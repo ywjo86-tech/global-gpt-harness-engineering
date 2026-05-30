@@ -1,0 +1,41 @@
+# Workspace handoffs and local working material
+_workspace/
+
+# Secrets and local environment
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+*.secret
+
+# Logs and runtime output
+*.log
+logs/
+tmp/
+temp/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node and package managers
+node_modules/
+dist/
+build/
+
+# Excel and Office temporary files
+~$*.xls*
+~$*.doc*
+~$*.ppt*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
