@@ -34,11 +34,27 @@ This repository acts as the Global Harness Engineering PMO for managing Codex-ba
 
 Use the harness skill when designing a new project team, creating reusable skills, defining QA handoffs, or building a project-specific workflow.
 
+## New Project Standard
+
+New projects default to `project-workspace/{project-slug}/`.
+
+When the user provides project keywords, purpose, goals, or short trigger phrases such as "프로젝트 진행", "만들어줘", or "생성해줘", use the `new-project-orchestrator` skill to run the standard flow from requirements analysis through team architecture, project subagent and skill creation, orchestration, MVP milestones, QA, release readiness, and deployment handoff.
+
+New projects always use the full harness lifecycle from requirements analysis through final handoff, even when the initial request is short. Do not downshift to a reduced planning mode unless the user explicitly asks to stop before implementation or handoff.
+
+For ordinary new-project work inside `project-workspace/`, the global harness may proceed within the previously approved scope without requiring the user to repeat the full prompt. Caution and dangerous work still follow the Safety Warning Protocol.
+
+When new-project work contains independent requirements, design, research, implementation, documentation, or QA streams, the harness should split them into bounded parallel work and fan the results back into a supervised review and synthesis step.
+
+Every project must include `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`; project code, plans, change history, and test logs must stay consistent.
+
+When a user reports real-use test feedback or requested improvements after a project handoff, QA must review the relevant `docs/DEVELOPMENT_PLAN.txt`, `logs/app.log`, and user feedback, then decide which specialist should perform the fix. Each completed fix must include a dedicated `.txt` fix artifact in the project output.
+
 ## Safety Warning Protocol
 
 If the user says "승인", "진행해", "계속 진행", or "OK 진행", continue ordinary work within the previously proposed scope without asking again.
 
-Ordinary work includes new docs, new skills, new project-pattern docs, `tree`, `git status`, `git diff`, approved file creation, typo fixes, and `docs/harness` documentation improvements.
+Ordinary work includes new docs, new skills, new project-pattern docs, new project folders under `project-workspace/`, `tree`, `git status`, `git diff`, approved file creation, typo fixes, and `docs/harness` documentation improvements.
 
 Before caution work, show:
 
