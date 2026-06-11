@@ -96,6 +96,107 @@ For every fan-in, the supervisor central agent must:
 - preserve intermediate outputs under `_workspace/` when the project is large or multi-phase
 - send the synthesized result through QA release review before final handoff
 
+## Threaded Subagent Orchestration
+
+When a new project has independent work streams, the project orchestrator or supervisor central agent decomposes the work into logical task threads. If the Codex runtime supports physical independent threads or sessions, the supervisor may use them. If not, still manage each work unit as a logical thread with isolated inputs, outputs, review, and merge handling.
+
+Each task thread must declare:
+
+- `thread_id` or `thread_name`
+- assigned subagent role
+- task purpose
+- input materials
+- execution scope
+- editable files or expected artifacts
+- modification-forbidden areas
+- expected output
+- validation criteria
+- handoff report format
+- fan-in merge point
+- conflict handling rule
+
+The supervisor central agent owns these control points:
+
+- interpret the project goal and success criteria
+- decompose the total scope
+- choose the required subagent roles
+- create logical task threads for each independent work unit
+- give each thread clear task instructions
+- receive intermediate outputs or handoff reports from subagents
+- review reports for duplication, missing work, conflicts, and risks
+- decide whether additional work is needed
+- decide whether the next lifecycle phase may proceed
+- synthesize fan-in results
+- request QA release review
+- verify consistency across final artifacts, `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, `logs/app.log`, and release handoff
+- provide the final handoff report to the user
+
+The supervisor must not accept a subagent output as final immediately after it is produced. First collect the relevant handoff reports, compare them against requirements and success criteria, resolve gaps or conflicts, and then decide the next step.
+
+Subagents must stay within their assigned task thread:
+
+- do not change files or artifacts outside the assigned scope
+- do not edit another thread's outputs without supervisor routing
+- report immediately when shared files or conflict-prone artifacts must be changed
+- escalate unclear requirements, missing inputs, caution or dangerous work, and security-sensitive work to the supervisor
+- submit a standard handoff report after completing the task
+
+Use this standard subagent handoff report:
+
+```text
+[Subagent Handoff Report]
+
+Thread:
+Subagent Role:
+Assigned Task:
+Input Used:
+Work Performed:
+Files or Artifacts Changed:
+Output Produced:
+Validation Performed:
+Risks Found:
+Open Issues:
+Dependencies:
+Recommendation for Next Step:
+```
+
+After collecting subagent reports, use this supervisor fan-in review:
+
+```text
+[Supervisor Fan-in Review]
+
+Received Threads:
+Completed Outputs:
+Missing Outputs:
+Conflicts:
+Duplicate Work:
+Requirement Coverage:
+Risk Summary:
+QA Required:
+Next Step Decision:
+Final Handoff Readiness:
+```
+
+Do not automatically distribute these items to parallel threads:
+
+- multiple threads that must edit the same file at the same time
+- work blocked by an unresolved prior decision
+- work with unclear requirements and high implementation risk
+- API key, token, password, secret, or other sensitive-data handling
+- package installation
+- file deletion
+- folder restructuring
+- `git add`
+- `git commit`
+- `git push`
+- `git reset`
+- `git rebase`
+- `git clean`
+- external network access
+- caution work or dangerous work under the repository Safety Warning Protocol
+
+Manage these items through supervisor-owned sequential gates and require the appropriate approval before proceeding.
+
 ## Required Project Records
 
 Create and maintain these files for every generated project:
@@ -191,11 +292,13 @@ Create only the roles that the project actually needs.
 8. Define orchestration and handoff docs under `project-workspace/{project-slug}/docs/harness/`.
 9. Define `project-workspace/{project-slug}/_workspace/` handoff artifacts for large or multi-phase work.
 10. Activate bounded parallel fan-out for independent streams, synthesize outputs through the supervisor central agent, and route defects back through producer-reviewer loops.
-11. Create and keep synchronized `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`.
-12. Define implementation, integration, QA, release readiness, deployment handoff, and rollback-readiness gates.
-13. Present the planned target files before caution edits or when the requested scope is not already approved.
-14. After approval when required, create the project harness and project artifacts inside the approved scope.
-15. For post-handoff real-use feedback, run the fix cycle: QA analysis -> specialist assignment -> correction -> QA validation -> dedicated fix `.txt` artifact -> updated final handoff.
+11. For threaded work, declare each logical task thread with its owner, input, scope, output, validation criteria, handoff report, fan-in merge point, and conflict rule.
+12. Collect subagent handoff reports, run the supervisor fan-in review, resolve missing work or conflicts, and decide the next lifecycle step before finalizing outputs.
+13. Create and keep synchronized `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`.
+14. Define implementation, integration, QA, release readiness, deployment handoff, and rollback-readiness gates.
+15. Present the planned target files before caution edits or when the requested scope is not already approved.
+16. After approval when required, create the project harness and project artifacts inside the approved scope.
+17. For post-handoff real-use feedback, run the fix cycle: QA analysis -> specialist assignment -> correction -> QA validation -> dedicated fix `.txt` artifact -> updated final handoff.
 
 ## Generated Artifacts
 
@@ -228,6 +331,7 @@ For planning-only requests, output:
 - selected team architecture
 - role list
 - parallel work-stream plan and fan-in merge point
+- logical task thread plan with owners, scopes, validation criteria, handoff format, and conflict policy
 - MVP milestone and post-MVP path to deployment
 - file plan
 - required record plan for `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`
@@ -245,6 +349,7 @@ For approved implementation, output:
 - validation results
 - `logs/app.log` test log summary
 - parallel work-stream results and fan-in decisions
+- subagent handoff reports and supervisor fan-in review summary when threaded work is used
 - remaining risks
 - MVP milestone status and final handoff status
 - commit/push suggestion status
@@ -258,6 +363,8 @@ For approved implementation, output:
 - MVP is clearly separated from release readiness and deployment handoff.
 - Safety, secrets, network, deletion, and git push boundaries are explicit.
 - Independent work streams are parallelized only with explicit handoff artifacts, merge points, and conflict policy.
+- Threaded subagent orchestration uses logical task threads unless the runtime explicitly supports independent physical threads or sessions.
+- Subagent outputs are finalized only after supervisor fan-in review covers missing work, duplication, conflicts, risks, requirement coverage, QA need, and next-step decision.
 - `docs/DEVELOPMENT_PLAN.txt` exists and matches the actual code structure, execution flow, function responsibilities, exception policy, logging policy, test scenarios, build/deploy method, and modification-forbidden areas.
 - Code changes are recorded in `CHANGELOG.txt`.
 - Test execution results are recorded in `logs/app.log`.
