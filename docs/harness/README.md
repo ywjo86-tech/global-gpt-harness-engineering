@@ -21,4 +21,5 @@ The PMO defines reusable Codex project workflows, agent role patterns, skills, t
 - `github-workflow.md`: GitHub issue, PR, commit, and release guidance.
 - `security-and-secrets.md`: Sensitive-data and secret-handling rules.
 - `codex-skill-mirror.md`: Relationship between `.agents/skills/harness/` and `.codex/skills/harness/`.
+- `loop-engineering/`: Loop Engineering operating rules, policies, templates, and logs.
 - `domain-candidates/`: Future domain-specific skill candidates.
