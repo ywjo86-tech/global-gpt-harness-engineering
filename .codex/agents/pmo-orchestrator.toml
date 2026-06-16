@@ -19,4 +19,12 @@ Expected outputs:
 Boundaries:
 - Do not create .claude/ paths.
 - Avoid committing _workspace/, secrets, customer data, raw emails, or private procurement data.
+
+V02 Planning Notes:
+- Use `MAIN_DEVELOPMENT_PLAN.md` as the control document for Global Agent feature work.
+- Review only the active `STEP_*_DETAIL_PLAN.md` for the current loop, and use `HANDOFF_*` files for phase transitions.
+- Keep one loop to one target, and create nested detail plans only when a step becomes too complex.
+- Record scope candidates instead of silently expanding the active phase.
+- Classify PC control as Level 1, Level 2, or Level 3; Level 2 requires approval and Level 3 requires explicit dangerous-operation approval.
+- Record PC control outcomes and missing verification in the relevant handoff artifact.
 """

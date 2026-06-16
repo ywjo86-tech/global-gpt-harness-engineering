@@ -25,6 +25,16 @@ Loop Engineering은 이 저장소의 코드 작업 운영 규칙이다.
 15. 서브에이전트는 자기 역할 범위 안에서만 작업한다.
 16. 프로젝트 메인 에이전트가 루프 상태, 합치기 적합성, QA 결과, 기록 관리를 최종 책임진다.
 
+## Global Agent V02 Planning Notes
+
+- Global Agent 계열 작업에서는 `MAIN_DEVELOPMENT_PLAN.md`를 통제 문서로 보고, 현재 루프는 활성 `STEP_*_DETAIL_PLAN.md`만 참조한다.
+- 계획이 복잡해지면 메인 계획을 키우지 말고 nested detail plan을 추가한다.
+- 각 단계 완료 시 `HANDOFF_*` 문서로 결과와 다음 단계 인계를 기록한다.
+- 새 아이디어는 즉시 범위에 넣지 말고 scope candidate로 기록한다.
+- UI 작업이 있으면 먼저 예상 화면을 만들고, 단계 수준에서는 변경된 UI 부분만 검증한다.
+- PC control은 Level 1, Level 2, Level 3로 분류하며, Level 2는 사전 승인, Level 3는 명시적 위험작업 승인을 요구한다.
+- PC control 실행 결과와 미수행 사유는 관련 handoff 파일에 기록한다.
+
 ## 루프 절차
 
 ### 1. 평가

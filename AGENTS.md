@@ -34,6 +34,17 @@ This repository acts as the Global Harness Engineering PMO for managing Codex-ba
 
 Use the harness skill when designing a new project team, creating reusable skills, defining QA handoffs, or building a project-specific workflow.
 
+## Global Agent V02 Planning Policy
+
+- For Global Agent feature work, use a hierarchical plan set: `MAIN_DEVELOPMENT_PLAN.md`, `PLAN_INDEX.md`, `STEP_*_DETAIL_PLAN.md`, and `HANDOFF_*` files.
+- Treat the Main Development Plan as the control document and review only the active detail plan for the current loop.
+- Keep each loop to one target, and record phase transitions through handoff documents before moving on.
+- If a step becomes too complex, create a nested detail plan instead of expanding the main plan.
+- Record new ideas as scope candidates instead of silently expanding the current phase.
+- If UI work is introduced, create an expected preview before implementation and verify only the changed UI area at the step level.
+- For PC control, classify work as Level 1, Level 2, or Level 3; Level 2 requires user approval, and Level 3 requires explicit dangerous-operation approval.
+- Record PC control execution results and any missing verification in the relevant handoff file.
+
 ## New Project Standard
 
 New projects default to `project-workspace/{project-slug}/`.
