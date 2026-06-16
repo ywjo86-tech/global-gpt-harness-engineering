@@ -76,7 +76,10 @@
   - the parent step context,
   - any future progress refinements as scope candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - the progress formula becomes a long policy block,
   - the nested plan loses parent linkage,
@@ -86,4 +89,3 @@
   - progress must be tracked with a more complex metric,
   - a repo-wide policy file must be changed,
   - another nested level becomes necessary.
-

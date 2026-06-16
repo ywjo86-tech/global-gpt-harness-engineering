@@ -72,7 +72,9 @@
 - 대체 검증 방법:
   - Repository review and link consistency check.
 
-## 9. Stop Conditions
+## 9. Stage Exit Review
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 10. Stop Conditions
 - Do not mark Phase 2 complete yet.
 - Do not expand the step template beyond its bounded section list.
-

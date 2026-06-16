@@ -80,7 +80,10 @@
   - the final readiness status,
   - the active list of unresolved candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - QA starts validating runtime behavior instead of planning artifacts,
   - release readiness is redefined as code deployment,

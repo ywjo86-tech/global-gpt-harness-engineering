@@ -78,7 +78,10 @@
   - the current progress model,
   - the final deployment boundary rule.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - progress is updated before the step handoff exists,
   - the final deployment handoff is made to absorb phase-only records,

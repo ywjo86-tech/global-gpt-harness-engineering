@@ -75,7 +75,10 @@
   - the parent step context,
   - any future trigger refinements as scope candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - the trigger rule becomes a duplicate of the main plan,
   - the step template starts absorbing trigger text,
@@ -85,4 +88,3 @@
   - the trigger must be expanded into a longer policy,
   - a repo-wide policy file must be changed,
   - another nested level becomes necessary.
-

@@ -76,7 +76,10 @@
   - the parent step context,
   - any future scope refinements as candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - an unapproved change is pulled into the active phase,
   - the nested plan loses parent linkage,

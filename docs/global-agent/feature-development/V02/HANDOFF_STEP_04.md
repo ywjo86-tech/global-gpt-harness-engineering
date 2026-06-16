@@ -71,7 +71,9 @@
 - 대체 검증 방법:
   - Repository review and link consistency check.
 
-## 9. Stop Conditions
+## 9. Stage Exit Review
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 10. Stop Conditions
 - Do not use this handoff as a substitute for the phase plan.
 - Do not advance final deployment without updating the final handoff record.
-

@@ -78,7 +78,10 @@
   - the parent step context,
   - any unresolved link candidates as scope notes.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - a required file is missing,
   - the active index conflicts with the actual document state,

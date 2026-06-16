@@ -76,7 +76,10 @@
   - the parent step context,
   - any final-closure refinements as scope candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - release readiness becomes code deployment,
   - the final handoff absorbs phase-only records,

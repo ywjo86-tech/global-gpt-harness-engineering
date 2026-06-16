@@ -77,7 +77,10 @@
   - the standard phase template,
   - the explicit nested-plan threshold.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - the index starts duplicating main-plan content,
   - the step template becomes too broad,

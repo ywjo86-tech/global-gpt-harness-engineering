@@ -3,23 +3,24 @@
 ## Main Plan
 - [MAIN_DEVELOPMENT_PLAN.md](MAIN_DEVELOPMENT_PLAN.md)
 
-## Step Detail Plans
-
-| Phase | Detail Plan | Nested Plan | Status | Last Handoff |
-|---|---|---|---|---|
-| 1 | `STEP_01_DETAIL_PLAN.md` | - | Done | `HANDOFF_STEP_01.md` |
-| 2 | `STEP_02_DETAIL_PLAN.md` | `STEP_02_03_DETAIL_PLAN.md` | Done | `HANDOFF_STEP_02.md` |
-| 3 | `STEP_03_DETAIL_PLAN.md` | `STEP_03_03_DETAIL_PLAN.md` | Done | `HANDOFF_STEP_03.md` |
-| 4 | `STEP_04_DETAIL_PLAN.md` | `STEP_04_03_DETAIL_PLAN.md` | Done | `HANDOFF_STEP_04.md` |
-
-## Current Active Plan
-- Current Phase: Final Deployment
-- Active Detail Plan: `HANDOFF_FINAL_DEPLOYMENT.md`
-- Active Nested Plan: -
-- Current Loop: Final deployment handoff
-
-## Final Deployment
-- `HANDOFF_FINAL_DEPLOYMENT.md`
+## Plan Map
+- [PLAN_STATE.md](PLAN_STATE.md)
+- [V02_OPERATION_GUIDE.md](V02_OPERATION_GUIDE.md)
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+- [HANDOFF_FINAL_DEPLOYMENT.md](HANDOFF_FINAL_DEPLOYMENT.md)
+- [STEP_01_DETAIL_PLAN.md](STEP_01_DETAIL_PLAN.md)
+- [STEP_02_DETAIL_PLAN.md](STEP_02_DETAIL_PLAN.md)
+- [STEP_03_DETAIL_PLAN.md](STEP_03_DETAIL_PLAN.md)
+- [STEP_04_DETAIL_PLAN.md](STEP_04_DETAIL_PLAN.md)
+- [STEP_02_01_DETAIL_PLAN.md](STEP_02_01_DETAIL_PLAN.md)
+- [STEP_02_02_DETAIL_PLAN.md](STEP_02_02_DETAIL_PLAN.md)
+- [STEP_02_03_DETAIL_PLAN.md](STEP_02_03_DETAIL_PLAN.md)
+- [STEP_03_01_DETAIL_PLAN.md](STEP_03_01_DETAIL_PLAN.md)
+- [STEP_03_02_DETAIL_PLAN.md](STEP_03_02_DETAIL_PLAN.md)
+- [STEP_03_03_DETAIL_PLAN.md](STEP_03_03_DETAIL_PLAN.md)
+- [STEP_04_01_DETAIL_PLAN.md](STEP_04_01_DETAIL_PLAN.md)
+- [STEP_04_02_DETAIL_PLAN.md](STEP_04_02_DETAIL_PLAN.md)
+- [STEP_04_03_DETAIL_PLAN.md](STEP_04_03_DETAIL_PLAN.md)
 
 ## Handoff Templates
 - `HANDOFF_STEP_01.md`
@@ -29,7 +30,7 @@
 
 ## Index Rules
 - Review this file before opening a detail plan.
-- Only the active phase detail plan should be read for the current loop.
-- Nested plans are optional and should be added only when the active step becomes too complex.
-- Update status and handoff references after each phase is completed.
-- Keep this file synchronized with the main plan and handoff files.
+- Use [PLAN_STATE.md](PLAN_STATE.md) for the current active routing state.
+- Use [V02_OPERATION_GUIDE.md](V02_OPERATION_GUIDE.md) for V02 loop and scope rules.
+- Use [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md) for stage-end review behavior.
+- Keep this file synchronized with the static plan map only.

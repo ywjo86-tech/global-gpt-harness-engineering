@@ -76,7 +76,10 @@
   - the parent step context,
   - any closure refinements as scope candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - the final handoff starts duplicating phase records,
   - the nested plan loses parent linkage,
@@ -86,4 +89,3 @@
   - the final handoff must absorb runtime QA detail,
   - a repo-wide policy file must be changed,
   - another nested level becomes necessary.
-

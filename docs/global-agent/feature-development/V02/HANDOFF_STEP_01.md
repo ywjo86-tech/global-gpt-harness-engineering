@@ -71,6 +71,9 @@
 - 대체 검증 방법:
   - File existence and content verification via repository review.
 
-## 9. Stop Conditions
+## 9. Stage Exit Review
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 10. Stop Conditions
 - Do not use this handoff as a substitute for the phase plan.
 - Do not proceed to phase 3 without updating the plan index and phase 2 handoff after phase 2 work is completed.

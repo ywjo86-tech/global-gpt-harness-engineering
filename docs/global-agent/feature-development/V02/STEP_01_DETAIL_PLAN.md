@@ -72,7 +72,10 @@
   - the current phase boundary,
   - the reason the next step is still pending.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - this step starts referencing later-phase execution details,
   - the active loop expands beyond the planning foundation,
@@ -82,4 +85,3 @@
   - the next loop must touch `.codex` or repo-wide harness policy files,
   - a scope expansion candidate becomes urgent,
   - a UI or runtime implementation task appears.
-

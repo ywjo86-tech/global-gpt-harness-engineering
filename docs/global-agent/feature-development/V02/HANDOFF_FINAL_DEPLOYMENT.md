@@ -74,6 +74,9 @@
 - 대체 검증 방법:
   - File content and link verification via repository review.
 
-## 9. Stop Conditions
+## 9. Stage Exit Review
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 10. Stop Conditions
 - This handoff is complete.
 - Future changes should be recorded as new version candidates instead of modifying the completed closeout record.

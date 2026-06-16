@@ -76,7 +76,10 @@
   - the current parent step context,
   - any future template refinements as scope candidates.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - the step template becomes a full project plan,
   - routing logic starts moving into the template body,

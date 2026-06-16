@@ -76,7 +76,10 @@
   - the active nested plan reference,
   - any scope candidates discovered while editing the index.
 
-## 10. Stop Conditions
+## 10. Stage Exit Condition
+- [STAGE_EXIT_STANDARD.md](STAGE_EXIT_STANDARD.md)
+
+## 11. Stop Conditions
 - Stop if:
   - the index turns into a long-form summary,
   - the nested plan loses its parent link,
