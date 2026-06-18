@@ -30,6 +30,9 @@ Trigger phrases include:
 - Target users or business purpose, when provided
 - Preferred stack or runtime, when provided
 - Existing repository path, when provided
+- `docs/DEVELOPMENT_PLAN.txt` when resuming an existing project
+- `CHANGELOG.txt` when resuming an existing project
+- `logs/app.log` when resuming an existing project
 
 ## Default Behavior
 
@@ -37,11 +40,20 @@ When the user provides enough information to infer the project direction, procee
 
 Create each new project under `project-workspace/{project-slug}/` by default. Use a deterministic, repository-friendly slug inferred from the project keyword or name. Ask only when the slug would be ambiguous, unsafe, or likely to collide with existing project work.
 
+For every new project, follow: global principles first, orchestration and gate rules second, project contract/history/log last.
+
 Always run the full harness lifecycle for new projects: requirements analysis, team architecture, project subagent definition, skill analysis and creation, orchestration, MVP milestone delivery, implementation, integration, QA, release readiness, and final deployment handoff. Treat MVP as an intermediate milestone, not the final objective, unless the user explicitly asks to stop at MVP. Do not downshift to a reduced planning mode just to save tokens; preserve scope stability by keeping the full lifecycle visible and controlled.
+
+When resuming an existing project, read `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log` first. Treat `docs/DEVELOPMENT_PLAN.txt` as the execution contract, not a passive status note. If the required records are missing for a new project, create them before entering implementation.
+
+Classify each work slice by the highest-risk item. General work may continue inside the approved scope and may proceed automatically without repeated approval. Documentation-only stabilization may continue under delegated approval inside the approved scope. Caution work still needs a user `승인` / `진행해` / `계속 진행` / `OK 진행`, and dangerous work still needs `위험 확인 후 승인`. Stage-gate `GO` never replaces the Safety Warning Protocol.
 
 For ordinary project-harness work, the global harness may proceed within the approved scope without asking the user to repeat the full prompt. Ordinary work includes project-folder creation under `project-workspace/`, new project docs, new project-specific skills, project templates, `_workspace/` handoff artifacts, typo fixes, and documentation improvements. Still follow repo safety rules for caution or dangerous work such as editing global guidance, changing existing shared skills, installing packages, deleting files, or performing Git stage/commit/push operations.
 
 Enable bounded parallel work by default whenever tasks can be completed independently and later merged through a deterministic handoff. The supervisor central agent owns the split, assigns independent streams, tracks outputs, resolves conflicts, and performs the fan-in synthesis before QA.
+
+The project orchestrator owns the logical thread map, fan-out instructions, output collection, and fan-in request. The stage-gate reviewer owns the independent decision about whether the current phase may advance.
+Use `docs/harness/orchestration-execution-standard.md` as the execution standard for phase transitions, orchestration state, fan-out/fan-in, and stage gate reporting.
 
 Every project must include `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`. Treat `docs/DEVELOPMENT_PLAN.txt` as the durable project contract for final output, future real-use testing, and error analysis. Keep it synchronized with the actual code structure whenever code, architecture, execution flow, tests, or deployment behavior changes.
 
@@ -115,6 +127,8 @@ Each task thread must declare:
 - fan-in merge point
 - conflict handling rule
 
+Each project should create or update `docs/harness/orchestration-state.md` to record the current phase, active threads, current gate status, and unresolved risks. Keep the state file aligned with the current execution contract.
+
 The supervisor central agent owns these control points:
 
 - interpret the project goal and success criteria
@@ -130,6 +144,8 @@ The supervisor central agent owns these control points:
 - request QA release review
 - verify consistency across final artifacts, `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, `logs/app.log`, and release handoff
 - provide the final handoff report to the user
+
+The stage-gate reviewer must return one of `GO`, `CONDITIONAL GO`, or `NO-GO`. The next phase may begin only after `GO` or `CONDITIONAL GO` is recorded and its conditions, if any, are satisfied.
 
 The supervisor must not accept a subagent output as final immediately after it is produced. First collect the relevant handoff reports, compare them against requirements and success criteria, resolve gaps or conflicts, and then decide the next step.
 

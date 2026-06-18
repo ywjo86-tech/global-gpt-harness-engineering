@@ -60,6 +60,7 @@ Default to specialist skills plus a markdown team spec. Add extra role briefs on
 - Treat prompt engineering as one layer inside harness engineering, not a replacement for clear artifacts and role contracts.
 - Prefer rippable seams. Keep model-specific retries, heuristics, and recovery rules isolated in removable sections or reference docs.
 - Keep coordination shallow. If the harness only works through deep routing or clever runtime recovery, simplify the design before adding more logic.
+- Apply the repository-wide Karpathy-style principles from `docs/harness/global-operating-principles.md` to every harness-related task.
 
 ## Portable Defaults
 

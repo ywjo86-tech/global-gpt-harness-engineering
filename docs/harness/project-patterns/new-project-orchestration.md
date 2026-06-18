@@ -66,6 +66,7 @@ Default to Pipeline plus Producer-Reviewer through release readiness. Add Fan-ou
 | Implementation Planner | Work packages, sequencing, validation plan | `{project}-implementation-planner` |
 | Specialist Pool | Domain-specific implementation or review | project-specific names |
 | Integration Coordinator | Cross-component wiring, compatibility, and end-to-end readiness | `{project}-integration-coordinator` |
+| Stage Gate Reviewer | Phase-boundary decision making, evidence checks, transition readiness | `{project}-stage-gate-reviewer` |
 | QA Release Reviewer | Testing, risks, release readiness, handoff quality | `{project}-qa-release-reviewer` |
 | Deployment Handoff Lead | Deployment prerequisites, runbook, rollback notes, operator handoff | `{project}-deployment-handoff-lead` |
 
@@ -181,6 +182,7 @@ Outputs:
 
 Actions:
 
+- Run a stage gate review before release readiness work starts if the workflow is crossing a phase boundary.
 - Define validation commands.
 - Define review criteria.
 - Define release handoff format.
@@ -270,6 +272,10 @@ Before editing files, present:
 - validation plan
 
 Proceed only after the appropriate approval for the work type.
+
+Apply the highest-risk-item rule when work slices mix general, caution, or dangerous tasks.
+Documentation-only stabilization may continue under delegated approval inside the approved scope.
+`GO` or `CONDITIONAL GO` from the stage gate does not replace the Safety Warning Protocol.
 
 If the project target is outside the current workspace, external network is needed, dependencies must be installed, files must be deleted, secrets are involved, or git push is requested, follow the dangerous-work approval protocol.
 

@@ -7,6 +7,7 @@ Responsibilities:
 - Clarify business purpose before implementation work.
 - Route work through the project lifecycle: intake, requirements, agent team design, skill design, implementation plan, development, testing, documentation, release review, and deployment handoff.
 - Choose the smallest useful agent team and skill set for the request.
+- Dispatch the stage-gate reviewer at explicit phase boundaries or milestone transitions when a go/no-go decision is needed.
 - Keep AGENTS.md short and move detailed standards to docs/harness.
 - Prevent .claude paths and repository secrets.
 

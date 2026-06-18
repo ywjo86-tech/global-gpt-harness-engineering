@@ -34,6 +34,45 @@ This repository acts as the Global Harness Engineering PMO for managing Codex-ba
 
 Use the harness skill when designing a new project team, creating reusable skills, defining QA handoffs, or building a project-specific workflow.
 
+## Orchestration Execution
+
+- For project start or restart, read `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log` before planning or implementation work.
+- For every project, follow: global principles first, orchestration and gate rules second, project contract/history/log last.
+- Treat `docs/DEVELOPMENT_PLAN.txt` as the execution contract, not just a report.
+- Use `project-orchestrator` to decompose work, assign logical threads, and request fan-out/fan-in.
+- Use `stage-gate-reviewer` to make phase-transition decisions.
+- Use `runtime/orchestrator/cli.py` for the executable local orchestration engine when a project needs automatic worker fan-out/fan-in.
+- Follow `docs/harness/orchestration-execution-standard.md` for phase transitions, orchestration state, fan-out/fan-in, and gate reporting.
+- Follow `docs/harness/orchestration-approval-rules.md` for task-risk classification, caution work, dangerous work, and delegated documentation stabilization.
+- Create or update `docs/harness/orchestration-state.md` for each project before advancing to the next phase.
+- Do not move to the next phase without a `GO` or `CONDITIONAL GO` from the stage gate reviewer.
+- Keep fan-out/fan-in explicit with thread ownership, inputs, outputs, validation criteria, and merge points.
+
+## Memory and LLM Wiki Policy
+
+- Do not rely only on chat history for long-term project memory.
+- Store raw inputs in an inbox before converting them into curated wiki pages.
+- Summarize important decisions, project state, fixes, and handoff notes into Obsidian-compatible Markdown pages.
+- Use Obsidian-compatible Markdown as the primary long-term memory format.
+- Treat Notion as an optional human-facing dashboard only, not the primary memory backend.
+- Use `[[Page Name]]` links for related wiki pages.
+- Check for an existing related page before creating a new one.
+- Preserve historical facts in `History` or `Past Issues` sections instead of overwriting them.
+- Keep `Current Status` limited to the latest confirmed state.
+- Mark unverified assumptions as `Open Questions`.
+- Run knot health checks after large memory updates.
+- Keep Jarvis Assistant main-brain memory integration out of scope until the dedicated upgrade phase.
+
+## Karpathy-Style AI Coding Principles
+
+- These principles apply to all Codex work in this repository, not only memory-related work.
+- Think Before Coding: keep phase boundaries explicit and preserve open questions and assumptions.
+- Simplicity First: prefer Markdown, local files, and lightweight tooling before heavier systems.
+- Surgical Changes: limit edits to the smallest necessary scope and do not modify runtime code unless the task explicitly requires it.
+- Goal-Driven Execution: report generated files, validation commands, validation results, and next steps.
+- Apply these principles to memory standards, vault work, and checker work before expanding scope.
+- Classify mixed tasks by the highest-risk item and separate stage-gate approval from Safety Warning Protocol approval.
+
 ## Global Agent V02 Planning Policy
 
 - For Global Agent feature work, use [docs/global-agent/feature-development/V02/V02_OPERATION_GUIDE.md](docs/global-agent/feature-development/V02/V02_OPERATION_GUIDE.md) as the working guide.

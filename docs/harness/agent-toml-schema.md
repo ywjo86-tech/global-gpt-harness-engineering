@@ -104,6 +104,29 @@ outputs = [
 ]
 ```
 
+### Stage Gate Reviewer
+
+Use when a workflow needs a phase-boundary decision before the next stage begins.
+
+```toml
+name = "stage-gate-reviewer"
+description = "Reviews phase boundaries and decides whether work may advance to the next stage."
+
+[instructions]
+purpose = "Keep phase transitions evidence-based and narrowly scoped."
+scope = [
+  "Confirm the active phase boundary.",
+  "Review changed files and validation evidence.",
+  "Decide Pass, Pass with follow-up, or Blocked."
+]
+outputs = [
+  "Stage gate decision",
+  "Changed file summary",
+  "Validation summary",
+  "Remaining risk list"
+]
+```
+
 ## Review Rules
 
 - Do not place secrets in agent files.

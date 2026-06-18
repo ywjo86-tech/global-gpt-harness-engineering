@@ -17,6 +17,7 @@
 - No `.claude/` paths exist.
 - Sensitive data is not committed.
 - Templates and docs use matching lifecycle language.
+- Stage gate review decides phase advancement; QA release review decides release or handoff readiness.
 
 ## Release Decision
 

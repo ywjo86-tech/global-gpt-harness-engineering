@@ -1,0 +1,517 @@
+Development Plan for LLM Wiki and Knot Standardization Upgrade in Global GPT Harness Engineering
+Generated: 2026-06-17 11:51:59
+
+1. PURPOSE
+
+This development plan defines how to upgrade the Global GPT Harness Engineering repository so it can provide a standardized operating framework for LLM Wiki and knot-based knowledge health management.
+
+The goal is not to modify Jarvis Assistant's main brain yet. The immediate goal is to establish reusable standards, documentation, and Codex-ready instructions inside Global GPT Harness Engineering. Jarvis Assistant will only be prepared for future integration.
+
+2. BACKGROUND
+
+Current project direction:
+
+- Global GPT Harness Engineering acts as the PMO and standardization repository for all Codex-driven projects.
+- Jarvis Assistant is the execution project that will later use long-term memory.
+- Jarvis Assistant's main brain upgrade has not started yet.
+- Obsidian-compatible Markdown is preferred as the primary LLM Wiki storage format.
+- Notion may remain useful as a human-facing dashboard, but should not be the primary memory backend for LLM Wiki/knot.
+- knot is understood as a health-check and quality-control layer for accumulated LLM Wiki knowledge.
+
+3. TARGET ARCHITECTURE
+
+Recommended high-level architecture:
+
+AI-Workspace/
+  global-gpt-harness-engineering/
+    AGENTS.md
+    docs/
+      harness/
+        memory/
+          llm-wiki-standard.md
+          knot-health-check-standard.md
+          obsidian-vault-structure.md
+          memory-governance.md
+    .agents/
+      skills/
+        llm-wiki-memory-harness.md
+        knot-health-check-harness.md
+
+  memory-vault/
+    inbox/
+      raw_chats/
+      raw_documents/
+      raw_logs/
+      raw_emails/
+    wiki/
+      projects/
+      concepts/
+      decisions/
+      business/
+    indexes/
+    templates/
+    knot/
+      config/
+      reports/
+
+  project-workspace/
+    jarvis-assistant/
+      docs/
+        memory/
+      config/
+        memory.example.json
+
+4. SCOPE OF THIS UPGRADE
+
+4.1 In Scope
+
+The Global GPT Harness Engineering repository should be upgraded with:
+
+A. Memory standards documentation
+- docs/harness/memory/llm-wiki-standard.md
+- docs/harness/memory/knot-health-check-standard.md
+- docs/harness/memory/obsidian-vault-structure.md
+- docs/harness/memory/memory-governance.md
+
+B. Reusable Codex skills
+- .agents/skills/llm-wiki-memory-harness.md
+- .agents/skills/knot-health-check-harness.md
+
+C. AGENTS.md policy extension
+- Add Memory and LLM Wiki Policy
+- Add rules for raw input handling, wiki page creation, link management, health checks, and stale information handling
+
+D. Optional initial templates
+- templates/project-page-template.md
+- templates/decision-record-template.md
+- templates/error-log-template.md
+- templates/handoff-summary-template.md
+
+4.2 Out of Scope
+
+The following must not be included in this upgrade phase:
+
+- Do not modify Jarvis Assistant main brain logic.
+- Do not connect Jarvis Assistant to memory retrieval yet.
+- Do not implement vector database retrieval yet.
+- Do not implement autonomous long-term memory writing inside Jarvis yet.
+- Do not use Notion as the primary memory backend.
+- Do not perform automatic memory correction without human review.
+
+5. GLOBAL GPT HARNESS ENGINEERING UPGRADE DETAILS
+
+5.1 Add LLM Wiki Standard
+
+File:
+docs/harness/memory/llm-wiki-standard.md
+
+Required content:
+
+- Definition of LLM Wiki
+- Difference between raw inbox and curated wiki
+- Obsidian-compatible Markdown rules
+- Required page structure
+- Required metadata fields
+- Link format using [[Page Name]]
+- Rules for historical facts
+- Rules for current status sections
+- Rules for decision records
+- Rules for avoiding duplicate pages
+
+Recommended page structure:
+
+# Page Title
+
+## Summary
+Short explanation of the topic.
+
+## Current Status
+Latest known state.
+
+## Key Facts
+Stable facts and decisions.
+
+## History
+Past issues, resolved problems, and deprecated information.
+
+## Related Pages
+- [[Related Page 1]]
+- [[Related Page 2]]
+
+## Open Questions
+Items that need later confirmation.
+
+## Last Updated
+YYYY-MM-DD
+
+5.2 Add knot Health Check Standard
+
+File:
+docs/harness/memory/knot-health-check-standard.md
+
+Required content:
+
+- Definition of knot
+- Difference between mechanical checks and AI semantic checks
+- knot v1 scope
+- knot v2 scope
+- Report format
+- Human review requirement
+
+knot v1 mechanical checks:
+
+- Broken [[wiki links]]
+- Duplicate page names
+- Empty Markdown files
+- Missing required sections
+- Missing Last Updated field
+- Missing index registration
+- Orphan pages
+- Invalid folder placement
+
+knot v2 semantic checks:
+
+- Outdated information detection
+- Contradiction detection between pages
+- Duplicate topic merge suggestions
+- Current status consistency check
+- Decision history consistency check
+- Handoff summary quality check
+
+5.3 Add Obsidian Vault Structure Standard
+
+File:
+docs/harness/memory/obsidian-vault-structure.md
+
+Required content:
+
+- Recommended folder structure
+- Naming rules
+- Link rules
+- Index page rules
+- Inbox-to-wiki workflow
+- Relationship between Obsidian, Global Harness, knot, and Jarvis Assistant
+
+5.4 Add Memory Governance
+
+File:
+docs/harness/memory/memory-governance.md
+
+Required content:
+
+- What should be stored
+- What should not be stored
+- How to handle sensitive information
+- How to handle outdated information
+- How to handle uncertain information
+- How to update project status
+- How to create handoff notes
+
+6. AGENTS.md UPDATE
+
+Add the following policy section to AGENTS.md:
+
+## Memory and LLM Wiki Policy
+
+- Do not rely only on chat history for long-term project memory.
+- Important decisions, project states, errors, fixes, and handoff notes must be summarized into Markdown wiki pages.
+- Raw inputs must be stored in inbox before being converted into curated wiki pages.
+- Use Obsidian-compatible Markdown links: [[Page Name]].
+- Before creating a new page, check whether a related page already exists.
+- Do not overwrite historical facts. Move outdated facts into History or Past Issues sections.
+- Current Status must represent the latest confirmed state.
+- Unverified assumptions must be marked as Open Questions.
+- Run knot health checks after large memory updates.
+- Jarvis Assistant main brain integration must remain disabled until the dedicated main brain upgrade phase.
+
+7. REUSABLE SKILLS
+
+7.1 LLM Wiki Memory Harness Skill
+
+File:
+.agents/skills/llm-wiki-memory-harness.md
+
+Purpose:
+Guide Codex to convert project chats, logs, handoff reports, and decisions into Obsidian-compatible Markdown wiki pages.
+
+Required workflow:
+
+1. Read raw input.
+2. Identify project, topic, decision, issue, and status.
+3. Check existing wiki pages before creating new ones.
+4. Update relevant wiki pages.
+5. Add [[links]] to related pages.
+6. Preserve historical information.
+7. Mark uncertain items as Open Questions.
+8. Update indexes.
+9. Request knot health check after large updates.
+
+7.2 knot Health Check Harness Skill
+
+File:
+.agents/skills/knot-health-check-harness.md
+
+Purpose:
+Guide Codex to inspect an LLM Wiki vault for structural and semantic quality issues.
+
+Required workflow:
+
+1. Scan Markdown files.
+2. Extract [[links]].
+3. Detect broken links.
+4. Detect missing required sections.
+5. Detect duplicate pages.
+6. Detect orphan pages.
+7. Detect index omissions.
+8. Create a health report.
+9. Suggest fixes but do not auto-apply without approval.
+10. For v2 semantic checks, identify possible outdated or contradictory content.
+
+8. JARVIS ASSISTANT INTEGRATION POSITION
+
+Jarvis Assistant should not be upgraded yet.
+
+Current recommended status:
+
+- memory_enabled: false
+- memory_provider: obsidian_markdown
+- read_mode: disabled_until_brain_upgrade
+- write_mode: manual
+- knot_check_required: true
+
+Future Jarvis Assistant files to prepare later:
+
+jarvis-assistant/
+  docs/
+    memory/
+      memory-integration-plan.md
+      memory-vault-contract.md
+  config/
+    memory.example.json
+
+Jarvis Assistant main brain upgrade should only begin after:
+
+- Global GPT Harness Engineering memory standards are completed.
+- Memory Vault structure is created.
+- knot v1 health checker is working.
+- Initial Jarvis project wiki page exists.
+- A clear memory integration contract is approved.
+
+9. DEVELOPMENT PHASES
+
+Phase 1: Standardization in Global GPT Harness Engineering
+
+Deliverables:
+- LLM Wiki standard document
+- knot health check standard document
+- Obsidian vault structure document
+- Memory governance document
+- AGENTS.md memory policy
+- Reusable Codex skills
+
+Expected result:
+Global GPT Harness Engineering becomes the official standard repository for memory architecture.
+
+Phase 2: Memory Vault Bootstrap
+
+Deliverables:
+- memory-vault folder structure
+- project index
+- concept index
+- Jarvis Assistant project page
+- Global GPT Harness Engineering project page
+- LLM Wiki concept page
+- knot concept page
+
+Expected result:
+A usable Obsidian-compatible vault exists outside Jarvis Assistant.
+
+Phase 3: knot v1 Local Health Checker
+
+Deliverables:
+- Local Markdown scanner
+- Broken link checker
+- Required section checker
+- Duplicate page checker
+- Orphan page checker
+- Health report generator
+
+Expected result:
+The memory vault can be checked without AI API calls.
+
+Phase 4: Jarvis Assistant Preparation Only
+
+Deliverables:
+- Memory integration plan
+- Memory vault contract
+- memory.example.json with memory_enabled=false
+
+Expected result:
+Jarvis Assistant is ready for later memory integration, but main brain logic remains untouched.
+
+Phase 5: Future Jarvis Main Brain Upgrade
+
+Deliverables:
+- Read-only memory retrieval
+- Project status lookup
+- Controlled memory writing
+- knot check before memory updates
+- Human approval for important memory changes
+
+Expected result:
+Jarvis Assistant uses the Obsidian Markdown vault as long-term memory.
+
+10. CODEX EXECUTION PROMPTS
+
+10.1 Phase 1 Codex Prompt
+
+Use this prompt inside the Global GPT Harness Engineering repository:
+
+Implement a documentation-only upgrade for LLM Wiki and knot standardization.
+
+Scope:
+- Create docs/harness/memory/llm-wiki-standard.md
+- Create docs/harness/memory/knot-health-check-standard.md
+- Create docs/harness/memory/obsidian-vault-structure.md
+- Create docs/harness/memory/memory-governance.md
+- Create .agents/skills/llm-wiki-memory-harness.md
+- Create .agents/skills/knot-health-check-harness.md
+- Update AGENTS.md with Memory and LLM Wiki Policy
+
+Rules:
+- Do not modify runtime code.
+- Do not modify Jarvis Assistant.
+- Do not add Notion as the primary memory backend.
+- Use Obsidian-compatible Markdown and [[wiki links]].
+- Keep Jarvis main brain integration out of scope.
+- Preserve existing repository conventions.
+- Report all changed files and summarize each file's purpose.
+
+Validation:
+- Confirm all requested files exist.
+- Confirm AGENTS.md includes the new memory policy.
+- Confirm no runtime code was changed.
+
+10.2 Phase 2 Codex Prompt
+
+Create an Obsidian-compatible memory-vault structure under AI-Workspace.
+
+Scope:
+- Create inbox/raw_chats
+- Create inbox/raw_documents
+- Create inbox/raw_logs
+- Create inbox/raw_emails
+- Create wiki/projects
+- Create wiki/concepts
+- Create wiki/decisions
+- Create wiki/business
+- Create indexes
+- Create templates
+- Create knot/config
+- Create knot/reports
+
+Initial pages:
+- wiki/projects/jarvis-assistant.md
+- wiki/projects/global-gpt-harness-engineering.md
+- wiki/concepts/llm-wiki.md
+- wiki/concepts/knot.md
+- indexes/project-index.md
+- indexes/concept-index.md
+
+Rules:
+- Do not modify Jarvis Assistant runtime code.
+- Do not connect memory to Jarvis yet.
+- Use Obsidian-compatible Markdown links.
+- Mark Jarvis main brain upgrade as not started.
+
+10.3 Phase 3 Codex Prompt
+
+Develop knot v1 local health checker for the memory-vault.
+
+Scope:
+- Scan Markdown files.
+- Extract [[wiki links]].
+- Detect broken links.
+- Detect duplicate page names.
+- Detect empty files.
+- Detect missing required sections.
+- Detect orphan pages.
+- Detect missing index entries.
+- Generate knot/reports/health-report.md.
+
+Rules:
+- No AI API calls.
+- No automatic file modification.
+- Report only.
+- Provide command-line usage.
+- Provide test output.
+
+11. RECOMMENDED SAVE FOLDERS
+
+11.1 Development Plan File
+
+Recommended local save folder:
+
+C:\Users\ywjo8\Documents\AI-Workspace\global-gpt-harness-engineering\docs\harness\memory\
+
+Recommended file name:
+
+LLM_Wiki_Knot_Standardization_Upgrade_Development_Plan.txt
+
+11.2 Current generated file location in this ChatGPT session
+
+/mnt/data/LLM_Wiki_Knot_Standardization_Upgrade_Development_Plan.txt
+
+12. WINDOWS POWERSHELL EXECUTION COMMANDS
+
+12.1 Move the downloaded plan file to the repository
+
+After downloading this txt file, move it to the Global GPT Harness Engineering repository:
+
+cd C:\Users\ywjo8\Documents\AI-Workspace\global-gpt-harness-engineering
+
+mkdir docs\harness\memory -Force
+
+copy "$env:USERPROFILE\Downloads\LLM_Wiki_Knot_Standardization_Upgrade_Development_Plan.txt" "docs\harness\memory\LLM_Wiki_Knot_Standardization_Upgrade_Development_Plan.txt"
+
+12.2 Open the repository in VS Code
+
+code C:\Users\ywjo8\Documents\AI-Workspace\global-gpt-harness-engineering
+
+12.3 Run Codex from the repository root
+
+cd C:\Users\ywjo8\Documents\AI-Workspace\global-gpt-harness-engineering
+
+codex
+
+12.4 Suggested Codex instruction after opening Codex
+
+Open docs/harness/memory/LLM_Wiki_Knot_Standardization_Upgrade_Development_Plan.txt and implement Phase 1 only.
+Do not modify runtime code.
+Do not modify Jarvis Assistant.
+After completion, report changed files, validation results, and next steps.
+
+13. SUCCESS CRITERIA
+
+This upgrade is successful when:
+
+- Global GPT Harness Engineering contains formal memory standards.
+- LLM Wiki and knot are documented as reusable architecture patterns.
+- AGENTS.md includes memory management rules.
+- Codex has reusable skills for LLM Wiki and knot workflows.
+- Obsidian Markdown is defined as the primary memory format.
+- Notion is clearly positioned as optional dashboard, not primary memory.
+- Jarvis Assistant remains untouched at main brain level.
+- Future Jarvis main brain integration has a clear preparation path.
+
+14. FINAL RECOMMENDATION
+
+Do not start Jarvis Assistant main brain memory integration yet.
+
+Recommended order:
+
+1. Upgrade Global GPT Harness Engineering with LLM Wiki/knot standards.
+2. Create the Obsidian-compatible memory-vault.
+3. Build knot v1 local health checker.
+4. Prepare Jarvis Assistant memory integration documents only.
+5. Start Jarvis main brain upgrade after the memory architecture is stable.
