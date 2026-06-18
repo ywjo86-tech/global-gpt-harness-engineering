@@ -1,0 +1,2 @@
+2026-06-18 | sample_project_contract | initial runtime smoke-test contract created
+

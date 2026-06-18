@@ -1,0 +1,33 @@
+# Development Plan
+
+Project: sample_project_contract
+Current phase: runtime orchestration smoke test
+
+## Execution Contract
+
+- Read `docs/DEVELOPMENT_PLAN.txt` first.
+- Read `CHANGELOG.txt`, `logs/app.log`, and `docs/harness/orchestration-state.md` together.
+- Treat the development plan as the execution contract.
+- Keep fan-out, fan-in, and stage gate separate.
+- Safety approval remains separate from stage-gate approval.
+
+## Work Slices
+
+### Documentation Stabilization
+
+- Confirm the orchestration-state document matches the runtime state.
+- Review the contract text for clarity and bounded scope.
+
+### QA and Gate Readiness
+
+- Review the activity log for smoke-test evidence.
+- Confirm the project is ready for an independent stage-gate review.
+
+## Acceptance Criteria
+
+- At least two worker threads are fan-out automatically.
+- Worker outputs are written to files.
+- Fan-in report is generated.
+- Stage gate returns GO or CONDITIONAL GO.
+- Approval-gated work does not run without the right approval.
+
