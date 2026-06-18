@@ -1,0 +1,88 @@
+Orchestration Real Check Development Plan
+========================================
+
+Purpose
+-------
+Validate the orchestration execution standard on a real project workspace by requiring
+`docs/DEVELOPMENT_PLAN.txt` as the execution contract, explicit fan-out/fan-in, and an
+independent stage-gate decision before the next phase.
+
+Current Status
+--------------
+- Project type: docs-first orchestration pilot
+- Implementation scope: no runtime code in this phase
+- Current phase: execution-contract validation
+- Stage gate state: GO after fan-in review
+
+Feature List
+------------
+- Contract-first project startup and restart
+- `docs/harness/orchestration-state.md` tracking
+- Explicit logical thread fan-out and fan-in records
+- Independent stage gate review
+- Structured validation logging
+
+Execution Flow
+--------------
+1. Read `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`.
+2. Refresh `docs/harness/orchestration-state.md`.
+3. Split the work into logical threads.
+4. Collect thread outputs.
+5. Run fan-in review.
+6. Request stage gate review.
+7. Record `GO`, `CONDITIONAL GO`, or `NO-GO`.
+
+File Structure
+--------------
+- `docs/DEVELOPMENT_PLAN.txt`
+- `CHANGELOG.txt`
+- `logs/app.log`
+- `docs/harness/orchestration-state.md`
+- `docs/harness/team-spec.md`
+- `docs/harness/workflow.md`
+
+Major Responsibilities
+----------------------
+- Project Orchestrator: read the execution contract, decompose work, run fan-out/fan-in, and request the gate decision.
+- Stage Gate Reviewer: independently decide whether the phase may advance.
+
+Exception Handling Policy
+-------------------------
+- Missing required records stop the flow and are reported as blockers.
+- `NO-GO` blocks the next phase.
+- User intervention is recorded with the blocked decision and the available options.
+
+Logging Policy
+--------------
+- Write one structured line per validation or gate event in `logs/app.log`.
+- Use the shape `timestamp | record_type | project | phase | decision | evidence | next_step`.
+- Keep the log focused on orchestration behavior and validation evidence.
+
+Test Scenarios
+-------------
+- Preflight reads all required records before planning.
+- Fan-out produces at least two thread records with explicit owners and merge point.
+- Fan-in records missing outputs, conflicts, duplicate work, and requirement coverage.
+- Stage gate returns `GO` or `CONDITIONAL GO` only after evidence review.
+- Missing-record flow records a blocker and stops before the next phase.
+
+Build and Deployment Method
+---------------------------
+- Not applicable. This is a docs-first orchestration pilot.
+- No runtime build, dependency install, or deployment occurs in this phase.
+
+Modification-Forbidden Areas
+----------------------------
+- Runtime code outside this project
+- Global harness repository files
+- Jarvis Assistant runtime code
+- Jarvis main-brain integration
+- Notion and vector DB work
+- `.claude/` paths
+
+Validation Notes
+----------------
+- The execution contract must be read before any phase work.
+- Orchestration state must reflect the active phase and gate status.
+- The stage gate must remain independent from fan-in synthesis.
+- Fan-in and stage-gate records should share the same structured fields as the global standard.

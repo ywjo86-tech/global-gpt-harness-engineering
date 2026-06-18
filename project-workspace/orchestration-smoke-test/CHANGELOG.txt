@@ -1,0 +1,8 @@
+2026-06-17 | orchestration-smoke-test | Initial smoke test scaffolding
+- Summary: Created a docs-only smoke-test project to validate contract-first execution, explicit fan-out/fan-in, orchestration state tracking, and independent stage gating.
+- Reason: Verify the new orchestration execution standard before applying it to a real project.
+- Validation: Planned and recorded orchestration flow; confirmed required project records and gate model in docs.
+2026-06-17 | orchestration-smoke-test | Structured gate and fan-in record format
+- Summary: Tightened the orchestration smoke test to use structured fan-in and stage-gate record shapes in the execution standard, state file, workflow, and log file.
+- Reason: Reduce ambiguity in future project runs and make gate evidence easier to compare.
+- Validation: Updated plan, state, workflow, and logs to use a consistent record shape.

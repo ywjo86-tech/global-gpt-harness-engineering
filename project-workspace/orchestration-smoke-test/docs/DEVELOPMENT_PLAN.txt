@@ -1,0 +1,92 @@
+Orchestration Smoke Test Development Plan
+=========================================
+
+Purpose
+-------
+Validate that the Global GPT Harness orchestration path now treats
+`docs/DEVELOPMENT_PLAN.txt` as the execution contract, splits work into
+logical threads, performs fan-out and fan-in explicitly, and requires an
+independent stage-gate decision before advancing.
+
+Current Status
+--------------
+- Project type: docs-only smoke test
+- Implementation scope: no runtime code
+- Current phase: orchestration validation
+- Stage gate state: GO after fan-in review
+
+Feature List
+------------
+- Contract-first project startup and restart
+- Explicit orchestration state tracking
+- Logical thread fan-out and fan-in reporting
+- Independent stage gate decision
+- Minimal documentation-only execution
+
+Execution Flow
+--------------
+1. Read `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`.
+2. Refresh `docs/harness/orchestration-state.md`.
+3. Split the work into logical threads:
+   - Thread T1: execution contract and phase boundary review
+   - Thread T2: gate rules and reporting review
+4. Perform fan-out with explicit inputs, outputs, and merge point.
+5. Fan in the thread results and confirm coverage.
+6. Request stage gate review.
+7. Record `GO`, `CONDITIONAL GO`, or `NO-GO`.
+
+File Structure
+--------------
+- `docs/DEVELOPMENT_PLAN.txt`
+- `CHANGELOG.txt`
+- `logs/app.log`
+- `docs/harness/orchestration-state.md`
+- `docs/harness/team-spec.md`
+- `docs/harness/workflow.md`
+
+Major Responsibilities
+----------------------
+- Project Orchestrator: read the execution contract, decompose work, run fan-out/fan-in, and request the gate decision.
+- Stage Gate Reviewer: independently decide whether the phase may advance.
+
+Exception Handling Policy
+-------------------------
+- If any required project record is missing, stop and record the blocker.
+- If the stage gate is `NO-GO`, do not advance.
+- If user input is required, record why it is needed and what choices remain.
+
+Logging Policy
+--------------
+- Log each validation step in `logs/app.log`.
+- Log the command or scenario, pass/fail status, and any blockers.
+- Use a structured line format for each log entry: `timestamp | record_type | project | phase | decision | evidence | next_step`.
+- Keep the log focused on orchestration behavior, not secrets or runtime data.
+
+Test Scenarios
+-------------
+- Preflight reads the three required records before any planning.
+- Fan-out creates two logical threads with clear owners and merge point.
+- Fan-in confirms no missing outputs and no conflicting assumptions.
+- Stage gate returns `GO` and allows the next phase.
+- Missing-record scenario stops the flow and records the blocker.
+
+Build and Deployment Method
+---------------------------
+- Not applicable. This is a docs-only smoke test.
+- No runtime build, package install, or deployment is performed.
+
+Modification-Forbidden Areas
+----------------------------
+- Runtime code outside this smoke-test project
+- Global harness repository files
+- Jarvis Assistant runtime code
+- Jarvis main-brain integration
+- Notion and vector DB work
+- `.claude/` paths
+
+Validation Notes
+----------------
+- The orchestration path should always begin with the execution contract.
+- The state file should reflect the current phase and gate status.
+- The stage gate must be independent from fan-in synthesis.
+- Fan-in and stage-gate records should share a consistent field set so they can be compared across projects.

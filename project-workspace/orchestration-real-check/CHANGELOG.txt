@@ -1,0 +1,25 @@
+2026-06-18 | orchestration-real-check | Approval boundary rules reflected in thread docs
+- Summary: Added highest-risk classification, separate Safety Warning Protocol approval, and delegated documentation stabilization rules to the project thread docs and stage-gate artifacts.
+- Reason: Keep the current project threads aligned with the global orchestrator approval rules.
+- Validation: Updated team-spec, workflow, orchestration-state, and final report example to match the new approval boundary.
+2026-06-17 | orchestration-real-check | Initial orchestration pilot scaffolding
+- Summary: Created a docs-first real project workspace to validate contract-first orchestration, fan-out/fan-in, and independent stage gating outside the smoke-test project.
+- Reason: Prove the execution standard works on a real project workspace, not only a smoke test.
+- Validation: Required project records created and aligned with the orchestration execution standard.
+2026-06-17 | orchestration-real-check | Validation record finalized
+- Summary: Added structured validation evidence to the project log after checking file presence, execution contract content, orchestration state content, and log structure.
+- Reason: Preserve a durable record that the real project workspace followed the new orchestration flow successfully.
+- Validation: Files PASS, plan PASS, state PASS, log PASS.
+2026-06-17 | orchestration-real-check | Example stage-gate variants added
+- Summary: Added CONDITIONAL GO and NO-GO example records to the orchestration state and log so the project workspace demonstrates all three gate states.
+- Reason: Make the stage-gate format complete and easier to reuse as a reference.
+- Validation: Example records appended; state, log, and record shapes remain aligned with the global standard.
+2026-06-17 | orchestration-real-check | Final report example added
+- Summary: Added a project-local stage gate final report example that mirrors the validated GO decision and references the completed orchestration flow.
+- Reason: Provide a concrete handoff artifact aligned with the stage gate template for future reuse.
+- Validation: Final report example created and aligned with the project state, workflow, and log records.
+2026-06-17 | orchestration-real-check | Final report variants added
+- Summary: Expanded the final report example with CONDITIONAL GO and NO-GO sections so all stage gate outcomes are represented in one artifact.
+- Reason: Keep the final report template and project-local example synchronized across all gate states.
+- Validation: GO, CONDITIONAL GO, and NO-GO variants are present in the final report example.
+2026-06-18 | Added orchestration boundary notes to the real-check thread docs and aligned them with manual, document-driven control.
