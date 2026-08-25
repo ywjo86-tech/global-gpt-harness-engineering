@@ -105,6 +105,8 @@ class ReadOnlyInspectTest(unittest.TestCase):
             payload["contract_mapping"]["selected_canonical_source"]["path"],
             "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md",
         )
+        self.assertEqual(payload["contract_mapping"]["canonical_state"], "PRE_CHECKPOINT")
+        self.assertIsNone(payload["contract_mapping"]["checkpoint_commit"])
         self.assertIn("Gate 0", payload["project_static_inspect"]["current_phase"])
         self.assertEqual(payload["business_gate_state"]["gate_closure"], "OPEN")
         self.assertEqual(payload["business_gate_state"]["g0_lv3_8"], "FAIL")
@@ -155,7 +157,7 @@ class ReadOnlyInspectTest(unittest.TestCase):
                 stdout = StringIO()
                 with (
                     patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir),
-                    patch("runtime.orchestrator.read_only_inspector.select_canonical_source") as inspect_select,
+                    patch("runtime.orchestrator.read_only_inspector.evaluate_canonical_state") as inspect_select,
                     patch("runtime.orchestrator.contract_loader.select_canonical_source") as loader_select,
                     redirect_stdout(stdout),
                 ):

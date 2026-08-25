@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .approval_hash import calculate_record_hash
 
 
 MAPPING_DIR = Path(__file__).resolve().parent / "contract_mappings"
@@ -167,64 +170,264 @@ def _approval_events(text: str) -> list[dict[str, Any]]:
     return events
 
 
-def select_canonical_source(mapping: ContractMapping) -> Path:
+def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[str, Any]:
+    required = {
+        "approval_id",
+        "target_type",
+        "target_id",
+        "approval_type",
+        "approval_scope",
+        "approval_version",
+        "approval_hash_version",
+        "plan_version",
+        "plan_sha256",
+        "external_action",
+        "action_parameters",
+        "approved_hash",
+        "approved_by",
+        "approved_at",
+        "expires_at",
+        "source_reference",
+        "approval_event_type",
+        "previous_approval_id",
+        "revokes_approval_id",
+        "previous_record_hash",
+        "record_hash",
+    }
+    errors: list[str] = []
+    try:
+        events = _approval_events(text)
+    except ContractMappingError as exc:
+        events = []
+        errors.append(str(exc))
+    if not events:
+        errors.append("no approval events found")
+    previous: dict[str, Any] | None = None
+    approval_ids: set[str] = set()
+    record_hashes_valid = True
+    for index, event in enumerate(events, start=1):
+        approval_id = event.get("approval_id")
+        safe_id = approval_id if isinstance(approval_id, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", approval_id) else f"event-{index}"
+        missing = sorted(required - set(event))
+        if missing:
+            errors.append(f"event {index} missing fields: {', '.join(missing)}")
+        if not isinstance(approval_id, str) or not approval_id or approval_id in approval_ids:
+            errors.append(f"event {index} approval_id is missing or duplicated")
+        else:
+            approval_ids.add(approval_id)
+        if event.get("approval_version") != index:
+            errors.append(f"event {index} approval_version is not sequential")
+        if event.get("plan_sha256") not in allowed_plan_hashes:
+            errors.append(f"event {index} plan SHA-256 is not bound to a mapped source")
+        record_hash = event.get("record_hash")
+        if not isinstance(record_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", record_hash):
+            errors.append(f"event {index} ({safe_id}) record_hash format is invalid")
+            record_hashes_valid = False
+        elif calculate_record_hash(event) != record_hash:
+            errors.append(f"event {index} ({safe_id}) record_hash payload mismatch")
+            record_hashes_valid = False
+        expected_previous = previous.get("record_hash") if previous else None
+        if event.get("previous_record_hash") != expected_previous:
+            errors.append(f"event {index} previous_record_hash does not link to the prior event")
+        previous = event
+    return {
+        "events": events,
+        "event_count": len(events),
+        "schema_valid": not errors,
+        "chain_links_valid": not any("link" in error for error in errors),
+        "record_hashes_valid": bool(events) and record_hashes_valid,
+        "plan_hash_bound": bool(events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in events),
+        "errors": errors,
+    }
+
+
+def _git_output(root: Path, *args: str) -> bytes | None:
+    result = subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        check=False,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def _committed_blob(root: Path, commit: str, relative_path: str) -> bytes | None:
+    return _git_output(root, "show", f"{commit}:{relative_path}")
+
+
+def _gate_checkpoint_metadata(text: str) -> tuple[int, str] | None:
+    closures = re.findall(r"Gate closure:\s*`(OPEN|CLOSED)`", text)
+    exits = re.findall(r"G0-LV3-8:\s*`(PASS|FAIL)`", text)
+    counts = re.findall(r"approval event count:\s*`(\d+)`", text)
+    heads = re.findall(r"last `record_hash`:\s*`([0-9a-f]{64})`", text)
+    if not closures or not exits or (closures[-1], exits[-1]) != ("CLOSED", "PASS"):
+        return None
+    if not counts or not heads:
+        return None
+    return int(counts[-1]), heads[-1]
+
+
+def _find_gate_zero_checkpoint(
+    root: Path,
+    gate_relative: str,
+    approval_relative: str,
+    allowed_plan_hashes: set[str],
+) -> tuple[str, int, str, list[dict[str, Any]]] | None:
+    history = _git_output(root, "rev-list", "--first-parent", "--reverse", "HEAD")
+    if history is None:
+        return None
+    for commit in history.decode("ascii").splitlines():
+        gate_blob = _committed_blob(root, commit, gate_relative)
+        approval_blob = _committed_blob(root, commit, approval_relative)
+        if gate_blob is None or approval_blob is None:
+            continue
+        try:
+            metadata = _gate_checkpoint_metadata(gate_blob.decode("utf-8"))
+            approval_validation = validate_approval_state(
+                approval_blob.decode("utf-8"),
+                allowed_plan_hashes,
+            )
+        except UnicodeDecodeError:
+            continue
+        if metadata is None or not approval_validation["schema_valid"]:
+            continue
+        count, record_head = metadata
+        events = approval_validation["events"]
+        if count >= 1 and len(events) == count and events[-1].get("record_hash") == record_head:
+            return commit, count, record_head, events
+    return None
+
+
+def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
     source_errors = validate_mapping_sources(mapping)
     if source_errors:
         raise ContractMappingError("; ".join(source_errors))
 
+    root = mapping.canonical_source.parent
     gate_text = mapping.gate_state_path.read_text(encoding="utf-8") if mapping.gate_state_path.is_file() else ""
     approval_text = mapping.business_approval_path.read_text(encoding="utf-8") if mapping.business_approval_path.is_file() else ""
-    closure_match = re.search(r"Gate closure:\s*`(OPEN|CLOSED)`", gate_text)
-    exit_match = re.search(r"G0-LV3-8:\s*`(PASS|FAIL)`", gate_text)
+    closure_matches = re.findall(r"Gate closure:\s*`(OPEN|CLOSED)`", gate_text)
+    exit_matches = re.findall(r"G0-LV3-8:\s*`(PASS|FAIL)`", gate_text)
     gate_one_not_started = bool(re.search(r"Gate 1:\s*(?:`)?(?:시작하지 않음|대기)", gate_text))
-    if not closure_match or not exit_match:
+    if not closure_matches or not exit_matches:
         raise ContractMappingError("Gate 0 transition state is missing or unknown")
 
-    closure = closure_match.group(1)
-    exit_status = exit_match.group(1)
-    checkpoint_count = re.search(r"approval event count:\s*`(\d+)`", gate_text)
-    checkpoint_head = re.search(r"last `record_hash`:\s*`([0-9a-f]{64})`", gate_text)
-    checkpoint_commit = re.search(r"local checkpoint commit:\s*`([0-9a-f]{40}|[0-9a-f]{64})`", gate_text)
-    has_checkpoint = bool(checkpoint_count and checkpoint_head and checkpoint_commit)
-
+    closure = closure_matches[-1]
+    exit_status = exit_matches[-1]
+    checkpoint_counts = re.findall(r"approval event count:\s*`(\d+)`", gate_text)
+    checkpoint_heads = re.findall(r"last `record_hash`:\s*`([0-9a-f]{64})`", gate_text)
+    checkpoint_count = checkpoint_counts[-1] if checkpoint_counts else None
+    checkpoint_head = checkpoint_heads[-1] if checkpoint_heads else None
     if (closure, exit_status) not in {("OPEN", "FAIL"), ("CLOSED", "PASS")}:
         raise ContractMappingError("Gate 0 transition evidence is conflicting")
 
-    pre_checkpoint = closure == "OPEN" or exit_status == "FAIL" or not has_checkpoint or gate_one_not_started
-    if pre_checkpoint:
-        if has_checkpoint or mapping.transition_approval_id is not None:
+    working_validation = validate_approval_state(
+        approval_text,
+        {mapping.approved_source_sha256, mapping.canonical_sha256},
+    )
+    if not working_validation["schema_valid"]:
+        raise ContractMappingError("working approval log validation failed: " + "; ".join(working_validation["errors"]))
+    events = working_validation["events"]
+
+    if closure == "OPEN":
+        if mapping.transition_approval_id is not None:
             raise ContractMappingError("Gate 0 pre-checkpoint state conflicts with transition evidence")
-        return mapping.approved_source
+        return {
+            "state": "PRE_CHECKPOINT",
+            "selected_source": mapping.approved_source,
+            "checkpoint_commit": None,
+            "gate_1_started": not gate_one_not_started,
+        }
 
+    if not checkpoint_count or not checkpoint_head:
+        raise ContractMappingError("Gate 0 checkpoint approval count/head is missing")
+
+    head_bytes = _git_output(root, "rev-parse", "--verify", "HEAD^{commit}")
+    if head_bytes is None:
+        raise ContractMappingError("CHECKPOINT_DECLARED_BUT_UNCOMMITTED: Git HEAD does not exist")
+    checkpoint_commit = head_bytes.decode("ascii").strip()
+    gate_relative = mapping.gate_state_path.relative_to(root).as_posix()
+    approval_relative = mapping.business_approval_path.relative_to(root).as_posix()
+    committed_gate = _committed_blob(root, "HEAD", gate_relative)
+    committed_approval = _committed_blob(root, "HEAD", approval_relative)
+    if committed_gate is None or committed_approval is None:
+        raise ContractMappingError("CHECKPOINT_DECLARED_BUT_UNCOMMITTED: Git HEAD does not contain the Gate 0 report and approval log")
+    if committed_gate != mapping.gate_state_path.read_bytes():
+        raise ContractMappingError("CHECKPOINT_DECLARED_BUT_UNCOMMITTED: working Gate 0 report differs from the committed HEAD snapshot")
+    if committed_approval != mapping.business_approval_path.read_bytes():
+        raise ContractMappingError("working approval log differs from the committed HEAD snapshot")
+
+    committed_validation = validate_approval_state(
+        committed_approval.decode("utf-8"),
+        {mapping.approved_source_sha256, mapping.canonical_sha256},
+    )
+    if not committed_validation["schema_valid"]:
+        raise ContractMappingError("committed approval log validation failed: " + "; ".join(committed_validation["errors"]))
+    committed_events = committed_validation["events"]
+    checkpoint = _find_gate_zero_checkpoint(
+        root,
+        gate_relative,
+        approval_relative,
+        {mapping.approved_source_sha256, mapping.canonical_sha256},
+    )
+    if checkpoint is None:
+        raise ContractMappingError("CHECKPOINT_DECLARED_BUT_UNCOMMITTED: no valid Gate 0 checkpoint exists in first-parent history")
+    checkpoint_commit, count, checkpoint_record_head, checkpoint_events = checkpoint
+    if int(checkpoint_count) != count or checkpoint_head != checkpoint_record_head:
+        raise ContractMappingError("current Gate 0 checkpoint metadata differs from the committed checkpoint")
+    if len(committed_events) < count or committed_events[:count] != checkpoint_events:
+        raise ContractMappingError("committed approval log does not extend the Gate 0 checkpoint")
+
+    gate_one_candidates = [
+        event
+        for event in committed_events[count:]
+        if event.get("target_type") == "GATE"
+        and event.get("target_id") == "GATE-1"
+        and event.get("approval_type") == "START_GATE"
+        and event.get("approval_event_type") in {"APPROVED", "RENEWED"}
+    ]
     if mapping.transition_approval_id is None:
-        raise ContractMappingError("Gate 1 transition approval is not configured")
+        if gate_one_candidates:
+            raise ContractMappingError("Gate 1 approval exists but canonical transition mapping is not configured")
+        return {
+            "state": "GATE0_CLOSED_WAITING_GATE1_APPROVAL",
+            "selected_source": mapping.approved_source,
+            "checkpoint_commit": checkpoint_commit,
+            "gate_1_started": False,
+        }
 
-    events = _approval_events(approval_text)
-    previous_record_hash: str | None = None
-    approval_ids: set[str] = set()
-    for event in events:
-        approval_id = event.get("approval_id")
-        record_hash = event.get("record_hash")
-        if not isinstance(approval_id, str) or not approval_id or approval_id in approval_ids:
-            raise ContractMappingError("approval log contains a missing or duplicated approval_id")
-        if not isinstance(record_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", record_hash):
-            raise ContractMappingError("approval log contains an invalid record_hash")
-        if event.get("previous_record_hash") != previous_record_hash:
-            raise ContractMappingError("approval log record_hash chain is disconnected")
-        approval_ids.add(approval_id)
-        previous_record_hash = record_hash
-    count = int(checkpoint_count.group(1))
-    if count < 1 or len(events) < count or events[count - 1].get("record_hash") != checkpoint_head.group(1):
-        raise ContractMappingError("approval log does not match the Gate 0 checkpoint")
-    matches = [event for event in events if event.get("approval_id") == mapping.transition_approval_id]
+    transition_id_events = [
+        event
+        for event in committed_events[count:]
+        if event.get("approval_id") == mapping.transition_approval_id
+    ]
+    if not gate_one_candidates and not transition_id_events:
+        return {
+            "state": "GATE0_CLOSED_WAITING_GATE1_APPROVAL",
+            "selected_source": mapping.approved_source,
+            "checkpoint_commit": checkpoint_commit,
+            "gate_1_started": False,
+        }
+    if transition_id_events and not gate_one_candidates:
+        raise ContractMappingError("Gate 1 transition approval is not bound to the implementation plan")
+    matches = [event for event in gate_one_candidates if event.get("approval_id") == mapping.transition_approval_id]
     if len(matches) != 1:
         raise ContractMappingError("Gate 1 transition approval is missing or duplicated")
     approval = matches[0]
     if not (
         approval.get("target_type") == "GATE"
+        and approval.get("target_id") == "GATE-1"
         and approval.get("approval_type") == "START_GATE"
         and approval.get("approval_event_type") in {"APPROVED", "RENEWED"}
         and approval.get("plan_sha256") == mapping.canonical_sha256
     ):
         raise ContractMappingError("Gate 1 transition approval is not bound to the implementation plan")
-    return mapping.canonical_source
+    return {
+        "state": "TRANSITION_READY",
+        "selected_source": mapping.canonical_source,
+        "checkpoint_commit": checkpoint_commit,
+        "gate_1_started": False,
+    }
+
+
+def select_canonical_source(mapping: ContractMapping) -> Path:
+    return evaluate_canonical_state(mapping)["selected_source"]

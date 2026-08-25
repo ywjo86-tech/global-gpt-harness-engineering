@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
-from .approval_hash import calculate_record_hash
-from .contract_adapter import load_project_mapping, select_canonical_source, sha256_file, validate_mapping_sources
+from .contract_adapter import (
+    evaluate_canonical_state,
+    load_project_mapping,
+    sha256_file,
+    validate_approval_state,
+    validate_mapping_sources,
+)
 from .contract_loader import load_contract
 
 
@@ -25,72 +29,8 @@ def _read(path: Path) -> str:
 
 
 def _validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[str, Any]:
-    required = {
-        "approval_id",
-        "target_type",
-        "target_id",
-        "approval_type",
-        "approval_scope",
-        "approval_version",
-        "approval_hash_version",
-        "plan_version",
-        "plan_sha256",
-        "external_action",
-        "action_parameters",
-        "approved_hash",
-        "approved_by",
-        "approved_at",
-        "expires_at",
-        "source_reference",
-        "approval_event_type",
-        "previous_approval_id",
-        "revokes_approval_id",
-        "previous_record_hash",
-        "record_hash",
-    }
-    errors: list[str] = []
-    events: list[dict[str, Any]] = []
-    for block in re.findall(r"```json\s*(\{.*?\})\s*```", text, flags=re.DOTALL):
-        try:
-            value = json.loads(block)
-        except json.JSONDecodeError:
-            errors.append("approval event JSON is malformed")
-            continue
-        if isinstance(value, dict):
-            events.append(value)
-    if not events:
-        errors.append("no approval events found")
-    previous: dict[str, Any] | None = None
-    record_hashes_valid = True
-    for index, event in enumerate(events, start=1):
-        approval_id = event.get("approval_id")
-        safe_id = approval_id if isinstance(approval_id, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", approval_id) else f"event-{index}"
-        missing = sorted(required - set(event))
-        if missing:
-            errors.append(f"event {index} missing fields: {', '.join(missing)}")
-        if event.get("plan_sha256") not in allowed_plan_hashes:
-            errors.append(f"event {index} plan SHA-256 is not bound to a mapped source")
-        if event.get("approval_version") != index:
-            errors.append(f"event {index} approval_version is not sequential")
-        record_hash = event.get("record_hash")
-        if not isinstance(record_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", record_hash):
-            errors.append(f"event {index} ({safe_id}) record_hash format is invalid")
-            record_hashes_valid = False
-        elif calculate_record_hash(event) != record_hash:
-            errors.append(f"event {index} ({safe_id}) record_hash payload mismatch")
-            record_hashes_valid = False
-        expected_previous = previous.get("record_hash") if previous else None
-        if event.get("previous_record_hash") != expected_previous:
-            errors.append(f"event {index} previous_record_hash does not link to the prior event")
-        previous = event
-    return {
-        "event_count": len(events),
-        "schema_valid": not errors,
-        "chain_links_valid": not any("link" in error for error in errors),
-        "record_hashes_valid": bool(events) and record_hashes_valid,
-        "plan_hash_bound": bool(events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in events),
-        "errors": errors,
-    }
+    report = validate_approval_state(text, allowed_plan_hashes)
+    return {key: value for key, value in report.items() if key != "events"}
 
 
 def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
@@ -158,7 +98,8 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
 
     if mapping is not None:
         errors = validate_mapping_sources(mapping)
-        selected_source = select_canonical_source(mapping)
+        canonical_state = evaluate_canonical_state(mapping)
+        selected_source = canonical_state["selected_source"]
         mapping_report = {
             **mapping.summary(root, selected_source),
             "configured": True,
@@ -168,6 +109,8 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
                 _relative(root, mapping.canonical_source): sha256_file(mapping.canonical_source),
                 _relative(root, mapping.approved_source): sha256_file(mapping.approved_source),
             },
+            "canonical_state": canonical_state["state"],
+            "checkpoint_commit": canonical_state["checkpoint_commit"],
         }
         assert approval_validation is not None
         business_report.update(
@@ -178,15 +121,15 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
             }
         )
         gate_text = _read(mapping.gate_state_path)
-        closure = re.search(r"Gate closure:\s*`([^`]+)`", gate_text)
-        lv3 = re.search(r"G0-LV3-8:\s*`([^`]+)`", gate_text)
+        closures = re.findall(r"Gate closure:\s*`([^`]+)`", gate_text)
+        lv3_results = re.findall(r"G0-LV3-8:\s*`([^`]+)`", gate_text)
         gate_one_not_started = bool(re.search(r"Gate 1:\s*(?:`)?(?:시작하지 않음|대기)", gate_text))
         gate_errors: list[str] = []
         if not gate_text:
             gate_errors.append("gate evidence is missing")
-        if not closure:
+        if not closures:
             gate_errors.append("Gate closure is missing")
-        if not lv3:
+        if not lv3_results:
             gate_errors.append("G0-LV3-8 status is missing")
         if not gate_one_not_started:
             gate_errors.append("Gate 1 non-started evidence is missing")
@@ -194,8 +137,8 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
             {
                 "source": _relative(root, mapping.gate_state_path),
                 "status": "static_evidence_valid" if not gate_errors else "invalid_static_evidence",
-                "gate_closure": closure.group(1) if closure else "unknown",
-                "g0_lv3_8": lv3.group(1) if lv3 else "unknown",
+                "gate_closure": closures[-1] if closures else "unknown",
+                "g0_lv3_8": lv3_results[-1] if lv3_results else "unknown",
                 "gate_1_started": False if gate_one_not_started else "unknown",
                 "errors": gate_errors,
             }
