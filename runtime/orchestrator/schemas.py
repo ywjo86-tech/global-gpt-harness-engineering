@@ -53,6 +53,7 @@ class ExecutionContract:
     orchestration_state_text: str
     current_phase: str
     missing_files: list[str] = field(default_factory=list)
+    contract_mapping: dict[str, Any] = field(default_factory=dict)
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -63,6 +64,7 @@ class ExecutionContract:
             "changelog_path": self.paths.changelog,
             "app_log_path": self.paths.app_log,
             "orchestration_state_path": self.paths.orchestration_state_md,
+            "contract_mapping": dict(self.contract_mapping),
         }
 
 

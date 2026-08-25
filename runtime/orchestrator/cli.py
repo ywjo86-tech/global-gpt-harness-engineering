@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 
 from .contract_loader import ContractLoadError
+from .contract_adapter import ContractMappingError
 from .engine import OrchestrationEngine
+from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
 
 
 def _print(obj: object) -> None:
@@ -28,11 +30,15 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--run-id")
         if name == "approve":
             sub.add_argument("--approval", required=True)
+        if name == "inspect":
+            sub.add_argument("--read-only", action="store_true", help="validate contracts and static state without creating or changing files")
 
     args = parser.parse_args(argv)
-    engine = OrchestrationEngine(Path(args.project))
-
     try:
+        if args.command == "inspect" and args.read_only:
+            _print(inspect_read_only(Path(args.project)))
+            return 0
+        engine = OrchestrationEngine(Path(args.project))
         if args.command == "inspect":
             _print(engine.inspect())
             return 0
@@ -63,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
     except PermissionError as exc:
         _print({"error": str(exc)})
         return 3
+    except ContractMappingError as exc:
+        _print({"error": str(exc), "error_type": "contract_mapping_error"})
+        return 4
+    except ReadOnlyValidationError as exc:
+        _print({"error": str(exc), "error_type": "read_only_validation_error", "validation": exc.report})
+        return 5
 
     return 1
 

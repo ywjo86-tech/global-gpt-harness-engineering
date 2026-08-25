@@ -1,0 +1,24 @@
+{
+  "project_id": "wallet-affiliate-collector",
+  "contract_paths": {
+    "development_plan": "IMPLEMENTATION_PLAN.md"
+  },
+  "required_contract_keys": [
+    "development_plan"
+  ],
+  "canonical_implementation_source": {
+    "path": "IMPLEMENTATION_PLAN.md",
+    "sha256": "fe1eb7611844211d6a731e608d487bd08c667e799bd77d2483b8748ea61c7a57"
+  },
+  "approved_source_reference": {
+    "path": "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md",
+    "sha256": "5671daaba1e7968fbdfb41e7ea812eb044b5c1e51045f9c34b9c476383daac41"
+  },
+  "static_validation": {
+    "business_lv_approval": "docs/APPROVAL_LOG.md",
+    "gate_state": "docs/GATE_0_REVIEW.md"
+  },
+  "canonical_transition": {
+    "gate_1_approval_id": null
+  }
+}

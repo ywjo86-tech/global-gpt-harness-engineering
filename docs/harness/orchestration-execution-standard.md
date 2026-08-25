@@ -17,6 +17,25 @@ The executable local runtime for this standard lives in `runtime/orchestrator/cl
 7. Record why user intervention is required whenever the workflow cannot proceed safely.
 8. Classify each task slice by the highest-risk item it contains and request the appropriate user approval when the slice includes caution or dangerous work.
 
+## Engine-host lifecycle exception
+
+The global repository may operate as an `engine-host`: a host that consumes, validates, and orchestrates lifecycle contracts owned by external managed projects. This does not make the host a managed project by default.
+
+The self-lifecycle exception is valid only when all of the following are true:
+
+1. The Git top-level identity is verified as this exact `global-gpt-harness-engineering` host checkout, using repository identity and host anchors (`AGENTS.md`, `runtime/orchestrator/cli.py`, and `.agents/skills/harness/SKILL.md`); a directory name or basename alone is insufficient.
+2. The current execution role is explicitly `engine-host`.
+3. The inspected root is the host repository itself, not an external managed project.
+4. The work is limited to orchestration engine maintenance, contract validation, or host orchestration maintenance.
+
+When all four conditions hold, the host may omit the ordinary managed-project files `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`. This is a documented self-lifecycle exception only: it must not create placeholder files, synthesize contract contents, or pretend that missing files exist.
+
+The exception is not implemented as an automatic runtime bypass. The current contract loader has no engine-host role parameter; if the role, repository identity, or scope is not explicitly established, the normal strict contract check remains in force. A host run in ordinary managed-project mode is also strict.
+
+The exception never applies to `wallet-affiliate-collector`, `jarvis-assistant`, `llmwiki-action-api`, any other external project, or a similarly named repository. External projects continue to require their own strict lifecycle contracts and their own mapping/evidence rules.
+
+The exception does not grant business/LV/Gate approval, runtime/sandbox authorization, checkpoint validity, phase transition, or Gate completion. It cannot be forwarded through the external project contract loader. If the host later becomes a product-development lifecycle target, it must adopt a complete management contract separately.
+
 ## Project Start Checklist
 
 For every project, follow this sequence before proceeding:
