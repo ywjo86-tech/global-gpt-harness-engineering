@@ -7,6 +7,7 @@ from pathlib import Path
 from .contract_loader import ContractLoadError
 from .contract_adapter import ContractMappingError
 from .engine import OrchestrationEngine
+from .lv_preview import LVPreviewValidationError, preview_lv_read_only
 from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
 
 
@@ -21,9 +22,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan"]:
         sub = subparsers.add_parser(name)
-        sub.add_argument("--project", required=True)
+        if name == "lv-plan":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--lv-id", required=True)
+            sub.add_argument("--read-only", action="store_true")
+        else:
+            sub.add_argument("--project", required=True)
         if name in {"plan", "run", "gate"}:
             sub.add_argument("--mode", default="mock")
         if name in {"plan", "collect", "fanin", "gate", "status", "run"}:
@@ -35,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
+        if args.command == "lv-plan":
+            if not args.read_only:
+                raise LVPreviewValidationError("H4-1 only supports --read-only LV previews")
+            _print(preview_lv_read_only(Path(args.project_root), args.gate_id, args.lv_id))
+            return 0
         if args.command == "inspect" and args.read_only:
             _print(inspect_read_only(Path(args.project)))
             return 0
@@ -75,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
     except ReadOnlyValidationError as exc:
         _print({"error": str(exc), "error_type": "read_only_validation_error", "validation": exc.report})
         return 5
+    except LVPreviewValidationError as exc:
+        _print({"error": str(exc), "error_type": "lv_preview_validation_error"})
+        return 6
 
     return 1
 

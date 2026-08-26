@@ -417,6 +417,13 @@ def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, 
         raise ContractMappingError("Gate State ledger has no first-parent activation commit")
     return {
         "state": "GATE1_ACTIVE",
+        "gate_id": payload["gate_id"],
+        "canonical_plan": payload["canonical_plan"],
+        "plan_sha256": payload["plan_sha256"],
+        "approval_id": payload["approval_id"],
+        "approval_record_hash": payload["approval_record_hash"],
+        "active_scope": list(scope),
+        "owned_files": list(owned),
         "activation_commit": activation[0],
         "activation_committed_at": activation[1],
         "ledger_path": relative,
