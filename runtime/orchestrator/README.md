@@ -91,13 +91,33 @@ report hash, and the identical package, preflight, and worker-result hashes.
 Missing or drifted legacy evidence blocks the review before a new attempt is
 created. The CLI has no arbitrary legacy-path or hash override.
 
+The bounded `attempt-03` recovery additionally requires the failed
+`attempt-02` directory as its immediate prior review. All five attempt-02
+artifacts must match the runtime's fixed hashes; the report sidecar, status
+report hash, run and attempt identities, FAIL/hard-stop result, package,
+preflight and worker seals, and `secret_like_value` violation must agree.
+`prior_review_lineage` retains the legacy run-root lineage and adds this
+immediate attempt-02 relationship. Missing or drifted evidence blocks creation
+of attempt-03. Attempts above 3 are not supported by this recovery contract,
+and every failed artifact set remains immutable.
+
 The reviewer records bounded, redacted `independent_checks` for the focused and
 full tests, configuration import, `git diff --check`, UTF-8/BOM/NUL/trailing
 whitespace, conflict markers, secret-like values, owned-file and staged-change
 boundaries, Git fingerprints, and immutable package/preflight/worker inputs.
 Secret checks are limited to owned files; environment-variable names and empty
-placeholders are allowed, while literal credentials and credential-bearing URLs
-fail without copying the value into artifacts or logs. Interpreter evidence is
+placeholders are allowed. Python owned files are parsed with the Python AST so
+annotations, docstrings, comments, identifier references, calls and environment
+lookups are distinguished from static literals. Narrow, visibly non-credential
+test sentinels (`fixture-...-not-a-secret` or `fixture-...-marker`) are allowed;
+this exception never applies outside `tests/` or to a credential URL. Non-empty
+literals assigned to secret/key/token/password names, statically composed
+credential literals, and credential-bearing URL literals fail closed; Python
+parse failure also fails closed. Credential-bearing URLs remain forbidden in
+tests, so URL fixtures use userinfo-free RFC-reserved domains. Findings record
+only a relative path, line, check identifier, candidate kind and redacted
+fingerprint—never the literal, source line or complete URL. Non-Python files
+retain the existing conservative pattern checks. Interpreter evidence is
 recorded before and after tests and must match, including executable, owner,
 namespace, mount, venv prefix, base-prefix, version, and venv verification.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -40,6 +41,17 @@ LEGACY_REVIEW_CONTRACTS: dict[str, dict[str, str]] = {
         "review.status": "3c147ff4634afb59cd4513d57aba6a710f565e0db1763782171b1cfb44f3873d",
         "worker.result.json": "d27f1e0fe59862a9616703f0abc35c683d2ccdad70ed7c51ec8e12d51788989b",
         "worker.result.sha256": "3d484a559b2e6961e6da1c1f196e9c1dc1d3261e6ca88c3d4d4349fc5a81b32b",
+    }
+}
+PRIOR_ATTEMPT_CONTRACTS: dict[str, dict[int, dict[str, str]]] = {
+    "wallet-g1-lv3-1-20260826-01": {
+        2: {
+            "reviewer.report.json": "3f274fdf877c9a1bfa3eb853a40f0859a188a1d824e814b1aac3eb4ef80ee5fd",
+            "reviewer.report.sha256": "9b8df887dd0c368b3f944eccb554777a6fd5da323506d862585093cbb68100b7",
+            "review.status": "d9f33cad41c6bd29c9e93501c79831efbb94c33b88cb3934132f225f3489cc07",
+            "worker.result.json": "d27f1e0fe59862a9616703f0abc35c683d2ccdad70ed7c51ec8e12d51788989b",
+            "worker.result.sha256": "3d484a559b2e6961e6da1c1f196e9c1dc1d3261e6ca88c3d4d4349fc5a81b32b",
+        }
     }
 }
 REVIEW_REPORT_FIELDS = {
@@ -789,10 +801,19 @@ def _run_tests(root: Path, interpreter: Path) -> tuple[list[dict[str, Any]], str
     return results, None
 
 
-def _check(identifier: str, passed: bool, summary: str, *, exit_code: int | None = None) -> dict[str, Any]:
+def _check(
+    identifier: str,
+    passed: bool,
+    summary: str,
+    *,
+    exit_code: int | None = None,
+    findings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     item: dict[str, Any] = {"check": identifier, "status": "PASS" if passed else "FAIL", "summary": summary[:240]}
     if exit_code is not None:
         item["exit_code"] = exit_code
+    if findings:
+        item["findings"] = findings
     return item
 
 
@@ -812,11 +833,126 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     return {path.name: _file_snapshot(path) for path in entries}
 
 
+_SECRET_NAME = re.compile(r"(?i)(?:api[_-]?key|token|password|secret)")
+_CREDENTIAL_URL = re.compile(r"[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@", re.IGNORECASE)
+_KNOWN_TOKEN_LITERAL = re.compile(r"(?i)^(?:sk|ghp|xox[baprs])-[a-z0-9_-]{12,}$")
+
+
+def _static_string(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _static_string(node.left)
+        right = _static_string(node.right)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+                return None
+            parts.append(value.value)
+        return "".join(parts)
+    return None
+
+
+def _secret_target(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return bool(_SECRET_NAME.search(node.id))
+    if isinstance(node, ast.Attribute):
+        return bool(_SECRET_NAME.search(node.attr))
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return any(_secret_target(item) for item in node.elts)
+    return False
+
+
+def _redacted_finding(relative: str, line: int, kind: str, value: str) -> dict[str, Any]:
+    return {
+        "path": relative,
+        "line": max(1, line),
+        "check": "secret_like_value",
+        "kind": kind,
+        "fingerprint": _sha256(value.encode("utf-8")),
+    }
+
+
+def _explicit_test_sentinel(relative: str, value: str) -> bool:
+    normalized = value.casefold()
+    return (
+        relative.startswith("tests/")
+        and normalized.startswith("fixture-")
+        and (normalized.endswith("-not-a-secret") or normalized.endswith("-marker"))
+        and not _CREDENTIAL_URL.search(value)
+    )
+
+
+def _python_secret_findings(relative: str, text: str) -> list[dict[str, Any]]:
+    try:
+        tree = ast.parse(text, filename=relative)
+    except (SyntaxError, ValueError) as exc:
+        return [_redacted_finding(relative, getattr(exc, "lineno", 1) or 1, "python_ast_parse_error", relative)]
+
+    candidates: list[tuple[ast.AST, str, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            value = _static_string(node.value)
+            if value and not _explicit_test_sentinel(relative, value) and any(_secret_target(target) for target in node.targets):
+                candidates.append((node.value, "secret_named_literal", value))
+        elif isinstance(node, ast.AnnAssign):
+            value = _static_string(node.value) if node.value is not None else None
+            if value and not _explicit_test_sentinel(relative, value) and _secret_target(node.target):
+                candidates.append((node.value, "secret_named_literal", value))
+        elif isinstance(node, ast.keyword) and node.arg and _SECRET_NAME.search(node.arg):
+            value = _static_string(node.value)
+            if value and not _explicit_test_sentinel(relative, value):
+                candidates.append((node.value, "secret_keyword_literal", value))
+        elif isinstance(node, ast.Dict):
+            for key, value_node in zip(node.keys, node.values):
+                key_value = _static_string(key) if key is not None else None
+                value = _static_string(value_node)
+                if key_value and _SECRET_NAME.search(key_value) and value and not _explicit_test_sentinel(relative, value):
+                    candidates.append((value_node, "secret_mapping_literal", value))
+
+    parent: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[child] = node
+    docstrings = {
+        node.body[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    for node in ast.walk(tree):
+        if node in docstrings:
+            continue
+        value = _static_string(node)
+        if value is None:
+            continue
+        enclosing = parent.get(node)
+        if isinstance(enclosing, (ast.BinOp, ast.JoinedStr)) and _static_string(enclosing) is not None:
+            continue
+        if _CREDENTIAL_URL.search(value):
+            candidates.append((node, "credential_bearing_url", value))
+        elif _KNOWN_TOKEN_LITERAL.fullmatch(value) and not _explicit_test_sentinel(relative, value):
+            candidates.append((node, "known_token_literal", value))
+
+    findings: list[dict[str, Any]] = []
+    seen: set[tuple[int, str, str]] = set()
+    for node, kind, value in candidates:
+        key = (getattr(node, "lineno", 1), kind, _sha256(value.encode("utf-8")))
+        if key not in seen:
+            seen.add(key)
+            findings.append(_redacted_finding(relative, key[0], kind, value))
+    return findings
+
+
 def _scan_owned_files(root: Path, owned_files: list[str]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
-    failures: dict[str, list[str]] = {key: [] for key in ("utf8_decode", "bom", "nul", "trailing_whitespace", "conflict_marker", "secret_like_value")}
+    failures: dict[str, list[Any]] = {key: [] for key in ("utf8_decode", "bom", "nul", "trailing_whitespace", "conflict_marker", "secret_like_value")}
     conflict = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
-    credential_url = re.compile(r"[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@", re.IGNORECASE)
     secret_assignment = re.compile(
         r"(?i)\b([a-z0-9_]*(?:api[_-]?key|token|password|secret)[a-z0-9_]*)\b"
         r"\s*[:=]\s*(['\"]?)([^\s,'\"}\]]+)\2"
@@ -841,25 +977,44 @@ def _scan_owned_files(root: Path, owned_files: list[str]) -> list[dict[str, Any]
             failures["trailing_whitespace"].append(relative)
         if conflict.search(text):
             failures["conflict_marker"].append(relative)
-        secret_hit = bool(credential_url.search(text))
-        for match in secret_assignment.finditer(text):
-            value = match.group(3)
-            surrounding = text[match.start():match.end() + 40].lower()
-            if value and not any(marker in surrounding for marker in ("getenv", "environ", "placeholder", "example", "dummy")):
-                secret_hit = True
-        if secret_hit:
-            failures["secret_like_value"].append(relative)
+        if path.suffix == ".py":
+            findings = _python_secret_findings(relative, text)
+            if findings:
+                failures["secret_like_value"].extend(findings)
+        else:
+            secret_hit = bool(_CREDENTIAL_URL.search(text))
+            for match in secret_assignment.finditer(text):
+                value = match.group(3)
+                surrounding = text[match.start():match.end() + 40].lower()
+                if value and not any(marker in surrounding for marker in ("getenv", "environ", "placeholder", "example", "dummy")):
+                    secret_hit = True
+            if secret_hit:
+                failures["secret_like_value"].append(relative)
     for identifier, locations_value in failures.items():
-        locations = sorted(set(locations_value))
-        checks.append(_check(identifier, not locations, "no findings" if not locations else "finding locations: " + ", ".join(locations)))
+        if identifier == "secret_like_value":
+            structured = [item for item in locations_value if isinstance(item, dict)]
+            plain = sorted({item for item in locations_value if isinstance(item, str)})
+            structured.extend(_redacted_finding(item, 1, "non_python_secret_pattern", item) for item in plain)
+            structured.sort(key=lambda item: (item["path"], item["line"], item["kind"]))
+            locations = sorted({item["path"] for item in structured})
+            checks.append(_check(identifier, not structured, "no findings" if not structured else "redacted findings in: " + ", ".join(locations), findings=structured))
+        else:
+            locations = sorted(set(locations_value))
+            checks.append(_check(identifier, not locations, "no findings" if not locations else "finding locations: " + ", ".join(locations)))
     return checks
 
 
 def _verify_legacy_lineage(
-    context: dict[str, Any], worker_hash: str, *, contract: dict[str, str] | None = None
+    context: dict[str, Any],
+    worker_hash: str,
+    *,
+    contract: dict[str, str] | None = None,
+    prior_attempt_contract: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     if context["review_attempt"] == 1:
         return None
+    if context["review_attempt"] > 3:
+        raise LVReviewError("review attempts above 3 are not supported")
     expected = contract if contract is not None else LEGACY_REVIEW_CONTRACTS.get(context["run_id"])
     required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
     if not expected or set(expected) != required:
@@ -876,7 +1031,7 @@ def _verify_legacy_lineage(
         artifacts.append({"path": f"_workspace/orchestration-results/{context['run_id']}/{name}", "sha256": actual_hash})
     if expected["worker.result.json"] != worker_hash:
         raise LVReviewError("legacy review worker result does not match current worker result")
-    return {
+    lineage: dict[str, Any] = {
         "prior_review_location_kind": "legacy_run_root",
         "prior_review_contract_status": "artifact_contract_failed",
         "artifacts": artifacts,
@@ -885,6 +1040,83 @@ def _verify_legacy_lineage(
         "preflight_evidence_sha256": context["preflight_evidence_sha256"],
         "worker_result_sha256": worker_hash,
     }
+    if context["review_attempt"] == 2:
+        return lineage
+
+    expected_prior = prior_attempt_contract
+    if expected_prior is None:
+        expected_prior = PRIOR_ATTEMPT_CONTRACTS.get(context["run_id"], {}).get(2)
+    if not expected_prior or set(expected_prior) != required:
+        raise LVReviewError("verified attempt-02 review lineage is required")
+    prior_root = run_root / "attempt-02"
+    prior_hashes: dict[str, str] = {}
+    prior_artifacts: list[dict[str, str]] = []
+    for name, expected_hash in expected_prior.items():
+        path = prior_root / name
+        if not path.is_file() or path.is_symlink():
+            raise LVReviewError("attempt-02 review artifact is missing or unsafe")
+        actual_hash = _sha256(path.read_bytes())
+        if actual_hash != expected_hash:
+            raise LVReviewError("attempt-02 review artifact hash mismatch")
+        prior_hashes[name] = actual_hash
+        prior_artifacts.append({
+            "path": f"_workspace/orchestration-results/{context['run_id']}/attempt-02/{name}",
+            "sha256": actual_hash,
+        })
+    report_hash = prior_hashes["reviewer.report.json"]
+    try:
+        sidecar_hash = (prior_root / "reviewer.report.sha256").read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError) as exc:
+        raise LVReviewError("attempt-02 reviewer sidecar is invalid") from exc
+    if sidecar_hash != report_hash:
+        raise LVReviewError("attempt-02 reviewer sidecar does not match report")
+    prior_report = _canonical_json(prior_root / "reviewer.report.json")
+    prior_status = _canonical_json(prior_root / "review.status")
+    if set(prior_report) != REVIEW_REPORT_FIELDS or set(prior_status) != REVIEW_STATUS_FIELDS:
+        raise LVReviewError("attempt-02 review schema mismatch")
+    if prior_status.get("reviewer_report_sha256") != report_hash:
+        raise LVReviewError("attempt-02 status does not match reviewer report")
+    expected_values = {
+        "run_id": context["run_id"],
+        "review_attempt": 2,
+        "worker_attempt": 1,
+        "verdict": "FAIL",
+        "hard_stop": True,
+        "review_only_reexecution": True,
+        "reran_worker": False,
+        "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+        "preflight_evidence_sha256": context["preflight_evidence_sha256"],
+        "worker_result_sha256": worker_hash,
+    }
+    for field, expected_value in expected_values.items():
+        if prior_report.get(field) != expected_value or prior_status.get(field) != expected_value:
+            raise LVReviewError(f"attempt-02 review contract mismatch: {field}")
+    violations = prior_report.get("violations")
+    if not isinstance(violations, list) or "independent check failed: secret_like_value" not in violations:
+        raise LVReviewError("attempt-02 secret-like failure evidence is missing")
+    checks = prior_report.get("independent_checks")
+    if not isinstance(checks, list) or not any(
+        isinstance(item, dict) and item.get("check") == "secret_like_value" and item.get("status") == "FAIL"
+        for item in checks
+    ):
+        raise LVReviewError("attempt-02 secret-like independent check is missing")
+    if prior_report.get("prior_review_lineage") != lineage:
+        raise LVReviewError("attempt-02 legacy lineage mismatch")
+    if prior_hashes["worker.result.json"] != worker_hash:
+        raise LVReviewError("attempt-02 worker result does not match current worker result")
+    lineage["immediate_prior_review"] = {
+        "location_kind": "attempt_directory",
+        "review_attempt": 2,
+        "verdict": "FAIL",
+        "hard_stop": True,
+        "violation_identifier": "secret_like_value",
+        "artifacts": prior_artifacts,
+        "prior_reviewer_report_sha256": report_hash,
+        "package_manifest_sha256": expected_values["package_manifest_sha256"],
+        "preflight_evidence_sha256": expected_values["preflight_evidence_sha256"],
+        "worker_result_sha256": worker_hash,
+    }
+    return lineage
 
 
 def _set_from_result(payload: dict[str, Any], field: str) -> set[str]:
@@ -1004,6 +1236,7 @@ def review_run(
     results_root: Path | None = None,
     interpreter: Path | None = None,
     prior_review_contract: dict[str, str] | None = None,
+    prior_attempt_contract: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     try:
         review_attempt = parse_review_attempt(attempt)
@@ -1062,7 +1295,12 @@ def review_run(
                 raise LVReviewError(f"worker {result_field} does not match package")
         current_identity = _capture_git_evidence(context["project_root"])
         actual = _actual_changes(context["project_root"])
-        prior_review_lineage = _verify_legacy_lineage(context, worker_hash, contract=prior_review_contract)
+        prior_review_lineage = _verify_legacy_lineage(
+            context,
+            worker_hash,
+            contract=prior_review_contract,
+            prior_attempt_contract=prior_attempt_contract,
+        )
         worker_sets = {field: _set_from_result(payload, field) for field in ("changed_files", "created_files", "modified_files", "deleted_files")}
         actual_sets = {field: set(actual[field]) for field in worker_sets}
         violations: list[str] = []

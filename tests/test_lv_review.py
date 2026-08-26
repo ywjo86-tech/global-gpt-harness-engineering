@@ -22,6 +22,7 @@ from runtime.orchestrator.lv_review import (
     _sha256,
     _safe_run_id,
     _validate_interpreter,
+    _verify_legacy_lineage,
     _preflight,
     _seal_preflight_evidence,
     _package_root,
@@ -710,6 +711,76 @@ class LVReviewTest(unittest.TestCase):
             preserved[name] = (path.stat().st_ino, data)
         return contract, preserved
 
+    def _legacy_lineage(self, context: dict[str, object], contract: dict[str, str], worker_hash: str) -> dict[str, object]:
+        run_id = str(context["run_id"])
+        return {
+            "prior_review_location_kind": "legacy_run_root",
+            "prior_review_contract_status": "artifact_contract_failed",
+            "artifacts": [
+                {"path": f"_workspace/orchestration-results/{run_id}/{name}", "sha256": digest}
+                for name, digest in contract.items()
+            ],
+            "prior_reviewer_report_sha256": contract["reviewer.report.json"],
+            "package_manifest_sha256": _sha256(Path(context["manifest_path"]).read_bytes()),
+            "preflight_evidence_sha256": context["preflight_evidence_sha256"],
+            "worker_result_sha256": worker_hash,
+        }
+
+    def _attempt_two_contract(
+        self,
+        context: dict[str, object],
+        legacy_lineage: dict[str, object],
+        worker_bytes: bytes,
+    ) -> tuple[dict[str, str], dict[str, tuple[int, bytes]]]:
+        worker_hash = _sha256(worker_bytes)
+        common = {
+            "run_id": context["run_id"],
+            "review_attempt": 2,
+            "worker_attempt": 1,
+            "verdict": "FAIL",
+            "hard_stop": True,
+            "package_manifest_sha256": _sha256(Path(context["manifest_path"]).read_bytes()),
+            "preflight_evidence_sha256": context["preflight_evidence_sha256"],
+            "worker_result_sha256": worker_hash,
+            "review_only_reexecution": True,
+            "reran_worker": False,
+        }
+        report = {field: None for field in REVIEW_REPORT_FIELDS}
+        report.update(common)
+        report.update({
+            "schema_version": "orchestration.lv_reviewer.report.v1",
+            "prior_review_lineage": legacy_lineage,
+            "independent_checks": [{"check": "secret_like_value", "status": "FAIL", "summary": "redacted findings"}],
+            "violations": ["independent check failed: secret_like_value"],
+            "blockers": [],
+            "reasons": [],
+        })
+        report_bytes = canonical_json_bytes(report)
+        report_hash = _sha256(report_bytes)
+        status = {field: None for field in REVIEW_STATUS_FIELDS}
+        status.update(common)
+        status.update({
+            "schema_version": "orchestration.lv_reviewer.status.v1",
+            "reviewer_report_sha256": report_hash,
+        })
+        content = {
+            "reviewer.report.json": report_bytes,
+            "reviewer.report.sha256": (report_hash + "\n").encode("ascii"),
+            "review.status": canonical_json_bytes(status),
+            "worker.result.json": worker_bytes,
+            "worker.result.sha256": (worker_hash + "\n").encode("ascii"),
+        }
+        prior_root = Path(context["results_root"]).parent / "attempt-02"
+        prior_root.mkdir()
+        contract: dict[str, str] = {}
+        preserved: dict[str, tuple[int, bytes]] = {}
+        for name, data in content.items():
+            path = prior_root / name
+            path.write_bytes(data)
+            contract[name] = _sha256(data)
+            preserved[name] = (path.stat().st_ino, data)
+        return contract, preserved
+
     def test_attempt_paths_are_canonical_and_run_root_is_never_the_output(self) -> None:
         with patch("runtime.orchestrator.lv_review._harness_root", return_value=Path("/fixture/harness")):
             self.assertEqual(_results_root(RUN_ID, 1), Path("/fixture/harness/_workspace/orchestration-results") / RUN_ID / "attempt-01")
@@ -777,6 +848,92 @@ class LVReviewTest(unittest.TestCase):
                 self.assertEqual(outcome["status"], "BLOCKED")
                 self.assertFalse(Path(context["results_root"]).exists())
 
+    def test_attempt_three_binds_immediate_attempt_two_and_legacy_lineage(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            _, manifest, _, context = self._context(base, results_root=base / "results" / RUN_ID / "attempt-03")
+            worker_bytes = canonical_json_bytes(self._worker_result(manifest, Path(context["project_root"])))
+            worker_hash = _sha256(worker_bytes)
+            legacy_contract, _ = self._legacy_contract(Path(context["results_root"]).parent, worker_bytes)
+            legacy_lineage = self._legacy_lineage(context, legacy_contract, worker_hash)
+            prior_contract, preserved = self._attempt_two_contract(context, legacy_lineage, worker_bytes)
+            context["review_attempt"] = 3
+            lineage = _verify_legacy_lineage(
+                context,
+                worker_hash,
+                contract=legacy_contract,
+                prior_attempt_contract=prior_contract,
+            )
+            self.assertEqual(lineage["prior_review_location_kind"], "legacy_run_root")
+            immediate = lineage["immediate_prior_review"]
+            self.assertEqual((immediate["review_attempt"], immediate["verdict"], immediate["hard_stop"]), (2, "FAIL", True))
+            self.assertEqual(immediate["violation_identifier"], "secret_like_value")
+            self.assertEqual({item["sha256"] for item in immediate["artifacts"]}, set(prior_contract.values()))
+            self.assertFalse(Path(context["results_root"]).exists())
+            for name, (inode, data) in preserved.items():
+                path = Path(context["results_root"]).parent / "attempt-02" / name
+                self.assertEqual((path.stat().st_ino, path.read_bytes()), (inode, data))
+
+    def test_attempt_three_lineage_contract_failures_block_before_output(self) -> None:
+        mutations = (
+            "missing", "hash_drift", "report_sidecar", "status_report_sha", "run_id", "review_attempt",
+            "worker_attempt", "verdict", "hard_stop", "package_hash", "preflight_hash", "worker_hash",
+            "missing_secret_violation",
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
+                base = Path(directory)
+                _, manifest, _, context = self._context(base, results_root=base / "results" / RUN_ID / "attempt-03")
+                worker_bytes = canonical_json_bytes(self._worker_result(manifest, Path(context["project_root"])))
+                worker_hash = _sha256(worker_bytes)
+                legacy_contract, _ = self._legacy_contract(Path(context["results_root"]).parent, worker_bytes)
+                prior_contract, _ = self._attempt_two_contract(
+                    context, self._legacy_lineage(context, legacy_contract, worker_hash), worker_bytes
+                )
+                context["review_attempt"] = 3
+                prior_root = Path(context["results_root"]).parent / "attempt-02"
+                if mutation == "missing":
+                    (prior_root / "review.status").unlink()
+                elif mutation == "hash_drift":
+                    (prior_root / "worker.result.sha256").write_bytes(b"drift\n")
+                elif mutation == "report_sidecar":
+                    (prior_root / "reviewer.report.sha256").write_bytes(b"0" * 64 + b"\n")
+                    prior_contract["reviewer.report.sha256"] = _sha256((prior_root / "reviewer.report.sha256").read_bytes())
+                else:
+                    target = prior_root / ("review.status" if mutation == "status_report_sha" else "reviewer.report.json")
+                    payload = json.loads(target.read_text())
+                    field_values = {
+                        "status_report_sha": ("reviewer_report_sha256", "0" * 64),
+                        "run_id": ("run_id", "wrong-run"),
+                        "review_attempt": ("review_attempt", 1),
+                        "worker_attempt": ("worker_attempt", 2),
+                        "verdict": ("verdict", "PASS"),
+                        "hard_stop": ("hard_stop", False),
+                        "package_hash": ("package_manifest_sha256", "0" * 64),
+                        "preflight_hash": ("preflight_evidence_sha256", "0" * 64),
+                        "worker_hash": ("worker_result_sha256", "0" * 64),
+                    }
+                    if mutation == "missing_secret_violation":
+                        payload["violations"] = []
+                    else:
+                        field, value = field_values[mutation]
+                        payload[field] = value
+                    target.write_bytes(canonical_json_bytes(payload))
+                    prior_contract[target.name] = _sha256(target.read_bytes())
+                    if target.name == "reviewer.report.json":
+                        report_hash = prior_contract[target.name]
+                        (prior_root / "reviewer.report.sha256").write_text(report_hash + "\n", encoding="ascii")
+                        prior_contract["reviewer.report.sha256"] = _sha256((prior_root / "reviewer.report.sha256").read_bytes())
+                with self.assertRaises(LVReviewError):
+                    _verify_legacy_lineage(
+                        context, worker_hash, contract=legacy_contract, prior_attempt_contract=prior_contract
+                    )
+                self.assertFalse(Path(context["results_root"]).exists())
+
+    def test_attempts_above_three_are_not_generalized(self) -> None:
+        with self.assertRaisesRegex(LVReviewError, "above 3"):
+            _verify_legacy_lineage({"review_attempt": 4}, "unused")
+
     def test_worker_attempt_and_preflight_hash_are_fail_closed(self) -> None:
         for mutation in ("missing_attempt", "wrong_attempt", "empty_preflight"):
             with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
@@ -826,7 +983,24 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             safe = root / "safe.py"
-            safe.write_text('ADPICK_API_KEY = os.getenv("ADPICK_API_KEY", "")\n', encoding="utf-8")
+            safe.write_text(
+                '"""api_key documents configuration."""\n'
+                "import os\n"
+                "from dataclasses import dataclass\n"
+                "@dataclass\n"
+                "class Settings:\n    secret_name: str\n"
+                "def loader(name: str) -> str:\n    return os.environ.get(name, '')\n"
+                "def build(api_key: str) -> Settings:\n"
+                "    # password is supplied by the environment\n"
+                "    existing_identifier = loader('ADPICK_API_KEY')\n"
+                "    api_token = loader('TOKEN')\n"
+                "    password = os.getenv('PASSWORD', '')\n"
+                "    secret = ''\n"
+                "    placeholder_secret = '<empty>' if False else ''\n"
+                "    return Settings(secret_name=existing_identifier)\n"
+                "settings = build(api_key=loader('ADPICK_API_KEY'))\n",
+                encoding="utf-8",
+            )
             checks = {item["check"]: item for item in _scan_owned_files(root, ["safe.py"])}
             self.assertEqual(checks["secret_like_value"]["status"], "PASS")
             unsafe = root / "unsafe.py"
@@ -835,11 +1009,17 @@ class LVReviewTest(unittest.TestCase):
             checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
             self.assertEqual(checks["secret_like_value"]["status"], "FAIL")
             self.assertNotIn(secret_value, checks["secret_like_value"]["summary"])
+            self.assertNotIn(secret_value, json.dumps(checks["secret_like_value"]))
+            self.assertEqual(
+                set(checks["secret_like_value"]["findings"][0]),
+                {"path", "line", "check", "kind", "fingerprint"},
+            )
             credential_url = "https://fixture-" + "user:fixture-" + "pass@example.invalid/path"
             unsafe.write_text('url = "' + credential_url + '"\n', encoding="utf-8")
             checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
             self.assertEqual(checks["secret_like_value"]["status"], "FAIL")
             self.assertNotIn("fixture-pass", checks["secret_like_value"]["summary"])
+            self.assertNotIn(credential_url, json.dumps(checks["secret_like_value"]))
             unsafe.write_bytes(b"value = \xff\n")
             checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
             self.assertEqual(checks["utf8_decode"]["status"], "FAIL")
@@ -847,6 +1027,52 @@ class LVReviewTest(unittest.TestCase):
             checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
             for identifier in ("bom", "nul", "trailing_whitespace", "conflict_marker"):
                 self.assertEqual(checks[identifier]["status"], "FAIL")
+
+    def test_python_secret_scanner_literal_boundaries_and_parse_failure(self) -> None:
+        cases = {
+            "api_key": "direct-value",
+            "token": "prefix-" + "suffix",
+            "password": "nonempty",
+        }
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, (name, value) in enumerate(cases.items()):
+                path = root / f"unsafe_{index}.py"
+                path.write_text(f"{name} = {value!r}\n", encoding="utf-8")
+                check = {item["check"]: item for item in _scan_owned_files(root, [path.name])}["secret_like_value"]
+                self.assertEqual(check["status"], "FAIL")
+                self.assertNotIn(value, json.dumps(check))
+            combined = root / "combined.py"
+            combined.write_text("api_key = 'static-' + 'credential'\n", encoding="utf-8")
+            check = {item["check"]: item for item in _scan_owned_files(root, [combined.name])}["secret_like_value"]
+            self.assertEqual(check["status"], "FAIL")
+            self.assertEqual(check["findings"][0]["kind"], "secret_named_literal")
+            shaped = root / "shaped.py"
+            shaped.write_text("value = 'sk-fixturetokenvalue123'\n", encoding="utf-8")
+            check = {item["check"]: item for item in _scan_owned_files(root, [shaped.name])}["secret_like_value"]
+            self.assertEqual(check["status"], "FAIL")
+            self.assertEqual(check["findings"][0]["kind"], "known_token_literal")
+            invalid = root / "invalid.py"
+            invalid.write_text("def broken(:\n", encoding="utf-8")
+            check = {item["check"]: item for item in _scan_owned_files(root, [invalid.name])}["secret_like_value"]
+            self.assertEqual(check["status"], "FAIL")
+            self.assertEqual(check["findings"][0]["kind"], "python_ast_parse_error")
+
+    def test_safe_unapproved_reserved_url_fixture_is_not_a_credential_url(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "tests" / "test_config.py"
+            path.parent.mkdir()
+            path.write_text(
+                "def test_rejects_unapproved_origin():\n"
+                "    api_url = 'https://unapproved.example.invalid'\n"
+                "    fixture_values = {'ADPICK_API_KEY': 'fixture-key-not-a-secret'}\n"
+                "    secret_marker = 'fixture-sensitive-marker'\n"
+                "    assert api_url and fixture_values and secret_marker\n",
+                encoding="utf-8",
+            )
+            check = {item["check"]: item for item in _scan_owned_files(root, ["tests/test_config.py"])}["secret_like_value"]
+            self.assertEqual(check["status"], "PASS")
 
     def test_cli_requires_attempt_and_distinguishes_exit_codes(self) -> None:
         for status, expected in (("PASS", 0), ("FAIL", 9), ("BLOCKED", 10)):
