@@ -8,6 +8,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from runtime.orchestrator.lv_execution_package import WORKER_RESULT_SCHEMA_VERSION, canonical_json_bytes
@@ -16,6 +17,7 @@ from runtime.orchestrator.lv_review import (
     _safe_read_result,
     _sha256,
     _safe_run_id,
+    _validate_interpreter,
     _preflight,
     _seal_preflight_evidence,
     _package_root,
@@ -28,6 +30,117 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_interpreter_accepts_standard_venv_symlink_chain_with_verified_probe(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "wallet"
+            interpreter = root / ".venv" / "bin" / "python"
+            interpreter.parent.mkdir(parents=True)
+            (root / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+            system_root = base / "system-bin"
+            system_root.mkdir()
+            system_root.chmod(0o755)
+            target = system_root / "python"
+            target.write_bytes(Path(sys.executable).read_bytes())
+            target.chmod(0o755)
+            (interpreter.parent / "python").symlink_to("python3")
+            (interpreter.parent / "python3").symlink_to(target)
+            proc_root = base / "proc"
+            (proc_root / "self").mkdir(parents=True)
+            (proc_root / "sys" / "kernel").mkdir(parents=True)
+            (proc_root / "self" / "uid_map").write_text("1000 0 1\n", encoding="ascii")
+            (proc_root / "sys" / "kernel" / "overflowuid").write_text("65534\n", encoding="ascii")
+            (proc_root / "self" / "mountinfo").write_text(
+                f"1 0 0:1 / {system_root} ro - ext4 /dev/fixture ro\n", encoding="utf-8"
+            )
+            probe = json.dumps({
+                "version": 3,
+                "prefix": str((root / ".venv").resolve()),
+                "base_prefix": "/usr",
+                "executable": str(interpreter),
+            }).encode()
+            with patch("runtime.orchestrator.lv_review.subprocess.run", return_value=subprocess.CompletedProcess([], 0, probe, b"")):
+                result = _validate_interpreter(root, interpreter, allowed_system_roots=(system_root,), proc_root=proc_root)
+            self.assertTrue(result["python_venv_verified"])
+            self.assertEqual(result["python_executable_sha256"], _sha256(target.read_bytes()))
+
+    def test_interpreter_rejects_broken_symlink_and_external_target(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "wallet"
+            interpreter = root / ".venv" / "bin" / "python"
+            interpreter.parent.mkdir(parents=True)
+            interpreter.symlink_to("missing-python")
+            with self.assertRaisesRegex(LVReviewError, "symlink chain"):
+                _validate_interpreter(root, interpreter, allowed_system_roots=(base / "system",))
+            loop_root = base / "loop"
+            loop = loop_root / ".venv" / "bin" / "python"
+            loop.parent.mkdir(parents=True)
+            loop.symlink_to("other")
+            (loop.parent / "other").symlink_to("python")
+            with self.assertRaisesRegex(LVReviewError, "symlink chain"):
+                _validate_interpreter(loop_root, loop, allowed_system_roots=(base / "system",))
+
+    def test_target_binding_owner_namespace_mount_and_file_boundaries(self) -> None:
+        from runtime.orchestrator.lv_review import _validate_target_binding
+
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            allowed = base / "system"
+            allowed.mkdir(mode=0o755)
+            target = allowed / "python"
+            target.write_bytes(b"ELF-fixture")
+            target.chmod(0o755)
+            real_stat = target.stat()
+            regular = SimpleNamespace(st_mode=real_stat.st_mode, st_uid=os.getuid())
+            with patch("runtime.orchestrator.lv_review._namespace_binding", return_value=("ns", 65534)), patch(
+                "runtime.orchestrator.lv_review._mount_binding", return_value=("mount", True)
+            ):
+                self.assertEqual(_validate_target_binding(target, regular, (allowed,), proc_root=base / "proc")[0], "direct-owner")
+                overflow = SimpleNamespace(st_mode=real_stat.st_mode, st_uid=65534)
+                self.assertEqual(_validate_target_binding(target, overflow, (allowed,), proc_root=base / "proc")[0], "sandbox-overflow-readonly")
+                for bad_uid in (65533,):
+                    with self.assertRaisesRegex(LVReviewError, "ownership"):
+                        _validate_target_binding(target, SimpleNamespace(st_mode=real_stat.st_mode, st_uid=bad_uid), (allowed,), proc_root=base / "proc")
+                with patch("runtime.orchestrator.lv_review._mount_binding", return_value=("mount", False)):
+                    with self.assertRaisesRegex(LVReviewError, "not read-only"):
+                        _validate_target_binding(target, overflow, (allowed,), proc_root=base / "proc")
+                with patch("runtime.orchestrator.lv_review._namespace_binding", side_effect=LVReviewError("mapping")):
+                    with self.assertRaises(LVReviewError):
+                        _validate_target_binding(target, overflow, (allowed,), proc_root=base / "proc")
+                for mode, message in ((0o775, "permissions"), (0o644, "executable")):
+                    target.chmod(mode)
+                    with self.assertRaisesRegex(LVReviewError, message):
+                        _validate_target_binding(target, SimpleNamespace(st_mode=target.stat().st_mode, st_uid=65534), (allowed,), proc_root=base / "proc")
+                target.chmod(0o755)
+                allowed.chmod(0o775)
+                with self.assertRaisesRegex(LVReviewError, "ancestor"):
+                    _validate_target_binding(target, overflow, (allowed,), proc_root=base / "proc")
+
+    def test_namespace_and_mount_fingerprint_drift_is_not_accepted(self) -> None:
+        from runtime.orchestrator.lv_review import _validate_target_binding
+
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            allowed = base / "system"
+            allowed.mkdir(mode=0o755)
+            target = allowed / "python"
+            target.write_bytes(b"ELF-fixture")
+            target.chmod(0o755)
+            st = target.stat()
+            with patch("runtime.orchestrator.lv_review._namespace_binding", return_value=("ns-before", 65534)), patch(
+                "runtime.orchestrator.lv_review._mount_binding", return_value=("mount-before", True)
+            ):
+                before = _validate_target_binding(target, SimpleNamespace(st_mode=st.st_mode, st_uid=65534), (allowed,), proc_root=base / "proc")
+            with patch("runtime.orchestrator.lv_review._namespace_binding", return_value=("ns-after", 65534)), patch(
+                "runtime.orchestrator.lv_review._mount_binding", return_value=("mount-after", True)
+            ):
+                after = _validate_target_binding(target, SimpleNamespace(st_mode=st.st_mode, st_uid=65534), (allowed,), proc_root=base / "proc")
+            self.assertNotEqual(before[1], after[1])
+            self.assertNotEqual(before[2], after[2])
+            target.write_bytes(b"ELF-drift")
+            self.assertNotEqual(_sha256(target.read_bytes()), _sha256(b"ELF-fixture"))
+
     def _git_fixture(self, base: Path) -> tuple[Path, dict[str, object], Path]:
         root = base / "wallet"
         (root / "app").mkdir(parents=True)
@@ -36,7 +149,8 @@ class LVReviewTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(root), "config", "user.name", "Fixture"], check=True)
         subprocess.run(["git", "-C", str(root), "config", "user.email", "fixture@example.invalid"], check=True)
         (root / "README.md").write_text("fixture\n", encoding="utf-8")
-        subprocess.run(["git", "-C", str(root), "add", "README.md"], check=True)
+        (root / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "README.md", ".gitignore"], check=True)
         subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
         package = base / "package"
         package.mkdir()
@@ -80,7 +194,19 @@ class LVReviewTest(unittest.TestCase):
     def _context(self, base: Path, *, result_path: Path | None = None, results_root: Path | None = None) -> tuple[Path, dict[str, object], Path, dict[str, object]]:
         root, manifest, manifest_path = self._git_fixture(base)
         manifest["manifest_sha256"] = _sha256(manifest_path.read_bytes())
+        venv_bin = root / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        (root / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+        system_root = base / "system-bin"
+        system_root.mkdir()
+        system_python = system_root / "python-fixture"
+        system_python.write_bytes(Path(sys.executable).read_bytes())
+        system_python.chmod(0o755)
+        (venv_bin / "python").symlink_to("python3")
+        (venv_bin / "python3").symlink_to(system_python)
         from runtime.orchestrator.lv_review import _capture_git_evidence
+
+        interpreter = Path(__file__).resolve().parents[2] / "wallet-affiliate-collector" / ".venv" / "bin" / "python"
 
         context = {
             "run_id": RUN_ID,
@@ -91,10 +217,22 @@ class LVReviewTest(unittest.TestCase):
             "package_root": manifest_path.parent,
             "result_path": result_path or base / "worker.result.json",
             "results_root": results_root or base / "results" / RUN_ID / "attempt-01",
-            "interpreter": Path(__file__).resolve().parents[2] / "wallet-affiliate-collector" / ".venv" / "bin" / "python",
+            "interpreter": interpreter,
+            "interpreter_allowed_system_roots": (system_root,),
             "preflight_root": base / "preflight" / RUN_ID,
             "git_before": _capture_git_evidence(root),
         }
+        context["interpreter_fingerprint"] = {
+            "python_version": "3.12.0",
+            "python_executable_sha256": _sha256(system_python.read_bytes()),
+            "python_prefix_fingerprint": _sha256(str((root / ".venv").resolve()).encode()),
+            "python_base_prefix_fingerprint": _sha256(b"/usr"),
+            "python_venv_verified": True,
+            "python_owner_validation_mode": "direct-owner",
+            "python_namespace_fingerprint": _sha256(b"fixture-namespace"),
+            "python_mount_fingerprint": _sha256(b"fixture-mount"),
+        }
+        context["interpreter_probe_required"] = False
         sealed = _seal_preflight_evidence(context)
         context["preflight_evidence_sha256"] = sealed["preflight_evidence_sha256"]
         return root, manifest, manifest_path, context

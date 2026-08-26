@@ -187,6 +187,165 @@ def _python_version(interpreter: Path) -> str:
     return version
 
 
+def _namespace_binding(*, proc_root: Path = Path("/proc")) -> tuple[str, int]:
+    try:
+        raw_map = (proc_root / "self" / "uid_map").read_text(encoding="ascii")
+        overflow = int((proc_root / "sys" / "kernel" / "overflowuid").read_text(encoding="ascii").strip())
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise LVReviewError("user namespace mapping is unavailable") from exc
+    rows = []
+    for line in raw_map.splitlines():
+        fields = line.split()
+        if len(fields) != 3:
+            raise LVReviewError("user namespace mapping is invalid")
+        try:
+            start, parent, count = (int(value) for value in fields)
+        except ValueError as exc:
+            raise LVReviewError("user namespace mapping is invalid") from exc
+        if count <= 0:
+            raise LVReviewError("user namespace mapping is invalid")
+        rows.append((start, parent, count))
+    uid = os.getuid()
+    if not rows or not any(start <= uid < start + count for start, _, count in rows):
+        raise LVReviewError("current UID is not covered by user namespace mapping")
+    normalized = "overflowuid=" + str(overflow) + "\n" + "\n".join(
+        f"{start} {parent} {count}" for start, parent, count in rows
+    )
+    return _sha256(normalized.encode("ascii")), overflow
+
+
+def _mount_binding(path: Path, *, proc_root: Path = Path("/proc")) -> tuple[str, bool]:
+    try:
+        lines = (proc_root / "self" / "mountinfo").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise LVReviewError("mount information is unavailable") from exc
+    candidates: list[tuple[int, str, str, str, str]] = []
+    resolved = path.resolve(strict=True)
+    for line in lines:
+        left, separator, right = line.partition(" - ")
+        if not separator:
+            continue
+        fields = left.split()
+        if len(fields) < 6:
+            continue
+        mount_point = fields[4].replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\")
+        mount_path = Path(mount_point)
+        try:
+            resolved.relative_to(mount_path)
+        except ValueError:
+            continue
+        right_fields = right.split()
+        if len(right_fields) < 2:
+            continue
+        candidates.append((len(mount_path.parts), mount_point, fields[5], right_fields[0], right_fields[1]))
+    if not candidates:
+        raise LVReviewError("mount information is ambiguous")
+    _, mount_point, mount_options, fs_type, source = max(candidates)
+    normalized = f"mount={mount_point}\noptions={mount_options}\nfs={fs_type}\nsource={source}"
+    return _sha256(normalized.encode("utf-8")), "ro" in mount_options.split(",")
+
+
+def _validate_target_binding(
+    resolved: Path,
+    target_stat: os.stat_result,
+    allowed_roots: tuple[Path, ...],
+    *,
+    proc_root: Path,
+) -> tuple[str, str, str]:
+    if not stat.S_ISREG(target_stat.st_mode) or not os.access(resolved, os.X_OK):
+        raise LVReviewError("Wallet interpreter target is not an executable regular file")
+    if target_stat.st_mode & 0o022:
+        raise LVReviewError("Wallet interpreter target ownership or permissions are unsafe")
+    containing_root = max((allowed for allowed in allowed_roots if resolved == allowed or allowed in resolved.parents), key=lambda item: len(item.parts))
+    ancestor = resolved.parent
+    while True:
+        ancestor_stat = ancestor.stat()
+        if ancestor_stat.st_mode & 0o022:
+            raise LVReviewError("Wallet interpreter ancestor permissions are unsafe")
+        if ancestor == containing_root:
+            break
+        if containing_root not in ancestor.parents:
+            raise LVReviewError("Wallet interpreter ancestor path is unsafe")
+        ancestor = ancestor.parent
+    namespace_fingerprint, overflow_uid = _namespace_binding(proc_root=proc_root)
+    mount_fingerprint, mount_read_only = _mount_binding(resolved, proc_root=proc_root)
+    if not mount_read_only:
+        raise LVReviewError("Wallet interpreter mount is not read-only")
+    if target_stat.st_uid in {0, os.getuid()}:
+        owner_mode = "direct-owner"
+    elif target_stat.st_uid == overflow_uid:
+        owner_mode = "sandbox-overflow-readonly"
+    else:
+        raise LVReviewError("Wallet interpreter target ownership is not trusted")
+    return owner_mode, namespace_fingerprint, mount_fingerprint
+
+
+def _validate_interpreter(
+    root: Path,
+    interpreter: Path,
+    *,
+    allowed_system_roots: tuple[Path, ...] = (Path("/usr/bin"), Path("/usr/local/bin")),
+    proc_root: Path = Path("/proc"),
+) -> dict[str, str | bool]:
+    """Validate only the mapped venv interpreter, including safe symlink chains."""
+    expected = root / ".venv" / "bin" / "python"
+    if interpreter != expected:
+        raise LVReviewError("Wallet interpreter path is not the fixed venv path")
+    if not interpreter.is_symlink() and not interpreter.is_file():
+        raise LVReviewError("Wallet .venv/bin/python is unavailable")
+    try:
+        resolved = interpreter.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise LVReviewError("Wallet interpreter symlink chain is invalid") from exc
+    allowed_roots = tuple(path.resolve() for path in allowed_system_roots)
+    if not any(resolved == allowed or allowed in resolved.parents for allowed in allowed_roots):
+        raise LVReviewError("Wallet interpreter target is outside allowed system paths")
+    try:
+        target_stat = resolved.stat()
+    except OSError as exc:
+        raise LVReviewError("Wallet interpreter target is unavailable") from exc
+    containing_root = max((allowed for allowed in allowed_roots if resolved == allowed or allowed in resolved.parents), key=lambda item: len(item.parts))
+    owner_mode, namespace_fingerprint, mount_fingerprint = _validate_target_binding(
+        resolved, target_stat, (containing_root,), proc_root=proc_root
+    )
+    probe = subprocess.run(
+        [str(interpreter), "-I", "-B", "-c", (
+            "import json,sys,pytest; "
+            "print(json.dumps({'version':sys.version_info[0],"
+            "'prefix':sys.prefix,'base_prefix':sys.base_prefix,'executable':sys.executable}))"
+        )],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        shell=False,
+        timeout=30,
+    )
+    if probe.returncode != 0 or len(probe.stdout) > 16384:
+        raise LVReviewError("Wallet venv interpreter probe failed")
+    try:
+        info = json.loads(probe.stdout.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise LVReviewError("Wallet venv interpreter probe was malformed") from exc
+    expected_prefix = str((root / ".venv").resolve())
+    if (
+        info.get("version") != 3
+        or info.get("prefix") != expected_prefix
+        or info.get("base_prefix") == info.get("prefix")
+        or info.get("executable") != str(interpreter)
+    ):
+        raise LVReviewError("Wallet interpreter is not an isolated Python venv")
+    return {
+        "python_version": f"{info['version']}",
+        "python_executable_sha256": _sha256(resolved.read_bytes()),
+        "python_prefix_fingerprint": _sha256(expected_prefix.encode("utf-8")),
+        "python_base_prefix_fingerprint": _sha256(str(info["base_prefix"]).encode("utf-8")),
+        "python_venv_verified": True,
+        "python_owner_validation_mode": owner_mode,
+        "python_namespace_fingerprint": namespace_fingerprint,
+        "python_mount_fingerprint": mount_fingerprint,
+    }
+
+
 def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
     mapping = load_project_mapping(root)
     if mapping is None:
@@ -272,10 +431,9 @@ def _preflight(
     results_root = results_root or _results_root(run_id)
     if results_root.exists() or results_root.is_symlink():
         raise LVReviewError("review attempt-01 already exists")
-        interpreter = interpreter or root / ".venv" / "bin" / "python"
+    interpreter = interpreter or root / ".venv" / "bin" / "python"
     expected_interpreter = root / ".venv" / "bin" / "python"
-    if interpreter != expected_interpreter or not interpreter.is_file() or not os.access(interpreter, os.X_OK):
-        raise LVReviewError("Wallet .venv/bin/python is unavailable")
+    interpreter_fingerprint = _validate_interpreter(root, interpreter)
     git_before = _capture_git_evidence(root)
     if not git_before["branch"]:
         raise LVReviewError("detached HEAD is not allowed for preflight")
@@ -289,6 +447,7 @@ def _preflight(
         "result_path": result_path,
         "results_root": results_root,
         "interpreter": interpreter,
+        "interpreter_fingerprint": interpreter_fingerprint,
         "git_before": git_before,
     }
 
@@ -331,7 +490,7 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
         "result_path_absent": True,
         "review_attempt_absent": True,
         "python_interpreter_reference": ".venv/bin/python",
-        "python_version": _python_version(context["interpreter"]),
+        **context["interpreter_fingerprint"],
         "runtime_authorization": "not_granted_by_preflight",
         "business_approval_reused": False,
     }
@@ -429,8 +588,11 @@ def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any],
     for field, expected_value in checks.items():
         if evidence.get(field) != expected_value:
             raise LVReviewError(f"preflight evidence mismatch: {field}")
-    if evidence.get("python_interpreter_reference") != ".venv/bin/python" or not evidence.get("python_version"):
+    if evidence.get("python_interpreter_reference") != ".venv/bin/python" or not evidence.get("python_version") or evidence.get("python_venv_verified") is not True:
         raise LVReviewError("preflight Python evidence is invalid")
+    for field, expected_value in context["interpreter_fingerprint"].items():
+        if evidence.get(field) != expected_value:
+            raise LVReviewError(f"preflight Python evidence mismatch: {field}")
     return evidence, evidence_hash
 
 
@@ -746,6 +908,17 @@ def review_run(
         if "tests/test_config.py" not in actual["changed_files"] and not (context["project_root"] / "tests/test_config.py").is_file():
             return {"status": "BLOCKED", "run_id": run_id, "reason": "tests/test_config.py is missing", "hard_stop": True}
         tests, test_error = _run_tests(context["project_root"], context["interpreter"])
+        if context.get("interpreter_probe_required", True):
+            try:
+                interpreter_after = _validate_interpreter(
+                    context["project_root"],
+                    context["interpreter"],
+                    allowed_system_roots=tuple(context.get("interpreter_allowed_system_roots", (Path("/usr/bin"), Path("/usr/local/bin")))),
+                )
+                if interpreter_after != context["interpreter_fingerprint"]:
+                    violations.append("interpreter fingerprint changed during review")
+            except LVReviewError as exc:
+                violations.append(f"interpreter validation failed after tests: {exc}")
         actual_after = _actual_changes(context["project_root"])
         if any(actual_after[field] != actual[field] for field in ("changed_files", "created_files", "modified_files", "deleted_files")):
             violations.append("Git change set changed during independent tests")
