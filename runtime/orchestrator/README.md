@@ -52,3 +52,57 @@ target_id)`, so the first event for each new target starts at version 1 and
 links to no prior approval ID. Later events for that target increment the
 lineage version and link to its prior approval ID. Independently, every event's
 `previous_record_hash` links the full append order across all target lineages.
+
+## Single-LV review artifacts
+
+`lv-review` requires both a run ID and an explicit canonical positive integer
+review attempt:
+
+```text
+python3 -m runtime.orchestrator.cli lv-review --run-id <run-id> --attempt 2
+```
+
+Values such as a missing attempt, `0`, `-1`, `01`, `+1`, or mixed text fail
+closed. Review artifacts are sealed atomically at
+`_workspace/orchestration-results/<run-id>/attempt-<NN>/`, where attempts 1 and
+2 are `attempt-01` and `attempt-02`. The run directory itself is never a new
+review output directory. An existing attempt is never overwritten.
+
+The worker attempt and review attempt are separate identities. A review-only
+re-execution records `review_attempt`, `worker_attempt`,
+`review_only_reexecution=true`, and `reran_worker=false`; it reuses and verifies
+the sealed worker result without running the worker. The reviewer report and
+status bind the run, both attempts, package manifest SHA-256, verified preflight
+evidence seal SHA-256, worker-result SHA-256, and hard-stop verdict. The status
+uses `orchestration.lv_reviewer.status.v1`. Both artifacts are checked against
+exact field sets before sealing.
+
+The empty self-reference placeholder inside `preflight.evidence.json` is not
+the seal. The reviewer recomputes and verifies the evidence bytes against the
+sidecar and preflight status, then records that non-empty computed seal in both
+review artifacts.
+
+Legacy files written directly under a run directory are preserved byte-for-byte
+and are not renamed or retroactively treated as `attempt-01`. A later recovery
+attempt is allowed only when the runtime has a fixed trusted contract for all
+five legacy relative paths and hashes. Its `prior_review_lineage` records the
+legacy location kind, contract-failure status, five paths and hashes, prior
+report hash, and the identical package, preflight, and worker-result hashes.
+Missing or drifted legacy evidence blocks the review before a new attempt is
+created. The CLI has no arbitrary legacy-path or hash override.
+
+The reviewer records bounded, redacted `independent_checks` for the focused and
+full tests, configuration import, `git diff --check`, UTF-8/BOM/NUL/trailing
+whitespace, conflict markers, secret-like values, owned-file and staged-change
+boundaries, Git fingerprints, and immutable package/preflight/worker inputs.
+Secret checks are limited to owned files; environment-variable names and empty
+placeholders are allowed, while literal credentials and credential-bearing URLs
+fail without copying the value into artifacts or logs. Interpreter evidence is
+recorded before and after tests and must match, including executable, owner,
+namespace, mount, venv prefix, base-prefix, version, and venv verification.
+
+`lv-review` exit codes are `0` for PASS, `9` for FAIL, and `10` for BLOCKED.
+Argument parsing and existing exception codes retain their prior meanings.
+A PASS remains a hard-stop review result only: it is not Gate completion,
+business approval, runtime/sandbox authorization, commit authorization, or
+permission to start another LV.

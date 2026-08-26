@@ -13,7 +13,11 @@ from unittest.mock import patch
 
 from runtime.orchestrator.lv_execution_package import WORKER_RESULT_SCHEMA_VERSION, canonical_json_bytes
 from runtime.orchestrator.lv_review import (
+    REVIEW_REPORT_FIELDS,
+    REVIEW_STATUS_FIELDS,
     LVReviewError,
+    _results_root,
+    _scan_owned_files,
     _safe_read_result,
     _sha256,
     _safe_run_id,
@@ -24,6 +28,7 @@ from runtime.orchestrator.lv_review import (
     preflight_run,
     review_run,
 )
+from runtime.orchestrator.cli import main as cli_main
 
 
 RUN_ID = "fixture-run-01"
@@ -242,7 +247,9 @@ class LVReviewTest(unittest.TestCase):
         changed = changed or ["app/config.py", "tests/test_config.py"]
         return {
             "schema_version": WORKER_RESULT_SCHEMA_VERSION,
+            "attempt": 1,
             "run_id": RUN_ID,
+            "preflight_evidence_sha256": "pending-fixture-binding",
             "package_manifest_sha256": manifest["manifest_sha256"],
             "gate_id": "GATE-1",
             "lv_id": "G1-LV3-1",
@@ -261,6 +268,7 @@ class LVReviewTest(unittest.TestCase):
             "created_files": changed,
             "modified_files": [],
             "deleted_files": [],
+            "owned_files": ["app/config.py", "tests/test_config.py"],
             "tests": ["pytest"],
             "commands_summary": [],
             "violations": [],
@@ -275,6 +283,10 @@ class LVReviewTest(unittest.TestCase):
         }
 
     def _write_worker(self, path: Path, payload: dict[str, object]) -> bytes:
+        if payload.get("preflight_evidence_sha256") == "pending-fixture-binding":
+            preflight = path.parent / "preflight" / RUN_ID / "preflight.evidence.json"
+            if preflight.is_file():
+                payload["preflight_evidence_sha256"] = _sha256(preflight.read_bytes())
         data = canonical_json_bytes(payload)
         path.write_bytes(data)
         path.chmod(0o600)
@@ -319,11 +331,11 @@ class LVReviewTest(unittest.TestCase):
             root = Path(directory)
             result = root / "worker.json"
             result.write_text("{}", encoding="utf-8")
-            with self.assertRaisesRegex(LVReviewError, "worker result already exists"):
+            with patch("runtime.orchestrator.lv_review._assert_source_snapshot"), self.assertRaisesRegex(LVReviewError, "worker result already exists"):
                 _preflight("wallet-g1-lv3-1-20260826-01", package_root=_package_root("wallet-g1-lv3-1-20260826-01"), result_path=result, results_root=root / "results")
             result.unlink()
             (root / "results").mkdir()
-            with self.assertRaisesRegex(LVReviewError, "attempt-01"):
+            with patch("runtime.orchestrator.lv_review._assert_source_snapshot"), self.assertRaisesRegex(LVReviewError, "attempt-01"):
                 _preflight("wallet-g1-lv3-1-20260826-01", package_root=_package_root("wallet-g1-lv3-1-20260826-01"), result_path=result, results_root=root / "results")
 
     def test_preflight_stale_or_dirty_source_is_blocked(self) -> None:
@@ -369,7 +381,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context["results_root"] = results_root
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
             self.assertEqual(outcome["status"], "PASS")
             self.assertTrue(outcome["hard_stop"])
             self.assertEqual({p.name for p in results_root.iterdir()}, {
@@ -396,7 +408,7 @@ class LVReviewTest(unittest.TestCase):
             sentinel.write_text("keep", encoding="utf-8")
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
             self.assertEqual(outcome["status"], "BLOCKED")
             self.assertEqual(sentinel.read_text(), "keep")
 
@@ -413,7 +425,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
             self.assertEqual(outcome["status"], "FAIL")
             report = json.loads((results_root / "reviewer.report.json").read_text())
             self.assertTrue(report["violations"])
@@ -429,7 +441,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
             self.assertEqual(outcome["status"], "BLOCKED")
             report = json.loads((results_root / "reviewer.report.json").read_text())
             self.assertEqual(report["verdict"], "BLOCKED")
@@ -442,7 +454,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
 
         with TemporaryDirectory() as directory:
@@ -455,7 +467,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
             self.assertFalse(results_root.exists())
 
@@ -474,7 +486,7 @@ class LVReviewTest(unittest.TestCase):
                 child.unlink()
             evidence_root.rmdir()
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
             self.assertFalse(results_root.exists())
 
@@ -490,7 +502,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
 
     def test_review_blocks_completed_with_invalid_runtime_state(self) -> None:
@@ -509,7 +521,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
 
     def test_review_fails_worker_violations_and_error(self) -> None:
@@ -527,7 +539,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "FAIL")
 
     def test_review_fails_staged_change_and_deletion(self) -> None:
@@ -547,7 +559,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "FAIL")
 
     def test_review_fails_branch_local_config_remote_head_and_index_changes(self) -> None:
@@ -580,7 +592,7 @@ class LVReviewTest(unittest.TestCase):
                 results_root = base / "results" / RUN_ID / "attempt-01"
                 context.update(result_path=result_path, results_root=results_root)
                 with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                    outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                    outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
                 self.assertEqual(outcome["status"], "FAIL")
 
     def test_review_rejects_owned_file_symlink_and_unsafe_result_without_artifacts(self) -> None:
@@ -596,7 +608,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "FAIL")
 
         with TemporaryDirectory() as directory:
@@ -611,7 +623,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
             self.assertFalse(results_root.exists())
 
@@ -628,7 +640,7 @@ class LVReviewTest(unittest.TestCase):
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context), patch(
                 "runtime.orchestrator.lv_review._run_tests", return_value=([{"exit_code": 1, "timeout": False}], "independent test command failed")
             ):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "FAIL")
 
         with TemporaryDirectory() as directory:
@@ -646,7 +658,7 @@ class LVReviewTest(unittest.TestCase):
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context), patch(
                 "runtime.orchestrator.lv_review._run_tests", side_effect=create_unexpected
             ):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "FAIL")
 
     def test_review_atomic_seal_failure_does_not_expose_artifact(self) -> None:
@@ -662,7 +674,7 @@ class LVReviewTest(unittest.TestCase):
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context), patch(
                 "runtime.orchestrator.lv_review._seal_review", side_effect=LVReviewError("injected atomic failure")
             ):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
             self.assertEqual(outcome["status"], "BLOCKED")
             self.assertFalse(results_root.exists())
 
@@ -676,9 +688,197 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
             self.assertEqual(outcome["status"], "BLOCKED")
             self.assertFalse(results_root.exists())
+
+    def _legacy_contract(self, run_root: Path, worker_bytes: bytes) -> tuple[dict[str, str], dict[str, tuple[int, bytes]]]:
+        run_root.mkdir(parents=True, exist_ok=True)
+        content = {
+            "reviewer.report.json": b'{"verdict":"PASS"}',
+            "reviewer.report.sha256": b"legacy-report-sidecar\n",
+            "review.status": b'{"verdict":"PASS"}',
+            "worker.result.json": worker_bytes,
+            "worker.result.sha256": (_sha256(worker_bytes) + "\n").encode("ascii"),
+        }
+        contract: dict[str, str] = {}
+        preserved: dict[str, tuple[int, bytes]] = {}
+        for name, data in content.items():
+            path = run_root / name
+            path.write_bytes(data)
+            contract[name] = _sha256(data)
+            preserved[name] = (path.stat().st_ino, data)
+        return contract, preserved
+
+    def test_attempt_paths_are_canonical_and_run_root_is_never_the_output(self) -> None:
+        with patch("runtime.orchestrator.lv_review._harness_root", return_value=Path("/fixture/harness")):
+            self.assertEqual(_results_root(RUN_ID, 1), Path("/fixture/harness/_workspace/orchestration-results") / RUN_ID / "attempt-01")
+            self.assertEqual(_results_root(RUN_ID, 2), Path("/fixture/harness/_workspace/orchestration-results") / RUN_ID / "attempt-02")
+        for invalid in (None, 0, -1, "0", "-1", "01", "+1", "1x", True):
+            with self.subTest(invalid=invalid):
+                outcome = review_run(RUN_ID, attempt=invalid)
+                self.assertEqual(outcome["status"], "BLOCKED")
+
+    def test_attempt_two_review_only_lineage_is_sealed_without_mutating_legacy(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root, manifest, _, context = self._context(base, results_root=base / "results" / RUN_ID / "attempt-02")
+            (root / "app" / "config.py").write_text("VALUE = 'fixture'\n", encoding="utf-8")
+            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            result_path = base / "worker.result.json"
+            worker_bytes = self._write_worker(result_path, self._worker_result(manifest, root))
+            context["result_path"] = result_path
+            run_root = Path(context["results_root"]).parent
+            contract, preserved = self._legacy_contract(run_root, worker_bytes)
+            with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
+                outcome = review_run(RUN_ID, attempt=2, result_path=result_path, prior_review_contract=contract)
+            self.assertEqual(outcome["status"], "PASS")
+            report = json.loads((Path(context["results_root"]) / "reviewer.report.json").read_text())
+            status = json.loads((Path(context["results_root"]) / "review.status").read_text())
+            self.assertEqual(set(report), REVIEW_REPORT_FIELDS)
+            self.assertEqual(set(status), REVIEW_STATUS_FIELDS)
+            self.assertEqual((report["worker_attempt"], report["review_attempt"]), (1, 2))
+            self.assertTrue(report["review_only_reexecution"])
+            self.assertFalse(report["reran_worker"])
+            self.assertEqual(report["preflight_evidence_sha256"], context["preflight_evidence_sha256"])
+            self.assertEqual(status["preflight_evidence_sha256"], context["preflight_evidence_sha256"])
+            self.assertEqual(report["prior_review_lineage"]["prior_review_location_kind"], "legacy_run_root")
+            self.assertEqual(report["prior_review_lineage"]["prior_reviewer_report_sha256"], contract["reviewer.report.json"])
+            required_interpreter = {
+                "python_version", "python_executable_sha256", "python_owner_validation_mode",
+                "python_namespace_fingerprint", "python_mount_fingerprint", "python_prefix_fingerprint",
+                "python_base_prefix_fingerprint", "python_venv_verified",
+            }
+            self.assertTrue(required_interpreter <= set(report["interpreter_before"]))
+            self.assertEqual(report["interpreter_before"], report["interpreter_after"])
+            for name, (inode, data) in preserved.items():
+                self.assertEqual((run_root / name).stat().st_ino, inode)
+                self.assertEqual((run_root / name).read_bytes(), data)
+
+    def test_attempt_two_blocks_missing_or_drifted_legacy_without_output(self) -> None:
+        for mutation in ("missing", "drift"):
+            with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
+                base = Path(directory)
+                root, manifest, _, context = self._context(base, results_root=base / "results" / RUN_ID / "attempt-02")
+                (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
+                (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+                result_path = base / "worker.result.json"
+                worker_bytes = self._write_worker(result_path, self._worker_result(manifest, root))
+                context["result_path"] = result_path
+                run_root = Path(context["results_root"]).parent
+                contract, _ = self._legacy_contract(run_root, worker_bytes)
+                target = run_root / "review.status"
+                if mutation == "missing":
+                    target.unlink()
+                else:
+                    target.write_bytes(b"drift")
+                with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
+                    outcome = review_run(RUN_ID, attempt=2, prior_review_contract=contract)
+                self.assertEqual(outcome["status"], "BLOCKED")
+                self.assertFalse(Path(context["results_root"]).exists())
+
+    def test_worker_attempt_and_preflight_hash_are_fail_closed(self) -> None:
+        for mutation in ("missing_attempt", "wrong_attempt", "empty_preflight"):
+            with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
+                base = Path(directory)
+                root, manifest, _, context = self._context(base)
+                (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
+                (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+                payload = self._worker_result(manifest, root)
+                if mutation == "missing_attempt":
+                    del payload["attempt"]
+                elif mutation == "wrong_attempt":
+                    payload["attempt"] = 2
+                result_path = base / "worker.result.json"
+                self._write_worker(result_path, payload)
+                context["result_path"] = result_path
+                verify = patch("runtime.orchestrator.lv_review._verify_preflight_evidence", return_value=({}, "")) if mutation == "empty_preflight" else patch("runtime.orchestrator.lv_review._preflight", return_value=context)
+                if mutation == "empty_preflight":
+                    with patch("runtime.orchestrator.lv_review._preflight", return_value=context), verify:
+                        outcome = review_run(RUN_ID, attempt=1)
+                else:
+                    with verify:
+                        outcome = review_run(RUN_ID, attempt=1)
+                self.assertEqual(outcome["status"], "BLOCKED")
+
+    def test_review_records_interpreter_before_after_and_fails_drift(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root, manifest, _, context = self._context(base)
+            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            result_path = base / "worker.result.json"
+            self._write_worker(result_path, self._worker_result(manifest, root))
+            context["result_path"] = result_path
+            context["interpreter_probe_required"] = True
+            drifted = dict(context["interpreter_fingerprint"], python_namespace_fingerprint="drifted")
+            with patch("runtime.orchestrator.lv_review._preflight", return_value=context), patch(
+                "runtime.orchestrator.lv_review._validate_interpreter", return_value=drifted
+            ):
+                outcome = review_run(RUN_ID, attempt=1)
+            self.assertEqual(outcome["status"], "FAIL")
+            report = json.loads((Path(context["results_root"]) / "reviewer.report.json").read_text())
+            self.assertEqual(report["interpreter_before"], context["interpreter_fingerprint"])
+            self.assertEqual(report["interpreter_after"], drifted)
+            self.assertIn("interpreter fingerprint changed during review", report["violations"])
+
+    def test_static_checks_redact_secrets_and_do_not_flag_environment_name(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            safe = root / "safe.py"
+            safe.write_text('ADPICK_API_KEY = os.getenv("ADPICK_API_KEY", "")\n', encoding="utf-8")
+            checks = {item["check"]: item for item in _scan_owned_files(root, ["safe.py"])}
+            self.assertEqual(checks["secret_like_value"]["status"], "PASS")
+            unsafe = root / "unsafe.py"
+            secret_value = "unit-test-credential-value"
+            unsafe.write_text("pass" + 'word = "' + secret_value + '"\n', encoding="utf-8")
+            checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
+            self.assertEqual(checks["secret_like_value"]["status"], "FAIL")
+            self.assertNotIn(secret_value, checks["secret_like_value"]["summary"])
+            credential_url = "https://fixture-" + "user:fixture-" + "pass@example.invalid/path"
+            unsafe.write_text('url = "' + credential_url + '"\n', encoding="utf-8")
+            checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
+            self.assertEqual(checks["secret_like_value"]["status"], "FAIL")
+            self.assertNotIn("fixture-pass", checks["secret_like_value"]["summary"])
+            unsafe.write_bytes(b"value = \xff\n")
+            checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
+            self.assertEqual(checks["utf8_decode"]["status"], "FAIL")
+            unsafe.write_bytes(b"\xef\xbb\xbfvalue = 1 \n<<<<<<< HEAD\n\0")
+            checks = {item["check"]: item for item in _scan_owned_files(root, ["unsafe.py"])}
+            for identifier in ("bom", "nul", "trailing_whitespace", "conflict_marker"):
+                self.assertEqual(checks[identifier]["status"], "FAIL")
+
+    def test_cli_requires_attempt_and_distinguishes_exit_codes(self) -> None:
+        for status, expected in (("PASS", 0), ("FAIL", 9), ("BLOCKED", 10)):
+            with self.subTest(status=status), patch("runtime.orchestrator.cli.review_run", return_value={"status": status}):
+                self.assertEqual(cli_main(["lv-review", "--run-id", RUN_ID, "--attempt", "2"]), expected)
+        with self.assertRaises(SystemExit) as missing:
+            cli_main(["lv-review", "--run-id", RUN_ID])
+        self.assertEqual(missing.exception.code, 2)
+
+    def test_cli_integration_uses_default_attempt_path_in_temporary_fixture(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root, manifest, _, context = self._context(base)
+            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            result_path = base / "worker.result.json"
+            self._write_worker(result_path, self._worker_result(manifest, root))
+            context["result_path"] = result_path
+            expected = base / "_workspace" / "orchestration-results" / RUN_ID / "attempt-01"
+            context["results_root"] = expected
+
+            def fixture_preflight(*args: object, **kwargs: object) -> dict[str, object]:
+                self.assertIsNone(kwargs.get("results_root"))
+                self.assertEqual(kwargs.get("review_attempt"), 1)
+                return context
+
+            with patch("runtime.orchestrator.lv_review._harness_root", return_value=base), patch(
+                "runtime.orchestrator.lv_review._preflight", side_effect=fixture_preflight
+            ):
+                self.assertEqual(cli_main(["lv-review", "--run-id", RUN_ID, "--attempt", "1"]), 0)
+            self.assertTrue(expected.is_dir())
+            self.assertFalse((expected.parent / "reviewer.report.json").exists())
 
     def test_hard_stop_is_true_for_pass_and_no_worker_execution_is_required(self) -> None:
         with TemporaryDirectory() as directory:
@@ -691,7 +891,7 @@ class LVReviewTest(unittest.TestCase):
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
-                outcome = review_run(RUN_ID, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
+                outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=Path(sys.executable))
             status = json.loads((results_root / "review.status").read_text())
             self.assertEqual(outcome["status"], "PASS")
             self.assertTrue(outcome["hard_stop"])

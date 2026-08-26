@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import signal
 import stat
 import subprocess
@@ -32,6 +33,28 @@ RESULT_PREFIX = "harness-lv-worker-result-"
 RESULT_SUFFIX = ".json"
 RESULT_STATUSES = {"completed", "partial", "failed", "blocked", "aborted"}
 _FORBIDDEN_CHANGE_CODES = {"R", "C", "T", "U"}
+LEGACY_REVIEW_CONTRACTS: dict[str, dict[str, str]] = {
+    "wallet-g1-lv3-1-20260826-01": {
+        "reviewer.report.json": "9c7033236bcb88db5ecd49d1ca1ea3a19a08748e1aa8b38c8697ffba522dfd01",
+        "reviewer.report.sha256": "092b40b7242c5c1968baa6f1c55ad0624d3f8351df23dde7d4396099a089d366",
+        "review.status": "3c147ff4634afb59cd4513d57aba6a710f565e0db1763782171b1cfb44f3873d",
+        "worker.result.json": "d27f1e0fe59862a9616703f0abc35c683d2ccdad70ed7c51ec8e12d51788989b",
+        "worker.result.sha256": "3d484a559b2e6961e6da1c1f196e9c1dc1d3261e6ca88c3d4d4349fc5a81b32b",
+    }
+}
+REVIEW_REPORT_FIELDS = {
+    "schema_version", "run_id", "project", "gate", "lv", "reviewed_at", "verdict", "hard_stop",
+    "review_attempt", "worker_attempt", "package_manifest_sha256", "preflight_evidence_sha256",
+    "worker_result_sha256", "baseline_wallet_head", "current_wallet_head", "canonical_plan", "owned_files",
+    "actual_changed_files", "actual_created_files", "actual_modified_files", "actual_deleted_files",
+    "review_only_reexecution", "reran_worker", "prior_review_lineage", "independent_checks",
+    "interpreter_before", "interpreter_after", "git_evidence", "violations", "blockers", "reasons",
+}
+REVIEW_STATUS_FIELDS = {
+    "schema_version", "run_id", "review_attempt", "worker_attempt", "verdict", "hard_stop",
+    "reviewer_report_sha256", "package_manifest_sha256", "preflight_evidence_sha256",
+    "worker_result_sha256", "review_only_reexecution", "reran_worker",
+}
 
 
 class LVReviewError(ValueError):
@@ -88,9 +111,24 @@ def _result_path(run_id: str) -> Path:
     return Path("/tmp") / f"{RESULT_PREFIX}{run_id}{RESULT_SUFFIX}"
 
 
-def _results_root(run_id: str) -> Path:
+def parse_review_attempt(value: object) -> int:
+    if isinstance(value, bool):
+        raise LVReviewError("review attempt must be a canonical positive integer")
+    if isinstance(value, int):
+        attempt = value
+    elif isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value):
+        attempt = int(value)
+    else:
+        raise LVReviewError("review attempt must be a canonical positive integer")
+    if attempt <= 0:
+        raise LVReviewError("review attempt must be a canonical positive integer")
+    return attempt
+
+
+def _results_root(run_id: str, review_attempt: int) -> Path:
     _safe_run_id(run_id)
-    return _harness_root() / "_workspace" / "orchestration-results" / run_id
+    attempt = parse_review_attempt(review_attempt)
+    return _harness_root() / "_workspace" / "orchestration-results" / run_id / f"attempt-{attempt:02d}"
 
 
 def _preflight_root(run_id: str) -> Path:
@@ -418,6 +456,7 @@ def _preflight(
     interpreter: Path | None = None,
     allow_worker_changes: bool = False,
     check_result_absent: bool = True,
+    review_attempt: int = 1,
 ) -> dict[str, Any]:
     _safe_run_id(run_id)
     package_root = package_root or _package_root(run_id)
@@ -428,9 +467,10 @@ def _preflight(
     result_path = result_path or _result_path(run_id)
     if check_result_absent and (result_path.exists() or result_path.is_symlink()):
         raise LVReviewError("worker result already exists")
-    results_root = results_root or _results_root(run_id)
+    review_attempt = parse_review_attempt(review_attempt)
+    results_root = results_root or _results_root(run_id, review_attempt)
     if results_root.exists() or results_root.is_symlink():
-        raise LVReviewError("review attempt-01 already exists")
+        raise LVReviewError(f"review attempt-{review_attempt:02d} already exists")
     interpreter = interpreter or root / ".venv" / "bin" / "python"
     expected_interpreter = root / ".venv" / "bin" / "python"
     interpreter_fingerprint = _validate_interpreter(root, interpreter)
@@ -439,6 +479,7 @@ def _preflight(
         raise LVReviewError("detached HEAD is not allowed for preflight")
     return {
         "run_id": run_id,
+        "review_attempt": review_attempt,
         "manifest": manifest,
         "manifest_path": manifest_path,
         "source": source,
@@ -520,7 +561,7 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
 
 def preflight_run(run_id: str) -> dict[str, Any]:
     try:
-        context = _preflight(run_id)
+        context = _preflight(run_id, review_attempt=1)
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc)}
     try:
@@ -748,6 +789,104 @@ def _run_tests(root: Path, interpreter: Path) -> tuple[list[dict[str, Any]], str
     return results, None
 
 
+def _check(identifier: str, passed: bool, summary: str, *, exit_code: int | None = None) -> dict[str, Any]:
+    item: dict[str, Any] = {"check": identifier, "status": "PASS" if passed else "FAIL", "summary": summary[:240]}
+    if exit_code is not None:
+        item["exit_code"] = exit_code
+    return item
+
+
+def _file_snapshot(path: Path) -> tuple[int, int, int, int, str]:
+    current = path.lstat()
+    if not stat.S_ISREG(current.st_mode) or path.is_symlink():
+        raise LVReviewError("immutable input is not a regular non-symlink file")
+    return current.st_dev, current.st_ino, current.st_mode, current.st_size, _sha256(path.read_bytes())
+
+
+def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]:
+    if not root.is_dir() or root.is_symlink():
+        raise LVReviewError("immutable input directory is missing or unsafe")
+    entries = list(root.iterdir())
+    if not all(path.is_file() and not path.is_symlink() for path in entries):
+        raise LVReviewError("immutable input directory contains an unsafe entry")
+    return {path.name: _file_snapshot(path) for path in entries}
+
+
+def _scan_owned_files(root: Path, owned_files: list[str]) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    failures: dict[str, list[str]] = {key: [] for key in ("utf8_decode", "bom", "nul", "trailing_whitespace", "conflict_marker", "secret_like_value")}
+    conflict = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
+    credential_url = re.compile(r"[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@", re.IGNORECASE)
+    secret_assignment = re.compile(
+        r"(?i)\b([a-z0-9_]*(?:api[_-]?key|token|password|secret)[a-z0-9_]*)\b"
+        r"\s*[:=]\s*(['\"]?)([^\s,'\"}\]]+)\2"
+    )
+    for relative in owned_files:
+        path = root / relative
+        try:
+            data = path.read_bytes()
+        except OSError:
+            failures["utf8_decode"].append(relative)
+            continue
+        if data.startswith(b"\xef\xbb\xbf"):
+            failures["bom"].append(relative)
+        if b"\0" in data:
+            failures["nul"].append(relative)
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            failures["utf8_decode"].append(relative)
+            continue
+        if any(line.rstrip("\r\n").endswith((" ", "\t")) for line in text.splitlines(keepends=True)):
+            failures["trailing_whitespace"].append(relative)
+        if conflict.search(text):
+            failures["conflict_marker"].append(relative)
+        secret_hit = bool(credential_url.search(text))
+        for match in secret_assignment.finditer(text):
+            value = match.group(3)
+            surrounding = text[match.start():match.end() + 40].lower()
+            if value and not any(marker in surrounding for marker in ("getenv", "environ", "placeholder", "example", "dummy")):
+                secret_hit = True
+        if secret_hit:
+            failures["secret_like_value"].append(relative)
+    for identifier, locations_value in failures.items():
+        locations = sorted(set(locations_value))
+        checks.append(_check(identifier, not locations, "no findings" if not locations else "finding locations: " + ", ".join(locations)))
+    return checks
+
+
+def _verify_legacy_lineage(
+    context: dict[str, Any], worker_hash: str, *, contract: dict[str, str] | None = None
+) -> dict[str, Any] | None:
+    if context["review_attempt"] == 1:
+        return None
+    expected = contract if contract is not None else LEGACY_REVIEW_CONTRACTS.get(context["run_id"])
+    required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
+    if not expected or set(expected) != required:
+        raise LVReviewError("verified prior review lineage is required")
+    run_root = context["results_root"].parent
+    artifacts = []
+    for name, expected_hash in expected.items():
+        path = run_root / name
+        if not path.is_file() or path.is_symlink():
+            raise LVReviewError("legacy review artifact is missing or unsafe")
+        actual_hash = _sha256(path.read_bytes())
+        if actual_hash != expected_hash:
+            raise LVReviewError("legacy review artifact hash mismatch")
+        artifacts.append({"path": f"_workspace/orchestration-results/{context['run_id']}/{name}", "sha256": actual_hash})
+    if expected["worker.result.json"] != worker_hash:
+        raise LVReviewError("legacy review worker result does not match current worker result")
+    return {
+        "prior_review_location_kind": "legacy_run_root",
+        "prior_review_contract_status": "artifact_contract_failed",
+        "artifacts": artifacts,
+        "prior_reviewer_report_sha256": expected["reviewer.report.json"],
+        "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+        "preflight_evidence_sha256": context["preflight_evidence_sha256"],
+        "worker_result_sha256": worker_hash,
+    }
+
+
 def _set_from_result(payload: dict[str, Any], field: str) -> set[str]:
     values = payload.get(field)
     if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
@@ -768,53 +907,79 @@ def _build_report(
     blockers: list[str] | None = None,
     reasons: list[str] | None = None,
     after: dict[str, Any] | None = None,
+    independent_checks: list[dict[str, Any]] | None = None,
+    interpreter_after: dict[str, Any] | None = None,
+    prior_review_lineage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest = context["manifest"]
     actual = actual or {key: [] for key in ("changed_files", "created_files", "modified_files", "deleted_files")}
-    return {
+    report = {
         "schema_version": REVIEW_SCHEMA_VERSION,
         "run_id": context["run_id"],
+        "project": manifest.get("project_id"),
+        "gate": manifest.get("gate_id"),
+        "lv": manifest.get("lv_id"),
         "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+        "preflight_evidence_sha256": context.get("preflight_evidence_sha256"),
         "worker_result_sha256": worker_hash,
-        "gate_id": manifest.get("gate_id"),
-        "lv_id": manifest.get("lv_id"),
+        "review_attempt": context["review_attempt"],
+        "worker_attempt": context.get("worker_attempt", 0),
+        "review_only_reexecution": context["review_attempt"] > 1,
+        "reran_worker": False,
+        "prior_review_lineage": prior_review_lineage,
         "reviewed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "verdict": verdict,
         "hard_stop": True,
-        "source_before": context["git_before"],
-        "source_after": after or {},
+        "baseline_wallet_head": manifest.get("source_head"),
+        "current_wallet_head": (after or {}).get("head"),
+        "canonical_plan": {"path": manifest.get("canonical_plan_path"), "sha256": manifest.get("canonical_plan_sha256")},
         "actual_changed_files": actual.get("changed_files", []),
         "actual_created_files": actual.get("created_files", []),
         "actual_modified_files": actual.get("modified_files", []),
         "actual_deleted_files": actual.get("deleted_files", []),
         "owned_files": manifest.get("owned_files", []),
         "git_evidence": {"before": context["git_before"], "after": after or {}},
-        "test_results": tests or [],
+        "independent_checks": independent_checks or [],
+        "interpreter_before": context.get("interpreter_fingerprint", {}),
+        "interpreter_after": interpreter_after or {},
         "violations": violations or [],
         "blockers": blockers or [],
         "reasons": reasons or [],
     }
+    if set(report) != REVIEW_REPORT_FIELDS:
+        raise LVReviewError("reviewer report schema field set mismatch")
+    return report
 
 
 def _seal_review(context: dict[str, Any], report: dict[str, Any], worker_hash: str, worker_bytes: bytes) -> dict[str, Any]:
     final_root = context["results_root"]
     if final_root.exists() or final_root.is_symlink():
-        raise LVReviewError("review attempt-01 already exists")
+        raise LVReviewError(f"review attempt-{context['review_attempt']:02d} already exists")
     parent = final_root.parent
     if parent.exists() and parent.is_symlink():
         raise LVReviewError("review result parent is a symlink")
     parent.mkdir(parents=True, exist_ok=True)
     temp_root = Path(tempfile.mkdtemp(prefix=f".{context['run_id']}.", dir=str(parent)))
+    if set(report) != REVIEW_REPORT_FIELDS or not report.get("preflight_evidence_sha256"):
+        raise LVReviewError("reviewer report schema or preflight binding is incomplete")
     report_bytes = canonical_json_bytes(report)
     report_hash = _sha256(report_bytes)
     status = {
+        "schema_version": REVIEW_STATUS_SCHEMA_VERSION,
+        "run_id": report["run_id"],
+        "review_attempt": report["review_attempt"],
+        "worker_attempt": report["worker_attempt"],
         "verdict": report["verdict"],
         "hard_stop": True,
         "reviewer_report_sha256": report_hash,
         "worker_result_sha256": worker_hash,
         "package_manifest_sha256": report["package_manifest_sha256"],
-        "preflight_evidence_sha256": report.get("preflight_evidence_sha256", ""),
+        "preflight_evidence_sha256": report["preflight_evidence_sha256"],
+        "review_only_reexecution": report["review_only_reexecution"],
+        "reran_worker": report["reran_worker"],
     }
+    if set(status) != REVIEW_STATUS_FIELDS:
+        raise LVReviewError("review status schema field set mismatch")
     files = {
         "worker.result.json": worker_bytes,
         "worker.result.sha256": (worker_hash + "\n").encode("ascii"),
@@ -833,11 +998,17 @@ def _seal_review(context: dict[str, Any], report: dict[str, Any], worker_hash: s
 def review_run(
     run_id: str,
     *,
+    attempt: object = None,
     package_root: Path | None = None,
     result_path: Path | None = None,
     results_root: Path | None = None,
     interpreter: Path | None = None,
+    prior_review_contract: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    try:
+        review_attempt = parse_review_attempt(attempt)
+    except LVReviewError as exc:
+        return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
     try:
         context = _preflight(
             run_id,
@@ -847,16 +1018,37 @@ def review_run(
             interpreter=interpreter,
             allow_worker_changes=True,
             check_result_absent=False,
+            review_attempt=review_attempt,
         )
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
+    context["review_attempt"] = review_attempt
     worker_hash = ""
     worker_bytes = b""
+    independent_checks: list[dict[str, Any]] = []
+    prior_review_lineage: dict[str, Any] | None = None
+    interpreter_after: dict[str, Any] = {}
     try:
         evidence, evidence_hash = _verify_preflight_evidence(context)
+        if not evidence_hash:
+            raise LVReviewError("preflight evidence seal hash is missing")
         context["preflight_evidence"] = evidence
         context["preflight_evidence_sha256"] = evidence_hash
+        package_snapshot = _directory_snapshot(context["package_root"])
+        evidence_root = Path(context.get("preflight_root") or _preflight_root(run_id))
+        preflight_snapshot = _directory_snapshot(evidence_root)
         payload, worker_hash, worker_bytes = _safe_read_result(context["result_path"])
+        worker_snapshot = _file_snapshot(context["result_path"])
+        worker_attempt = payload.get("attempt")
+        if isinstance(worker_attempt, bool) or not isinstance(worker_attempt, int) or worker_attempt <= 0:
+            raise LVReviewError("worker result attempt must be a positive integer")
+        if worker_attempt != 1 or worker_attempt > review_attempt:
+            raise LVReviewError("worker result attempt does not match review recovery contract")
+        if payload.get("preflight_evidence_sha256") != evidence_hash:
+            raise LVReviewError("worker result preflight evidence binding mismatch")
+        if payload.get("owned_files") != context["manifest"].get("owned_files"):
+            raise LVReviewError("worker result owned-files contract mismatch")
+        context["worker_attempt"] = worker_attempt
         validate_worker_result(payload, context["manifest"])
         if payload.get("worker_type") != "manual":
             raise LVReviewError("worker_type must be manual")
@@ -870,6 +1062,7 @@ def review_run(
                 raise LVReviewError(f"worker {result_field} does not match package")
         current_identity = _capture_git_evidence(context["project_root"])
         actual = _actual_changes(context["project_root"])
+        prior_review_lineage = _verify_legacy_lineage(context, worker_hash, contract=prior_review_contract)
         worker_sets = {field: _set_from_result(payload, field) for field in ("changed_files", "created_files", "modified_files", "deleted_files")}
         actual_sets = {field: set(actual[field]) for field in worker_sets}
         violations: list[str] = []
@@ -899,6 +1092,11 @@ def review_run(
         owned = set(context["manifest"]["owned_files"])
         if set(actual["changed_files"]) - owned:
             violations.append("actual change is outside owned files")
+        independent_checks.append(_check("owned_file_boundary", not bool(set(actual["changed_files"]) - owned), "actual changes are limited to owned files" if not set(actual["changed_files"]) - owned else "out-of-scope paths detected"))
+        staged_absent = not bool(_git(context["project_root"], "diff", "--cached", "--name-only").strip())
+        independent_checks.append(_check("staged_changes_absent", staged_absent, "no staged changes" if staged_absent else "staged changes detected"))
+        if not staged_absent:
+            violations.append("staged changes detected")
         if actual["forbidden_status"]:
             violations.append("forbidden Git status detected")
         for path_text in actual["changed_files"]:
@@ -907,7 +1105,18 @@ def review_run(
                 violations.append(f"unsafe changed path: {path_text}")
         if "tests/test_config.py" not in actual["changed_files"] and not (context["project_root"] / "tests/test_config.py").is_file():
             return {"status": "BLOCKED", "run_id": run_id, "reason": "tests/test_config.py is missing", "hard_stop": True}
+        independent_checks.extend(_scan_owned_files(context["project_root"], list(context["manifest"]["owned_files"])))
+        diff_check = _run_command(["git", "diff", "--check"], context["project_root"], 30)
+        diff_passed = not diff_check["timeout"] and diff_check["exit_code"] == 0
+        independent_checks.append(_check("git_diff_check", diff_passed, "git diff --check passed" if diff_passed else "git diff --check failed", exit_code=diff_check["exit_code"]))
+        if not diff_passed:
+            violations.append("git diff --check failed")
         tests, test_error = _run_tests(context["project_root"], context["interpreter"])
+        test_ids = ("tests_test_config", "wallet_pytest", "import_app_config")
+        for index, identifier in enumerate(test_ids):
+            result = tests[index] if index < len(tests) else {"exit_code": None, "timeout": False}
+            passed = result.get("exit_code") == 0 and not result.get("timeout")
+            independent_checks.append(_check(identifier, passed, "independent command passed" if passed else "independent command failed", exit_code=result.get("exit_code")))
         if context.get("interpreter_probe_required", True):
             try:
                 interpreter_after = _validate_interpreter(
@@ -919,11 +1128,15 @@ def review_run(
                     violations.append("interpreter fingerprint changed during review")
             except LVReviewError as exc:
                 violations.append(f"interpreter validation failed after tests: {exc}")
+        else:
+            interpreter_after = dict(context["interpreter_fingerprint"])
         actual_after = _actual_changes(context["project_root"])
         if any(actual_after[field] != actual[field] for field in ("changed_files", "created_files", "modified_files", "deleted_files")):
             violations.append("Git change set changed during independent tests")
         actual = actual_after
         after = _capture_git_evidence(context["project_root"])
+        fingerprint_passed = all(after[field] == context["git_before"][field] for field in ("head", "tree", "index_fingerprint", "worktree_fingerprint"))
+        independent_checks.append(_check("wallet_git_fingerprints", fingerprint_passed, "Wallet HEAD/index/worktree fingerprints are unchanged" if fingerprint_passed else "Wallet fingerprint drift detected"))
         immutable_git_fields = (
             "head",
             "tree",
@@ -941,10 +1154,28 @@ def review_run(
             violations.append("worker reported violations")
         if payload.get("error") is not None:
             violations.append("worker reported an error")
+        package_unchanged = _directory_snapshot(context["package_root"]) == package_snapshot
+        preflight_unchanged = _directory_snapshot(evidence_root) == preflight_snapshot
+        worker_unchanged = _file_snapshot(context["result_path"]) == worker_snapshot
+        for identifier, passed, summary in (
+            ("package_unchanged", package_unchanged, "sealed package manifest is unchanged"),
+            ("preflight_unchanged", preflight_unchanged, "sealed preflight evidence is unchanged"),
+            ("worker_result_unchanged", worker_unchanged, "original worker result is unchanged"),
+        ):
+            independent_checks.append(_check(identifier, passed, summary if passed else identifier + " failed"))
+            if not passed:
+                violations.append(identifier + " failed")
+        failed_checks = [item["check"] for item in independent_checks if item["status"] != "PASS"]
+        for identifier in failed_checks:
+            marker = f"independent check failed: {identifier}"
+            if marker not in violations:
+                violations.append(marker)
         verdict = "PASS" if not violations else "FAIL"
-        report = _build_report(context, worker_hash, verdict, actual=actual, tests=tests, violations=violations, after=after)
+        report = _build_report(context, worker_hash, verdict, actual=actual, violations=violations, after=after, independent_checks=independent_checks, interpreter_after=interpreter_after, prior_review_lineage=prior_review_lineage)
     except (LVReviewError, LVExecutionPackageError) as exc:
-        report = _build_report(context, worker_hash, "BLOCKED", blockers=[str(exc)], reasons=["strict intake or identity validation failed"])
+        if not context.get("preflight_evidence_sha256") or context.get("review_attempt", 1) > 1 and prior_review_lineage is None:
+            return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
+        report = _build_report(context, worker_hash, "BLOCKED", blockers=[str(exc)], reasons=["strict intake or identity validation failed"], independent_checks=independent_checks, interpreter_after=interpreter_after, prior_review_lineage=prior_review_lineage)
         if not worker_bytes:
             return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
     try:

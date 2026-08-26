@@ -36,6 +36,12 @@ def main(argv: list[str] | None = None) -> int:
                 sub.add_argument("--run-id", required=True)
         elif name in {"lv-preflight", "lv-review"}:
             sub.add_argument("--run-id", required=True)
+            if name == "lv-review":
+                sub.add_argument(
+                    "--attempt",
+                    required=True,
+                    help="canonical positive review attempt; writes only to attempt-<NN>",
+                )
         else:
             sub.add_argument("--project", required=True)
         if name in {"plan", "run", "gate"}:
@@ -62,8 +68,13 @@ def main(argv: list[str] | None = None) -> int:
             _print(preflight_run(args.run_id))
             return 0
         if args.command == "lv-review":
-            _print(review_run(args.run_id))
-            return 0
+            outcome = review_run(args.run_id, attempt=args.attempt)
+            _print(outcome)
+            if outcome.get("status") == "PASS":
+                return 0
+            if outcome.get("status") == "FAIL":
+                return 9
+            return 10
         if args.command == "inspect" and args.read_only:
             _print(inspect_read_only(Path(args.project)))
             return 0
