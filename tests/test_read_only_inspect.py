@@ -19,6 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReadOnlyInspectTest(unittest.TestCase):
+    gate_one_approval_id = "APR-GATE1-V1-20260826T015632Z"
+
     @staticmethod
     def _event(
         version: int,
@@ -84,19 +86,177 @@ class ReadOnlyInspectTest(unittest.TestCase):
         (mapping_dir / f"{root.name}.json").write_text(json.dumps(mapping), encoding="utf-8")
 
     @staticmethod
+    def _commit(root: Path, message: str) -> str:
+        subprocess.run(["git", "-C", str(root), "add", "--", "."], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", message], check=True)
+        return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+
+    def _wallet_lifecycle_fixture(self, base: Path, *, active: bool) -> tuple[Path, Path, str | None]:
+        root = base / "wallet-lifecycle-fixture"
+        mapping_dir = base / "mappings"
+        root.mkdir()
+        (root / "IMPLEMENTATION_PLAN.md").write_text("implementation plan\n", encoding="utf-8")
+        (root / "V20.md").write_text("v20 plan\n", encoding="utf-8")
+        (root / "docs").mkdir()
+
+        plan_hash = sha256_file(root / "IMPLEMENTATION_PLAN.md")
+        v20_hash = sha256_file(root / "V20.md")
+        gate_zero = self._event(1, v20_hash, None, approval_id="APR-GATE0", target_id="GATE-0")
+        (root / "docs" / "APPROVAL.md").write_text(self._approval_text([gate_zero]), encoding="utf-8")
+        (root / "docs" / "GATE.md").write_text(
+            "Gate closure: `CLOSED`\n"
+            "G0-LV3-8: `PASS`\n"
+            "Gate 1: 시작하지 않음\n"
+            "approval event count: `1`\n"
+            f"last `record_hash`: `{gate_zero['record_hash']}`\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Test User"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.invalid"], check=True)
+        self._commit(root, "gate 0 checkpoint")
+
+        gate_one = self._event(
+            1,
+            plan_hash,
+            str(gate_zero["record_hash"]),
+            approval_id=self.gate_one_approval_id,
+            target_id="GATE-1",
+        )
+        gate_one["approval_scope"] = {
+            "lv3_ids": ["G1-LV3-1"],
+            "owned_files": ["app/config.py", "tests/test_config.py"],
+        }
+        gate_one["record_hash"] = calculate_record_hash(gate_one)
+        (root / "docs" / "APPROVAL.md").write_text(
+            self._approval_text([gate_zero, gate_one]),
+            encoding="utf-8",
+        )
+        self._commit(root, "gate 1 approval")
+
+        activation_commit = None
+        if active:
+            ledger = {
+                "schema_version": 1,
+                "project_id": root.name,
+                "gate_id": "GATE-1",
+                "gate_state": "GATE1_ACTIVE",
+                "canonical_plan": "IMPLEMENTATION_PLAN.md",
+                "plan_sha256": plan_hash,
+                "approval_id": self.gate_one_approval_id,
+                "approval_record_hash": gate_one["record_hash"],
+                "active_scope": ["G1-LV3-1"],
+                "owned_files": ["app/config.py", "tests/test_config.py"],
+            }
+            (root / "docs" / "GATE_STATE.md").write_text(
+                "# Gate State Ledger\n\n```json\n" + json.dumps(ledger, indent=2) + "\n```\n",
+                encoding="utf-8",
+            )
+            activation_commit = self._commit(root, "activate gate 1")
+
+        mapping_dir.mkdir()
+        mapping = {
+            "project_id": root.name,
+            "contract_paths": {"development_plan": "IMPLEMENTATION_PLAN.md"},
+            "required_contract_keys": ["development_plan"],
+            "canonical_implementation_source": {
+                "path": "IMPLEMENTATION_PLAN.md",
+                "sha256": plan_hash,
+            },
+            "approved_source_reference": {"path": "V20.md", "sha256": v20_hash},
+            "static_validation": {
+                "business_lv_approval": "docs/APPROVAL.md",
+                "gate_state": "docs/GATE.md",
+                "gate_state_ledger": "docs/GATE_STATE.md",
+            },
+            "canonical_transition": {"gate_1_approval_id": self.gate_one_approval_id},
+        }
+        (mapping_dir / f"{root.name}.json").write_text(json.dumps(mapping), encoding="utf-8")
+        return root, mapping_dir, activation_commit
+
+    @staticmethod
+    def _run_read_only_inspect(root: Path, mapping_dir: Path) -> tuple[int, dict[str, object]]:
+        stdout = StringIO()
+        with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), redirect_stdout(stdout):
+            exit_code = main(["inspect", "--read-only", "--project", str(root)])
+        return exit_code, json.loads(stdout.getvalue())
+
+    @staticmethod
     def _tree_signature(root: Path) -> dict[str, tuple[str, int]]:
         return {
             path.relative_to(root).as_posix(): ("dir" if path.is_dir() else "file", path.stat().st_mtime_ns)
             for path in root.rglob("*")
         }
 
+    def test_transition_ready_fixture_has_no_gate_state_ledger(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir, activation_commit = self._wallet_lifecycle_fixture(Path(directory), active=False)
+            self.assertIsNone(activation_commit)
+            self.assertFalse((root / "docs" / "GATE_STATE.md").exists())
+            before = self._tree_signature(root)
+
+            exit_code, payload = self._run_read_only_inspect(root, mapping_dir)
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["contract_mapping"]["canonical_state"], "TRANSITION_READY")
+            self.assertEqual(
+                payload["contract_mapping"]["selected_canonical_source"]["path"],
+                "IMPLEMENTATION_PLAN.md",
+            )
+            self.assertTrue(payload["business_gate_state"]["transition_authorized"])
+            self.assertFalse(payload["business_gate_state"]["gate_1_started"])
+            self.assertNotIn("activation_commit", payload["business_gate_state"])
+            self.assertNotIn("activation_committed_at", payload["business_gate_state"])
+            self.assertEqual(before, self._tree_signature(root))
+
+    def test_gate_one_active_fixture_has_committed_exact_scope_ledger(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir, activation_commit = self._wallet_lifecycle_fixture(Path(directory), active=True)
+            self.assertIsNotNone(activation_commit)
+            ledger_text = (root / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
+            ledger = json.loads(ledger_text.split("```json\n", 1)[1].split("\n```", 1)[0])
+            self.assertEqual(ledger["active_scope"], ["G1-LV3-1"])
+            self.assertEqual(ledger["owned_files"], ["app/config.py", "tests/test_config.py"])
+            before = self._tree_signature(root)
+
+            exit_code, payload = self._run_read_only_inspect(root, mapping_dir)
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["contract_mapping"]["canonical_state"], "GATE1_ACTIVE")
+            self.assertEqual(
+                payload["contract_mapping"]["selected_canonical_source"]["path"],
+                "IMPLEMENTATION_PLAN.md",
+            )
+            self.assertTrue(payload["business_gate_state"]["transition_authorized"])
+            self.assertTrue(payload["business_gate_state"]["gate_1_started"])
+            self.assertEqual(payload["business_gate_state"]["activation_commit"], activation_commit)
+            self.assertTrue(payload["business_gate_state"]["activation_committed_at"])
+            self.assertEqual(before, self._tree_signature(root))
+
     def test_wallet_mapping_inspect_is_no_write_and_separates_approval_namespaces(self) -> None:
         wallet = REPO_ROOT.parent / "wallet-affiliate-collector"
         if not wallet.is_dir():
-            self.skipTest("read-only reference project is not available")
+            self.skipTest("read-only Wallet smoke skipped: project checkout is not available")
+        required_contract_files = [
+            wallet / "IMPLEMENTATION_PLAN.md",
+            wallet / "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md",
+            wallet / "docs" / "APPROVAL_LOG.md",
+            wallet / "docs" / "GATE_0_REVIEW.md",
+            wallet / "docs" / "GATE_STATE.md",
+        ]
+        missing_contract_files = [path.relative_to(wallet).as_posix() for path in required_contract_files if not path.is_file()]
+        if missing_contract_files:
+            self.skipTest(
+                "read-only Wallet smoke skipped: required contract file(s) are not available: "
+                + ", ".join(missing_contract_files)
+            )
         mapping = load_project_mapping(wallet)
         self.assertIsNotNone(mapping)
-        self.assertEqual(mapping.transition_approval_id, "APR-GATE1-V1-20260826T015632Z")
+        self.assertEqual(mapping.transition_approval_id, self.gate_one_approval_id)
+        ledger_text = (wallet / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
+        ledger = json.loads(ledger_text.split("```json\n", 1)[1].split("\n```", 1)[0])
+        self.assertEqual(ledger["active_scope"], ["G1-LV3-1"])
+        self.assertEqual(ledger["owned_files"], ["app/config.py", "tests/test_config.py"])
         before = self._tree_signature(wallet)
         harness_paths = [REPO_ROOT / "runtime" / "orchestrator_state.json", REPO_ROOT / "logs" / "app.log"]
         harness_before = {str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None) for path in harness_paths}
@@ -112,12 +272,13 @@ class ReadOnlyInspectTest(unittest.TestCase):
         self.assertEqual(payload["inspection_mode"], "read_only_no_write")
         self.assertFalse(payload["write_operations_performed"])
         self.assertTrue(payload["contract_mapping"]["valid"])
-        self.assertEqual(payload["contract_mapping"]["canonical_state"], "TRANSITION_READY")
+        self.assertEqual(payload["contract_mapping"]["canonical_state"], "GATE1_ACTIVE")
         self.assertEqual(payload["contract_mapping"]["selected_canonical_source"]["path"], "IMPLEMENTATION_PLAN.md")
         self.assertEqual(payload["contract_mapping"]["gate_state_ledger"], "docs/GATE_STATE.md")
         self.assertTrue(payload["business_gate_state"]["transition_authorized"])
-        self.assertFalse(payload["business_gate_state"]["gate_1_started"])
-        self.assertNotIn("activation_commit", payload["business_gate_state"])
+        self.assertTrue(payload["business_gate_state"]["gate_1_started"])
+        self.assertTrue(payload["business_gate_state"]["activation_commit"])
+        self.assertTrue(payload["business_gate_state"]["activation_committed_at"])
         self.assertFalse(payload["codex_runtime_sandbox_approval_state"]["business_approval_reused"])
         self.assertTrue(payload["business_lv_approval_state"]["record_hashes_valid"])
         after = self._tree_signature(wallet)
