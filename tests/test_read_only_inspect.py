@@ -96,6 +96,7 @@ class ReadOnlyInspectTest(unittest.TestCase):
             self.skipTest("read-only reference project is not available")
         mapping = load_project_mapping(wallet)
         self.assertIsNotNone(mapping)
+        self.assertEqual(mapping.transition_approval_id, "APR-GATE1-V1-20260826T015632Z")
         before = self._tree_signature(wallet)
         harness_paths = [REPO_ROOT / "runtime" / "orchestrator_state.json", REPO_ROOT / "logs" / "app.log"]
         harness_before = {str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None) for path in harness_paths}
@@ -106,10 +107,19 @@ class ReadOnlyInspectTest(unittest.TestCase):
             text=True,
             check=False,
         )
-        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["error_type"], "contract_mapping_error")
-        self.assertIn("mapping is not configured", payload["error"])
+        self.assertEqual(payload["inspection_mode"], "read_only_no_write")
+        self.assertFalse(payload["write_operations_performed"])
+        self.assertTrue(payload["contract_mapping"]["valid"])
+        self.assertEqual(payload["contract_mapping"]["canonical_state"], "TRANSITION_READY")
+        self.assertEqual(payload["contract_mapping"]["selected_canonical_source"]["path"], "IMPLEMENTATION_PLAN.md")
+        self.assertEqual(payload["contract_mapping"]["gate_state_ledger"], "docs/GATE_STATE.md")
+        self.assertTrue(payload["business_gate_state"]["transition_authorized"])
+        self.assertFalse(payload["business_gate_state"]["gate_1_started"])
+        self.assertNotIn("activation_commit", payload["business_gate_state"])
+        self.assertFalse(payload["codex_runtime_sandbox_approval_state"]["business_approval_reused"])
+        self.assertTrue(payload["business_lv_approval_state"]["record_hashes_valid"])
         after = self._tree_signature(wallet)
         self.assertEqual(before, after)
         harness_after = {str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None) for path in harness_paths}

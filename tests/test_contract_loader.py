@@ -180,9 +180,24 @@ class ContractLoaderTest(unittest.TestCase):
                     load_project_mapping(root)
 
     def test_wallet_gate_one_approval_without_mapping_fails_closed(self) -> None:
-        wallet = Path(__file__).resolve().parents[2] / "wallet-affiliate-collector"
-        with self.assertRaisesRegex(ContractMappingError, "mapping is not configured"):
-            load_contract(wallet)
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "mapped-project"
+            mapping_dir = base / "mappings"
+            mapping, gate0 = self._checkpoint_fixture(root, mapping_dir)
+            gate1 = self._event("gate-1", "GATE-1", mapping.canonical_sha256, str(gate0["record_hash"]))
+            (root / "docs" / "APPROVAL.md").write_text(
+                "\n".join(f"```json\n{json.dumps(event)}\n```" for event in (gate0, gate1)) + "\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "gate 1 approval")
+            output = StringIO()
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), redirect_stdout(output):
+                exit_code = main(["inspect", "--read-only", "--project", str(root)])
+            self.assertEqual(exit_code, 4)
+            payload = json.loads(output.getvalue())
+            self.assertEqual(payload["error_type"], "contract_mapping_error")
+            self.assertIn("mapping is not configured", payload["error"])
 
     def test_closed_gate_without_head_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:

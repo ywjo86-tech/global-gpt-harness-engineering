@@ -20,6 +20,6 @@
     "gate_state_ledger": "docs/GATE_STATE.md"
   },
   "canonical_transition": {
-    "gate_1_approval_id": null
+    "gate_1_approval_id": "APR-GATE1-V1-20260826T015632Z"
   }
 }
