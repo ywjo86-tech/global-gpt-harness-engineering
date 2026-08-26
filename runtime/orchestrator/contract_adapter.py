@@ -6,6 +6,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 from .approval_hash import calculate_record_hash
@@ -26,6 +27,7 @@ class ContractMappingError(ValueError):
 
 @dataclass(frozen=True)
 class ContractMapping:
+    project_root: Path
     project_id: str
     contract_paths: dict[str, Path]
     required_contract_keys: list[str]
@@ -35,6 +37,7 @@ class ContractMapping:
     approved_source_sha256: str
     business_approval_path: Path
     gate_state_path: Path
+    gate_state_ledger_path: Path | None
     transition_approval_id: str | None
 
     def summary(self, project_root: Path, selected_source: Path | None = None) -> dict[str, Any]:
@@ -59,6 +62,7 @@ class ContractMapping:
                 "path": relative(selected),
                 "sha256": selected_hash,
             },
+            **({"gate_state_ledger": relative(self.gate_state_ledger_path)} if self.gate_state_ledger_path else {}),
         }
 
 
@@ -71,7 +75,7 @@ def sha256_file(path: Path) -> str:
 
 
 def _resolve_project_path(project_root: Path, value: object, field: str) -> Path:
-    if not isinstance(value, str) or not value or Path(value).is_absolute():
+    if not isinstance(value, str) or not value or Path(value).is_absolute() or "\\" in value:
         raise ContractMappingError(f"{field} must be a non-empty project-relative path")
     candidate = (project_root / value).resolve()
     if not candidate.is_relative_to(project_root):
@@ -124,6 +128,12 @@ def load_project_mapping(project_root: str | Path) -> ContractMapping | None:
     static = payload.get("static_validation")
     if not isinstance(static, dict):
         raise ContractMappingError("static_validation must be an object")
+    ledger_value = static.get("gate_state_ledger")
+    ledger_path = None
+    if ledger_value is not None:
+        if not isinstance(ledger_value, str) or (root / ledger_value).is_symlink():
+            raise ContractMappingError("static_validation.gate_state_ledger must be a non-symlink relative path")
+        ledger_path = _resolve_project_path(root, ledger_value, "static_validation.gate_state_ledger")
     transition = payload.get("canonical_transition", {})
     if not isinstance(transition, dict):
         raise ContractMappingError("canonical_transition must be an object")
@@ -131,6 +141,7 @@ def load_project_mapping(project_root: str | Path) -> ContractMapping | None:
     if transition_approval_id is not None and (not isinstance(transition_approval_id, str) or not transition_approval_id):
         raise ContractMappingError("canonical_transition.gate_1_approval_id must be null or a non-empty string")
     return ContractMapping(
+        project_root=root,
         project_id=root.name,
         contract_paths=contract_paths,
         required_contract_keys=list(required),
@@ -140,6 +151,7 @@ def load_project_mapping(project_root: str | Path) -> ContractMapping | None:
         approved_source_sha256=approved_digest,
         business_approval_path=_resolve_project_path(root, static.get("business_lv_approval"), "static_validation.business_lv_approval"),
         gate_state_path=_resolve_project_path(root, static.get("gate_state"), "static_validation.gate_state"),
+        gate_state_ledger_path=ledger_path,
         transition_approval_id=transition_approval_id,
     )
 
@@ -267,6 +279,150 @@ def _committed_blob(root: Path, commit: str, relative_path: str) -> bytes | None
     return _git_output(root, "show", f"{commit}:{relative_path}")
 
 
+LEDGER_FIELDS = {
+    "schema_version",
+    "project_id",
+    "gate_id",
+    "gate_state",
+    "canonical_plan",
+    "plan_sha256",
+    "approval_id",
+    "approval_record_hash",
+    "active_scope",
+    "owned_files",
+}
+
+
+def _json_no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ContractMappingError(f"Gate State ledger contains duplicate key: {key}")
+        value[key] = item
+    return value
+
+
+def _ledger_payload(text: str) -> dict[str, Any]:
+    if text.startswith("\ufeff") or "\x00" in text:
+        raise ContractMappingError("Gate State ledger must be UTF-8 without BOM or NUL")
+    if any(marker in text for marker in ("<<<<<<<", "=======", ">>>>>>>")):
+        raise ContractMappingError("Gate State ledger contains a conflict marker")
+    if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:AKIA|gh[pousr]_|sk-[A-Za-z0-9])", text):
+        raise ContractMappingError("Gate State ledger contains a secret-like value")
+    blocks = re.findall(r"```json[ \t]*\r?\n(.*?)\r?\n```", text, flags=re.DOTALL)
+    if len(blocks) != 1:
+        raise ContractMappingError("Gate State ledger must contain exactly one json fenced block")
+    try:
+        value = json.loads(blocks[0], object_pairs_hook=_json_no_duplicate_keys)
+    except json.JSONDecodeError as exc:
+        raise ContractMappingError("Gate State ledger JSON is malformed") from exc
+    if not isinstance(value, dict):
+        raise ContractMappingError("Gate State ledger payload must be an object")
+    if set(value) != LEDGER_FIELDS:
+        missing = sorted(LEDGER_FIELDS - set(value))
+        unknown = sorted(set(value) - LEDGER_FIELDS)
+        detail = []
+        if missing:
+            detail.append(f"missing fields: {', '.join(missing)}")
+        if unknown:
+            detail.append(f"unknown fields: {', '.join(unknown)}")
+        raise ContractMappingError("Gate State ledger fields are invalid (" + "; ".join(detail) + ")")
+    return value
+
+
+def _validate_ledger_relative_path(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value or Path(value).is_absolute() or "\\" in value:
+        raise ContractMappingError(f"{field} must be a project-relative POSIX path")
+    parts = PurePosixPath(value).parts
+    if ".." in parts or any(part == "" for part in parts):
+        raise ContractMappingError(f"{field} must not escape the project root")
+    return value
+
+
+def _find_ledger_activation_commit(root: Path, relative_path: str, current: bytes) -> tuple[str, str] | None:
+    history = _git_output(root, "rev-list", "--first-parent", "--reverse", "HEAD")
+    if history is None:
+        return None
+    for raw_commit in history.decode("ascii").splitlines():
+        commit = raw_commit.strip()
+        blob = _committed_blob(root, commit, relative_path)
+        if blob != current:
+            continue
+        parent = _git_output(root, "rev-parse", f"{commit}^")
+        parent_blob = None
+        if parent:
+            parent_blob = _committed_blob(root, parent.decode("ascii").strip(), relative_path)
+        if parent_blob == current:
+            continue
+        timestamp = _git_output(root, "show", "-s", "--format=%cI", commit)
+        if timestamp is None:
+            return None
+        return commit, timestamp.decode("ascii").strip()
+    return None
+
+
+def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    path = mapping.gate_state_ledger_path
+    if path is None:
+        return None
+    relative = path.relative_to(mapping.project_root).as_posix()
+    if not path.exists():
+        if _committed_blob(mapping.project_root, "HEAD", relative) is not None:
+            raise ContractMappingError("Gate State ledger is missing from the working tree")
+        return None
+    if path.is_symlink() or not path.is_file():
+        raise ContractMappingError("Gate State ledger must be a regular non-symlink file")
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ContractMappingError("Gate State ledger must be valid UTF-8") from exc
+    payload = _ledger_payload(text)
+    if payload["schema_version"] != 1 or payload["project_id"] != mapping.project_id or payload["gate_id"] != "GATE-1":
+        raise ContractMappingError("Gate State ledger fixed fields are invalid")
+    if payload["gate_state"] != "GATE1_ACTIVE":
+        raise ContractMappingError("Gate State ledger gate_state must be GATE1_ACTIVE")
+    canonical_relative = mapping.canonical_source.relative_to(mapping.project_root).as_posix()
+    if payload["canonical_plan"] != canonical_relative:
+        raise ContractMappingError("Gate State ledger canonical_plan is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", payload["plan_sha256"]) or payload["plan_sha256"] != mapping.canonical_sha256:
+        raise ContractMappingError("Gate State ledger plan_sha256 is invalid")
+    if not isinstance(payload["approval_id"], str) or not isinstance(payload["approval_record_hash"], str):
+        raise ContractMappingError("Gate State ledger approval fields are invalid")
+    if payload["approval_id"] != mapping.transition_approval_id or not re.fullmatch(r"[0-9a-f]{64}", payload["approval_record_hash"]):
+        raise ContractMappingError("Gate State ledger approval binding is invalid")
+    matches = [event for event in events if event.get("approval_id") == payload["approval_id"]]
+    if len(matches) != 1 or matches[0].get("record_hash") != payload["approval_record_hash"]:
+        raise ContractMappingError("Gate State ledger approval record is missing or mismatched")
+    approval = matches[0]
+    if approval.get("plan_sha256") != payload["plan_sha256"]:
+        raise ContractMappingError("Gate State ledger approval plan binding is invalid")
+    scope = payload["active_scope"]
+    owned = payload["owned_files"]
+    if not isinstance(scope, list) or scope != approval.get("approval_scope", {}).get("lv3_ids"):
+        raise ContractMappingError("Gate State ledger active_scope does not match approval scope")
+    approved_owned = approval.get("approval_scope", {}).get("owned_files")
+    if not isinstance(owned, list) or owned != approved_owned:
+        raise ContractMappingError("Gate State ledger owned_files does not match approval scope")
+    for index, item in enumerate(scope):
+        if not isinstance(item, str) or not item:
+            raise ContractMappingError(f"Gate State ledger active_scope[{index}] is invalid")
+    for index, item in enumerate(owned):
+        _validate_ledger_relative_path(item, f"owned_files[{index}]")
+    committed = _committed_blob(mapping.project_root, "HEAD", relative)
+    if committed != raw:
+        raise ContractMappingError("Gate State ledger is not committed at HEAD")
+    activation = _find_ledger_activation_commit(mapping.project_root, relative, raw)
+    if activation is None:
+        raise ContractMappingError("Gate State ledger has no first-parent activation commit")
+    return {
+        "state": "GATE1_ACTIVE",
+        "activation_commit": activation[0],
+        "activation_committed_at": activation[1],
+        "ledger_path": relative,
+    }
+
+
 def _gate_checkpoint_metadata(text: str) -> tuple[int, str] | None:
     closures = re.findall(r"Gate closure:\s*`(OPEN|CLOSED)`", text)
     exits = re.findall(r"G0-LV3-8:\s*`(PASS|FAIL)`", text)
@@ -348,6 +504,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
             "state": "PRE_CHECKPOINT",
             "selected_source": mapping.approved_source,
             "checkpoint_commit": None,
+            "transition_authorized": False,
             "gate_1_started": not gate_one_not_started,
         }
 
@@ -405,6 +562,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
             "state": "GATE0_CLOSED_WAITING_GATE1_APPROVAL",
             "selected_source": mapping.approved_source,
             "checkpoint_commit": checkpoint_commit,
+            "transition_authorized": False,
             "gate_1_started": False,
         }
 
@@ -418,6 +576,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
             "state": "GATE0_CLOSED_WAITING_GATE1_APPROVAL",
             "selected_source": mapping.approved_source,
             "checkpoint_commit": checkpoint_commit,
+            "transition_authorized": False,
             "gate_1_started": False,
         }
     if transition_id_events and not gate_one_candidates:
@@ -434,12 +593,18 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
         and approval.get("plan_sha256") == mapping.canonical_sha256
     ):
         raise ContractMappingError("Gate 1 transition approval is not bound to the implementation plan")
-    return {
+    ledger_state = validate_gate_state_ledger(mapping, committed_events)
+    result = {
         "state": "TRANSITION_READY",
         "selected_source": mapping.canonical_source,
         "checkpoint_commit": checkpoint_commit,
-        "gate_1_started": False,
+        "transition_authorized": True,
+        "gate_1_started": ledger_state is not None,
     }
+    if ledger_state is not None:
+        result.update(ledger_state)
+        result["state"] = "GATE1_ACTIVE"
+    return result
 
 
 def select_canonical_source(mapping: ContractMapping) -> Path:

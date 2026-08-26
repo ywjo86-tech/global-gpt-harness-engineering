@@ -29,7 +29,8 @@ Jarvis connection readiness is documented in `docs/harness/orchestration-jarvis-
 The document-based orchestration rules in `docs/harness/` remain the reference contract. This runtime layer expands them into executable file-based workflows without requiring external servers, queues, or databases.
 # Wallet Gate 0 canonical transition
 
-The wallet project mapping uses four fail-closed states. `PRE_CHECKPOINT` selects
+The wallet project mapping uses the Gate 0 states plus opt-in Gate 1 transition
+states. `PRE_CHECKPOINT` selects
 the approved V20 source. A working-tree-only `CLOSED`/`PASS` declaration is
 rejected until a valid Gate 0 checkpoint is found in Git `HEAD`'s first-parent
 history. The checkpoint's committed Gate report and approval count, head, full
@@ -39,8 +40,12 @@ preserve and correctly extend that committed chain.
 the checkpoint while continuing to select V20. Only a separate, mapped Gate 1
 approval committed at the current `HEAD` and bound to the configured
 `IMPLEMENTATION_PLAN.md` SHA-256 produces `TRANSITION_READY`. Working-tree-only
-approval changes fail closed. A checkpoint SHA written inside the Gate report is
-never used as evidence.
+approval changes fail closed. `TRANSITION_READY` is authorized but not started
+and does not require a Gate State ledger. A mapped project may opt in to
+`static_validation.gate_state_ledger`; a committed, validated `GATE1_ACTIVE`
+JSON ledger upgrades the report and includes the first-parent activation commit
+and committer timestamp. The ledger never stores its own commit SHA. A
+checkpoint SHA written inside the Gate report is never used as evidence.
 
 Approval versions are sequential within a lineage keyed by `(target_type,
 target_id)`, so the first event for each new target starts at version 1 and

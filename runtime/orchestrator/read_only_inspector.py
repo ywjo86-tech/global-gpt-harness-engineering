@@ -124,6 +124,7 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
         closures = re.findall(r"Gate closure:\s*`([^`]+)`", gate_text)
         lv3_results = re.findall(r"G0-LV3-8:\s*`([^`]+)`", gate_text)
         gate_one_not_started = bool(re.search(r"Gate 1:\s*(?:`)?(?:시작하지 않음|대기)", gate_text))
+        gate_one_active = canonical_state["state"] == "GATE1_ACTIVE"
         gate_errors: list[str] = []
         if not gate_text:
             gate_errors.append("gate evidence is missing")
@@ -131,7 +132,7 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
             gate_errors.append("Gate closure is missing")
         if not lv3_results:
             gate_errors.append("G0-LV3-8 status is missing")
-        if not gate_one_not_started:
+        if not gate_one_not_started and not gate_one_active:
             gate_errors.append("Gate 1 non-started evidence is missing")
         gate_report.update(
             {
@@ -139,10 +140,14 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
                 "status": "static_evidence_valid" if not gate_errors else "invalid_static_evidence",
                 "gate_closure": closures[-1] if closures else "unknown",
                 "g0_lv3_8": lv3_results[-1] if lv3_results else "unknown",
-                "gate_1_started": False if gate_one_not_started else "unknown",
+                "transition_authorized": bool(canonical_state.get("transition_authorized", False)),
+                "gate_1_started": gate_one_active,
                 "errors": gate_errors,
             }
         )
+        if gate_one_active:
+            gate_report["activation_commit"] = canonical_state["activation_commit"]
+            gate_report["activation_committed_at"] = canonical_state["activation_committed_at"]
 
     report = {
         "inspection_mode": "read_only_no_write",

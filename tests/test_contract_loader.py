@@ -179,14 +179,10 @@ class ContractLoaderTest(unittest.TestCase):
                 with self.assertRaises(ContractMappingError):
                     load_project_mapping(root)
 
-    def test_wallet_waiting_for_gate_one_selects_v20_canonical_source(self) -> None:
+    def test_wallet_gate_one_approval_without_mapping_fails_closed(self) -> None:
         wallet = Path(__file__).resolve().parents[2] / "wallet-affiliate-collector"
-        contract = load_contract(wallet)
-        self.assertEqual(Path(contract.paths.development_plan).name, "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md")
-        self.assertEqual(
-            contract.contract_mapping["selected_canonical_source"]["path"],
-            "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md",
-        )
+        with self.assertRaisesRegex(ContractMappingError, "mapping is not configured"):
+            load_contract(wallet)
 
     def test_closed_gate_without_head_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:

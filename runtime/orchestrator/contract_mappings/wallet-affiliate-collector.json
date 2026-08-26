@@ -16,7 +16,8 @@
   },
   "static_validation": {
     "business_lv_approval": "docs/APPROVAL_LOG.md",
-    "gate_state": "docs/GATE_0_REVIEW.md"
+    "gate_state": "docs/GATE_0_REVIEW.md",
+    "gate_state_ledger": "docs/GATE_STATE.md"
   },
   "canonical_transition": {
     "gate_1_approval_id": null
