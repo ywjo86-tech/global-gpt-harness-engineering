@@ -9,6 +9,7 @@ from .contract_adapter import ContractMappingError
 from .engine import OrchestrationEngine
 from .lv_execution_package import LVExecutionPackageError, create_lv_execution_package
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
+from .lv_review import LVReviewError, preflight_run, review_run
 from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
 
 
@@ -23,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review"]:
         sub = subparsers.add_parser(name)
         if name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
                 sub.add_argument("--read-only", action="store_true")
             else:
                 sub.add_argument("--run-id", required=True)
+        elif name in {"lv-preflight", "lv-review"}:
+            sub.add_argument("--run-id", required=True)
         else:
             sub.add_argument("--project", required=True)
         if name in {"plan", "run", "gate"}:
@@ -54,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "lv-package":
             package = create_lv_execution_package(Path(args.project_root), args.gate_id, args.lv_id, args.run_id)
             _print(package)
+            return 0
+        if args.command == "lv-preflight":
+            _print(preflight_run(args.run_id))
+            return 0
+        if args.command == "lv-review":
+            _print(review_run(args.run_id))
             return 0
         if args.command == "inspect" and args.read_only:
             _print(inspect_read_only(Path(args.project)))
@@ -101,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     except LVExecutionPackageError as exc:
         _print({"error": str(exc), "error_type": "lv_execution_package_error"})
         return 7
+    except LVReviewError as exc:
+        _print({"error": str(exc), "error_type": "lv_review_error"})
+        return 8
 
     return 1
 
