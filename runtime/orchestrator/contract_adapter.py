@@ -204,6 +204,7 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
         errors.append("no approval events found")
     previous: dict[str, Any] | None = None
     approval_ids: set[str] = set()
+    lineage_heads: dict[tuple[object, object], dict[str, Any]] = {}
     record_hashes_valid = True
     for index, event in enumerate(events, start=1):
         approval_id = event.get("approval_id")
@@ -215,8 +216,19 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
             errors.append(f"event {index} approval_id is missing or duplicated")
         else:
             approval_ids.add(approval_id)
-        if event.get("approval_version") != index:
-            errors.append(f"event {index} approval_version is not sequential")
+        lineage = (event.get("target_type"), event.get("target_id"))
+        lineage_head = lineage_heads.get(lineage)
+        if lineage_head is None:
+            if event.get("approval_version") != 1:
+                errors.append(f"event {index} first lineage approval_version must be 1")
+            if event.get("previous_approval_id") is not None:
+                errors.append(f"event {index} first lineage previous_approval_id must be null")
+        else:
+            expected_version = lineage_head.get("approval_version")
+            if not isinstance(expected_version, int) or event.get("approval_version") != expected_version + 1:
+                errors.append(f"event {index} lineage approval_version is not sequential")
+            if event.get("previous_approval_id") != lineage_head.get("approval_id"):
+                errors.append(f"event {index} previous_approval_id does not match the prior lineage event")
         if event.get("plan_sha256") not in allowed_plan_hashes:
             errors.append(f"event {index} plan SHA-256 is not bound to a mapped source")
         record_hash = event.get("record_hash")
@@ -229,12 +241,13 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
         expected_previous = previous.get("record_hash") if previous else None
         if event.get("previous_record_hash") != expected_previous:
             errors.append(f"event {index} previous_record_hash does not link to the prior event")
+        lineage_heads[lineage] = event
         previous = event
     return {
         "events": events,
         "event_count": len(events),
         "schema_valid": not errors,
-        "chain_links_valid": not any("link" in error for error in errors),
+        "chain_links_valid": not any("previous_record_hash" in error for error in errors),
         "record_hashes_valid": bool(events) and record_hashes_valid,
         "plan_hash_bound": bool(events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in events),
         "errors": errors,

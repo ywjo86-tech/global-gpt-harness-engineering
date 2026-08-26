@@ -41,3 +41,9 @@ approval committed at the current `HEAD` and bound to the configured
 `IMPLEMENTATION_PLAN.md` SHA-256 produces `TRANSITION_READY`. Working-tree-only
 approval changes fail closed. A checkpoint SHA written inside the Gate report is
 never used as evidence.
+
+Approval versions are sequential within a lineage keyed by `(target_type,
+target_id)`, so the first event for each new target starts at version 1 and
+links to no prior approval ID. Later events for that target increment the
+lineage version and link to its prior approval ID. Independently, every event's
+`previous_record_hash` links the full append order across all target lineages.

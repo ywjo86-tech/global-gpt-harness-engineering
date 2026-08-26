@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from contextlib import redirect_stdout
 from io import StringIO
+import re
 import subprocess
 import sys
 import unittest
@@ -12,7 +13,7 @@ from unittest.mock import patch
 
 from runtime.orchestrator.approval_hash import calculate_record_hash, canonical_record_payload
 from runtime.orchestrator.cli import main
-from runtime.orchestrator.contract_adapter import sha256_file
+from runtime.orchestrator.contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from runtime.orchestrator.read_only_inspector import _validate_approval_state
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,11 +21,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class ReadOnlyInspectTest(unittest.TestCase):
     @staticmethod
-    def _event(version: int, plan_hash: str, previous_hash: str | None, approval_id: str | None = None) -> dict[str, object]:
+    def _event(
+        version: int,
+        plan_hash: str,
+        previous_hash: str | None,
+        approval_id: str | None = None,
+        *,
+        target_id: str | None = None,
+        previous_approval_id: str | None = None,
+    ) -> dict[str, object]:
         event: dict[str, object] = {
             "approval_id": approval_id or f"APR-{version}",
             "target_type": "GATE",
-            "target_id": f"GATE-{version}",
+            "target_id": target_id or f"GATE-{version}",
             "approval_type": "START_GATE",
             "approval_scope": {"lv3_ids": [f"G{version}-LV3-1"]},
             "approval_version": version,
@@ -39,7 +48,7 @@ class ReadOnlyInspectTest(unittest.TestCase):
             "expires_at": None,
             "source_reference": "test fixture",
             "approval_event_type": "APPROVED",
-            "previous_approval_id": None,
+            "previous_approval_id": previous_approval_id,
             "revokes_approval_id": None,
             "previous_record_hash": previous_hash,
         }
@@ -86,6 +95,12 @@ class ReadOnlyInspectTest(unittest.TestCase):
         wallet = REPO_ROOT.parent / "wallet-affiliate-collector"
         if not wallet.is_dir():
             self.skipTest("read-only reference project is not available")
+        mapping = load_project_mapping(wallet)
+        self.assertIsNotNone(mapping)
+        expected_state = evaluate_canonical_state(mapping)
+        gate_text = mapping.gate_state_path.read_text(encoding="utf-8")
+        expected_closure = re.findall(r"Gate closure:\s*`([^`]+)`", gate_text)[-1]
+        expected_exit = re.findall(r"G0-LV3-8:\s*`([^`]+)`", gate_text)[-1]
         before = self._tree_signature(wallet)
         harness_paths = [REPO_ROOT / "runtime" / "orchestrator_state.json", REPO_ROOT / "logs" / "app.log"]
         harness_before = {str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None) for path in harness_paths}
@@ -103,13 +118,12 @@ class ReadOnlyInspectTest(unittest.TestCase):
         self.assertTrue(payload["contract_mapping"]["valid"])
         self.assertEqual(
             payload["contract_mapping"]["selected_canonical_source"]["path"],
-            "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md",
+            expected_state["selected_source"].relative_to(wallet).as_posix(),
         )
-        self.assertEqual(payload["contract_mapping"]["canonical_state"], "PRE_CHECKPOINT")
-        self.assertIsNone(payload["contract_mapping"]["checkpoint_commit"])
-        self.assertIn("Gate 0", payload["project_static_inspect"]["current_phase"])
-        self.assertEqual(payload["business_gate_state"]["gate_closure"], "OPEN")
-        self.assertEqual(payload["business_gate_state"]["g0_lv3_8"], "FAIL")
+        self.assertEqual(payload["contract_mapping"]["canonical_state"], expected_state["state"])
+        self.assertEqual(payload["contract_mapping"]["checkpoint_commit"], expected_state["checkpoint_commit"])
+        self.assertEqual(payload["business_gate_state"]["gate_closure"], expected_closure)
+        self.assertEqual(payload["business_gate_state"]["g0_lv3_8"], expected_exit)
         self.assertFalse(payload["business_gate_state"]["gate_1_started"])
         self.assertFalse(payload["codex_runtime_sandbox_approval_state"]["business_approval_reused"])
         self.assertTrue(payload["business_lv_approval_state"]["record_hashes_valid"])
@@ -125,14 +139,118 @@ class ReadOnlyInspectTest(unittest.TestCase):
         self.assertTrue(report["schema_valid"], report["errors"])
         self.assertTrue(report["record_hashes_valid"])
 
-    def test_two_event_chain_recomputes_every_record_hash(self) -> None:
+    def test_different_target_lineages_each_start_at_version_one(self) -> None:
         plan_hash = "a" * 64
         first = self._event(1, plan_hash, None)
-        second = self._event(2, plan_hash, str(first["record_hash"]))
+        second = self._event(1, plan_hash, str(first["record_hash"]), approval_id="APR-2", target_id="GATE-2")
         report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
         self.assertTrue(report["schema_valid"], report["errors"])
         self.assertTrue(report["chain_links_valid"])
         self.assertTrue(report["record_hashes_valid"])
+
+    def test_same_target_lineage_versions_and_approval_links_are_sequential(self) -> None:
+        plan_hash = "a" * 64
+        first = self._event(1, plan_hash, None, target_id="GATE-1")
+        second = self._event(
+            2,
+            plan_hash,
+            str(first["record_hash"]),
+            approval_id="APR-2",
+            target_id="GATE-1",
+            previous_approval_id=str(first["approval_id"]),
+        )
+        report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
+        self.assertTrue(report["schema_valid"], report["errors"])
+
+    def test_renewal_and_revocation_use_the_same_lineage_sequence(self) -> None:
+        plan_hash = "a" * 64
+        for event_type in ("RENEWED", "REVOKED"):
+            with self.subTest(event_type=event_type):
+                first = self._event(1, plan_hash, None, target_id="GATE-1")
+                second = self._event(
+                    2,
+                    plan_hash,
+                    str(first["record_hash"]),
+                    approval_id=f"APR-{event_type}",
+                    target_id="GATE-1",
+                    previous_approval_id=str(first["approval_id"]),
+                )
+                second["approval_event_type"] = event_type
+                if event_type == "REVOKED":
+                    second["revokes_approval_id"] = str(first["approval_id"])
+                second["record_hash"] = calculate_record_hash(second)
+                report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
+                self.assertTrue(report["schema_valid"], report["errors"])
+
+    def test_lineage_version_duplicate_gap_and_regression_fail(self) -> None:
+        plan_hash = "a" * 64
+        for invalid_version in (1, 3, 0):
+            with self.subTest(invalid_version=invalid_version):
+                first = self._event(1, plan_hash, None, target_id="GATE-1")
+                second = self._event(
+                    invalid_version,
+                    plan_hash,
+                    str(first["record_hash"]),
+                    approval_id="APR-2",
+                    target_id="GATE-1",
+                    previous_approval_id=str(first["approval_id"]),
+                )
+                report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
+                self.assertFalse(report["schema_valid"])
+                self.assertTrue(any("lineage approval_version" in error for error in report["errors"]))
+
+    def test_same_lineage_wrong_previous_approval_id_fails(self) -> None:
+        plan_hash = "a" * 64
+        first = self._event(1, plan_hash, None, target_id="GATE-1")
+        second = self._event(
+            2,
+            plan_hash,
+            str(first["record_hash"]),
+            approval_id="APR-2",
+            target_id="GATE-1",
+            previous_approval_id="WRONG",
+        )
+        report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
+        self.assertFalse(report["schema_valid"])
+        self.assertTrue(any("prior lineage event" in error for error in report["errors"]))
+
+    def test_new_lineage_with_previous_approval_id_fails(self) -> None:
+        plan_hash = "a" * 64
+        event = self._event(1, plan_hash, None, previous_approval_id="OTHER")
+        report = _validate_approval_state(self._approval_text([event]), {plan_hash})
+        self.assertFalse(report["schema_valid"])
+        self.assertTrue(any("first lineage previous_approval_id" in error for error in report["errors"]))
+
+    def test_global_record_chain_break_fails(self) -> None:
+        plan_hash = "a" * 64
+        first = self._event(1, plan_hash, None)
+        second = self._event(1, plan_hash, "f" * 64, approval_id="APR-2", target_id="GATE-2")
+        report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
+        self.assertFalse(report["schema_valid"])
+        self.assertFalse(report["chain_links_valid"])
+
+    def test_global_approval_id_duplicate_fails(self) -> None:
+        plan_hash = "a" * 64
+        first = self._event(1, plan_hash, None, approval_id="DUPLICATE")
+        second = self._event(1, plan_hash, str(first["record_hash"]), approval_id="DUPLICATE", target_id="GATE-2")
+        report = _validate_approval_state(self._approval_text([first, second]), {plan_hash})
+        self.assertFalse(report["schema_valid"])
+        self.assertTrue(any("duplicated" in error for error in report["errors"]))
+
+    def test_gate_one_first_start_gate_uses_version_one(self) -> None:
+        plan_hash = "a" * 64
+        gate_zero = self._event(1, plan_hash, None, target_id="GATE-0")
+        gate_one = self._event(1, plan_hash, str(gate_zero["record_hash"]), approval_id="GATE-1-APPROVAL", target_id="GATE-1")
+        report = _validate_approval_state(self._approval_text([gate_zero, gate_one]), {plan_hash})
+        self.assertTrue(report["schema_valid"], report["errors"])
+
+    def test_gate_one_version_two_is_not_allowed_by_global_position(self) -> None:
+        plan_hash = "a" * 64
+        gate_zero = self._event(1, plan_hash, None, target_id="GATE-0")
+        gate_one = self._event(2, plan_hash, str(gate_zero["record_hash"]), approval_id="GATE-1-APPROVAL", target_id="GATE-1")
+        report = _validate_approval_state(self._approval_text([gate_zero, gate_one]), {plan_hash})
+        self.assertFalse(report["schema_valid"])
+        self.assertTrue(any("first lineage approval_version" in error for error in report["errors"]))
 
     def test_payload_tampering_cases_fail_closed_with_cli_exit_five(self) -> None:
         cases = {
@@ -175,8 +293,8 @@ class ReadOnlyInspectTest(unittest.TestCase):
     def test_middle_event_payload_tamper_is_detected_before_chain_tail(self) -> None:
         plan_hash = "a" * 64
         first = self._event(1, plan_hash, None)
-        second = self._event(2, plan_hash, str(first["record_hash"]))
-        third = self._event(3, plan_hash, str(second["record_hash"]))
+        second = self._event(2, plan_hash, str(first["record_hash"]), target_id="GATE-1", previous_approval_id="APR-1")
+        third = self._event(3, plan_hash, str(second["record_hash"]), target_id="GATE-1", previous_approval_id="APR-2")
         second["target_id"] = "TAMPERED"
         report = _validate_approval_state(self._approval_text([first, second, third]), {plan_hash})
         self.assertFalse(report["schema_valid"])

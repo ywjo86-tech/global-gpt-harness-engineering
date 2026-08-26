@@ -32,6 +32,7 @@ class ContractLoaderTest(unittest.TestCase):
         previous_hash: str | None,
         *,
         approval_version: int = 1,
+        previous_approval_id: str | None = None,
     ) -> dict[str, object]:
         event: dict[str, object] = {
             "approval_id": approval_id,
@@ -51,7 +52,7 @@ class ContractLoaderTest(unittest.TestCase):
             "expires_at": None,
             "source_reference": "test fixture",
             "approval_event_type": "APPROVED",
-            "previous_approval_id": None,
+            "previous_approval_id": previous_approval_id,
             "revokes_approval_id": None,
             "previous_record_hash": previous_hash,
         }
@@ -178,7 +179,7 @@ class ContractLoaderTest(unittest.TestCase):
                 with self.assertRaises(ContractMappingError):
                     load_project_mapping(root)
 
-    def test_gate_zero_open_selects_v20_canonical_source(self) -> None:
+    def test_wallet_waiting_for_gate_one_selects_v20_canonical_source(self) -> None:
         wallet = Path(__file__).resolve().parents[2] / "wallet-affiliate-collector"
         contract = load_contract(wallet)
         self.assertEqual(Path(contract.paths.development_plan).name, "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md")
@@ -248,7 +249,7 @@ class ContractLoaderTest(unittest.TestCase):
                     ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
                 ).strip()
                 gate_one = self._event(
-                    "gate-1", "GATE-1", mapping.canonical_sha256, head, approval_version=2
+                    "gate-1", "GATE-1", mapping.canonical_sha256, head
                 )
                 approval_blocks = "\n".join(
                     f"```json\n{json.dumps(event)}\n```" for event in [gate_zero, gate_one]
@@ -298,7 +299,6 @@ class ContractLoaderTest(unittest.TestCase):
                 "GATE-1",
                 mapping.canonical_sha256,
                 str(gate_zero["record_hash"]),
-                approval_version=2,
             )
             (root / "docs" / "APPROVAL.md").write_text(
                 "\n".join(
@@ -361,7 +361,7 @@ class ContractLoaderTest(unittest.TestCase):
                 plan_hash = mapping.approved_source_sha256 if case == "plan_hash" else mapping.canonical_sha256
                 previous_hash = "f" * 64 if case == "chain" else str(gate_zero["record_hash"])
                 gate_one = self._event(
-                    "gate-1", "GATE-1", plan_hash, previous_hash, approval_version=2
+                    "gate-1", "GATE-1", plan_hash, previous_hash
                 )
                 if case == "missing_id":
                     gate_one.pop("approval_id")
@@ -373,7 +373,8 @@ class ContractLoaderTest(unittest.TestCase):
                         "GATE-1",
                         mapping.canonical_sha256,
                         str(gate_one["record_hash"]),
-                        approval_version=3,
+                        approval_version=2,
+                        previous_approval_id="gate-1",
                     )
                     events.append(duplicate)
                 (root / "docs" / "APPROVAL.md").write_text(
