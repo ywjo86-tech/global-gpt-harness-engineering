@@ -522,11 +522,36 @@ def _validate_worker(payload: dict[str, Any], manifest: dict[str, Any], prefligh
         raise LVRemediationError("remediation worker runtime approval state mismatch")
 
 
-def _run_checks(root: Path, owned: list[str]) -> tuple[list[dict[str, Any]], bool]:
+def _validate_remediation_interpreter(root: Path, manifest: dict[str, Any] | None) -> None:
+    interpreter = root / ".venv" / "bin" / "python"
+    if not interpreter.exists() or not (interpreter.is_file() or interpreter.is_symlink()):
+        raise LVRemediationError("fixed remediation venv interpreter is unavailable")
+    resolved = interpreter.resolve(strict=True)
+    allowed = (Path("/usr/bin").resolve(), Path("/usr/local/bin").resolve())
+    if not any(resolved == item or item in resolved.parents for item in allowed):
+        raise LVRemediationError("remediation interpreter target is outside system roots")
+    if manifest is None:
+        return
+    evidence = _json(_harness_root() / "_workspace" / "orchestration-preflights" / manifest["parent_run_id"] / "preflight.evidence.json")
+    expected = evidence.get("python_executable_sha256")
+    if not isinstance(expected, str) or _sha(resolved.read_bytes()) != expected:
+        raise LVRemediationError("remediation interpreter differs from parent sealed executable")
+    probe = subprocess.run(
+        [str(interpreter), "-I", "-B", "-c", "import json,sys,pytest; print(json.dumps({'version':sys.version_info[0],'prefix':sys.prefix,'base_prefix':sys.base_prefix}))"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30,
+    )
+    if probe.returncode != 0:
+        raise LVRemediationError("remediation venv interpreter probe failed")
+    info = json.loads(probe.stdout.decode("utf-8"))
+    if info.get("version") != 3 or info.get("prefix") != str((root / ".venv").resolve()) or info.get("base_prefix") == info.get("prefix"):
+        raise LVRemediationError("remediation interpreter is not the fixed isolated venv")
+
+
+def _run_checks(root: Path, owned: list[str], manifest: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], bool]:
     checks = _scan_owned_files(root, owned)
     interpreter = root / ".venv" / "bin" / "python"
     try:
-        _validate_interpreter(root, interpreter)
+        _validate_remediation_interpreter(root, manifest)
         test_results, test_error = _run_tests(root, interpreter, owned)
     except Exception as exc:
         test_results, test_error = [], str(exc)
@@ -578,7 +603,7 @@ def review_remediation(run_id: str) -> dict[str, Any]:
         _validate_worker(worker, manifest, preflight_hash, after_before, actual, remediated)
         package_hashes = _dir_hashes(package)
         preflight_hashes = _dir_hashes(preflight)
-        checks, passed = _run_checks(root, manifest["owned_files"])
+        checks, passed = _run_checks(root, manifest["owned_files"], manifest)
         _assert_baseline(root, manifest, require_before=False)
         after_after = _snapshot(root, manifest["owned_files"])
         stable = after_before == after_after

@@ -230,7 +230,7 @@ class LVRemediationTests(unittest.TestCase):
     def test_clean_untracked_owned_bytes_diff_check_passes(self) -> None:
         (self.project / "app/model.py").write_text("VALUE = 1\n")
         with patch("runtime.orchestrator.lv_remediation._scan_owned_files", return_value=[]), \
-             patch("runtime.orchestrator.lv_remediation._validate_interpreter", return_value={}), \
+             patch("runtime.orchestrator.lv_remediation._validate_remediation_interpreter", return_value={}), \
              patch("runtime.orchestrator.lv_remediation._run_tests", return_value=([], None)):
             checks, passed = _run_checks(self.project, self.owned)
         item = next(value for value in checks if value["check"] == "owned_bytes_diff_check")
@@ -239,7 +239,7 @@ class LVRemediationTests(unittest.TestCase):
 
     def test_untracked_blank_eof_fails_owned_bytes_diff_check(self) -> None:
         with patch("runtime.orchestrator.lv_remediation._scan_owned_files", return_value=[]), \
-             patch("runtime.orchestrator.lv_remediation._validate_interpreter", return_value={}), \
+             patch("runtime.orchestrator.lv_remediation._validate_remediation_interpreter", return_value={}), \
              patch("runtime.orchestrator.lv_remediation._run_tests", return_value=([], None)):
             checks, passed = _run_checks(self.project, self.owned)
         item = next(value for value in checks if value["check"] == "owned_bytes_diff_check")
