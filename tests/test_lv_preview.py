@@ -237,15 +237,15 @@ class LVPreviewTest(unittest.TestCase):
                     "--gate-id",
                     "GATE-1",
                     "--lv-id",
-                    "G1-LV3-1",
+                    "G1-LV3-2",
                     "--read-only",
                 ]
             )
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertEqual(payload["selected_canonical_plan"]["path"], "IMPLEMENTATION_PLAN.md")
-        self.assertEqual(payload["selected_lv"]["lv_id"], "G1-LV3-1")
-        self.assertEqual(payload["approved_owned_files"], ["app/config.py", "tests/test_config.py"])
+        self.assertEqual(payload["selected_lv"]["lv_id"], "G1-LV3-2")
+        self.assertEqual(payload["approved_owned_files"], ["app/models/product.py", "tests/test_product.py"])
         self.assertFalse(payload["mutation_permitted"])
         self.assertEqual(before, read_only_fixtures.ReadOnlyInspectTest._tree_signature(wallet))
         harness_after = {

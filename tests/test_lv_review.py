@@ -16,6 +16,7 @@ from runtime.orchestrator.lv_review import (
     REVIEW_REPORT_FIELDS,
     REVIEW_STATUS_FIELDS,
     LVReviewError,
+    _assert_canonical_binding,
     _results_root,
     _scan_owned_files,
     _safe_read_result,
@@ -149,7 +150,7 @@ class LVReviewTest(unittest.TestCase):
 
     def _git_fixture(self, base: Path) -> tuple[Path, dict[str, object], Path]:
         root = base / "wallet"
-        (root / "app").mkdir(parents=True)
+        (root / "app" / "models").mkdir(parents=True)
         (root / "tests").mkdir()
         subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(root), "config", "user.name", "Fixture"], check=True)
@@ -168,19 +169,19 @@ class LVReviewTest(unittest.TestCase):
             "schema_version": "orchestration.lv_execution_package.v1",
             "run_id": RUN_ID,
             "package_status": "sealed",
-            "project_id": "fixture-wallet",
+            "project_id": root.name,
             "gate_id": "GATE-1",
-            "lv_id": "G1-LV3-1",
+            "lv_id": "G1-LV3-2",
             "canonical_plan_path": "IMPLEMENTATION_PLAN.md",
             "canonical_plan_sha256": "plan",
-            "approval_id": "approval",
-            "approval_record_hash": "record",
+            "approval_id": "APR-GATE1-V2-20260827T053453Z",
+            "approval_record_hash": "a" * 64,
             "checkpoint_commit": "checkpoint",
             "gate_ledger_commit": head,
             "gate_ledger_blob_oid": "blob",
             "gate_ledger_sha256": "ledger",
-            "active_scope": ["G1-LV3-1"],
-            "owned_files": ["app/config.py", "tests/test_config.py"],
+            "active_scope": ["G1-LV3-2"],
+            "owned_files": ["app/models/product.py", "tests/test_product.py"],
             "execution_authorization_required": True,
             "runtime_sandbox_approval_state": {
                 "source": "external_codex_runtime",
@@ -245,7 +246,7 @@ class LVReviewTest(unittest.TestCase):
 
     def _worker_result(self, manifest: dict[str, object], root: Path, *, changed: list[str] | None = None) -> dict[str, object]:
         head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
-        changed = changed or ["app/config.py", "tests/test_config.py"]
+        changed = changed or ["app/models/product.py", "tests/test_product.py"]
         return {
             "schema_version": WORKER_RESULT_SCHEMA_VERSION,
             "attempt": 1,
@@ -253,7 +254,7 @@ class LVReviewTest(unittest.TestCase):
             "preflight_evidence_sha256": "pending-fixture-binding",
             "package_manifest_sha256": manifest["manifest_sha256"],
             "gate_id": "GATE-1",
-            "lv_id": "G1-LV3-1",
+            "lv_id": "G1-LV3-2",
             "status": "completed",
             "started_at": "2026-08-26T00:00:00+00:00",
             "completed_at": "2026-08-26T00:01:00+00:00",
@@ -269,7 +270,7 @@ class LVReviewTest(unittest.TestCase):
             "created_files": changed,
             "modified_files": [],
             "deleted_files": [],
-            "owned_files": ["app/config.py", "tests/test_config.py"],
+            "owned_files": ["app/models/product.py", "tests/test_product.py"],
             "tests": ["pytest"],
             "commands_summary": [],
             "violations": [],
@@ -292,6 +293,67 @@ class LVReviewTest(unittest.TestCase):
         path.write_bytes(data)
         path.chmod(0o600)
         return data
+
+    def _canonical_binding_fixture(
+        self, base: Path
+    ) -> tuple[Path, dict[str, object], SimpleNamespace, dict[str, object], dict[str, str]]:
+        root, manifest, _ = self._git_fixture(base)
+        mapping = SimpleNamespace(
+            project_id=root.name,
+            transition_approval_id=manifest["approval_id"],
+        )
+        state = {
+            "state": "GATE1_ACTIVE",
+            "gate_id": manifest["gate_id"],
+            "canonical_plan": manifest["canonical_plan_path"],
+            "plan_sha256": manifest["canonical_plan_sha256"],
+            "approval_id": manifest["approval_id"],
+            "approval_record_hash": manifest["approval_record_hash"],
+            "checkpoint_commit": manifest["checkpoint_commit"],
+            "active_scope": list(manifest["active_scope"]),
+            "owned_files": list(manifest["owned_files"]),
+        }
+        ledger = {
+            "commit": manifest["gate_ledger_commit"],
+            "blob_oid": manifest["gate_ledger_blob_oid"],
+            "sha256": manifest["gate_ledger_sha256"],
+        }
+        return root, manifest, mapping, state, ledger
+
+    def test_canonical_binding_uses_current_manifest_ledger_and_mapping(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
+            with (
+                patch("runtime.orchestrator.lv_review.load_project_mapping", return_value=mapping),
+                patch("runtime.orchestrator.lv_review.evaluate_canonical_state", return_value=state),
+                patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
+            ):
+                _assert_canonical_binding(root, manifest)
+
+    def test_canonical_binding_mismatches_fail_closed(self) -> None:
+        for mismatch, expected_error in (
+            ("lv_id", "lv_id"),
+            ("active_scope", "active_scope"),
+            ("owned_files", "owned_files"),
+            ("approval_binding", "approval_id"),
+        ):
+            with self.subTest(mismatch=mismatch), TemporaryDirectory() as directory:
+                root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
+                if mismatch == "lv_id":
+                    manifest["lv_id"] = "G1-LV3-1"
+                elif mismatch == "active_scope":
+                    manifest["active_scope"] = ["G1-LV3-1"]
+                elif mismatch == "owned_files":
+                    manifest["owned_files"] = ["app/models/product.py"]
+                else:
+                    mapping.transition_approval_id = "APR-GATE1-V1-20260826T015632Z"
+                with (
+                    patch("runtime.orchestrator.lv_review.load_project_mapping", return_value=mapping),
+                    patch("runtime.orchestrator.lv_review.evaluate_canonical_state", return_value=state),
+                    patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
+                    self.assertRaisesRegex(LVReviewError, f"canonical binding mismatch: {expected_error}"),
+                ):
+                    _assert_canonical_binding(root, manifest)
 
     def test_preflight_evidence_ready_has_exact_three_bound_files(self) -> None:
         with TemporaryDirectory() as directory:
@@ -332,15 +394,15 @@ class LVReviewTest(unittest.TestCase):
             root = Path(directory)
             result = root / "worker.json"
             result.write_text("{}", encoding="utf-8")
-            with patch("runtime.orchestrator.lv_review._assert_source_snapshot"), self.assertRaisesRegex(LVReviewError, "worker result already exists"):
+            with patch("runtime.orchestrator.lv_review._assert_canonical_binding"), patch("runtime.orchestrator.lv_review._assert_source_snapshot"), self.assertRaisesRegex(LVReviewError, "worker result already exists"):
                 _preflight("wallet-g1-lv3-1-20260826-01", package_root=_package_root("wallet-g1-lv3-1-20260826-01"), result_path=result, results_root=root / "results")
             result.unlink()
             (root / "results").mkdir()
-            with patch("runtime.orchestrator.lv_review._assert_source_snapshot"), self.assertRaisesRegex(LVReviewError, "attempt-01"):
+            with patch("runtime.orchestrator.lv_review._assert_canonical_binding"), patch("runtime.orchestrator.lv_review._assert_source_snapshot"), self.assertRaisesRegex(LVReviewError, "attempt-01"):
                 _preflight("wallet-g1-lv3-1-20260826-01", package_root=_package_root("wallet-g1-lv3-1-20260826-01"), result_path=result, results_root=root / "results")
 
     def test_preflight_stale_or_dirty_source_is_blocked(self) -> None:
-        with patch("runtime.orchestrator.lv_review._assert_source_snapshot", side_effect=LVReviewError("source snapshot mismatch")):
+        with patch("runtime.orchestrator.lv_review._assert_canonical_binding"), patch("runtime.orchestrator.lv_review._assert_source_snapshot", side_effect=LVReviewError("source snapshot mismatch")):
             with self.assertRaises(LVReviewError):
                 _preflight("wallet-g1-lv3-1-20260826-01", package_root=_package_root("wallet-g1-lv3-1-20260826-01"), result_path=Path("/tmp/nonexistent-h4-3b-result"), results_root=Path("/tmp/nonexistent-h4-3b-results"))
 
@@ -373,8 +435,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, manifest_path, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 'fixture'\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 'fixture'\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             payload = self._worker_result(manifest, root)
             result_path = base / "worker.result.json"
             data = self._write_worker(result_path, payload)
@@ -393,14 +455,14 @@ class LVReviewTest(unittest.TestCase):
             report = json.loads((results_root / "reviewer.report.json").read_text())
             self.assertEqual(report["verdict"], "PASS")
             self.assertTrue(report["hard_stop"])
-            self.assertEqual(report["actual_created_files"], ["app/config.py", "tests/test_config.py"])
+            self.assertEqual(report["actual_created_files"], ["app/models/product.py", "tests/test_product.py"])
 
     def test_review_blocks_duplicate_attempt_without_overwrite(self) -> None:
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -417,11 +479,11 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             (root / "unexpected.txt").write_text("bad\n", encoding="utf-8")
             result_path = base / "worker.result.json"
-            payload = self._worker_result(manifest, root, changed=["app/config.py", "tests/test_config.py"])
+            payload = self._worker_result(manifest, root, changed=["app/models/product.py", "tests/test_product.py"])
             self._write_worker(result_path, payload)
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
@@ -476,8 +538,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -496,8 +558,8 @@ class LVReviewTest(unittest.TestCase):
             root, manifest, _, context = self._context(base)
             evidence_path = Path(context["preflight_root"]) / "preflight.evidence.json"
             evidence_path.write_bytes(b"not-json")
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -529,8 +591,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             payload = self._worker_result(manifest, root)
             payload["status"] = "partial"
@@ -547,15 +609,15 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(root), "add", "app/config.py"], check=True)
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "app/models/product.py"], check=True)
             (root / "README.md").unlink()
             result_path = base / "worker.result.json"
-            payload = self._worker_result(manifest, root, changed=["README.md", "app/config.py", "tests/test_config.py"])
-            payload["created_files"] = ["app/config.py", "tests/test_config.py"]
+            payload = self._worker_result(manifest, root, changed=["README.md", "app/models/product.py", "tests/test_product.py"])
+            payload["created_files"] = ["app/models/product.py", "tests/test_product.py"]
             payload["deleted_files"] = ["README.md"]
-            payload["changed_files"] = ["README.md", "app/config.py", "tests/test_config.py"]
+            payload["changed_files"] = ["README.md", "app/models/product.py", "tests/test_product.py"]
             self._write_worker(result_path, payload)
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
@@ -568,8 +630,8 @@ class LVReviewTest(unittest.TestCase):
             with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
                 base = Path(directory)
                 root, manifest, _, context = self._context(base)
-                (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-                (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+                (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+                (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
                 if mutation == "branch":
                     subprocess.run(["git", "-C", str(root), "branch", "-m", "changed"], check=True)
                 elif mutation == "config":
@@ -581,7 +643,7 @@ class LVReviewTest(unittest.TestCase):
                     subprocess.run(["git", "-C", str(root), "add", "head-change.txt"], check=True)
                     subprocess.run(["git", "-C", str(root), "commit", "-qm", "head-change"], check=True)
                 elif mutation == "index":
-                    subprocess.run(["git", "-C", str(root), "add", "app/config.py"], check=True)
+                    subprocess.run(["git", "-C", str(root), "add", "app/models/product.py"], check=True)
                 elif mutation == "submodule":
                     context["git_before"]["submodule_fingerprint"] = "changed-submodule"
                 result_path = base / "worker.result.json"
@@ -602,8 +664,8 @@ class LVReviewTest(unittest.TestCase):
             root, manifest, _, context = self._context(base)
             target = base / "outside.py"
             target.write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "app" / "config.py").symlink_to(target)
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").symlink_to(target)
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -615,8 +677,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             real = base / "real-result.json"
             self._write_worker(real, self._worker_result(manifest, root))
             result_path = base / "worker.result.json"
@@ -632,8 +694,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -647,8 +709,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -666,8 +728,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"
@@ -683,9 +745,9 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
             result_path = base / "worker.result.json"
-            self._write_worker(result_path, self._worker_result(manifest, root, changed=["app/config.py", "tests/test_config.py"]))
+            self._write_worker(result_path, self._worker_result(manifest, root, changed=["app/models/product.py", "tests/test_product.py"]))
             results_root = base / "results" / RUN_ID / "attempt-01"
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
@@ -794,8 +856,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base, results_root=base / "results" / RUN_ID / "attempt-02")
-            (root / "app" / "config.py").write_text("VALUE = 'fixture'\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 'fixture'\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             worker_bytes = self._write_worker(result_path, self._worker_result(manifest, root))
             context["result_path"] = result_path
@@ -831,8 +893,8 @@ class LVReviewTest(unittest.TestCase):
             with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
                 base = Path(directory)
                 root, manifest, _, context = self._context(base, results_root=base / "results" / RUN_ID / "attempt-02")
-                (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-                (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+                (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+                (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
                 result_path = base / "worker.result.json"
                 worker_bytes = self._write_worker(result_path, self._worker_result(manifest, root))
                 context["result_path"] = result_path
@@ -939,8 +1001,8 @@ class LVReviewTest(unittest.TestCase):
             with self.subTest(mutation=mutation), TemporaryDirectory() as directory:
                 base = Path(directory)
                 root, manifest, _, context = self._context(base)
-                (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-                (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+                (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+                (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
                 payload = self._worker_result(manifest, root)
                 if mutation == "missing_attempt":
                     del payload["attempt"]
@@ -962,8 +1024,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             context["result_path"] = result_path
@@ -1061,7 +1123,7 @@ class LVReviewTest(unittest.TestCase):
     def test_safe_unapproved_reserved_url_fixture_is_not_a_credential_url(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            path = root / "tests" / "test_config.py"
+            path = root / "tests" / "test_product.py"
             path.parent.mkdir()
             path.write_text(
                 "def test_rejects_unapproved_origin():\n"
@@ -1071,7 +1133,7 @@ class LVReviewTest(unittest.TestCase):
                 "    assert api_url and fixture_values and secret_marker\n",
                 encoding="utf-8",
             )
-            check = {item["check"]: item for item in _scan_owned_files(root, ["tests/test_config.py"])}["secret_like_value"]
+            check = {item["check"]: item for item in _scan_owned_files(root, ["tests/test_product.py"])}["secret_like_value"]
             self.assertEqual(check["status"], "PASS")
 
     def test_cli_requires_attempt_and_distinguishes_exit_codes(self) -> None:
@@ -1086,8 +1148,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             context["result_path"] = result_path
@@ -1110,8 +1172,8 @@ class LVReviewTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             root, manifest, _, context = self._context(base)
-            (root / "app" / "config.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "tests" / "test_config.py").write_text("def test_config():\n    assert True\n", encoding="utf-8")
+            (root / "app" / "models" / "product.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
             result_path = base / "worker.result.json"
             self._write_worker(result_path, self._worker_result(manifest, root))
             results_root = base / "results" / RUN_ID / "attempt-01"

@@ -402,10 +402,30 @@ def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
         raise LVReviewError("project contract mapping is required")
     state = evaluate_canonical_state(mapping)
     ledger = _ledger_binding(root, mapping, state)
+    if not isinstance(state.get("state"), str) or not state["state"].endswith("_ACTIVE"):
+        raise LVReviewError("canonical binding mismatch: gate_state")
+    active_scope = state.get("active_scope")
+    if (
+        not isinstance(active_scope, list)
+        or len(active_scope) != 1
+        or not isinstance(active_scope[0], str)
+        or not active_scope[0]
+    ):
+        raise LVReviewError("canonical binding mismatch: active_scope")
+    owned_files = state.get("owned_files")
+    if (
+        not isinstance(owned_files, list)
+        or not owned_files
+        or any(not isinstance(item, str) or not item for item in owned_files)
+        or len(set(owned_files)) != len(owned_files)
+    ):
+        raise LVReviewError("canonical binding mismatch: owned_files")
+    if state.get("approval_id") != mapping.transition_approval_id:
+        raise LVReviewError("canonical binding mismatch: approval_id")
     checks = {
-        "project_id": root.name,
-        "gate_id": "GATE-1",
-        "lv_id": "G1-LV3-1",
+        "project_id": mapping.project_id,
+        "gate_id": state.get("gate_id"),
+        "lv_id": active_scope[0],
         "canonical_plan_path": state.get("canonical_plan"),
         "canonical_plan_sha256": state.get("plan_sha256"),
         "approval_id": state.get("approval_id"),
@@ -414,8 +434,8 @@ def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
         "gate_ledger_commit": ledger["commit"],
         "gate_ledger_blob_oid": ledger["blob_oid"],
         "gate_ledger_sha256": ledger["sha256"],
-        "active_scope": ["G1-LV3-1"],
-        "owned_files": ["app/config.py", "tests/test_config.py"],
+        "active_scope": active_scope,
+        "owned_files": owned_files,
     }
     for field, expected in checks.items():
         if manifest.get(field) != expected:
@@ -783,14 +803,29 @@ def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
     }
 
 
-def _run_tests(root: Path, interpreter: Path) -> tuple[list[dict[str, Any]], str | None]:
-    target = root / "tests" / "test_config.py"
-    if not target.is_file() or target.is_symlink():
-        return [], "tests/test_config.py is missing or unsafe"
+def _run_tests(root: Path, interpreter: Path, owned_files: list[str]) -> tuple[list[dict[str, Any]], str | None]:
+    test_targets = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
+    import_targets = [
+        path.removesuffix(".py").replace("/", ".")
+        for path in owned_files
+        if path.endswith(".py") and not path.startswith("tests/")
+    ]
+    if not test_targets or not import_targets:
+        return [], "owned Python test/module scope is missing"
+    for relative in test_targets:
+        target = root / relative
+        if not target.is_file() or target.is_symlink():
+            return [], "owned Python test target is missing or unsafe"
     commands = [
-        ([str(interpreter), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_config.py"], 60),
+        ([str(interpreter), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", *test_targets], 60),
         ([str(interpreter), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider"], 180),
-        ([str(interpreter), "-B", "-c", "import app.config"], 30),
+        ([
+            str(interpreter),
+            "-B",
+            "-c",
+            "import importlib,sys; [importlib.import_module(name) for name in sys.argv[1:]]",
+            *import_targets,
+        ], 30),
     ]
     results: list[dict[str, Any]] = []
     for argv, timeout in commands:
@@ -1341,16 +1376,34 @@ def review_run(
             path = context["project_root"] / path_text
             if path.is_symlink() or (path.exists() and not path.is_file()):
                 violations.append(f"unsafe changed path: {path_text}")
-        if "tests/test_config.py" not in actual["changed_files"] and not (context["project_root"] / "tests/test_config.py").is_file():
-            return {"status": "BLOCKED", "run_id": run_id, "reason": "tests/test_config.py is missing", "hard_stop": True}
+        owned_test_files = [
+            path
+            for path in context["manifest"]["owned_files"]
+            if path.startswith("tests/") and path.endswith(".py")
+        ]
+        if not owned_test_files or any(
+            not (context["project_root"] / path).is_file()
+            or (context["project_root"] / path).is_symlink()
+            for path in owned_test_files
+        ):
+            return {
+                "status": "BLOCKED",
+                "run_id": run_id,
+                "reason": "owned Python test target is missing or unsafe",
+                "hard_stop": True,
+            }
         independent_checks.extend(_scan_owned_files(context["project_root"], list(context["manifest"]["owned_files"])))
         diff_check = _run_command(["git", "diff", "--check"], context["project_root"], 30)
         diff_passed = not diff_check["timeout"] and diff_check["exit_code"] == 0
         independent_checks.append(_check("git_diff_check", diff_passed, "git diff --check passed" if diff_passed else "git diff --check failed", exit_code=diff_check["exit_code"]))
         if not diff_passed:
             violations.append("git diff --check failed")
-        tests, test_error = _run_tests(context["project_root"], context["interpreter"])
-        test_ids = ("tests_test_config", "wallet_pytest", "import_app_config")
+        tests, test_error = _run_tests(
+            context["project_root"],
+            context["interpreter"],
+            list(context["manifest"]["owned_files"]),
+        )
+        test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
             result = tests[index] if index < len(tests) else {"exit_code": None, "timeout": False}
             passed = result.get("exit_code") == 0 and not result.get("timeout")

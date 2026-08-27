@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class ReadOnlyInspectTest(unittest.TestCase):
     gate_one_approval_id = "APR-GATE1-V1-20260826T015632Z"
+    wallet_gate_one_approval_id = "APR-GATE1-V2-20260827T053453Z"
 
     @staticmethod
     def _event(
@@ -252,11 +253,11 @@ class ReadOnlyInspectTest(unittest.TestCase):
             )
         mapping = load_project_mapping(wallet)
         self.assertIsNotNone(mapping)
-        self.assertEqual(mapping.transition_approval_id, self.gate_one_approval_id)
+        self.assertEqual(mapping.transition_approval_id, self.wallet_gate_one_approval_id)
         ledger_text = (wallet / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
         ledger = json.loads(ledger_text.split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(ledger["active_scope"], ["G1-LV3-1"])
-        self.assertEqual(ledger["owned_files"], ["app/config.py", "tests/test_config.py"])
+        self.assertEqual(ledger["active_scope"], ["G1-LV3-2"])
+        self.assertEqual(ledger["owned_files"], ["app/models/product.py", "tests/test_product.py"])
         before = self._tree_signature(wallet)
         harness_paths = [REPO_ROOT / "runtime" / "orchestrator_state.json", REPO_ROOT / "logs" / "app.log"]
         harness_before = {str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None) for path in harness_paths}
