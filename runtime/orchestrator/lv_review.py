@@ -61,7 +61,9 @@ REVIEW_REPORT_FIELDS = {
     "actual_changed_files", "actual_created_files", "actual_modified_files", "actual_deleted_files",
     "review_only_reexecution", "reran_worker", "prior_review_lineage", "independent_checks",
     "interpreter_before", "interpreter_after", "git_evidence", "violations", "blockers", "reasons",
+    "owned_content_evidence",
 }
+LEGACY_REVIEW_REPORT_FIELDS = REVIEW_REPORT_FIELDS - {"owned_content_evidence"}
 REVIEW_STATUS_FIELDS = {
     "schema_version", "run_id", "review_attempt", "worker_attempt", "verdict", "hard_stop",
     "reviewer_report_sha256", "package_manifest_sha256", "preflight_evidence_sha256",
@@ -868,6 +870,82 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     return {path.name: _file_snapshot(path) for path in entries}
 
 
+def _owned_content_snapshot(root: Path, owned_files: list[str]) -> list[dict[str, Any]]:
+    """Capture deterministic content evidence without following owned-path symlinks."""
+    if not isinstance(owned_files, list) or not owned_files:
+        raise LVReviewError("owned files are missing")
+    root_resolved = root.resolve(strict=True)
+    normalized: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for relative in owned_files:
+        if not isinstance(relative, str) or not relative or "\\" in relative:
+            raise LVReviewError("owned path is invalid")
+        relative_path = Path(relative)
+        canonical = relative_path.as_posix()
+        if relative_path.is_absolute() or canonical in {".", ".."} or ".." in relative_path.parts:
+            raise LVReviewError("owned path escapes project root")
+        if canonical in seen:
+            raise LVReviewError("duplicate owned path")
+        seen.add(canonical)
+        candidate = root / relative_path
+        current = root
+        try:
+            for part in relative_path.parts:
+                current = current / part
+                if current.is_symlink():
+                    raise LVReviewError("owned path is a symlink")
+            resolved = candidate.resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise LVReviewError("owned file is missing") from exc
+        except (OSError, RuntimeError) as exc:
+            raise LVReviewError("owned path is unsafe") from exc
+        try:
+            resolved.relative_to(root_resolved)
+        except ValueError as exc:
+            raise LVReviewError("owned path escapes project root") from exc
+        normalized.append((canonical, candidate))
+
+    evidence: list[dict[str, Any]] = []
+    for relative, candidate in sorted(normalized):
+        before = candidate.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            raise LVReviewError("owned path is not a regular file")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(candidate, flags)
+        except OSError as exc:
+            raise LVReviewError("owned file could not be opened safely") from exc
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or not stat.S_ISREG(opened.st_mode):
+                raise LVReviewError("owned file changed during open")
+            digest = hashlib.sha256()
+            size = 0
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                size += len(chunk)
+        finally:
+            os.close(descriptor)
+        after = candidate.lstat()
+        if (
+            (after.st_dev, after.st_ino, after.st_size) != (before.st_dev, before.st_ino, before.st_size)
+            or not stat.S_ISREG(after.st_mode)
+            or size != before.st_size
+        ):
+            raise LVReviewError("owned file changed while reading")
+        evidence.append({
+            "path": relative,
+            "sha256": digest.hexdigest(),
+            "size": size,
+            "regular_file": True,
+            "not_symlink": True,
+        })
+    return evidence
+
+
 _SECRET_NAME = re.compile(r"(?i)(?:api[_-]?key|token|password|secret)")
 _CREDENTIAL_URL = re.compile(r"[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@", re.IGNORECASE)
 _KNOWN_TOKEN_LITERAL = re.compile(r"(?i)^(?:sk|ghp|xox[baprs])-[a-z0-9_-]{12,}$")
@@ -1050,6 +1128,63 @@ def _verify_legacy_lineage(
         return None
     if context["review_attempt"] > 3:
         raise LVReviewError("review attempts above 3 are not supported")
+    if context["review_attempt"] == 2:
+        prior_root = context["results_root"].parent / "attempt-01"
+        if prior_root.is_dir() and not prior_root.is_symlink():
+            required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
+            entries = list(prior_root.iterdir())
+            if {entry.name for entry in entries} != required or not all(
+                entry.is_file() and not entry.is_symlink() for entry in entries
+            ):
+                raise LVReviewError("attempt-01 review artifacts are incomplete or unsafe")
+            hashes = {entry.name: _sha256(entry.read_bytes()) for entry in entries}
+            report_hash = hashes["reviewer.report.json"]
+            if (prior_root / "reviewer.report.sha256").read_text(encoding="ascii").strip() != report_hash:
+                raise LVReviewError("attempt-01 reviewer sidecar does not match report")
+            if (prior_root / "worker.result.sha256").read_text(encoding="ascii").strip() != worker_hash:
+                raise LVReviewError("attempt-01 worker sidecar does not match current worker result")
+            if hashes["worker.result.json"] != worker_hash:
+                raise LVReviewError("attempt-01 worker result does not match current worker result")
+            prior_report = _canonical_json(prior_root / "reviewer.report.json")
+            prior_status = _canonical_json(prior_root / "review.status")
+            if frozenset(prior_report) not in {frozenset(REVIEW_REPORT_FIELDS), frozenset(LEGACY_REVIEW_REPORT_FIELDS)}:
+                raise LVReviewError("attempt-01 reviewer report schema mismatch")
+            if set(prior_status) != REVIEW_STATUS_FIELDS:
+                raise LVReviewError("attempt-01 review status schema mismatch")
+            expected_values = {
+                "run_id": context["run_id"],
+                "review_attempt": 1,
+                "worker_attempt": 1,
+                "verdict": "PASS",
+                "hard_stop": True,
+                "review_only_reexecution": False,
+                "reran_worker": False,
+                "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+                "preflight_evidence_sha256": context["preflight_evidence_sha256"],
+                "worker_result_sha256": worker_hash,
+            }
+            for field, expected_value in expected_values.items():
+                if prior_report.get(field) != expected_value or prior_status.get(field) != expected_value:
+                    raise LVReviewError(f"attempt-01 review contract mismatch: {field}")
+            if prior_status.get("reviewer_report_sha256") != report_hash:
+                raise LVReviewError("attempt-01 status does not match reviewer report")
+            artifacts = [
+                {
+                    "path": f"_workspace/orchestration-results/{context['run_id']}/attempt-01/{name}",
+                    "sha256": hashes[name],
+                }
+                for name in sorted(required)
+            ]
+            return {
+                "prior_review_location_kind": "attempt_directory",
+                "prior_review_contract_status": "verified_pass_hard_stop",
+                "review_attempt": 1,
+                "artifacts": artifacts,
+                "prior_reviewer_report_sha256": report_hash,
+                "package_manifest_sha256": expected_values["package_manifest_sha256"],
+                "preflight_evidence_sha256": expected_values["preflight_evidence_sha256"],
+                "worker_result_sha256": worker_hash,
+            }
     expected = contract if contract is not None else LEGACY_REVIEW_CONTRACTS.get(context["run_id"])
     required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
     if not expected or set(expected) != required:
@@ -1107,7 +1242,7 @@ def _verify_legacy_lineage(
         raise LVReviewError("attempt-02 reviewer sidecar does not match report")
     prior_report = _canonical_json(prior_root / "reviewer.report.json")
     prior_status = _canonical_json(prior_root / "review.status")
-    if set(prior_report) != REVIEW_REPORT_FIELDS or set(prior_status) != REVIEW_STATUS_FIELDS:
+    if frozenset(prior_report) not in {frozenset(REVIEW_REPORT_FIELDS), frozenset(LEGACY_REVIEW_REPORT_FIELDS)} or set(prior_status) != REVIEW_STATUS_FIELDS:
         raise LVReviewError("attempt-02 review schema mismatch")
     if prior_status.get("reviewer_report_sha256") != report_hash:
         raise LVReviewError("attempt-02 status does not match reviewer report")
@@ -1177,6 +1312,7 @@ def _build_report(
     independent_checks: list[dict[str, Any]] | None = None,
     interpreter_after: dict[str, Any] | None = None,
     prior_review_lineage: dict[str, Any] | None = None,
+    owned_content_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest = context["manifest"]
     actual = actual or {key: [] for key in ("changed_files", "created_files", "modified_files", "deleted_files")}
@@ -1212,6 +1348,7 @@ def _build_report(
         "violations": violations or [],
         "blockers": blockers or [],
         "reasons": reasons or [],
+        "owned_content_evidence": owned_content_evidence or {},
     }
     if set(report) != REVIEW_REPORT_FIELDS:
         raise LVReviewError("reviewer report schema field set mismatch")
@@ -1229,6 +1366,20 @@ def _seal_review(context: dict[str, Any], report: dict[str, Any], worker_hash: s
     temp_root = Path(tempfile.mkdtemp(prefix=f".{context['run_id']}.", dir=str(parent)))
     if set(report) != REVIEW_REPORT_FIELDS or not report.get("preflight_evidence_sha256"):
         raise LVReviewError("reviewer report schema or preflight binding is incomplete")
+    owned_content = report.get("owned_content_evidence")
+    if not isinstance(owned_content, dict) or not isinstance(owned_content.get("stable"), bool):
+        raise LVReviewError("owned-content evidence is required")
+    if owned_content.get("capture_status") == "unavailable":
+        if report.get("verdict") == "PASS":
+            raise LVReviewError("PASS requires complete owned-content evidence")
+    else:
+        final_snapshot = _owned_content_snapshot(context["project_root"], list(context["manifest"]["owned_files"]))
+        expected_stable = owned_content.get("before") == owned_content.get("after")
+        if owned_content["stable"] != expected_stable or (not expected_stable and report.get("verdict") == "PASS"):
+            raise LVReviewError("owned-content stability result is invalid")
+        if final_snapshot != owned_content.get("after"):
+            raise LVReviewError("owned content changed before artifact sealing")
+        owned_content["final"] = final_snapshot
     report_bytes = canonical_json_bytes(report)
     report_hash = _sha256(report_bytes)
     status = {
@@ -1296,6 +1447,7 @@ def review_run(
     independent_checks: list[dict[str, Any]] = []
     prior_review_lineage: dict[str, Any] | None = None
     interpreter_after: dict[str, Any] = {}
+    owned_content_before: list[dict[str, Any]] = []
     try:
         evidence, evidence_hash = _verify_preflight_evidence(context)
         if not evidence_hash:
@@ -1335,6 +1487,9 @@ def review_run(
             worker_hash,
             contract=prior_review_contract,
             prior_attempt_contract=prior_attempt_contract,
+        )
+        owned_content_before = _owned_content_snapshot(
+            context["project_root"], list(context["manifest"]["owned_files"])
         )
         worker_sets = {field: _set_from_result(payload, field) for field in ("changed_files", "created_files", "modified_files", "deleted_files")}
         actual_sets = {field: set(actual[field]) for field in worker_sets}
@@ -1448,6 +1603,17 @@ def review_run(
         package_unchanged = _directory_snapshot(context["package_root"]) == package_snapshot
         preflight_unchanged = _directory_snapshot(evidence_root) == preflight_snapshot
         worker_unchanged = _file_snapshot(context["result_path"]) == worker_snapshot
+        owned_content_after = _owned_content_snapshot(
+            context["project_root"], list(context["manifest"]["owned_files"])
+        )
+        owned_content_stable = owned_content_after == owned_content_before
+        independent_checks.append(_check(
+            "owned_content_unchanged",
+            owned_content_stable,
+            "owned file content is unchanged during review" if owned_content_stable else "owned file content changed during review",
+        ))
+        if not owned_content_stable:
+            violations.append("owned file content changed during independent checks")
         for identifier, passed, summary in (
             ("package_unchanged", package_unchanged, "sealed package manifest is unchanged"),
             ("preflight_unchanged", preflight_unchanged, "sealed preflight evidence is unchanged"),
@@ -1462,11 +1628,33 @@ def review_run(
             if marker not in violations:
                 violations.append(marker)
         verdict = "PASS" if not violations else "FAIL"
-        report = _build_report(context, worker_hash, verdict, actual=actual, violations=violations, after=after, independent_checks=independent_checks, interpreter_after=interpreter_after, prior_review_lineage=prior_review_lineage)
+        report = _build_report(
+            context, worker_hash, verdict, actual=actual, violations=violations, after=after,
+            independent_checks=independent_checks, interpreter_after=interpreter_after,
+            prior_review_lineage=prior_review_lineage,
+            owned_content_evidence={
+                "algorithm": "sha256",
+                "before": owned_content_before,
+                "after": owned_content_after,
+                "final": owned_content_after,
+                "stable": owned_content_stable,
+            },
+        )
     except (LVReviewError, LVExecutionPackageError) as exc:
         if not context.get("preflight_evidence_sha256") or context.get("review_attempt", 1) > 1 and prior_review_lineage is None:
             return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
-        report = _build_report(context, worker_hash, "BLOCKED", blockers=[str(exc)], reasons=["strict intake or identity validation failed"], independent_checks=independent_checks, interpreter_after=interpreter_after, prior_review_lineage=prior_review_lineage)
+        if not owned_content_before and str(exc).startswith("owned "):
+            return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
+        report = _build_report(
+            context, worker_hash, "BLOCKED", blockers=[str(exc)],
+            reasons=["strict intake or identity validation failed"],
+            independent_checks=independent_checks, interpreter_after=interpreter_after,
+            prior_review_lineage=prior_review_lineage,
+            owned_content_evidence={
+                "algorithm": "sha256", "before": owned_content_before, "after": [], "final": [],
+                "stable": False, "capture_status": "unavailable",
+            },
+        )
         if not worker_bytes:
             return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
     try:

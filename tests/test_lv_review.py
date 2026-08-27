@@ -27,6 +27,7 @@ from runtime.orchestrator.lv_review import (
     _preflight,
     _seal_preflight_evidence,
     _package_root,
+    _owned_content_snapshot,
     preflight_run,
     review_run,
 )
@@ -431,6 +432,43 @@ class LVReviewTest(unittest.TestCase):
             with self.assertRaisesRegex(LVReviewError, "malformed"):
                 _safe_read_result(path)
 
+    def test_owned_content_snapshot_covers_tracked_and_untracked_files_deterministically(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, _, _ = self._git_fixture(Path(directory))
+            untracked = root / "app" / "models" / "product.py"
+            untracked.write_bytes(b"product-bytes\n")
+            snapshot = _owned_content_snapshot(root, ["app/models/product.py", "README.md"])
+            self.assertEqual([item["path"] for item in snapshot], ["README.md", "app/models/product.py"])
+            expected = {"README.md": (root / "README.md").read_bytes(), "app/models/product.py": untracked.read_bytes()}
+            for item in snapshot:
+                self.assertEqual(item["sha256"], _sha256(expected[item["path"]]))
+                self.assertEqual(item["size"], len(expected[item["path"]]))
+                self.assertTrue(item["regular_file"])
+                self.assertTrue(item["not_symlink"])
+
+    def test_owned_content_snapshot_rejects_invalid_boundaries_and_types(self) -> None:
+        cases = ("missing", "symlink", "directory", "escape", "duplicate")
+        for case in cases:
+            with self.subTest(case=case), TemporaryDirectory() as directory:
+                root = Path(directory) / "project"
+                root.mkdir()
+                (root / "safe.py").write_bytes(b"safe\n")
+                owned = ["safe.py"]
+                if case == "missing":
+                    owned = ["missing.py"]
+                elif case == "symlink":
+                    (root / "link.py").symlink_to("safe.py")
+                    owned = ["link.py"]
+                elif case == "directory":
+                    (root / "folder").mkdir()
+                    owned = ["folder"]
+                elif case == "escape":
+                    owned = ["../outside.py"]
+                elif case == "duplicate":
+                    owned = ["safe.py", "safe.py"]
+                with self.assertRaises(LVReviewError):
+                    _owned_content_snapshot(root, owned)
+
     def test_review_passes_two_owned_untracked_files_and_seals_five_artifacts(self) -> None:
         with TemporaryDirectory() as directory:
             base = Path(directory)
@@ -456,6 +494,37 @@ class LVReviewTest(unittest.TestCase):
             self.assertEqual(report["verdict"], "PASS")
             self.assertTrue(report["hard_stop"])
             self.assertEqual(report["actual_created_files"], ["app/models/product.py", "tests/test_product.py"])
+            evidence = report["owned_content_evidence"]
+            self.assertTrue(evidence["stable"])
+            self.assertEqual(evidence["before"], evidence["after"])
+            self.assertEqual(evidence["after"], evidence["final"])
+            self.assertEqual([item["path"] for item in evidence["final"]], ["app/models/product.py", "tests/test_product.py"])
+
+    def test_review_fails_when_owned_bytes_change_during_independent_checks(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root, manifest, _, context = self._context(base)
+            product = root / "app" / "models" / "product.py"
+            product.write_text("VALUE = 'before'\n", encoding="utf-8")
+            (root / "tests" / "test_product.py").write_text("def test_product():\n    assert True\n", encoding="utf-8")
+            result_path = base / "worker.result.json"
+            self._write_worker(result_path, self._worker_result(manifest, root))
+            context["result_path"] = result_path
+            results_root = base / "results" / RUN_ID / "attempt-01"
+            context["results_root"] = results_root
+
+            def mutate(*_args: object, **_kwargs: object) -> tuple[list[dict[str, object]], None]:
+                product.write_text("VALUE = 'after'\n", encoding="utf-8")
+                return ([{"exit_code": 0, "timeout": False}] * 3, None)
+
+            with patch("runtime.orchestrator.lv_review._preflight", return_value=context), patch(
+                "runtime.orchestrator.lv_review._run_tests", side_effect=mutate
+            ):
+                outcome = review_run(RUN_ID, attempt=1)
+            self.assertEqual(outcome["status"], "FAIL")
+            report = json.loads((results_root / "reviewer.report.json").read_text())
+            self.assertFalse(report["owned_content_evidence"]["stable"])
+            self.assertNotEqual(report["owned_content_evidence"]["before"], report["owned_content_evidence"]["after"])
 
     def test_review_blocks_duplicate_attempt_without_overwrite(self) -> None:
         with TemporaryDirectory() as directory:
@@ -672,7 +741,7 @@ class LVReviewTest(unittest.TestCase):
             context.update(result_path=result_path, results_root=results_root)
             with patch("runtime.orchestrator.lv_review._preflight", return_value=context):
                 outcome = review_run(RUN_ID, attempt=1, result_path=result_path, results_root=results_root, interpreter=context["interpreter"])
-            self.assertEqual(outcome["status"], "FAIL")
+            self.assertEqual(outcome["status"], "BLOCKED")
 
         with TemporaryDirectory() as directory:
             base = Path(directory)
