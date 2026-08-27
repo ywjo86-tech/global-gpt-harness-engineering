@@ -316,7 +316,14 @@ def create_remediation_package(parent_run_id: str, run_id: str, reason_code: str
     if not isinstance(owned, list) or not owned or evidence.get("stable") is not True:
         raise LVRemediationError("parent owned-content binding is incomplete")
     before = _snapshot(root, owned)
-    if before != evidence.get("final"):
+    parent_final = evidence.get("final")
+    if not isinstance(parent_final, list):
+        raise LVRemediationError("parent final owned-content snapshot is missing")
+    normalized_parent = [
+        {"path": item.get("path"), "sha256": item.get("sha256"), "size": item.get("size")}
+        for item in parent_final if isinstance(item, dict)
+    ]
+    if before != normalized_parent or len(normalized_parent) != len(parent_final):
         raise LVRemediationError("current owned content does not match parent final snapshot")
     identity = _git_identity(root)
     paths, staged = _status_paths(root)

@@ -178,6 +178,19 @@ class LVRemediationTests(unittest.TestCase):
         with self.assertRaisesRegex(LVRemediationError, "already exists"):
             create_remediation_package(self.parent, self.run, "POST_REVIEW_VALIDATION", "reason")
 
+    def test_parent_snapshot_accepts_review_file_metadata(self) -> None:
+        review = self.harness / "_workspace/orchestration-results" / self.parent / "attempt-02"
+        path = review / "reviewer.report.json"
+        payload = json.loads(path.read_text())
+        enriched = [dict(item, regular_file=True, not_symlink=True) for item in self.before]
+        payload["owned_content_evidence"] = {"before": enriched, "after": enriched, "final": enriched, "stable": True}
+        data = canon(payload); path.write_bytes(data)
+        report_hash = sha(data); (review / "reviewer.report.sha256").write_text(report_hash + "\n")
+        status = json.loads((review / "review.status").read_text()); status["reviewer_report_sha256"] = report_hash
+        (review / "review.status").write_bytes(canon(status))
+        outcome = create_remediation_package(self.parent, self.run, "POST_REVIEW_VALIDATION", "reason")
+        self.assertEqual(outcome["status"], "SEALED")
+
     def test_parent_review_binding_tamper_blocks_package(self) -> None:
         review = self.harness / "_workspace/orchestration-results" / self.parent / "attempt-02"
         path = review / "reviewer.report.json"
