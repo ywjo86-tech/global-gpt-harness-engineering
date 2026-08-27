@@ -4,11 +4,12 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
@@ -160,9 +161,59 @@ def _source_snapshot(root: Path, preview: dict[str, Any], ledger: dict[str, str]
 
 
 def _worker_prompt(manifest: dict[str, Any]) -> str:
-    task = manifest["task"]
-    owned = "\n".join(f"- {item}" for item in manifest["owned_files"])
-    checks = "\n".join(f"- {item}" for item in manifest["completion_checks"])
+    if (
+        manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION
+        or manifest.get("package_status") != PACKAGE_STATUS
+        or manifest.get("execution_mode") != "manual"
+        or manifest.get("business_scope_mutation_policy") != "owned_files_only"
+        or manifest.get("execution_authorization_required") is not True
+        or manifest.get("worker_result_schema_version") != WORKER_RESULT_SCHEMA_VERSION
+    ):
+        raise LVExecutionPackageError("manual worker prompt package contract is invalid")
+    for field in ("run_id", "project_id", "gate_id", "lv_id"):
+        if not isinstance(manifest.get(field), str) or not manifest[field]:
+            raise LVExecutionPackageError(f"manual worker prompt field is missing or malformed: {field}")
+    task = manifest.get("task")
+    if (
+        not isinstance(task, dict)
+        or set(task) != {"purpose", "execution"}
+        or any(not isinstance(task.get(field), str) or not task[field] for field in ("purpose", "execution"))
+    ):
+        raise LVExecutionPackageError("manual worker prompt Stage contract is missing or malformed")
+    dependencies = manifest.get("dependencies")
+    completion_checks = manifest.get("completion_checks")
+    if (
+        not isinstance(dependencies, list)
+        or any(not isinstance(item, str) or not item for item in dependencies)
+        or not isinstance(completion_checks, list)
+        or not completion_checks
+        or any(not isinstance(item, str) or not item for item in completion_checks)
+    ):
+        raise LVExecutionPackageError("manual worker prompt Stage contract is missing or malformed")
+    owned_files = manifest.get("owned_files")
+    if not isinstance(owned_files, list) or not owned_files or len(set(owned_files)) != len(owned_files):
+        raise LVExecutionPackageError("manual worker prompt owned files are missing or malformed")
+    for item in owned_files:
+        if (
+            not isinstance(item, str)
+            or not item
+            or Path(item).is_absolute()
+            or "\\" in item
+            or PurePosixPath(item).as_posix() != item
+            or ".." in PurePosixPath(item).parts
+        ):
+            raise LVExecutionPackageError("manual worker prompt owned files are missing or malformed")
+    focused_tests = [
+        item
+        for item in owned_files
+        if item.startswith("tests/") and PurePosixPath(item).name.startswith("test_") and item.endswith(".py")
+    ]
+    if not focused_tests:
+        raise LVExecutionPackageError("manual worker prompt has no owned focused test")
+    owned = "\n".join(f"- {item}" for item in owned_files)
+    checks = "\n".join(f"- {item}" for item in completion_checks)
+    focused_command = shlex.join([".venv/bin/python", "-m", "pytest", "-q", *focused_tests])
+    full_command = ".venv/bin/python -m pytest -q"
     return (
         "# Manual LV Worker Package\n\n"
         f"Run ID: {manifest['run_id']}\n"
@@ -179,23 +230,32 @@ def _worker_prompt(manifest: dict[str, Any]) -> str:
         "- Do not modify the package manifest to change approval state.\n"
         "- Record the runtime state observed at execution time in the result object.\n"
         "- Worker reporting is not Harness final approval or verification.\n\n"
-        "## Task context\n"
-        f"Purpose: {task['purpose']}\n"
-        f"Dependencies: {', '.join(manifest['dependencies']) or 'none'}\n"
+        "## Canonical Stage contract\n"
+        f"Stage goal: {task['purpose']}\n"
+        f"Execution: {task['execution']}\n"
+        f"Dependencies: {', '.join(dependencies) or 'none'}\n"
         "Completion checks:\n"
         f"{checks or '- none'}\n\n"
         "## Editable scope\n"
         f"{owned}\n\n"
         "## Mandatory prohibitions\n"
-        "- Do not create, modify, or delete any file outside editable scope.\n"
+        "- Every path not listed in editable scope is out of scope; do not create, modify, or delete it.\n"
+        "- Use only facts present in the sealed package and canonical Stage contract.\n"
+        "- Do not guess external API schemas, field names, nesting, mappings, or implementation details absent from the contract.\n"
         "- Do not modify the plan, approval, checkpoint, or Gate ledger.\n"
         "- Do not expand the Gate or LV scope or work on a later LV.\n"
         "- Do not run git add, commit, or push.\n"
-        "- Do not use network access or install packages.\n"
-        "- Do not print secrets or environment variable values.\n"
+        "- Do not use network or API access and do not install packages.\n"
+        "- Do not access or print secrets, credentials, or environment variable values.\n"
         "- Worker self-PASS is not final Business/Gate approval.\n\n"
+        "## Required validation\n"
+        f"- Focused test: `{focused_command}`\n"
+        f"- Full regression: `{full_command}`\n"
+        "- Run static, secret, and owned-file boundary checks required by the package contract.\n\n"
         "## Required result\n"
         f"Return JSON matching {WORKER_RESULT_SCHEMA_VERSION}; include the exact run/package/gate/LV identity, source before/after evidence, file arrays, tests, commands, violations, and structured error.\n"
+        "- After producing the worker result, stop. Do not run review yourself.\n"
+        "- Review is a separate hard stop; do not automatically start another LV, advance the Gate, or change approval/state.\n"
     )
 
 

@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 from runtime.orchestrator.lv_execution_package import (
     LVExecutionPackageError,
+    MANIFEST_SCHEMA_VERSION,
     WORKER_RESULT_SCHEMA_VERSION,
+    _worker_prompt,
     create_lv_execution_package,
     validate_worker_result,
 )
@@ -72,11 +74,73 @@ class LVExecutionPackageTest(unittest.TestCase):
                 "Record the runtime state observed at execution time",
                 "Worker reporting is not Harness final approval or verification",
                 "Do not run git add",
-                "Do not use network",
+                "Do not use network or API access",
+                "Do not guess external API schemas",
+                ".venv/bin/python -m pytest -q tests/test_config.py",
+                ".venv/bin/python -m pytest -q",
+                "After producing the worker result, stop",
+                "Review is a separate hard stop",
+                "do not automatically start another LV",
             ):
                 self.assertIn(text, prompt)
             self.assertNotIn("execution_authorized=false", prompt)
             self.assertNotIn("Implement G1-LV3-1", prompt)
+
+    @staticmethod
+    def _prompt_manifest() -> dict[str, object]:
+        return {
+            "schema_version": MANIFEST_SCHEMA_VERSION,
+            "package_status": "sealed",
+            "run_id": "candidate-stage-01",
+            "project_id": "fixture-project",
+            "gate_id": "GATE-1",
+            "lv_id": "G1-LV3-2",
+            "task": {"purpose": "Internal standard candidate model", "execution": "parallel-eligible"},
+            "dependencies": ["Gate 0"],
+            "completion_checks": ["standard fields and validation", "dedicated model tests"],
+            "owned_files": ["app/models/product.py", "tests/test_product.py"],
+            "execution_mode": "manual",
+            "business_scope_mutation_policy": "owned_files_only",
+            "execution_authorization_required": True,
+            "worker_result_schema_version": WORKER_RESULT_SCHEMA_VERSION,
+        }
+
+    def test_prompt_is_dynamic_deterministic_and_binds_current_stage_meaning(self) -> None:
+        manifest = self._prompt_manifest()
+        first = _worker_prompt(manifest)
+        second = _worker_prompt(dict(manifest))
+        self.assertEqual(first, second)
+        for text in (
+            "Stage goal: Internal standard candidate model",
+            "app/models/product.py",
+            "tests/test_product.py",
+            "Every path not listed in editable scope is out of scope",
+            "Do not guess external API schemas",
+            ".venv/bin/python -m pytest -q tests/test_product.py",
+            "Full regression: `.venv/bin/python -m pytest -q`",
+            "After producing the worker result, stop",
+            "Do not run review yourself",
+            "do not automatically start another LV",
+            "advance the Gate",
+        ):
+            self.assertIn(text, first)
+
+    def test_prompt_missing_stage_or_malformed_owned_files_fail_closed(self) -> None:
+        missing_stage = self._prompt_manifest()
+        del missing_stage["task"]
+        with self.assertRaisesRegex(LVExecutionPackageError, "Stage contract"):
+            _worker_prompt(missing_stage)
+        for owned_files in (
+            [],
+            ["app/models/product.py", "app/models/product.py"],
+            ["../app/models/product.py", "tests/test_product.py"],
+            ["app/models/product.py"],
+        ):
+            with self.subTest(owned_files=owned_files):
+                malformed = self._prompt_manifest()
+                malformed["owned_files"] = owned_files
+                with self.assertRaises(LVExecutionPackageError):
+                    _worker_prompt(malformed)
 
     def test_run_id_collision_and_invalid_ids_fail_closed(self) -> None:
         with TemporaryDirectory() as directory:

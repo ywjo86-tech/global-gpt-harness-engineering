@@ -27,6 +27,23 @@ Jarvis bridge contract is documented in `docs/harness/orchestration-jarvis-bridg
 Jarvis connection readiness is documented in `docs/harness/orchestration-jarvis-bridge-readiness.md`.
 
 The document-based orchestration rules in `docs/harness/` remain the reference contract. This runtime layer expands them into executable file-based workflows without requiring external servers, queues, or databases.
+
+## Manual single-LV worker prompt
+
+`lv-package` derives the manual worker prompt only from the sealed manifest's
+Stage purpose, execution mode, dependencies, completion checks, and exact owned
+files. Owned `tests/test_*.py` paths determine the focused pytest command; the
+project venv pytest command remains the full regression command. Missing or
+malformed Stage fields, owned paths, or focused tests fail closed before a
+package can be sealed.
+
+The prompt treats every non-owned path as out of scope, forbids guessing API
+schemas or implementation details absent from the canonical contract, and
+retains the Git, network/API, package-installation, secret, approval, and
+baseline boundaries. The worker must emit the bound worker-result schema and
+stop. Review is a separate hard stop and cannot automatically start another LV
+or advance a Gate.
+
 # Wallet Gate 0 canonical transition
 
 The wallet project mapping uses the Gate 0 states plus opt-in Gate 1 transition
