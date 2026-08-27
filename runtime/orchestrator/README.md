@@ -138,6 +138,23 @@ retain the existing conservative pattern checks. Interpreter evidence is
 recorded before and after tests and must match, including executable, owner,
 namespace, mount, venv prefix, base-prefix, version, and venv verification.
 
+## Post-review owned-file remediation
+
+A validation defect discovered after a sealed PASS review uses a separate remediation lineage; it never overwrites or re-labels an `attempt-<NN>` directory. Create the package before changing owned bytes, then preflight, run the manual worker, and review independently:
+
+```text
+python3 -m runtime.orchestrator.cli lv-remediation-package --parent-run-id <parent-run> --run-id <remediation-run> --reason-code <UPPER_SNAKE_CODE> --reason <bounded-redacted-reason>
+python3 -m runtime.orchestrator.cli lv-remediation-preflight --run-id <remediation-run>
+# authorized manual worker writes /tmp/harness-lv-remediation-worker-result-<remediation-run>.json
+python3 -m runtime.orchestrator.cli lv-remediation-review --run-id <remediation-run>
+```
+
+Artifacts are atomically sealed under `_workspace/orchestration-remediations/<remediation-run>/` in `package`, `preflight`, and `review` directories. Preflight also seals `worker.input.json` and its sidecar with the exact result field set, package and preflight hashes, before snapshot, runtime approval object, output path, and prohibitions. The package requires the latest parent review to be PASS with `hard_stop=true`, binds all parent artifact hashes plus canonical plan, approval, Gate/LV, branch/HEAD/tree/index, exact owned files, and before SHA-256/size. Preflight rejects staged or non-owned drift and stale worker paths. The worker result uses `orchestration.lv_remediation.worker.result.v1`, a distinct path and exact field set, and binds before/after owned content plus package and preflight seals. Review rechecks parent/package/preflight/worker immutability, exact ownership, focused and full tests, text/secret checks, and final snapshot stability. The copied worker result must be byte-identical to the original.
+
+The remediation review always records `hard_stop=true`, `transition_authorized=false`, and `checkpoint_authorized=false`. PASS is evidence only; it is not Gate completion, checkpoint authorization, business approval, or authority to start another LV. Existing attempt-03 legacy recovery remains unchanged and is not a remediation mechanism.
+
+`lv-remediation-review` uses the same exit convention: `0` PASS, `9` FAIL, `10` BLOCKED. Contract-construction errors use bounded JSON and exit `11`.
+
 `lv-review` exit codes are `0` for PASS, `9` for FAIL, and `10` for BLOCKED.
 Argument parsing and existing exception codes retain their prior meanings.
 A PASS remains a hard-stop review result only: it is not Gate completion,

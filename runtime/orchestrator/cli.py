@@ -9,6 +9,7 @@ from .contract_adapter import ContractMappingError
 from .engine import OrchestrationEngine
 from .lv_execution_package import LVExecutionPackageError, create_lv_execution_package
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
+from .lv_remediation import LVRemediationError
 from .lv_review import LVReviewError, preflight_run, review_run
 from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
 
@@ -24,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review"]:
         sub = subparsers.add_parser(name)
         if name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
@@ -42,6 +43,13 @@ def main(argv: list[str] | None = None) -> int:
                     required=True,
                     help="canonical positive review attempt; writes only to attempt-<NN>",
                 )
+        elif name == "lv-remediation-package":
+            sub.add_argument("--parent-run-id", required=True)
+            sub.add_argument("--run-id", required=True)
+            sub.add_argument("--reason-code", required=True)
+            sub.add_argument("--reason", required=True)
+        elif name in {"lv-remediation-preflight", "lv-remediation-review"}:
+            sub.add_argument("--run-id", required=True)
         else:
             sub.add_argument("--project", required=True)
         if name in {"plan", "run", "gate"}:
@@ -69,6 +77,24 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "lv-review":
             outcome = review_run(args.run_id, attempt=args.attempt)
+            _print(outcome)
+            if outcome.get("status") == "PASS":
+                return 0
+            if outcome.get("status") == "FAIL":
+                return 9
+            return 10
+        if args.command == "lv-remediation-package":
+            from .lv_remediation import create_remediation_package
+            _print(create_remediation_package(args.parent_run_id, args.run_id, args.reason_code, args.reason))
+            return 0
+        if args.command == "lv-remediation-preflight":
+            from .lv_remediation import create_remediation_preflight
+            outcome = create_remediation_preflight(args.run_id)
+            _print(outcome)
+            return 0 if outcome.get("status") == "READY" else 10
+        if args.command == "lv-remediation-review":
+            from .lv_remediation import review_remediation
+            outcome = review_remediation(args.run_id)
             _print(outcome)
             if outcome.get("status") == "PASS":
                 return 0
@@ -124,6 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     except LVReviewError as exc:
         _print({"error": str(exc), "error_type": "lv_review_error"})
         return 8
+    except LVRemediationError as exc:
+        _print({"error": str(exc), "error_type": "lv_remediation_error"})
+        return 11
 
     return 1
 

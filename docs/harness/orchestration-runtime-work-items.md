@@ -93,6 +93,29 @@ Change targets:
 - `tests/test_audit_log.py`
 - `docs/harness/orchestration-jarvis-bridge.md`
 
+## Work Item 5: Post-review Remediation Lineage
+
+Goal:
+- Seal a generic, immutable remediation lineage when an owned-file validation defect is found after a PASS hard-stop review.
+- Preserve the parent run and review while binding the remediation reason, before/after owned-content evidence, canonical plan, approval, Gate, LV, and Git baseline.
+
+Document classes:
+- runtime source
+- runtime tests
+- runtime docs
+
+Change targets:
+- `runtime/orchestrator/lv_remediation.py`
+- `runtime/orchestrator/cli.py`
+- `tests/test_lv_remediation.py`
+- `runtime/orchestrator/README.md`
+
+Completion constraints:
+- Existing package, preflight, worker, and review artifacts remain immutable.
+- Remediation package, preflight, worker result, and independent review use a namespace separate from review attempts.
+- Non-owned, staged, branch, HEAD, tree, index, parent-artifact, and content-binding drift fail closed.
+- Every review result has `hard_stop=true`; PASS grants neither checkpoint, Gate completion, nor LV transition.
+
 ## Validation
 
 - `inspect`, `plan`, `run`, `collect`, `fanin`, `gate`, and `status` must remain functional.
