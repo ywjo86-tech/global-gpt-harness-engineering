@@ -47,7 +47,7 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 
 - `docs/harness/orchestration-execution-standard.md`
 - `docs/harness/orchestration-approval-rules.md`
-- `docs/harness/orchestration-runtime-work-items.md`
+- `docs/harness/orchestration-runtime-work-items.md` — global Gate orchestration requirements SHA-256 `f734be6f2a81c89428f28605a1ffcd12234a511e69ded4c607041a2e0b367361`
 - `docs/harness/orchestration-jarvis-bridge.md`
 - `docs/harness/stage-gate-reviewer.md`
 - `docs/harness/stage-gate-final-report-template.md`
@@ -63,4 +63,4 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 - Confirm bridge snapshots can be generated from runtime state for Jarvis consumption.
 
 ## Last Updated
-2026-06-18
+2026-08-28

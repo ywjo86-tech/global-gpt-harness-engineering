@@ -155,6 +155,29 @@ The remediation review always records `hard_stop=true`, `transition_authorized=f
 
 `lv-remediation-review` uses the same exit convention: `0` PASS, `9` FAIL, `10` BLOCKED. Contract-construction errors use bounded JSON and exit `11`.
 
+## Global Gate orchestration
+
+The canonical R01-R25 requirements are recorded without abbreviation in `docs/harness/orchestration-runtime-work-items.md`. The sealed global Gate orchestration requirements SHA-256 is `f734be6f2a81c89428f28605a1ffcd12234a511e69ded4c607041a2e0b367361`; runtime state, action manifests, checkpoints, ledgers, and handoffs must bind this value and fail closed on drift.
+
+`gate-dry-run` is the project-Codex entrypoint for loading a declarative Gate without mutation. `project-onboard --dry-run` reports missing lifecycle contracts and namespace readiness after `dev new` or `dev add`; the non-Git `dev` launcher is not modified by this repository. Project Codex invokes the Harness CLI internally, so users do not need a separate Harness Codex session. Harness engine maintenance remains the only reason to work directly in the Harness project.
+
+The Gate controller binds one authorization to the project, Gate, canonical plan SHA, complete LV order, per-LV owned files and completion criteria, lifecycle permissions, and stop conditions. LV changes use auditable `SYSTEM_TRANSITION` state with `user_approval_renewal=false`; an approval object is never rewritten as the active LV. The lifecycle is `PLAN → PACKAGE → PREFLIGHT → WORKER → REVIEW → CHECKPOINT → EXIT → HANDOFF`, with FAIL routed to same-LV remediation and BLOCKED routed to user handoff.
+
+`GATE_BY_GATE` is the default and stops after Gate Exit. `FULL_PLAN` is rejected unless final project validation and explicit opt-in are both true; no opt-in is activated by implementation or dry-run. `RESUME` verifies a sealed checkpoint SHA plus project, Gate, and run namespace before returning state, so completed LVs are not repeated and artifacts are not overwritten.
+
+The completeness ledger maps every loaded LV plan item to Gate, LV, selected existing asset, owned files, tests, evidence SHA, and status. Missing, duplicate, reordered, unbound, or unevidenced completed items block Exit. Structured handoff uses an exact field set and canonical SHA, includes recovery checkpoint and next-stage boundaries, and revalidates changed files against the LV authorization.
+
+All approval, state, artifact, run, and secret paths live below distinct per-project namespaces. Project IDs and relative paths are validated, cross-project checkpoint/handoff reuse is rejected, and concurrent ownership of one file by different active LVs is blocked. Asset selection is global existing asset, then project existing asset, then composition; capability gaps are reported without authorizing global Skill/Agent creation.
+
+CLI examples:
+
+```text
+python3 -m runtime.orchestrator.cli gate-dry-run --project-root <project-root> --gate-id GATE-1 --mode GATE_BY_GATE
+python3 -m runtime.orchestrator.cli project-onboard --project-root <project-root> --alias <alias> --dry-run
+```
+
+These commands are read-only. Product work begins only through a separately sealed package and never as a side effect of a pilot.
+
 `lv-review` exit codes are `0` for PASS, `9` for FAIL, and `10` for BLOCKED.
 Argument parsing and existing exception codes retain their prior meanings.
 A PASS remains a hard-stop review result only: it is not Gate completion,
