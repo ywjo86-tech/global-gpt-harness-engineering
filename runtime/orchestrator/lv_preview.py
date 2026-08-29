@@ -36,25 +36,22 @@ class LVDefinition:
 
 
 def _gate_number(gate_id: str) -> str:
-    match = re.fullmatch(r"GATE-([0-9]+)", gate_id)
-    if not match:
+    if not isinstance(gate_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", gate_id):
         raise LVPreviewValidationError(f"invalid Gate ID: {gate_id}")
-    return match.group(1)
+    return gate_id
 
 
 def _validate_lv_id(gate_id: str, lv_id: str) -> None:
-    gate_number = _gate_number(gate_id)
-    match = re.fullmatch(r"G([0-9]+)-LV3-([0-9]+)", lv_id)
-    if not match:
+    _gate_number(gate_id)
+    if not isinstance(lv_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", lv_id):
         raise LVPreviewValidationError(f"invalid LV ID: {lv_id}")
-    if match.group(1) != gate_number:
-        raise LVPreviewValidationError(f"LV {lv_id} does not belong to {gate_id}")
 
 
 def _gate_section(plan_text: str, gate_id: str) -> str:
     gate_number = _gate_number(gate_id)
-    headings = list(re.finditer(r"(?m)^###\s+Gate\s+([0-9]+)\b.*$", plan_text))
-    matches = [index for index, heading in enumerate(headings) if heading.group(1) == gate_number]
+    headings = list(re.finditer(r"(?m)^###\s+Gate\s+([A-Za-z0-9_-]+).*?$", plan_text))
+    matches = [index for index, heading in enumerate(headings)
+               if heading.group(1) == gate_number or (gate_number.startswith("GATE-") and heading.group(1) == gate_number[5:])]
     if len(matches) != 1:
         raise LVPreviewValidationError(f"canonical plan must contain exactly one section for {gate_id}")
     index = matches[0]

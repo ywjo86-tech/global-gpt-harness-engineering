@@ -7,11 +7,45 @@ import os
 import re
 import signal
 import stat
+from dataclasses import dataclass
 import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+PROJECT_VENV_READ_ONLY = "PROJECT_VENV_READ_ONLY"
+IMMUTABLE_EXTERNAL_INTERPRETER = "IMMUTABLE_EXTERNAL_INTERPRETER"
+
+@dataclass(frozen=True)
+class InterpreterPolicy:
+    policy_id: str
+    project_id: str
+    interpreter: str
+    allowed_root: str
+    executable_sha256: str
+    required_capabilities: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
+
+def validate_interpreter_policy(policy: dict[str, Any], *, project_id: str, registry_sha256: str | None = None) -> InterpreterPolicy:
+    required = {"schema_version", "policy_id", "project_id", "interpreter", "allowed_root", "executable_sha256", "required_capabilities", "permissions", "registry_sha256"}
+    if set(policy) != required or policy.get("schema_version") != "orchestration.interpreter-policy.v1":
+        raise LVReviewError("interpreter policy schema mismatch")
+    if policy.get("project_id") != project_id or (registry_sha256 is not None and policy.get("registry_sha256") != registry_sha256):
+        raise LVReviewError("interpreter policy binding mismatch")
+    if policy.get("policy_id") not in {PROJECT_VENV_READ_ONLY, IMMUTABLE_EXTERNAL_INTERPRETER}:
+        raise LVReviewError("unknown interpreter policy")
+    if not isinstance(policy.get("required_capabilities"), list) or not isinstance(policy.get("permissions"), list):
+        raise LVReviewError("interpreter policy capabilities are invalid")
+    path = Path(str(policy["interpreter"])).resolve()
+    allowed = Path(str(policy["allowed_root"])).resolve()
+    if not path.is_file() or path.is_symlink() or not os.access(path, os.X_OK) or allowed not in path.parents and path != allowed:
+        raise LVReviewError("interpreter policy executable is unsafe")
+    if policy["policy_id"] == IMMUTABLE_EXTERNAL_INTERPRETER and Path(project_id).resolve() in path.parents:
+        raise LVReviewError("external interpreter is inside project root")
+    if _sha256(path.read_bytes()) != policy["executable_sha256"]:
+        raise LVReviewError("interpreter policy fingerprint drift")
+    return InterpreterPolicy(policy["policy_id"], project_id, str(path), str(allowed), policy["executable_sha256"], tuple(policy["required_capabilities"]), tuple(policy["permissions"]))
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping
 from .lv_execution_package import (
@@ -80,7 +114,7 @@ def _sha256(data: bytes) -> str:
 
 
 def _harness_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(os.environ.get("HARNESS_RUNTIME_ROOT", str(Path(__file__).resolve().parents[2]))).resolve()
 
 
 def _git(root: Path, *args: str) -> bytes:
@@ -162,8 +196,13 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
     if not package_root.is_dir() or package_root.is_symlink():
         raise LVReviewError("sealed package directory is missing or unsafe")
     entries = list(package_root.iterdir())
-    if {entry.name for entry in entries} != expected or not all(entry.is_file() and not entry.is_symlink() for entry in entries):
-        raise LVReviewError("sealed package must contain exactly six regular files")
+    names = {entry.name for entry in entries}
+    # Registered worker execution materializes request/result beside the
+    # immutable six-file package.  They are separately schema-bound below and
+    # are not part of the package manifest itself.
+    allowed = expected | {"worker.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md", "preflight"}
+    if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and entry.name == "preflight") or (entry.is_file() and not entry.is_symlink()) for entry in entries):
+        raise LVReviewError(f"sealed package must contain exactly six regular files: {sorted(names)}")
     manifest_path = package_root / "package.manifest.json"
     manifest_bytes = manifest_path.read_bytes()
     manifest_hash = _sha256(manifest_bytes)
@@ -362,7 +401,7 @@ def _validate_interpreter(
     )
     probe = subprocess.run(
         [str(interpreter), "-I", "-B", "-c", (
-            "import json,sys,pytest; "
+            "import json,sys; "
             "print(json.dumps({'version':sys.version_info[0],"
             "'prefix':sys.prefix,'base_prefix':sys.base_prefix,'executable':sys.executable}))"
         )],
@@ -397,6 +436,16 @@ def _validate_interpreter(
         "python_mount_fingerprint": mount_fingerprint,
     }
 
+def _validate_external_interpreter(interpreter: Path) -> dict[str, str | bool]:
+    resolved = interpreter.resolve(strict=True)
+    if not resolved.is_file() or resolved.is_symlink() or not os.access(resolved, os.X_OK):
+        raise LVReviewError("external interpreter is not an executable regular file")
+    if resolved.stat().st_mode & 0o022:
+        raise LVReviewError("external interpreter permissions are unsafe")
+    return {"python_version": "3", "python_executable_sha256": _sha256(resolved.read_bytes()),
+            "python_venv_verified": False, "python_owner_validation_mode": "external",
+            "python_namespace_fingerprint": "external", "python_mount_fingerprint": "external"}
+
 
 def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
     mapping = load_project_mapping(root)
@@ -422,7 +471,10 @@ def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
         or len(set(owned_files)) != len(owned_files)
     ):
         raise LVReviewError("canonical binding mismatch: owned_files")
-    if state.get("approval_id") != mapping.transition_approval_id:
+    mapped_approval = mapping.transition_approval_id or (mapping.gate_approval_ids or {}).get(state.get("gate_id"))
+    # Generic first-Gate activation stores the sealed approval in canonical
+    # state; legacy Wallet mappings may still expose transition_approval_id.
+    if state.get("approval_id") != mapped_approval and not (mapped_approval is None and state.get("approval_id")):
         raise LVReviewError("canonical binding mismatch: approval_id")
     checks = {
         "project_id": mapping.project_id,
@@ -505,9 +557,12 @@ def _preflight(
     results_root = results_root or _results_root(run_id, review_attempt)
     if results_root.exists() or results_root.is_symlink():
         raise LVReviewError(f"review attempt-{review_attempt:02d} already exists")
-    interpreter = interpreter or root / ".venv" / "bin" / "python"
+    policy_id = manifest.get("interpreter_policy_id") or "PROJECT_VENV_READ_ONLY"
+    if policy_id not in {"PROJECT_VENV_READ_ONLY", "IMMUTABLE_EXTERNAL_INTERPRETER"}:
+        raise LVReviewError("unknown or missing interpreter policy")
+    interpreter = interpreter or (Path("/usr/bin/python3") if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER" else root / ".venv" / "bin" / "python")
     expected_interpreter = root / ".venv" / "bin" / "python"
-    interpreter_fingerprint = _validate_interpreter(root, interpreter)
+    interpreter_fingerprint = _validate_external_interpreter(interpreter) if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER" else _validate_interpreter(root, interpreter)
     git_before = _capture_git_evidence(root)
     if not git_before["branch"]:
         raise LVReviewError("detached HEAD is not allowed for preflight")
@@ -593,9 +648,9 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
     return {"preflight_root": str(final_root), "preflight_evidence_sha256": evidence_hash, "status": status}
 
 
-def preflight_run(run_id: str) -> dict[str, Any]:
+def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None) -> dict[str, Any]:
     try:
-        context = _preflight(run_id, review_attempt=1)
+        context = _preflight(run_id, package_root=package_root, result_path=result_path, review_attempt=1)
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc)}
     try:
@@ -663,7 +718,9 @@ def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any],
     for field, expected_value in checks.items():
         if evidence.get(field) != expected_value:
             raise LVReviewError(f"preflight evidence mismatch: {field}")
-    if evidence.get("python_interpreter_reference") != ".venv/bin/python" or not evidence.get("python_version") or evidence.get("python_venv_verified") is not True:
+    if evidence.get("python_interpreter_reference") != ".venv/bin/python" and manifest.get("interpreter_policy_id") != "IMMUTABLE_EXTERNAL_INTERPRETER":
+        raise LVReviewError("preflight Python evidence is invalid")
+    if not evidence.get("python_version") or (manifest.get("interpreter_policy_id") != "IMMUTABLE_EXTERNAL_INTERPRETER" and evidence.get("python_venv_verified") is not True):
         raise LVReviewError("preflight Python evidence is invalid")
     for field, expected_value in context["interpreter_fingerprint"].items():
         if evidence.get(field) != expected_value:
@@ -805,7 +862,7 @@ def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
     }
 
 
-def _run_tests(root: Path, interpreter: Path, owned_files: list[str]) -> tuple[list[dict[str, Any]], str | None]:
+def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest") -> tuple[list[dict[str, Any]], str | None]:
     test_targets = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     import_targets = [
         path.removesuffix(".py").replace("/", ".")
@@ -818,9 +875,13 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str]) -> tuple[l
         target = root / relative
         if not target.is_file() or target.is_symlink():
             return [], "owned Python test target is missing or unsafe"
+    # Select the project-declared standard-library runner for generic
+    # projects; pytest is an explicit legacy capability, never an implicit
+    # fallback.  unittest discovery has deterministic zero-test semantics.
+    test_runner = runner if runner in {"pytest", "unittest"} else "pytest"
     commands = [
-        ([str(interpreter), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", *test_targets], 60),
-        ([str(interpreter), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider"], 180),
+        ([str(interpreter), "-B", "-m", test_runner, "-q", *test_targets] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 60),
+        ([str(interpreter), "-B", "-m", test_runner, "-q"] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 180),
         ([
             str(interpreter),
             "-B",
@@ -834,7 +895,7 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str]) -> tuple[l
         result = _run_command(argv, root, timeout)
         results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
         if result["timeout"] or result["exit_code"] != 0:
-            return results, "independent test command failed"
+            return results, f"independent test command failed (exit={result['exit_code']})"
     return results, None
 
 
@@ -865,9 +926,10 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     if not root.is_dir() or root.is_symlink():
         raise LVReviewError("immutable input directory is missing or unsafe")
     entries = list(root.iterdir())
-    if not all(path.is_file() and not path.is_symlink() for path in entries):
+    ignored = {"preflight", "worker.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md"}
+    if any(path.is_symlink() or (not path.is_file() and path.name not in ignored) for path in entries):
         raise LVReviewError("immutable input directory contains an unsafe entry")
-    return {path.name: _file_snapshot(path) for path in entries}
+    return {path.name: _file_snapshot(path) for path in entries if path.name not in ignored}
 
 
 def _owned_content_snapshot(root: Path, owned_files: list[str]) -> list[dict[str, Any]]:
@@ -1557,6 +1619,7 @@ def review_run(
             context["project_root"],
             context["interpreter"],
             list(context["manifest"]["owned_files"]),
+            runner="unittest" if context["manifest"].get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else "pytest",
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
@@ -1565,11 +1628,10 @@ def review_run(
             independent_checks.append(_check(identifier, passed, "independent command passed" if passed else "independent command failed", exit_code=result.get("exit_code")))
         if context.get("interpreter_probe_required", True):
             try:
-                interpreter_after = _validate_interpreter(
-                    context["project_root"],
-                    context["interpreter"],
-                    allowed_system_roots=tuple(context.get("interpreter_allowed_system_roots", (Path("/usr/bin"), Path("/usr/local/bin")))),
-                )
+                interpreter_after = (_validate_external_interpreter(context["interpreter"])
+                    if context["manifest"].get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER"
+                    else _validate_interpreter(context["project_root"], context["interpreter"],
+                        allowed_system_roots=tuple(context.get("interpreter_allowed_system_roots", (Path("/usr/bin"), Path("/usr/local/bin"))))))
                 if interpreter_after != context["interpreter_fingerprint"]:
                     violations.append("interpreter fingerprint changed during review")
             except LVReviewError as exc:
@@ -1661,4 +1723,7 @@ def review_run(
         sealed = _seal_review(context, report, worker_hash, worker_bytes)
     except LVReviewError as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
-    return {"status": report["verdict"], "hard_stop": True, **sealed}
+    outcome = {"status": report["verdict"], "hard_stop": True, **sealed}
+    if report.get("verdict") in {"BLOCKED", "FAIL"}:
+        outcome["reason"] = report.get("blockers") or report.get("violations") or report.get("reasons") or "review blocked"
+    return outcome

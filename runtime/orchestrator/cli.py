@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .contract_loader import ContractLoadError
@@ -10,6 +11,11 @@ from .engine import OrchestrationEngine
 from .lv_execution_package import LVExecutionPackageError, create_lv_execution_package
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
 from .lv_remediation import LVRemediationError
+from .gate_orchestrator import GateOrchestrationError
+from .gate_approval import GateApprovalError
+from .project_isolation import ProjectIsolationError
+from .gate_controller import GateControllerError
+from .resume_store import ResumeStoreError
 from .lv_review import LVReviewError, preflight_run, review_run
 from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
 
@@ -25,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-onboard"]:
         sub = subparsers.add_parser(name)
         if name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
@@ -50,6 +56,45 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--reason", required=True)
         elif name in {"lv-remediation-preflight", "lv-remediation-review"}:
             sub.add_argument("--run-id", required=True)
+        elif name == "gate-dry-run":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--mode", default="GATE_BY_GATE")
+            sub.add_argument("--mapping-root")
+        elif name == "gate-run":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--run-id", required=True)
+            sub.add_argument("--harness-root", required=True)
+            sub.add_argument("--mode", default="GATE_BY_GATE")
+            sub.add_argument("--resume", action="store_true")
+            sub.add_argument("--requirements-sha256", required=True)
+            sub.add_argument("--approval-evidence", required=True)
+            sub.add_argument("--branch", required=True)
+            sub.add_argument("--head", required=True)
+            sub.add_argument("--requirement-evidence", required=True)
+            sub.add_argument("--mapping-root")
+        elif name == "gate-approve":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--approval-evidence", required=True)
+            sub.add_argument("--mapping-root")
+        elif name == "gate-validate":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--requirements-sha256", required=True)
+            sub.add_argument("--approval-evidence", required=True)
+            sub.add_argument("--branch", required=True)
+            sub.add_argument("--head", required=True)
+            sub.add_argument("--harness-root", required=True)
+            sub.add_argument("--requirement-evidence", required=True)
+            sub.add_argument("--mapping-root")
+        elif name == "project-onboard":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--alias", required=True)
+            sub.add_argument("--dry-run", action="store_true")
+            sub.add_argument("--bootstrap", action="store_true")
+            sub.add_argument("--mapping-root")
         else:
             sub.add_argument("--project", required=True)
         if name in {"plan", "run", "gate"}:
@@ -62,6 +107,9 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--read-only", action="store_true", help="validate contracts and static state without creating or changing files")
 
     args = parser.parse_args(argv)
+    if getattr(args, "mapping_root", None) is not None:
+        # The child lifecycle commands inherit this process-local registry choice.
+        os.environ["HARNESS_CONTRACT_MAPPING_ROOT"] = args.mapping_root
     try:
         if args.command == "lv-plan":
             if not args.read_only:
@@ -101,6 +149,58 @@ def main(argv: list[str] | None = None) -> int:
             if outcome.get("status") == "FAIL":
                 return 9
             return 10
+        if args.command == "gate-dry-run":
+            from .gate_orchestrator import compatibility_dry_run
+            outcome = compatibility_dry_run(args.project_root, args.gate_id, mode=args.mode)
+            _print(outcome)
+            return 0 if outcome.get("status") == "COMPATIBLE" else 10
+        if args.command == "gate-run":
+            from .gate_orchestrator import execute_gate, dispatch_requirement_artifact, validate_global_gate_bindings
+            validate_global_gate_bindings(
+                args.project_root, args.gate_id, requirements_sha256=args.requirements_sha256,
+                approval_evidence=args.approval_evidence, branch=args.branch, head=args.head,
+                harness_root=args.harness_root,
+            )
+            raw = json.loads(Path(args.requirement_evidence).read_text(encoding="utf-8"))
+            expected = tuple(raw.get("requirements", {}).keys()) if raw.get("schema_version") == "orchestration.project-requirement-contract.v1" else tuple(f"R{i:02d}" for i in range(1, 26))
+            first = next(iter(raw.get("requirements", {}).values()), {}) if isinstance(raw.get("requirements"), dict) else {}
+            artifact = dispatch_requirement_artifact(args.requirement_evidence, project_id=str(first.get("project_id", Path(args.project_root).name)),
+                gate_id=args.gate_id, lv_id=str(first.get("lv_id", "")), plan_sha256=str(first.get("plan_sha256", "")), expected_requirement_ids=expected)
+            outcome = execute_gate(
+                args.project_root, args.gate_id, args.run_id, harness_root=args.harness_root,
+                mode=args.mode, resume=args.resume, requirements_sha256=args.requirements_sha256, approval_evidence=args.approval_evidence,
+                branch=args.branch, head=args.head,
+                requirement_evidence=artifact["requirements"],
+            )
+            _print(outcome)
+            return 0 if outcome.get("status") in {"SYSTEM_TRANSITION", "GATE_EXIT"} else 10
+        if args.command == "gate-approve":
+            from .gate_orchestrator import activate_first_gate
+            outcome = activate_first_gate(args.project_root, args.gate_id, args.approval_evidence, mapping_root=args.mapping_root)
+            _print(outcome)
+            return 0 if outcome.get("status") in {"ACTIVATED", "ALREADY_ACTIVE"} else 10
+        if args.command == "gate-validate":
+            from .gate_orchestrator import load_requirement_evidence, validate_global_gate_bindings
+            load_requirement_evidence(args.requirement_evidence, requirements_sha256=args.requirements_sha256)
+            outcome = validate_global_gate_bindings(
+                args.project_root, args.gate_id, requirements_sha256=args.requirements_sha256,
+                approval_evidence=args.approval_evidence, branch=args.branch, head=args.head,
+                harness_root=args.harness_root,
+            )
+            _print(outcome)
+            return 0
+        if args.command == "project-onboard":
+            if args.bootstrap:
+                from .project_onboarding import OnboardingRegistry
+                if not args.mapping_root:
+                    raise GateOrchestrationError("--bootstrap requires an isolated --mapping-root")
+                registry = OnboardingRegistry(Path(args.mapping_root) / "aliases")
+                outcome = registry.bootstrap(args.project_root, args.alias, mapping_root=args.mapping_root)
+            else:
+                from .gate_orchestrator import onboarding_dry_run
+                outcome = onboarding_dry_run(args.project_root, args.alias)
+            _print(outcome)
+            return 0 if outcome.get("status") in {"BOOTSTRAPPED", "COMPATIBLE", "REGISTRATION_READY"} or not outcome.get("fail_closed") else 10
         if args.command == "inspect" and args.read_only:
             _print(inspect_read_only(Path(args.project)))
             return 0
@@ -153,6 +253,18 @@ def main(argv: list[str] | None = None) -> int:
     except LVRemediationError as exc:
         _print({"error": str(exc), "error_type": "lv_remediation_error"})
         return 11
+    except GateOrchestrationError as exc:
+        _print({"error": str(exc), "error_type": "gate_orchestration_error"})
+        return 12
+    except GateApprovalError as exc:
+        _print({"error": str(exc), "error_type": "gate_approval_error"})
+        return 13
+    except ProjectIsolationError as exc:
+        _print({"error": str(exc), "error_type": "project_isolation_error"})
+        return 14
+    except (GateControllerError, ResumeStoreError) as exc:
+        _print({"error": str(exc), "error_type": "gate_controller_error", "status": "BLOCKED", "hard_stop": True})
+        return 15
 
     return 1
 

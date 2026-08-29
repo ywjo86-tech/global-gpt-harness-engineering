@@ -100,6 +100,45 @@ class FixedRunnerTests(unittest.TestCase):
                                      owned_files=["x.py"], command_id="bad", input_sha256=INPUT_SHA,
                                      registry=registry)
 
+    def test_worker_registered_template_binds_typed_request_and_result_paths(self):
+        seen = {}
+        def executor(argv, **kwargs):
+            seen.update(argv=argv, kwargs=kwargs)
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request = root / "request.json"
+            result = root / "result.json"
+            manifest = self.manifest(command_id="lv.worker", parameters={
+                "request_file": str(request), "result_file": str(result)})
+            run_sealed_action(manifest, expected_project_id="wallet-affiliate-collector",
+                              expected_requirements_sha256=SHA, audit_path=root / "audit.jsonl",
+                              execution_root=root, executor=executor)
+            self.assertEqual(seen["argv"][-4:], ["--request-file", str(request), "--result-file", str(result)])
+            self.assertFalse(seen["kwargs"]["shell"])
+
+    def test_worker_unknown_or_unsafe_parameter_is_blocked(self):
+        for params in (
+            {"request_file": "/tmp/request", "result_file": "/tmp/result", "evil": "x"},
+            {"request_file": "/tmp/../request", "result_file": "/tmp/result"},
+        ):
+            with self.subTest(params=params), self.assertRaises(FixedRunnerError):
+                self.manifest(command_id="lv.worker", parameters=params)
+
+    def test_worker_path_symlink_and_outside_root_are_blocked(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); outside = root.parent / (root.name + "-outside")
+            outside.mkdir()
+            request = root / "request.json"; result = root / "result.json"
+            request.write_text("{}")
+            result.symlink_to(outside / "result.json")
+            manifest = self.manifest(command_id="lv.worker", parameters={
+                "request_file": str(request), "result_file": str(result)})
+            with self.assertRaisesRegex(FixedRunnerError, "symlink"):
+                run_sealed_action(manifest, expected_project_id="wallet-affiliate-collector",
+                                  expected_requirements_sha256=SHA, audit_path=root / "audit.jsonl",
+                                  execution_root=root, executor=lambda *a, **k: None)
+
 
 if __name__ == "__main__":
     unittest.main()

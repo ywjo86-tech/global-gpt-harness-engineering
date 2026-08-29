@@ -13,6 +13,7 @@ from .approval_hash import calculate_record_hash
 
 
 MAPPING_DIR = Path(__file__).resolve().parent / "contract_mappings"
+MAPPING_ROOT_ENV = "HARNESS_CONTRACT_MAPPING_ROOT"
 ALLOWED_CONTRACT_KEYS = {
     "development_plan",
     "changelog",
@@ -39,6 +40,8 @@ class ContractMapping:
     gate_state_path: Path
     gate_state_ledger_path: Path | None
     transition_approval_id: str | None
+    gate_approval_ids: dict[str, str] | None = None
+    interpreter_policy_id: str | None = None
 
     def summary(self, project_root: Path, selected_source: Path | None = None) -> dict[str, Any]:
         def relative(path: Path) -> str:
@@ -94,11 +97,31 @@ def _source(payload: dict[str, Any], key: str, root: Path) -> tuple[Path, str]:
     return path, digest
 
 
-def load_project_mapping(project_root: str | Path) -> ContractMapping | None:
+def _mapping_root(value: str | Path | None) -> Path:
+    """Resolve the declarative mapping registry without crossing a symlink boundary.
+
+    The normal installation uses the code-owned registry.  Production CLI fixtures
+    and declarative onboarding may supply an isolated registry root explicitly (or
+    through ``HARNESS_CONTRACT_MAPPING_ROOT``); this is intentionally process-local
+    and never mutates the shared registry.
+    """
+    supplied = value if value is not None else __import__("os").environ.get(MAPPING_ROOT_ENV)
+    if supplied is None:
+        return MAPPING_DIR
+    root = Path(supplied)
+    if not root.is_absolute() or not root.exists() or not root.is_dir() or root.is_symlink() or root != root.resolve():
+        raise ContractMappingError("mapping root must be an existing absolute directory without symlink components")
+    return root
+
+
+def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path | None = None) -> ContractMapping | None:
     root = Path(project_root).resolve()
-    mapping_path = MAPPING_DIR / f"{root.name}.json"
+    registry_root = _mapping_root(mapping_root)
+    mapping_path = registry_root / f"{root.name}.json"
     if not mapping_path.exists():
         return None
+    if mapping_path.is_symlink() or not mapping_path.is_file():
+        raise ContractMappingError("mapping entry is missing, non-regular, or symlinked")
     payload = json.loads(mapping_path.read_text(encoding="utf-8"))
     if payload.get("project_id") != root.name:
         raise ContractMappingError("mapping project_id does not match the target project")
@@ -138,6 +161,9 @@ def load_project_mapping(project_root: str | Path) -> ContractMapping | None:
     if not isinstance(transition, dict):
         raise ContractMappingError("canonical_transition must be an object")
     transition_approval_id = transition.get("gate_1_approval_id")
+    gate_approval_ids = transition.get("gate_approval_ids", {})
+    if not isinstance(gate_approval_ids, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v for k, v in gate_approval_ids.items()):
+        raise ContractMappingError("canonical_transition.gate_approval_ids must be an object of strings")
     if transition_approval_id is not None and (not isinstance(transition_approval_id, str) or not transition_approval_id):
         raise ContractMappingError("canonical_transition.gate_1_approval_id must be null or a non-empty string")
     return ContractMapping(
@@ -153,6 +179,8 @@ def load_project_mapping(project_root: str | Path) -> ContractMapping | None:
         gate_state_path=_resolve_project_path(root, static.get("gate_state"), "static_validation.gate_state"),
         gate_state_ledger_path=ledger_path,
         transition_approval_id=transition_approval_id,
+        gate_approval_ids=dict(gate_approval_ids),
+        interpreter_policy_id=payload.get("interpreter_policy_id"),
     )
 
 
@@ -378,7 +406,7 @@ def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, 
     except UnicodeDecodeError as exc:
         raise ContractMappingError("Gate State ledger must be valid UTF-8") from exc
     payload = _ledger_payload(text)
-    if payload["schema_version"] != 1 or payload["project_id"] != mapping.project_id or payload["gate_id"] != "GATE-1":
+    if payload["schema_version"] != 1 or payload["project_id"] != mapping.project_id:
         raise ContractMappingError("Gate State ledger fixed fields are invalid")
     if payload["gate_state"] != "GATE1_ACTIVE":
         raise ContractMappingError("Gate State ledger gate_state must be GATE1_ACTIVE")
@@ -389,7 +417,8 @@ def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, 
         raise ContractMappingError("Gate State ledger plan_sha256 is invalid")
     if not isinstance(payload["approval_id"], str) or not isinstance(payload["approval_record_hash"], str):
         raise ContractMappingError("Gate State ledger approval fields are invalid")
-    if payload["approval_id"] != mapping.transition_approval_id or not re.fullmatch(r"[0-9a-f]{64}", payload["approval_record_hash"]):
+    expected_approval = (mapping.gate_approval_ids or {}).get(payload["gate_id"], mapping.transition_approval_id)
+    if payload["approval_id"] != expected_approval or not re.fullmatch(r"[0-9a-f]{64}", payload["approval_record_hash"]):
         raise ContractMappingError("Gate State ledger approval binding is invalid")
     matches = [event for event in events if event.get("approval_id") == payload["approval_id"]]
     if len(matches) != 1 or matches[0].get("record_hash") != payload["approval_record_hash"]:
@@ -480,10 +509,36 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
 
     root = mapping.canonical_source.parent
     gate_text = mapping.gate_state_path.read_text(encoding="utf-8") if mapping.gate_state_path.is_file() else ""
+    activation_path = root / "docs" / "harness" / "first-gate.activation.json"
+    if activation_path.is_file() and "FIRST_GATE_ACTIVE" in gate_text:
+        try:
+            activation = json.loads(activation_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ContractMappingError("first Gate activation is malformed") from exc
+        required = {"project_id", "gate_id", "plan_sha256", "approval_id", "approval_record_hash", "branch", "head", "lv_order"}
+        if not required.issubset(activation) or activation.get("project_id") != mapping.project_id or activation.get("plan_sha256") != mapping.canonical_sha256:
+            raise ContractMappingError("first Gate activation binding mismatch")
+        return {"state": "GATE1_ACTIVE", "selected_source": mapping.canonical_source,
+                "checkpoint_commit": activation["head"], "transition_authorized": True,
+                "gate_1_started": True, "gate_id": activation["gate_id"],
+                "approval_id": activation["approval_id"], "approval_record_hash": activation["approval_record_hash"],
+                "canonical_plan": mapping.canonical_source.relative_to(root).as_posix(),
+                "plan_sha256": mapping.canonical_sha256, "active_scope": [activation["lv_order"][0]],
+                "owned_files": activation.get("owned_files", []), "activation_commit": activation.get("head"), "activation_committed_at": "bootstrap-activation", "ledger_path": "docs/GATE_STATE.md"}
     approval_text = mapping.business_approval_path.read_text(encoding="utf-8") if mapping.business_approval_path.is_file() else ""
     closure_matches = re.findall(r"Gate closure:\s*`(OPEN|CLOSED)`", gate_text)
     exit_matches = re.findall(r"G0-LV3-8:\s*`(PASS|FAIL)`", gate_text)
     gate_one_not_started = bool(re.search(r"Gate 1:\s*(?:`)?(?:시작하지 않음|대기)", gate_text))
+    # A newly onboarded project has no predecessor Gate checkpoint.  This
+    # explicit state is a waiting boundary, not a fabricated Gate-0 closure.
+    if "FIRST_GATE_WAITING_APPROVAL" in gate_text:
+        return {
+            "state": "FIRST_GATE_WAITING_APPROVAL",
+            "selected_source": mapping.canonical_source,
+            "checkpoint_commit": None,
+            "transition_authorized": False,
+            "gate_1_started": False,
+        }
     if not closure_matches or not exit_matches:
         raise ContractMappingError("Gate 0 transition state is missing or unknown")
 

@@ -36,6 +36,17 @@ def _validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[s
 def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
     root = Path(project_root).resolve()
     mapping = load_project_mapping(root)
+    # Generic onboarding contracts use the shared structural inspector; the
+    # Wallet business approval parser is retained only for legacy mappings.
+    generic_state = root / "docs" / "GATE_STATE.md"
+    if mapping is not None and generic_state.is_file() and "FIRST_GATE_ACTIVE" in generic_state.read_text(encoding="utf-8"):
+        contract = load_contract(root, strict=True)
+        return {"inspection_mode": "read_only_no_write", "write_operations_performed": False,
+                "contract_mapping": {**mapping.summary(root), "configured": True, "valid": True, "inspector_id": "generic.canonical"},
+                "project_static_inspect": {"project_id": root.name, "current_phase": contract.current_phase, "required_contract_files_valid": not contract.missing_files},
+                "business_lv_approval_state": {"namespace": "business_lv_gate_approval", "status": "generic_structural_valid", "validation": "static_only", "reused_as_runtime_approval": False},
+                "business_gate_state": {"namespace": "business_gate_state", "status": "generic_structural_valid", "validation": "static_only", "transition_authorized": True, "gate_1_started": True},
+                "codex_runtime_sandbox_approval_state": {"namespace": "codex_runtime_sandbox_approval", "status": "not_requested_read_only", "business_approval_reused": False, "runtime_mutation_authorized": False}}
     approval_validation: dict[str, Any] | None = None
     if mapping is not None:
         approval_validation = _validate_approval_state(

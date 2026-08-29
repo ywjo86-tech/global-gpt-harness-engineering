@@ -131,6 +131,8 @@ class ResumeStore:
         checkpoint: bool = False,
         remediation_lineage: Mapping[str, Any] | None = None,
         owned_content_sha256: Mapping[str, str] | None = None,
+        stage_payload: Mapping[str, Any] | None = None,
+        checkpoint_payload: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if lifecycle not in _LIFECYCLE:
             raise ResumeStoreError("unknown lifecycle stage")
@@ -161,6 +163,8 @@ class ResumeStore:
             "owned_content_sha256": dict(sorted(current_owned.items())),
             "checkpoint": bool(checkpoint),
             "remediation_lineage": remediation or None,
+            "stage_payload": dict(stage_payload or {}),
+            "checkpoint_payload": dict(checkpoint_payload or {}) if checkpoint else None,
             "previous_event_sha256": records[-1]["event_sha256"] if records else None,
         }
         record["event_sha256"] = _hash(record)
@@ -193,5 +197,6 @@ class ResumeStore:
             "checkpoint": latest,
             "next_sequence": len(records) + 1,
             "last_event_sha256": records[-1]["event_sha256"],
+            "checkpoint_payload": latest.get("checkpoint_payload") or {},
             "hard_stop": True,
         }

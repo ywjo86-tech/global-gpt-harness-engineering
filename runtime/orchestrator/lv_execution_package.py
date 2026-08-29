@@ -271,6 +271,8 @@ def _manifest_payload(
     source_snapshot: dict[str, Any],
 ) -> dict[str, Any]:
     selected = preview["selected_lv"]
+    mapping = load_project_mapping(root)
+    policy_id = getattr(mapping, "interpreter_policy_id", None) or "PROJECT_VENV_READ_ONLY"
     source_head = source_snapshot["source_head"]
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -314,6 +316,7 @@ def _manifest_payload(
             "verified_by_harness": False,
         },
         "worker_result_schema_version": WORKER_RESULT_SCHEMA_VERSION,
+        "interpreter_policy_id": policy_id,
     }
 
 
@@ -440,7 +443,9 @@ def create_lv_execution_package(
         source_snapshot,
     )
 
-    harness_root = Path(__file__).resolve().parents[2]
+    # Production and isolated onboarding fixtures may provide an explicit
+    # runtime root; this is a location binding, never a validation bypass.
+    harness_root = Path(os.environ.get("HARNESS_RUNTIME_ROOT", str(Path(__file__).resolve().parents[2]))).resolve()
     base = Path(output_root).resolve() if output_root is not None else harness_root / "_workspace" / "orchestration-runs"
     base.mkdir(parents=True, exist_ok=True)
     final_dir = base / run_id

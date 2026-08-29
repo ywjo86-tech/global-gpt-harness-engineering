@@ -13,6 +13,9 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 - `python -m runtime.orchestrator.cli approve --project <project_path> --approval "..."`
 - `python -m runtime.orchestrator.cli gate --project <project_path>`
 - `python -m runtime.orchestrator.cli status --project <project_path>`
+- `python -m runtime.orchestrator.cli gate-dry-run --project-root <project_path> --gate-id <gate_id>`
+- `python -m runtime.orchestrator.cli gate-validate --project-root <project_path> --gate-id <gate_id> --requirements-sha256 <sha256> --approval-evidence <path> --requirement-evidence <path> --branch <branch> --head <head> --harness-root <harness_path>`
+- `python -m runtime.orchestrator.cli gate-run --project-root <project_path> --gate-id <gate_id> --run-id <run_id> --requirements-sha256 <sha256> --approval-evidence <path> --requirement-evidence <path> --branch <branch> --head <head> --harness-root <harness_path>`
 
 ## Runtime Responsibilities
 
@@ -26,6 +29,8 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 - Collect worker results into a fan-in report.
 - Call the stage gate reviewer as a separate execution unit.
 - Persist runtime state in machine-readable JSON and human-readable Markdown.
+- Validate the sealed fixed-command registry, canonical Gate approval, requirements/plan SHA, Git baseline, LV scope, and isolated project namespace before a real Gate lifecycle starts.
+- Execute package, preflight, sealed worker result, independent review, same-LV remediation when required, append-only checkpoint, Exit, handoff, and `SYSTEM_TRANSITION`; a missing worker result is a distinct hard stop and never a successful handoff.
 
 ## Safety Boundaries
 

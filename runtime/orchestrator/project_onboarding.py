@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -150,3 +151,102 @@ class OnboardingRegistry:
         except FileExistsError as exc:
             raise ProjectOnboardingError("immutable alias entry already exists") from exc
         return {"status": "REGISTERED", "entry": entry, "mutation_performed": True}
+
+    def bootstrap(
+        self,
+        project_root: str | Path,
+        alias: str,
+        *,
+        mapping_root: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Create the minimum, production-shaped project contract and register it.
+
+        This is deliberately a declarative bootstrap: it never invents a plan.  A
+        caller must provide an existing canonical plan.  The isolated mapping root
+        is separate from the alias registry because the contract adapter's mapping
+        filenames are project IDs while this registry's filenames are aliases.
+        """
+        root = _verified_project(project_root)
+        if mapping_root is None:
+            mapping_dir = self.root.parent / "mappings"
+        else:
+            mapping_dir = Path(mapping_root)
+        if not mapping_dir.is_absolute() or (mapping_dir.exists() and (mapping_dir.is_symlink() or not mapping_dir.is_dir())):
+            raise ProjectOnboardingError("mapping root is unsafe")
+        mapping_dir = mapping_dir.resolve()
+        plan = _plan(root)
+        if plan is None:
+            return {"status": "ONBOARDING_REQUIRED", "reason": "canonical plan absent", "mutation_performed": False}
+        # Bootstrap is intentionally idempotent, but never takes ownership of a
+        # dirty repository or an existing entry that points elsewhere.
+        git_dir = root / ".git"
+        if git_dir.exists() and git_dir.is_symlink():
+            raise ProjectOnboardingError("project .git must not be a symlink")
+        if git_dir.exists():
+            status = subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True, text=True, check=True)
+            if status.stdout.strip():
+                raise ProjectOnboardingError("project repository must be clean before bootstrap")
+        contract_files = {
+            "changelog": root / "CHANGELOG.txt",
+            "app_log": root / "logs" / "app.log",
+            "orchestration_state_md": root / "docs" / "harness" / "orchestration-state.md",
+            "business_approval": root / "docs" / "APPROVAL_LOG.md",
+            "gate_state": root / "docs" / "GATE_STATE.md",
+            "gate_ledger": root / "docs" / "GATE_STATE.md",
+        }
+        defaults = {
+            "changelog": "# Changelog\n",
+            "app_log": "",
+            "orchestration_state_md": "# Orchestration State\n\nCurrent phase: onboarding\n",
+            "business_approval": "# Approval Log\n",
+            "gate_state": "# Gate State\n\nStatus: FIRST_GATE_WAITING_APPROVAL\n",
+        }
+        created: list[Path] = []
+        for key, path in contract_files.items():
+            if key == "gate_ledger":
+                continue
+            if path.exists():
+                if path.is_symlink() or not path.is_file():
+                    raise ProjectOnboardingError(f"bootstrap contract is not a regular file: {key}")
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(defaults[key], encoding="utf-8")
+                created.append(path)
+        plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
+        mapping = {
+            "project_id": root.name,
+            "contract_paths": {
+                "development_plan": plan.relative_to(root).as_posix(),
+                "changelog": "CHANGELOG.txt",
+                "app_log": "logs/app.log",
+                "orchestration_state_md": "docs/harness/orchestration-state.md",
+            },
+            "required_contract_keys": ["development_plan", "changelog", "app_log", "orchestration_state_md"],
+            "canonical_implementation_source": {"path": plan.relative_to(root).as_posix(), "sha256": plan_sha},
+            "approved_source_reference": {"path": plan.relative_to(root).as_posix(), "sha256": plan_sha},
+            "static_validation": {
+                "business_lv_approval": "docs/APPROVAL_LOG.md",
+                "gate_state": "docs/GATE_STATE.md",
+                "gate_state_ledger": "docs/GATE_STATE.md",
+            },
+            "canonical_transition": {},
+            "interpreter_policy_id": "IMMUTABLE_EXTERNAL_INTERPRETER",
+        }
+        mapping_dir.mkdir(parents=True, exist_ok=True)
+        mapping_path = mapping_dir / f"{root.name}.json"
+        if mapping_path.exists():
+            if mapping_path.is_symlink() or mapping_path.read_bytes() != _canonical(mapping):
+                raise ProjectOnboardingError("existing project mapping conflicts with bootstrap")
+        else:
+            mapping_path.write_bytes(_canonical(mapping)); created.append(mapping_path)
+        alias_report = self.register(root, alias)
+        if alias_report.get("status") not in {"REGISTERED", "COMPATIBLE"}:
+            return alias_report
+        if not git_dir.exists():
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "add", "--", plan.relative_to(root).as_posix(), "CHANGELOG.txt", "logs/app.log", "docs/harness/orchestration-state.md", "docs/APPROVAL_LOG.md", "docs/GATE_STATE.md"], cwd=root, capture_output=True, text=True, check=True)
+        staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=root, capture_output=True, text=True, check=True).stdout.splitlines()
+        if staged:
+            subprocess.run(["git", "-c", "user.name=Harness Bootstrap", "-c", "user.email=harness-bootstrap@localhost", "commit", "-m", "chore: bootstrap orchestration contract"], cwd=root, capture_output=True, text=True, check=True)
+        created_names = [str(path.relative_to(root)) if path.is_relative_to(root) else str(path.relative_to(mapping_dir)) for path in created]
+        return {"status": "BOOTSTRAPPED", "entry": alias_report.get("entry"), "mapping": mapping, "mapping_path": str(mapping_path), "created_files": created_names, "mutation_performed": bool(created or staged)}

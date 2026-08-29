@@ -102,14 +102,21 @@ def run_gate_lifecycle(context: Mapping[str, Any], adapters: GateControllerAdapt
     invoke("PREFLIGHT", adapters.preflight)
     invoke("WORKER", adapters.worker)
     review = invoke("REVIEW", adapters.review)
+    restored_verdicts = review.get("verdict_history")
+    review_verdicts = list(restored_verdicts) if isinstance(restored_verdicts, list) and restored_verdicts else [review["status"]]
     remediated = False
+    remediation_verdict = review.get("remediation_verdict")
+    if remediation_verdict is not None:
+        remediated = True
     if review["status"] == "FAIL":
-        invoke("REMEDIATION", adapters.remediation)
+        remediation = invoke("REMEDIATION", adapters.remediation)
+        remediation_verdict = remediation["status"]
         remediated = True
         state["review_attempt"] = 2
         review = invoke("REVIEW", adapters.review)
+        review_verdicts.append(review["status"])
         if review["status"] != "PASS":
-            raise GateControllerError("independent review did not pass after remediation")
+            raise GateControllerError(f"independent review did not pass after remediation: {review}")
     invoke("CHECKPOINT", adapters.checkpoint)
     invoke("EXIT", adapters.exit)
     handoff = invoke("HANDOFF", adapters.handoff)
@@ -126,6 +133,8 @@ def run_gate_lifecycle(context: Mapping[str, Any], adapters: GateControllerAdapt
         "trace": trace,
         "evidence": evidence,
         "remediated": remediated,
+        "review_verdicts": review_verdicts,
+        "remediation_verdict": remediation_verdict,
         "handoff": handoff,
         "hard_stop": True,
     }

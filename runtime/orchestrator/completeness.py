@@ -15,7 +15,8 @@ class CompletenessError(ValueError):
     pass
 
 
-REQUIREMENT_IDS = tuple(f"R{number:02d}" for number in range(1, 26))
+ENGINE_REQUIREMENT_IDS = tuple(f"R{number:02d}" for number in range(1, 26))
+REQUIREMENT_IDS = ENGINE_REQUIREMENT_IDS  # legacy compatibility alias
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _HEAD = re.compile(r"[0-9a-f]{40,64}\Z")
 _STATUSES = {"PENDING", "IMPLEMENTED", "VERIFIED", "CHECKPOINTED", "EXITED", "BLOCKED"}
@@ -32,26 +33,32 @@ _HANDOFF_FIELDS = {
     "forbidden_actions", "selected_assets", "excluded_assets", "selection_rationale",
 }
 
+PROJECT_REQUIREMENT_EVIDENCE_SCHEMA = "orchestration.project-requirement-evidence.v1"
+
 
 def _hash(value: object) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
 def build_ledger(*, project_id: str, requirements_sha256: str, plan_sha256: str,
-                 plan_items: Sequence[Mapping[str, object]], requirements: Mapping[str, Mapping[str, object]]) -> dict[str, object]:
-    if set(requirements) != set(REQUIREMENT_IDS):
-        raise CompletenessError("R01-R25 completeness mismatch")
+                 plan_items: Sequence[Mapping[str, object]], requirements: Mapping[str, Mapping[str, object]],
+                 expected_requirement_ids: Sequence[str] | None = None) -> dict[str, object]:
+    expected_ids = tuple(expected_requirement_ids) if expected_requirement_ids is not None else ENGINE_REQUIREMENT_IDS
+    if len(set(expected_ids)) != len(expected_ids) or any(not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", item) for item in expected_ids):
+        raise CompletenessError("requirement ID order is invalid")
+    if set(requirements) != set(expected_ids):
+        raise CompletenessError("requirement completeness mismatch")
     rows: list[dict[str, object]] = []
     for item in plan_items:
         rows.append(_row(item, "PLAN_ITEM", len(rows) + 1))
-    for requirement_id in REQUIREMENT_IDS:
+    for requirement_id in expected_ids:
         value = dict(requirements[requirement_id]); value["item_id"] = requirement_id
         rows.append(_row(value, "REQUIREMENT", len(rows) + 1))
     payload = {
         "schema_version": "orchestration.completeness-ledger.v1", "project_id": project_id,
         "requirements_sha256": requirements_sha256, "plan_sha256": plan_sha256, "items": rows,
     }
-    validate_ledger(payload, plan_items=plan_items, requirements=requirements)
+    validate_ledger(payload, plan_items=plan_items, requirements=requirements, expected_requirement_ids=expected_ids)
     return {"payload": payload, "ledger_sha256": _hash(payload)}
 
 
@@ -71,7 +78,7 @@ def _row(source: Mapping[str, object], kind: str, order: int) -> dict[str, objec
 def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mapping[str, object]],
                     requirements: Mapping[str, Mapping[str, object]] | None = None,
                     requirements_sha256: str | None = None, plan_sha256: str | None = None,
-                    require_exit: bool = False) -> None:
+                    require_exit: bool = False, expected_requirement_ids: Sequence[str] | None = None) -> None:
     if set(payload) != {"schema_version", "project_id", "requirements_sha256", "plan_sha256", "items"} or payload.get("schema_version") != "orchestration.completeness-ledger.v1":
         raise CompletenessError("ledger schema mismatch")
     if requirements_sha256 is not None and payload.get("requirements_sha256") != requirements_sha256:
@@ -84,7 +91,8 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
     if not isinstance(items, list) or any(not isinstance(row, dict) or set(row) != _ROW_FIELDS for row in items):
         raise CompletenessError("ledger item schema mismatch")
     expected_plan = [str(item["item_id"]) for item in plan_items]
-    expected = expected_plan + list(REQUIREMENT_IDS)
+    expected_requirements = tuple(expected_requirement_ids) if expected_requirement_ids is not None else ENGINE_REQUIREMENT_IDS
+    expected = expected_plan + list(expected_requirements)
     actual = [row["item_id"] for row in items]
     if actual != expected or len(set(actual)) != len(expected):
         raise CompletenessError("ledger missing, duplicate, unlinked, or out-of-order item")
@@ -145,6 +153,77 @@ def load_ledger(path: str | Path) -> dict[str, object]:
     if not isinstance(envelope, dict) or set(envelope) != {"payload", "ledger_sha256"} or envelope.get("ledger_sha256") != _hash(envelope.get("payload")):
         raise CompletenessError("ledger envelope hash mismatch")
     return envelope
+
+
+def aggregate_project_requirement_evidence(*, contract: Mapping[str, Mapping[str, object]],
+                                           worker: Mapping[str, Mapping[str, object]],
+                                           review: Mapping[str, Mapping[str, object]],
+                                           project_id: str, gate_id: str, lv_id: str,
+                                           plan_sha256: str, package_sha256: str,
+                                           approval_sha256: str, contract_sha256: str,
+                                           lifecycle_attempt: int = 1) -> dict[str, object]:
+    """Combine truthful worker and independent-review evidence per requirement."""
+    ids = tuple(contract)
+    if not ids or len(set(ids)) != len(ids) or any(not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", item) for item in ids) or set(worker) - set(ids) or set(review) - set(ids):
+        raise CompletenessError("project requirement evidence IDs are missing, duplicate, or unknown")
+    final: dict[str, object] = {}
+    for requirement_id in ids:
+        item = contract[requirement_id]
+        w = worker.get(requirement_id); r = review.get(requirement_id)
+        if not isinstance(item, Mapping) or item.get("status") != "PENDING" or item.get("semantic_sha256") is not None and not _SHA.fullmatch(str(item.get("semantic_sha256"))):
+            raise CompletenessError("project requirement contract is not PENDING")
+        if not isinstance(w, Mapping) or not isinstance(r, Mapping):
+            raise CompletenessError(f"{requirement_id} implementation/review evidence is missing")
+        for evidence in (w, r):
+            if evidence.get("project_id") != project_id or evidence.get("gate_id") != gate_id or evidence.get("lv_id") != lv_id or evidence.get("plan_sha256") != plan_sha256 or evidence.get("package_sha256") != package_sha256 or evidence.get("approval_sha256") != approval_sha256 or evidence.get("contract_sha256") != contract_sha256 or evidence.get("requirement_id") != requirement_id or evidence.get("lifecycle_attempt") != lifecycle_attempt:
+                raise CompletenessError(f"{requirement_id} evidence binding mismatch")
+        owned = item.get("owned_files")
+        changed = w.get("changed_files")
+        if isinstance(owned, list) and isinstance(changed, list) and any(path not in owned for path in changed):
+            raise CompletenessError(f"{requirement_id} implementation changed file is outside owned scope")
+        if r.get("verdict") != "PASS" or w.get("status") != "IMPLEMENTED":
+            final[requirement_id] = {"status": "INCOMPLETE", "worker": dict(w), "review": dict(r)}
+            continue
+        final[requirement_id] = {"schema_version": PROJECT_REQUIREMENT_EVIDENCE_SCHEMA, "project_id": project_id, "gate_id": gate_id, "lv_id": lv_id, "plan_sha256": plan_sha256, "package_sha256": package_sha256, "approval_sha256": approval_sha256, "contract_sha256": contract_sha256, "requirement_id": requirement_id, "semantic_sha256": item.get("semantic_sha256"), "lifecycle_attempt": lifecycle_attempt, "implementation_evidence": dict(w), "review_evidence": dict(r), "status": "COMPLETE", "verdict": "PASS"}
+        final[requirement_id]["evidence_sha256"] = _hash(final[requirement_id])
+    return final
+
+
+def validate_project_requirement_evidence(record: Mapping[str, object], *, project_id: str,
+                                          gate_id: str, lv_id: str, plan_sha256: str,
+                                          package_sha256: str, approval_sha256: str,
+                                          contract_sha256: str, requirement_id: str,
+                                          lifecycle_attempt: int = 1) -> None:
+    """Validate one final project evidence record without treating a contract as evidence."""
+    required = {
+        "schema_version", "project_id", "gate_id", "lv_id", "plan_sha256",
+        "package_sha256", "approval_sha256", "contract_sha256", "requirement_id",
+        "semantic_sha256", "lifecycle_attempt", "implementation_evidence",
+        "review_evidence", "status", "verdict", "evidence_sha256",
+    }
+    if set(record) != required or record.get("schema_version") != PROJECT_REQUIREMENT_EVIDENCE_SCHEMA:
+        raise CompletenessError("project evidence schema mismatch")
+    expected = {
+        "project_id": project_id, "gate_id": gate_id, "lv_id": lv_id,
+        "plan_sha256": plan_sha256, "package_sha256": package_sha256,
+        "approval_sha256": approval_sha256, "contract_sha256": contract_sha256,
+        "requirement_id": requirement_id, "lifecycle_attempt": lifecycle_attempt,
+    }
+    for key, value in expected.items():
+        if record.get(key) != value:
+            raise CompletenessError(f"project evidence {key} binding mismatch")
+    if not isinstance(record.get("semantic_sha256"), str) or not _SHA.fullmatch(record["semantic_sha256"]):
+        raise CompletenessError("project evidence semantic SHA is invalid")
+    if record.get("status") != "COMPLETE" or record.get("verdict") != "PASS":
+        raise CompletenessError("project evidence is not complete")
+    worker = record.get("implementation_evidence")
+    review = record.get("review_evidence")
+    if not isinstance(worker, Mapping) or not isinstance(review, Mapping):
+        raise CompletenessError("project evidence component is missing")
+    if worker.get("status") != "IMPLEMENTED" or review.get("verdict") != "PASS":
+        raise CompletenessError("project evidence component verdict mismatch")
+    if record.get("evidence_sha256") != _hash({key: record[key] for key in required if key != "evidence_sha256"}):
+        raise CompletenessError("project evidence SHA mismatch")
 
 
 def seal_handoff(payload: Mapping[str, object]) -> dict[str, object]:
