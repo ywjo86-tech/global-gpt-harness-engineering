@@ -220,6 +220,11 @@ writes artifacts. `production-gate-run` uses the same boundary for a mutating
 controller invocation; legacy v1 `--approval-evidence` is never converted or
 accepted by this path.
 
+The production controller evaluates approval, canonical state and the
+immutable-exit bridge before selecting the first incomplete LV. A
+`GATE_BY_GATE` run terminates at Gate Exit with a `USER_APPROVAL_REQUIRED`
+handoff for the next Gate; it never auto-enters another Gate.
+
 `lv-review` exit codes are `0` for PASS, `9` for FAIL, and `10` for BLOCKED.
 Argument parsing and existing exception codes retain their prior meanings.
 A PASS remains a hard-stop review result only: it is not Gate completion,
