@@ -66,7 +66,8 @@ def validate_canonical_gate_state(
         raise CanonicalTransitionError("pre-approval canonical Gate state must not bind an approval hash")
     if state["gate_status"] == "READY_FOR_TRANSITION" and not _SHA256.fullmatch(str(state.get("approval_record_hash"))):
         raise CanonicalTransitionError("transition-ready canonical Gate state approval digest is invalid")
-    if state.get("closure_status") != "CLOSED":
+    allowed_closure = {"CLOSED", "PREDECESSOR_CLOSED"}
+    if state.get("closure_status") not in allowed_closure:
         raise CanonicalTransitionError("canonical Gate closure is missing")
     if not _SHA256.fullmatch(str(state.get("plan_sha256"))):
         raise CanonicalTransitionError("canonical Gate state digest is invalid")
