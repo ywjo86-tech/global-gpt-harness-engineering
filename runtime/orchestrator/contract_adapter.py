@@ -428,10 +428,21 @@ def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, 
         raise ContractMappingError("Gate State ledger approval plan binding is invalid")
     scope = payload["active_scope"]
     owned = payload["owned_files"]
-    if not isinstance(scope, list) or scope != approval.get("approval_scope", {}).get("lv3_ids"):
-        raise ContractMappingError("Gate State ledger active_scope does not match approval scope")
+    approval_scope_ids = approval.get("approval_scope", {}).get("lv3_ids")
+    legacy_scope = False
+    if isinstance(scope, list) and scope != approval_scope_ids:
+        # Existing Wallet ledgers retain the last completed LV scope while a
+        # migrated Gate approval records the full Gate scope. Accept that
+        # representation only when it exactly matches the predecessor event;
+        # never broaden or infer scope from identifiers.
+        predecessor_id = approval.get("previous_approval_id")
+        predecessor = next((event for event in events if event.get("approval_id") == predecessor_id), None)
+        predecessor_scope = predecessor.get("approval_scope", {}) if isinstance(predecessor, dict) else {}
+        legacy_scope = scope == predecessor_scope.get("lv3_ids")
+        if not legacy_scope:
+            raise ContractMappingError("Gate State ledger active_scope does not match approval scope")
     approved_owned = approval.get("approval_scope", {}).get("owned_files")
-    if not isinstance(owned, list) or owned != approved_owned:
+    if not isinstance(owned, list) or (owned != approved_owned and not (legacy_scope and owned == predecessor_scope.get("owned_files"))):
         raise ContractMappingError("Gate State ledger owned_files does not match approval scope")
     for index, item in enumerate(scope):
         if not isinstance(item, str) or not item:
