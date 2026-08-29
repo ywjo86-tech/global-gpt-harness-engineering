@@ -628,7 +628,8 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
         and event.get("approval_type") == "START_GATE"
         and event.get("approval_event_type") in {"APPROVED", "RENEWED"}
     ]
-    if mapping.transition_approval_id is None:
+    transition_id = mapping.transition_approval_id or (mapping.gate_approval_ids or {}).get("GATE-1")
+    if transition_id is None:
         if gate_one_candidates:
             raise ContractMappingError("Gate 1 approval exists but canonical transition mapping is not configured")
         return {
@@ -642,7 +643,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
     transition_id_events = [
         event
         for event in committed_events[count:]
-        if event.get("approval_id") == mapping.transition_approval_id
+        if event.get("approval_id") == transition_id
     ]
     if not gate_one_candidates and not transition_id_events:
         return {
@@ -654,7 +655,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
         }
     if transition_id_events and not gate_one_candidates:
         raise ContractMappingError("Gate 1 transition approval is not bound to the implementation plan")
-    matches = [event for event in gate_one_candidates if event.get("approval_id") == mapping.transition_approval_id]
+    matches = [event for event in gate_one_candidates if event.get("approval_id") == transition_id]
     if len(matches) != 1:
         raise ContractMappingError("Gate 1 transition approval is missing or duplicated")
     approval = matches[0]
