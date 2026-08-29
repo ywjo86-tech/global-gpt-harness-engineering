@@ -18,6 +18,7 @@ from .gate_controller import GateControllerError
 from .resume_store import ResumeStoreError
 from .lv_review import LVReviewError, preflight_run, review_run
 from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
+from .production_approval import ProductionApprovalError
 
 
 def _print(obj: object) -> None:
@@ -31,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-onboard"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-onboard", "production-approval-create", "production-approval-correct"]:
         sub = subparsers.add_parser(name)
         if name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
@@ -89,6 +90,18 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--harness-root", required=True)
             sub.add_argument("--requirement-evidence", required=True)
             sub.add_argument("--mapping-root")
+        elif name in {"production-approval-create", "production-approval-correct"}:
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--output", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--plan-sha256", required=True)
+            sub.add_argument("--scope-file", required=True)
+            sub.add_argument("--authorization-source", required=True)
+            sub.add_argument("--approval-mode", default="GATE_BY_GATE")
+            sub.add_argument("--dry-run", action="store_true")
+            sub.add_argument("--read-only", action="store_true")
+            if name == "production-approval-correct":
+                sub.add_argument("--supersedes", required=True)
         elif name == "project-onboard":
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--alias", required=True)
@@ -111,6 +124,22 @@ def main(argv: list[str] | None = None) -> int:
         # The child lifecycle commands inherit this process-local registry choice.
         os.environ["HARNESS_CONTRACT_MAPPING_ROOT"] = args.mapping_root
     try:
+        if args.command in {"production-approval-create", "production-approval-correct"}:
+            from .production_approval import write_production_approval
+            scope = json.loads(Path(args.scope_file).read_text(encoding="utf-8"))
+            required_scope = {"canonical_lv_scope", "owned_file_scope", "completion_conditions_sha256"}
+            if not isinstance(scope, dict) or set(scope) != required_scope:
+                raise ProductionApprovalError("scope file schema mismatch")
+            outcome = write_production_approval(
+                project_root=args.project_root, output_path=args.output, gate_id=args.gate_id,
+                plan_sha256=args.plan_sha256, approval_mode=args.approval_mode,
+                canonical_lv_scope=scope["canonical_lv_scope"], owned_file_scope=scope["owned_file_scope"],
+                completion_conditions_sha256=scope["completion_conditions_sha256"],
+                authorization_source=args.authorization_source,
+                correction_of=getattr(args, "supersedes", None), dry_run=args.dry_run, read_only=args.read_only,
+            )
+            _print(outcome)
+            return 0
         if args.command == "lv-plan":
             if not args.read_only:
                 raise LVPreviewValidationError("H4-1 only supports --read-only LV previews")
@@ -262,6 +291,9 @@ def main(argv: list[str] | None = None) -> int:
     except ProjectIsolationError as exc:
         _print({"error": str(exc), "error_type": "project_isolation_error"})
         return 14
+    except ProductionApprovalError as exc:
+        _print({"error": str(exc), "error_type": "production_approval_error", "status": "BLOCKED"})
+        return 16
     except (GateControllerError, ResumeStoreError) as exc:
         _print({"error": str(exc), "error_type": "gate_controller_error", "status": "BLOCKED", "hard_stop": True})
         return 15

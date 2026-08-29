@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -207,3 +210,128 @@ def classify_approval_schema(event: Mapping[str, Any]) -> str:
     if event.get("schema_version") == SCHEMA_V2:
         return "PRODUCTION_V2"
     return "UNSUPPORTED"
+
+
+def load_v2_event_log(path: str | Path, *, now: datetime | None = None) -> list[dict[str, Any]]:
+    source = Path(path)
+    if not source.is_file() or source.is_symlink() or source.stat().st_size > 1024 * 1024:
+        raise ProductionApprovalError("production approval log is missing or unsafe")
+    try:
+        raw = json.loads(source.read_text(encoding="utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ProductionApprovalError("production approval log is malformed") from exc
+    if not isinstance(raw, dict) or set(raw) != {"schema_version", "events"}:
+        raise ProductionApprovalError("production approval log schema mismatch")
+    if raw["schema_version"] != "orchestration.production-approval-log.v2" or not isinstance(raw["events"], list):
+        raise ProductionApprovalError("production approval log schema mismatch")
+    return validate_v2_chain(raw["events"], now=now)
+
+
+def _git(root: Path, *args: str) -> str:
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise ProductionApprovalError("Git binding inspection failed")
+    return result.stdout.strip()
+
+
+def inspect_git_binding(project_root: str | Path, *, allowed_dirty_paths: Iterable[str] = ()) -> tuple[Path, str, str]:
+    root = Path(project_root).resolve()
+    if not root.is_dir() or _git(root, "rev-parse", "--show-toplevel") != str(root):
+        raise ProductionApprovalError("project_root must be a Git top-level directory")
+    allowed = set(allowed_dirty_paths)
+    dirty = _git(root, "status", "--porcelain=v1", "--untracked-files=all").splitlines()
+    dirty_paths = {line[3:].split(" -> ")[-1] for line in dirty if len(line) > 3}
+    if dirty_paths - allowed:
+        raise ProductionApprovalError("production approval requires a clean Git worktree")
+    branch_result = subprocess.run(
+        ["git", "-C", str(root), "symbolic-ref", "--quiet", "--short", "HEAD"],
+        capture_output=True, text=True, check=False,
+    )
+    branch = branch_result.stdout.strip()
+    if branch_result.returncode != 0 or not branch:
+        raise ProductionApprovalError("production approval requires an attached Git branch")
+    head = _git(root, "rev-parse", "HEAD")
+    if not _HEAD.fullmatch(head):
+        raise ProductionApprovalError("invalid Git baseline HEAD")
+    return root, branch, head
+
+
+def _atomic_write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ProductionApprovalError("production approval log path is unsafe")
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def write_production_approval(
+    *, project_root: str | Path, output_path: str | Path, gate_id: str,
+    plan_sha256: str, approval_mode: str, canonical_lv_scope: Iterable[str],
+    owned_file_scope: Mapping[str, Iterable[str]], completion_conditions_sha256: str,
+    authorization_source: str, correction_of: str | None = None,
+    dry_run: bool = False, read_only: bool = False,
+) -> dict[str, Any]:
+    root = Path(project_root).resolve()
+    output = Path(output_path)
+    if not output.is_absolute():
+        output = root / output
+    resolved_parent = output.parent.resolve()
+    if not resolved_parent.is_relative_to(root) or output.is_symlink():
+        raise ProductionApprovalError("production approval output escapes the project root or is unsafe")
+    relative_output = output.relative_to(root).as_posix()
+    root, branch, head = inspect_git_binding(project_root, allowed_dirty_paths=(relative_output,))
+    existing: list[dict[str, Any]] = []
+    if output.exists():
+        existing = load_v2_event_log(output)
+    if correction_of is not None and not existing:
+        raise ProductionApprovalError("correction requires an existing production approval log")
+    if correction_of is not None and correction_of not in {item["event_id"] for item in existing}:
+        raise ProductionApprovalError("correction target does not exist")
+
+    clock = datetime.now(timezone.utc)
+    timestamp = clock.isoformat(timespec="microseconds").replace("+00:00", "Z")
+    event_id = f"APR-{gate_id}-{clock.strftime('%Y%m%dT%H%M%S%fZ')}"
+    candidate: dict[str, Any] = {
+        "schema_version": SCHEMA_V2,
+        "event_id": event_id,
+        "event_type": "CORRECTION" if correction_of else "APPROVED",
+        "project_id": root.name,
+        "gate_id": gate_id,
+        "plan_sha256": plan_sha256,
+        "branch": branch,
+        "baseline_head": head,
+        "approved_at": timestamp,
+        "recorded_at": timestamp,
+        "approval_mode": approval_mode,
+        "canonical_lv_scope": list(canonical_lv_scope),
+        "owned_file_scope": {key: list(value) for key, value in owned_file_scope.items()},
+        "completion_conditions_sha256": completion_conditions_sha256,
+        "predecessor": existing[-1]["record_hash"] if existing else None,
+        "supersedes": correction_of,
+        "authorization_source": authorization_source,
+        "record_hash": "0" * 64,
+    }
+    candidate["record_hash"] = calculate_v2_record_hash(candidate)
+    validate_v2_chain([*existing, candidate], now=clock)
+    result = {
+        "status": "DRY_RUN" if dry_run else "READ_ONLY" if read_only else "WRITTEN",
+        "mutation_performed": not (dry_run or read_only),
+        "event": candidate,
+        "event_count": len(existing) + 1,
+    }
+    if dry_run or read_only:
+        return result
+    envelope = {"schema_version": "orchestration.production-approval-log.v2", "events": [*existing, candidate]}
+    _atomic_write(output, canonical_json_bytes(envelope) + b"\n")
+    return result
