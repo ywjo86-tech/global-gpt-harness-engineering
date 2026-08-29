@@ -208,9 +208,17 @@ python3 -m runtime.orchestrator.cli gate-dry-run --project-root <project-root> -
 python3 -m runtime.orchestrator.cli gate-validate --project-root <project-root> --gate-id GATE-1 --requirements-sha256 <sha256> --approval-evidence <approval.json> --requirement-evidence <requirements.json> --branch <branch> --head <head> --harness-root <harness-root>
 python3 -m runtime.orchestrator.cli gate-run --project-root <project-root> --gate-id GATE-1 --run-id <run-id> --requirements-sha256 <sha256> --approval-evidence <approval.json> --requirement-evidence <requirements.json> --branch <branch> --head <head> --harness-root <harness-root>
 python3 -m runtime.orchestrator.cli project-onboard --project-root <project-root> --alias <alias> --dry-run
+python3 -m runtime.orchestrator.cli production-gate-dry-run --project-root <project-root> --gate-id GATE-1 --harness-root <harness-root> --approval-log <approval-log> --approval-event-id <event-id>
 ```
 
 `gate-dry-run`, `gate-validate`, and `project-onboard --dry-run` are read-only. `gate-run` is the sole mutating Gate lifecycle surface: it validates every sealed binding before mutation, consumes only immutable lifecycle artifacts, records append-only checkpoints, and returns success only for `SYSTEM_TRANSITION` or Gate Exit. A missing sealed worker result returns the bounded `WORKER_RESULT_REQUIRED` hard stop instead of treating `WORKER_HANDOFF` as success.
+
+`production-gate-dry-run` is the explicit production approval v2 boundary. It
+selects one event by ID from the approval log, validates the v2 hash chain,
+Git descendant, canonical state and immutable-exit resume bridge, and never
+writes artifacts. `production-gate-run` uses the same boundary for a mutating
+controller invocation; legacy v1 `--approval-evidence` is never converted or
+accepted by this path.
 
 `lv-review` exit codes are `0` for PASS, `9` for FAIL, and `10` for BLOCKED.
 Argument parsing and existing exception codes retain their prior meanings.

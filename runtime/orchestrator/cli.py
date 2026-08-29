@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 from .contract_loader import ContractLoadError
@@ -33,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "production-gate-dry-run", "production-gate-run", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
         sub = subparsers.add_parser(name)
         if name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
@@ -75,6 +76,15 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--branch", required=True)
             sub.add_argument("--head", required=True)
             sub.add_argument("--requirement-evidence", required=True)
+            sub.add_argument("--mapping-root")
+        elif name in {"production-gate-dry-run", "production-gate-run"}:
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--harness-root", required=True)
+            sub.add_argument("--approval-log", required=True)
+            sub.add_argument("--approval-event-id", required=True)
+            sub.add_argument("--mode", default="GATE_BY_GATE")
+            sub.add_argument("--run-id")
             sub.add_argument("--mapping-root")
         elif name == "gate-approve":
             sub.add_argument("--project-root", required=True)
@@ -198,6 +208,73 @@ def main(argv: list[str] | None = None) -> int:
             outcome = compatibility_dry_run(args.project_root, args.gate_id, mode=args.mode)
             _print(outcome)
             return 0 if outcome.get("status") == "COMPATIBLE" else 10
+        if args.command in {"production-gate-dry-run", "production-gate-run"}:
+            from .gate_orchestrator import load_gate_plan, create_gate_authorization, _production_adapters
+            from .production_approval import load_v2_event_log, ApprovalBindings, evaluate_production_authorization
+            from .production_resume import build_resume_bridge, validate_resume_bridge
+            from .canonical_transition import validate_governance_descendant
+            plan = load_gate_plan(args.project_root, args.gate_id)
+            events = load_v2_event_log(args.approval_log)
+            selected = [event for event in events if event.get("event_id") == args.approval_event_id]
+            if len(selected) != 1:
+                raise GateControllerError("approval event ID is missing or ambiguous")
+            event = selected[0]
+            bindings = ApprovalBindings(
+                project_id=plan.project_id, gate_id=args.gate_id, plan_sha256=plan.canonical_plan_sha256,
+                branch=event["branch"], baseline_head=event["baseline_head"], approval_mode=args.mode,
+                canonical_lv_scope=tuple(event["canonical_lv_scope"]),
+                owned_file_scope={k: tuple(v) for k, v in event["owned_file_scope"].items()},
+                completion_conditions_sha256=event["completion_conditions_sha256"],
+            )
+            # The markdown log loader returns the v2 suffix while preserving
+            # its historical predecessor on the first event. Validate the
+            # selected event as a one-event production chain; legacy records
+            # remain audit-only and are never converted to v2 authorization.
+            approval = evaluate_production_authorization(
+                [event], bindings,
+                historical_predecessor=event.get("predecessor"),
+                historical_event_ids=((event["supersedes"],) if event.get("supersedes") else ()),
+            )
+            descendant = validate_governance_descendant(args.project_root, approval["baseline_head"])
+            state_text = (Path(args.project_root) / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
+            blocks = re.findall(r"```json[ \t]*\r?\n(.*?)\r?\n```", state_text, flags=re.DOTALL)
+            if not blocks:
+                raise GateControllerError("canonical Gate state ledger is missing")
+            canonical_state = json.loads(blocks[-1])
+            from .canonical_transition import validate_canonical_gate_state
+            validate_canonical_gate_state(canonical_state, project_id=plan.project_id, gate_id=args.gate_id,
+                                          phase=str(canonical_state.get("phase")), plan_sha256=plan.canonical_plan_sha256,
+                                          approval_record_hash=approval["record_hash"])
+            bridge = build_resume_bridge(args.project_root, args.harness_root, args.gate_id,
+                                         plan_sha256=plan.canonical_plan_sha256)
+            validate_resume_bridge(bridge, project_id=plan.project_id, gate_id=args.gate_id, plan_sha256=plan.canonical_plan_sha256)
+            output = {"status": "DRY_RUN", "mutation_performed": False,
+                      "approval_event_id": approval["event_id"], "approval_schema": approval["schema_version"],
+                      "approval_record_hash": approval["record_hash"], "mode": args.mode,
+                      "project_id": plan.project_id, "gate_id": args.gate_id,
+                      "plan_sha256": plan.canonical_plan_sha256, "branch": approval["branch"],
+                      "baseline_head": approval["baseline_head"], "current_head": descendant["current_head"],
+                      "governance_only": descendant["governance_only"], "scope": approval["canonical_lv_scope"],
+                      "resume_bridge": bridge, "next_gate": "USER_APPROVAL_REQUIRED", "hard_stop": True}
+            if args.command == "production-gate-run":
+                if not args.run_id:
+                    raise GateControllerError("--run-id is required for production-gate-run")
+                auth = create_gate_authorization(plan, approval["event_id"], mode=args.mode)
+                import subprocess
+                head = subprocess.run(["git", "-C", args.project_root, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+                context = {"project_id": plan.project_id, "gate_id": args.gate_id, "lv_id": bridge["first_incomplete_lv"],
+                           "run_id": args.run_id, "plan_sha256": plan.canonical_plan_sha256,
+                           "branch": approval["branch"], "baseline_head": approval["baseline_head"],
+                           "approval_mode": args.mode, "canonical_lv_scope": approval["canonical_lv_scope"],
+                           "owned_file_scope": approval["owned_file_scope"], "phase": "PHASE-1"}
+                outcome = __import__("runtime.orchestrator.gate_controller", fromlist=["run_production_gate_lifecycle"]).run_production_gate_lifecycle(
+                    context, _production_adapters(Path(args.project_root), plan, auth, bridge["first_incomplete_lv"], args.run_id, args.harness_root),
+                    approval_events=events, project_root=args.project_root,
+                    canonical_state=canonical_state,
+                    completion_conditions_sha256=approval["completion_conditions_sha256"])
+                output.update(outcome)
+            _print(output)
+            return 0
         if args.command == "gate-run":
             from .gate_orchestrator import execute_gate, dispatch_requirement_artifact, validate_global_gate_bindings
             validate_global_gate_bindings(
