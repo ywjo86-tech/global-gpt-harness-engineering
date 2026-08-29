@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,8 +23,14 @@ class ProductionResumeBridgeTests(unittest.TestCase):
             root = Path(td); run = root / "_workspace/orchestration-runs/run-1"; run.mkdir(parents=True)
             manifest = {"gate_id": "GATE-1", "lv_id": "LV-1", "canonical_plan_sha256": "a" * 64}
             (run / "package.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            pkg_sha = hashlib.sha256((run / "package.manifest.json").read_bytes()).hexdigest()
+            (run / "package.manifest.json.sha256").write_text(pkg_sha, encoding="ascii")
             review = root / "_workspace/orchestration-results/run-1"; review.mkdir(parents=True)
-            (review / "reviewer.report.json").write_text(json.dumps({"verdict": "PASS"}), encoding="utf-8")
+            worker = review / "worker.result.json"; worker.write_text("{}", encoding="utf-8")
+            worker_sha = hashlib.sha256(worker.read_bytes()).hexdigest(); (review / "worker.result.json.sha256").write_text(worker_sha, encoding="ascii")
+            report = review / "reviewer.report.json"
+            report.write_text(json.dumps({"verdict": "PASS", "hard_stop": True, "run_id": "run-1", "package_manifest_sha256": pkg_sha, "worker_result_sha256": worker_sha}), encoding="utf-8")
+            (review / "reviewer.report.json.sha256").write_text(hashlib.sha256(report.read_bytes()).hexdigest(), encoding="ascii")
             with patch("runtime.orchestrator.production_resume.load_gate_plan", return_value=self._plan()):
                 bridge = build_resume_bridge(root, root, "GATE-1", plan_sha256="a" * 64)
             self.assertEqual(bridge["first_incomplete_lv"], "LV-2")

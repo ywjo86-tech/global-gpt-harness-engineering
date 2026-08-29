@@ -30,6 +30,18 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _sealed_sha(path: Path) -> str:
+    candidates = [path.with_suffix(".sha256"), path.with_suffix(path.suffix + ".sha256")]
+    sidecar = next((item for item in candidates if item.is_file()), candidates[0])
+    if not sidecar.is_file() or sidecar.is_symlink():
+        raise ResumeBridgeError(f"sealed hash sidecar is missing: {path.name}")
+    expected = sidecar.read_text(encoding="ascii").strip()
+    actual = _sha(path)
+    if expected != actual:
+        raise ResumeBridgeError(f"sealed hash sidecar mismatch: {path.name}")
+    return actual
+
+
 def _attempt(root: Path, run_id: str) -> Path:
     candidates = sorted((root / "_workspace" / "orchestration-results" / run_id).glob("attempt-*/reviewer.report.json"))
     candidates += [root / "_workspace" / "orchestration-results" / run_id / "reviewer.report.json"]
@@ -81,8 +93,21 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
                 raise ResumeBridgeError("historical evidence plan SHA is not mapped to canonical plan")
             if review.get("verdict") != "PASS":
                 raise ResumeBridgeError("immutable review evidence is not PASS")
+            if review.get("hard_stop") is not True or review.get("run_id") != run_id:
+                raise ResumeBridgeError("review evidence hard-stop/run binding is invalid")
+            package_sha = _sealed_sha(package)
+            if review.get("package_manifest_sha256") != package_sha:
+                raise ResumeBridgeError("review/package lineage mismatch")
+            review_sha = _sealed_sha(review_path)
+            worker = review_path.parent / "worker.result.json"
+            if not worker.is_file():
+                worker = review_path.parent.parent / "worker.result.json"
+            worker_sha = _sealed_sha(worker)
+            if review.get("worker_result_sha256") != worker_sha:
+                raise ResumeBridgeError("review/worker lineage mismatch")
             completed.append({"lv_id": item.lv_id, "run_id": run_id,
-                              "package_sha256": _sha(package), "review_sha256": _sha(review_path),
+                              "package_sha256": package_sha, "review_sha256": review_sha,
+                              "worker_sha256": worker_sha,
                               "status": "COMPLETE", "source": "immutable"})
         except ResumeBridgeError:
             if item.lv_id in required_completed:
