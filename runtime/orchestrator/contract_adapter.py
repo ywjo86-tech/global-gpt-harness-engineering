@@ -10,6 +10,8 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from .approval_hash import calculate_record_hash
+from .canonical_transition import validate_canonical_gate_state
+from .production_approval import load_v2_event_log
 
 
 MAPPING_DIR = Path(__file__).resolve().parent / "contract_mappings"
@@ -42,6 +44,7 @@ class ContractMapping:
     transition_approval_id: str | None
     gate_approval_ids: dict[str, str] | None = None
     interpreter_policy_id: str | None = None
+    historical_plan_sha256: tuple[str, ...] = ()
 
     def summary(self, project_root: Path, selected_source: Path | None = None) -> dict[str, Any]:
         def relative(path: Path) -> str:
@@ -66,6 +69,7 @@ class ContractMapping:
                 "sha256": selected_hash,
             },
             **({"gate_state_ledger": relative(self.gate_state_ledger_path)} if self.gate_state_ledger_path else {}),
+            **({"historical_plan_sha256": list(self.historical_plan_sha256)} if self.historical_plan_sha256 else {}),
         }
 
 
@@ -166,6 +170,14 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         raise ContractMappingError("canonical_transition.gate_approval_ids must be an object of strings")
     if transition_approval_id is not None and (not isinstance(transition_approval_id, str) or not transition_approval_id):
         raise ContractMappingError("canonical_transition.gate_1_approval_id must be null or a non-empty string")
+    migrations = payload.get("plan_sha_migrations", [])
+    if not isinstance(migrations, list) or any(
+        not isinstance(item, dict) or set(item) != {"from", "to"}
+        or not isinstance(item["from"], str) or not re.fullmatch(r"[0-9a-f]{64}", item["from"])
+        or not isinstance(item["to"], str) or not re.fullmatch(r"[0-9a-f]{64}", item["to"])
+        for item in migrations
+    ):
+        raise ContractMappingError("plan_sha_migrations is invalid")
     return ContractMapping(
         project_root=root,
         project_id=root.name,
@@ -181,6 +193,7 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         transition_approval_id=transition_approval_id,
         gate_approval_ids=dict(gate_approval_ids),
         interpreter_policy_id=payload.get("interpreter_policy_id"),
+        historical_plan_sha256=tuple(item["from"] for item in migrations),
     )
 
 
@@ -319,6 +332,10 @@ LEDGER_FIELDS = {
     "active_scope",
     "owned_files",
 }
+LEDGER_FIELDS_V2 = {
+    "schema_version", "project_id", "gate_id", "phase", "plan_sha256",
+    "gate_status", "closure_status", "approval_record_hash",
+}
 
 
 def _json_no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -346,9 +363,10 @@ def _ledger_payload(text: str) -> dict[str, Any]:
         raise ContractMappingError("Gate State ledger JSON is malformed") from exc
     if not isinstance(value, dict):
         raise ContractMappingError("Gate State ledger payload must be an object")
-    if set(value) != LEDGER_FIELDS:
-        missing = sorted(LEDGER_FIELDS - set(value))
-        unknown = sorted(set(value) - LEDGER_FIELDS)
+    expected_fields = LEDGER_FIELDS_V2 if value.get("schema_version") == "orchestration.canonical-gate-state.v2" else LEDGER_FIELDS
+    if set(value) != expected_fields:
+        missing = sorted(expected_fields - set(value))
+        unknown = sorted(set(value) - expected_fields)
         detail = []
         if missing:
             detail.append(f"missing fields: {', '.join(missing)}")
@@ -406,6 +424,48 @@ def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, 
     except UnicodeDecodeError as exc:
         raise ContractMappingError("Gate State ledger must be valid UTF-8") from exc
     payload = _ledger_payload(text)
+    if payload["schema_version"] == "orchestration.canonical-gate-state.v2":
+        try:
+            validate_canonical_gate_state(
+                payload, project_id=mapping.project_id, gate_id=str(payload["gate_id"]),
+                phase=str(payload["phase"]), plan_sha256=mapping.canonical_sha256,
+                approval_record_hash=payload["approval_record_hash"],
+            )
+        except ValueError as exc:
+            raise ContractMappingError(str(exc)) from exc
+        committed = _committed_blob(mapping.project_root, "HEAD", relative)
+        if committed != raw:
+            raise ContractMappingError("Gate State ledger is not committed at HEAD")
+        activation = _find_ledger_activation_commit(mapping.project_root, relative, raw)
+        if activation is None:
+            raise ContractMappingError("Gate State ledger has no first-parent activation commit")
+        production_event: dict[str, Any] | None = None
+        if payload["gate_status"] == "READY_FOR_TRANSITION":
+            try:
+                production_events = load_v2_event_log(mapping.business_approval_path)
+            except ValueError as exc:
+                raise ContractMappingError(str(exc)) from exc
+            production_event = production_events[-1]
+            if (
+                production_event.get("project_id") != mapping.project_id
+                or production_event.get("gate_id") != payload["gate_id"]
+                or production_event.get("plan_sha256") != payload["plan_sha256"]
+                or production_event.get("record_hash") != payload["approval_record_hash"]
+            ):
+                raise ContractMappingError("production approval does not match canonical Gate state")
+        return {
+            "state": "GATE1_RESUME_READY" if production_event else "GATE1_APPROVAL_READY",
+            "gate_id": payload["gate_id"],
+            "canonical_plan": mapping.canonical_source.relative_to(mapping.project_root).as_posix(),
+            "plan_sha256": payload["plan_sha256"],
+            "approval_id": production_event.get("event_id") if production_event else None,
+            "approval_record_hash": payload["approval_record_hash"],
+            "active_scope": list(production_event.get("canonical_lv_scope", [])) if production_event else [],
+            "owned_files": sorted({path for paths in production_event.get("owned_file_scope", {}).values() for path in paths}) if production_event else [],
+            "activation_commit": activation[0],
+            "activation_committed_at": activation[1],
+            "ledger_path": relative,
+        }
     if payload["schema_version"] != 1 or payload["project_id"] != mapping.project_id:
         raise ContractMappingError("Gate State ledger fixed fields are invalid")
     if payload["gate_state"] != "GATE1_ACTIVE":
@@ -564,7 +624,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
 
     working_validation = validate_approval_state(
         approval_text,
-        {mapping.approved_source_sha256, mapping.canonical_sha256},
+        {mapping.approved_source_sha256, mapping.canonical_sha256, *mapping.historical_plan_sha256},
     )
     if not working_validation["schema_valid"]:
         raise ContractMappingError("working approval log validation failed: " + "; ".join(working_validation["errors"]))
@@ -601,7 +661,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
 
     committed_validation = validate_approval_state(
         committed_approval.decode("utf-8"),
-        {mapping.approved_source_sha256, mapping.canonical_sha256},
+        {mapping.approved_source_sha256, mapping.canonical_sha256, *mapping.historical_plan_sha256},
     )
     if not committed_validation["schema_valid"]:
         raise ContractMappingError("committed approval log validation failed: " + "; ".join(committed_validation["errors"]))
@@ -610,7 +670,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
         root,
         gate_relative,
         approval_relative,
-        {mapping.approved_source_sha256, mapping.canonical_sha256},
+        {mapping.approved_source_sha256, mapping.canonical_sha256, *mapping.historical_plan_sha256},
     )
     if checkpoint is None:
         raise ContractMappingError("CHECKPOINT_DECLARED_BUT_UNCOMMITTED: no valid Gate 0 checkpoint exists in first-parent history")
@@ -619,6 +679,16 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
         raise ContractMappingError("current Gate 0 checkpoint metadata differs from the committed checkpoint")
     if len(committed_events) < count or committed_events[:count] != checkpoint_events:
         raise ContractMappingError("committed approval log does not extend the Gate 0 checkpoint")
+
+    ledger_state = validate_gate_state_ledger(mapping, committed_events)
+    if ledger_state is not None and ledger_state["state"] in {"GATE1_APPROVAL_READY", "GATE1_RESUME_READY"}:
+        return {
+            **ledger_state,
+            "selected_source": mapping.canonical_source,
+            "checkpoint_commit": checkpoint_commit,
+            "transition_authorized": ledger_state["state"] == "GATE1_RESUME_READY",
+            "gate_1_started": False,
+        }
 
     gate_one_candidates = [
         event

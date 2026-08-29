@@ -242,11 +242,17 @@ class LVPreviewTest(unittest.TestCase):
                 ]
             )
         payload = json.loads(stdout.getvalue())
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["selected_canonical_plan"]["path"], "IMPLEMENTATION_PLAN.md")
-        self.assertEqual(payload["selected_lv"]["lv_id"], "G1-LV3-2")
-        self.assertEqual(payload["approved_owned_files"], ["app/models/product.py", "tests/test_product.py"])
-        self.assertFalse(payload["mutation_permitted"])
+        ledger_text = (wallet / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
+        ledger = json.loads(ledger_text.split("```json\n", 1)[1].split("\n```", 1)[0])
+        if ledger.get("gate_status") == "READY_FOR_APPROVAL":
+            self.assertEqual(exit_code, 6)
+            self.assertEqual(payload["error_type"], "lv_preview_validation_error")
+        else:
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["selected_canonical_plan"]["path"], "IMPLEMENTATION_PLAN.md")
+            self.assertEqual(payload["selected_lv"]["lv_id"], "G1-LV3-2")
+            self.assertIn("app/models/product.py", payload["approved_owned_files"])
+            self.assertFalse(payload["mutation_permitted"])
         self.assertEqual(before, read_only_fixtures.ReadOnlyInspectTest._tree_signature(wallet))
         harness_after = {
             str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None)

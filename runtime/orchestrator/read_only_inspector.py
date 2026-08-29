@@ -51,7 +51,7 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
     if mapping is not None:
         approval_validation = _validate_approval_state(
             _read(mapping.business_approval_path),
-            {mapping.approved_source_sha256, mapping.canonical_sha256},
+            {mapping.approved_source_sha256, mapping.canonical_sha256, *mapping.historical_plan_sha256},
         )
         if not approval_validation["schema_valid"]:
             raise ReadOnlyValidationError(

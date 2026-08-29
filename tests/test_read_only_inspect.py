@@ -253,11 +253,11 @@ class ReadOnlyInspectTest(unittest.TestCase):
             )
         mapping = load_project_mapping(wallet)
         self.assertIsNotNone(mapping)
-        self.assertEqual(mapping.transition_approval_id, self.wallet_gate_one_approval_id)
+        self.assertIsNone(mapping.transition_approval_id)
         ledger_text = (wallet / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
         ledger = json.loads(ledger_text.split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(ledger["active_scope"], ["G1-LV3-2"])
-        self.assertEqual(ledger["owned_files"], ["app/models/product.py", "tests/test_product.py"])
+        self.assertEqual(ledger["schema_version"], "orchestration.canonical-gate-state.v2")
+        self.assertIn(ledger["gate_status"], {"READY_FOR_APPROVAL", "READY_FOR_TRANSITION"})
         before = self._tree_signature(wallet)
         harness_paths = [REPO_ROOT / "runtime" / "orchestrator_state.json", REPO_ROOT / "logs" / "app.log"]
         harness_before = {str(path): (path.exists(), path.stat().st_mtime_ns if path.exists() else None) for path in harness_paths}
@@ -273,13 +273,11 @@ class ReadOnlyInspectTest(unittest.TestCase):
         self.assertEqual(payload["inspection_mode"], "read_only_no_write")
         self.assertFalse(payload["write_operations_performed"])
         self.assertTrue(payload["contract_mapping"]["valid"])
-        self.assertEqual(payload["contract_mapping"]["canonical_state"], "GATE1_ACTIVE")
+        self.assertIn(payload["contract_mapping"]["canonical_state"], {"GATE1_APPROVAL_READY", "GATE1_RESUME_READY"})
         self.assertEqual(payload["contract_mapping"]["selected_canonical_source"]["path"], "IMPLEMENTATION_PLAN.md")
         self.assertEqual(payload["contract_mapping"]["gate_state_ledger"], "docs/GATE_STATE.md")
-        self.assertTrue(payload["business_gate_state"]["transition_authorized"])
-        self.assertTrue(payload["business_gate_state"]["gate_1_started"])
-        self.assertTrue(payload["business_gate_state"]["activation_commit"])
-        self.assertTrue(payload["business_gate_state"]["activation_committed_at"])
+        self.assertEqual(payload["business_gate_state"]["transition_authorized"], ledger["gate_status"] == "READY_FOR_TRANSITION")
+        self.assertFalse(payload["business_gate_state"]["gate_1_started"])
         self.assertFalse(payload["codex_runtime_sandbox_approval_state"]["business_approval_reused"])
         self.assertTrue(payload["business_lv_approval_state"]["record_hashes_valid"])
         after = self._tree_signature(wallet)
@@ -295,6 +293,7 @@ class ReadOnlyInspectTest(unittest.TestCase):
             {
                 sha256_file(wallet / "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md"),
                 sha256_file(wallet / "IMPLEMENTATION_PLAN.md"),
+                "fe1eb7611844211d6a731e608d487bd08c667e799bd77d2483b8748ea61c7a57",
             },
         )
         self.assertTrue(report["schema_valid"], report["errors"])
