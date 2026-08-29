@@ -628,7 +628,7 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
         and event.get("approval_type") == "START_GATE"
         and event.get("approval_event_type") in {"APPROVED", "RENEWED"}
     ]
-    transition_id = mapping.transition_approval_id or (mapping.gate_approval_ids or {}).get("GATE-1")
+    transition_id = (mapping.gate_approval_ids or {}).get("GATE-1") or mapping.transition_approval_id
     if transition_id is None:
         if gate_one_candidates:
             raise ContractMappingError("Gate 1 approval exists but canonical transition mapping is not configured")

@@ -539,7 +539,7 @@ def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode:
         raise GateOrchestrationError(f"canonical approval/state validation failed: {exc}") from exc
     if state.get("gate_id") not in (None, gate_id) or state.get("transition_authorized") is not True:
         raise GateOrchestrationError("Gate approval is not active for this project/Gate")
-    approval_id = getattr(mapping, "transition_approval_id", None) or (getattr(mapping, "gate_approval_ids", None) or {}).get(gate_id)
+    approval_id = (getattr(mapping, "gate_approval_ids", None) or {}).get(gate_id) or getattr(mapping, "transition_approval_id", None)
     if not approval_id:
         activation_path = root / "docs" / "harness" / "first-gate.activation.json"
         if activation_path.is_file() and not activation_path.is_symlink():
