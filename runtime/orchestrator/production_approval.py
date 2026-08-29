@@ -219,6 +219,9 @@ def classify_approval_schema(event: Mapping[str, Any]) -> str:
         return "HISTORICAL_READ_ONLY"
     if event.get("schema_version") == SCHEMA_V2:
         return "PRODUCTION_V2"
+    legacy_markers = {"approval_id", "target_type", "target_id", "approval_type", "record_hash"}
+    if event.get("schema_version") is None and legacy_markers.issubset(event):
+        return "HISTORICAL_READ_ONLY"
     return "UNSUPPORTED"
 
 

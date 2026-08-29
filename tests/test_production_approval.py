@@ -123,6 +123,10 @@ class ProductionApprovalSchemaV2Tests(unittest.TestCase):
 
     def test_v1_is_historical_only(self):
         self.assertEqual(classify_approval_schema({"schema_version": "orchestration.gate-approval.v1"}), "HISTORICAL_READ_ONLY")
+        self.assertEqual(classify_approval_schema({
+            "approval_id": "APR-LEGACY", "target_type": "GATE", "target_id": "GATE-X",
+            "approval_type": "START_GATE", "record_hash": "a" * 64,
+        }), "HISTORICAL_READ_ONLY")
         with self.assertRaises(ProductionApprovalError):
             evaluate_production_authorization([{"schema_version": "orchestration.gate-approval.v1"}], bindings(), now=NOW)
 
