@@ -19,6 +19,7 @@ from .resume_store import ResumeStoreError
 from .lv_review import LVReviewError, preflight_run, review_run
 from .read_only_inspector import ReadOnlyValidationError, inspect_read_only
 from .production_approval import ProductionApprovalError
+from .mapping_migration import MappingMigrationError
 
 
 def _print(obj: object) -> None:
@@ -32,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-onboard", "production-approval-create", "production-approval-correct"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
         sub = subparsers.add_parser(name)
         if name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
@@ -90,6 +91,12 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--harness-root", required=True)
             sub.add_argument("--requirement-evidence", required=True)
             sub.add_argument("--mapping-root")
+        elif name == "production-mapping-migrate":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--mapping-root", required=True)
+            sub.add_argument("--old-plan-sha256", required=True)
+            sub.add_argument("--new-plan-sha256", required=True)
+            sub.add_argument("--dry-run", action="store_true")
         elif name in {"production-approval-create", "production-approval-correct"}:
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--output", required=True)
@@ -124,6 +131,14 @@ def main(argv: list[str] | None = None) -> int:
         # The child lifecycle commands inherit this process-local registry choice.
         os.environ["HARNESS_CONTRACT_MAPPING_ROOT"] = args.mapping_root
     try:
+        if args.command == "production-mapping-migrate":
+            from .mapping_migration import migrate_plan_sha_mapping
+            _print(migrate_plan_sha_mapping(
+                mapping_root=args.mapping_root, project_root=args.project_root,
+                old_plan_sha256=args.old_plan_sha256, new_plan_sha256=args.new_plan_sha256,
+                dry_run=args.dry_run,
+            ))
+            return 0
         if args.command in {"production-approval-create", "production-approval-correct"}:
             from .production_approval import write_production_approval
             scope = json.loads(Path(args.scope_file).read_text(encoding="utf-8"))
@@ -294,6 +309,9 @@ def main(argv: list[str] | None = None) -> int:
     except ProductionApprovalError as exc:
         _print({"error": str(exc), "error_type": "production_approval_error", "status": "BLOCKED"})
         return 16
+    except MappingMigrationError as exc:
+        _print({"error": str(exc), "error_type": "mapping_migration_error", "status": "BLOCKED"})
+        return 17
     except (GateControllerError, ResumeStoreError) as exc:
         _print({"error": str(exc), "error_type": "gate_controller_error", "status": "BLOCKED", "hard_stop": True})
         return 15

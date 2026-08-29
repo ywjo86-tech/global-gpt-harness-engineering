@@ -1,5 +1,37 @@
 # Orchestration Runtime
 
+## Production approval v2 foundation
+
+Production execution uses `orchestration.production-approval.v2` events. Legacy
+`orchestration.gate-approval.v1` evidence remains readable for historical and
+compatibility inspection, but the production controller boundary does not accept
+it as authorization.
+
+Create or correct an event with the official CLI:
+
+```bash
+python3 -m runtime.orchestrator.cli production-approval-create \
+  --project-root PROJECT --output governance/approval-v2.json \
+  --gate-id GATE-1 --plan-sha256 SHA256 --scope-file SCOPE.json \
+  --authorization-source USER_OWNER
+
+python3 -m runtime.orchestrator.cli production-approval-correct \
+  --project-root PROJECT --output governance/approval-v2.json \
+  --gate-id GATE-1 --plan-sha256 SHA256 --scope-file SCOPE.json \
+  --authorization-source USER_OWNER --supersedes EVENT_ID
+```
+
+Both commands bind the actual UTC clock, attached Git branch, and baseline HEAD.
+`--dry-run` and `--read-only` validate without writing. Writes use a temporary
+file, fsync, and atomic replacement. The scope file contains exactly
+`canonical_lv_scope`, `owned_file_scope`, and
+`completion_conditions_sha256`.
+
+Canonical plan mappings can be migrated atomically with
+`production-mapping-migrate`. Production Gate execution additionally requires a
+canonical v2 Gate state with `READY_FOR_TRANSITION` and `CLOSED`, and rejects
+descendants that changed product files after the approval baseline.
+
 This package contains the local runtime orchestration engine used by the Global GPT Harness Engineering repository.
 
 ## Stage 1

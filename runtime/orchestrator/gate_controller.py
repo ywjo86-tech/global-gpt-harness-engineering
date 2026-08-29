@@ -4,6 +4,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from .canonical_transition import validate_canonical_gate_state, validate_governance_descendant
+from .production_approval import ApprovalBindings, evaluate_production_authorization
+
 
 class GateControllerError(ValueError):
     """Fail-closed error raised at an orchestration lifecycle boundary."""
@@ -138,3 +141,38 @@ def run_gate_lifecycle(context: Mapping[str, Any], adapters: GateControllerAdapt
         "handoff": handoff,
         "hard_stop": True,
     }
+
+
+def run_production_gate_lifecycle(
+    context: Mapping[str, Any], adapters: GateControllerAdapters, *, approval_events: list[Mapping[str, Any]],
+    project_root: str, canonical_state: Mapping[str, Any], completion_conditions_sha256: str,
+) -> dict[str, Any]:
+    """Production boundary: v2 authorization, Git descendant, state, then lifecycle."""
+    required = ("project_id", "gate_id", "plan_sha256", "branch", "baseline_head", "approval_mode", "canonical_lv_scope", "owned_file_scope", "phase")
+    missing = [field for field in required if not context.get(field)]
+    if missing:
+        raise GateControllerError(f"production context is missing: {', '.join(missing)}")
+    try:
+        approval = evaluate_production_authorization(
+            approval_events,
+            ApprovalBindings(
+                project_id=str(context["project_id"]), gate_id=str(context["gate_id"]),
+                plan_sha256=str(context["plan_sha256"]), branch=str(context["branch"]),
+                baseline_head=str(context["baseline_head"]), approval_mode=str(context["approval_mode"]),
+                canonical_lv_scope=tuple(context["canonical_lv_scope"]),
+                owned_file_scope={key: tuple(value) for key, value in context["owned_file_scope"].items()},
+                completion_conditions_sha256=completion_conditions_sha256,
+            ),
+        )
+        validate_governance_descendant(project_root, str(context["baseline_head"]))
+        validate_canonical_gate_state(
+            canonical_state, project_id=str(context["project_id"]), gate_id=str(context["gate_id"]),
+            phase=str(context["phase"]), plan_sha256=str(context["plan_sha256"]),
+            approval_record_hash=str(approval["record_hash"]),
+        )
+    except ValueError as exc:
+        raise GateControllerError(str(exc)) from exc
+    outcome = run_gate_lifecycle(context, adapters)
+    outcome["production_approval_schema"] = approval["schema_version"]
+    outcome["production_approval_record_hash"] = approval["record_hash"]
+    return outcome

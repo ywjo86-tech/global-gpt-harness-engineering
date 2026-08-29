@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import unittest
+import subprocess
+import tempfile
+from pathlib import Path
 
 from runtime.orchestrator.gate_controller import (
     GateControllerAdapters,
     GateControllerError,
     gate_dry_run,
     run_gate_lifecycle,
+    run_production_gate_lifecycle,
 )
+from runtime.orchestrator.production_approval import write_production_approval
 
 
 SHA = "a" * 64
@@ -99,6 +104,46 @@ class GateControllerTests(unittest.TestCase):
             run_gate_lifecycle(self.context, self._adapters(calls, ["FAIL", "FAIL"]))
         self.assertEqual(calls[-2:], ["remediation", "review"])
         self.assertNotIn("checkpoint", calls)
+
+    def test_production_controller_consumes_only_v2_and_validates_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "fixture-project"; root.mkdir()
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "fixture@example.invalid"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Fixture"], cwd=root, check=True)
+            (root / "PLAN.md").write_text("plan\n")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "baseline"], cwd=root, check=True, capture_output=True)
+            approval = write_production_approval(
+                project_root=root, output_path="approval.json", gate_id="GATE-1", plan_sha256=SHA,
+                approval_mode="GATE_BY_GATE", canonical_lv_scope=["G1-LV3-1"],
+                owned_file_scope={"G1-LV3-1": ["app/a.py"]}, completion_conditions_sha256="c"*64,
+                authorization_source="USER_OWNER", dry_run=True,
+            )["event"]
+            context = {
+                **self.context, "branch": "main", "baseline_head": approval["baseline_head"],
+                "approval_mode": "GATE_BY_GATE", "canonical_lv_scope": ["G1-LV3-1"],
+                "owned_file_scope": {"G1-LV3-1": ["app/a.py"]}, "phase": "PHASE-1",
+            }
+            state = {
+                "schema_version": "orchestration.canonical-gate-state.v2", "project_id": "fixture-project",
+                "gate_id": "GATE-1", "phase": "PHASE-1", "plan_sha256": SHA,
+                "gate_status": "READY_FOR_TRANSITION", "closure_status": "CLOSED",
+                "approval_record_hash": approval["record_hash"],
+            }
+            calls: list[str] = []
+            outcome = run_production_gate_lifecycle(
+                context, self._adapters(calls), approval_events=[approval], project_root=str(root),
+                canonical_state=state, completion_conditions_sha256="c"*64,
+            )
+            self.assertEqual(outcome["production_approval_schema"], "orchestration.production-approval.v2")
+            calls.clear()
+            with self.assertRaises(GateControllerError):
+                run_production_gate_lifecycle(
+                    context, self._adapters(calls), approval_events=[{"schema_version": "orchestration.gate-approval.v1"}],
+                    project_root=str(root), canonical_state=state, completion_conditions_sha256="c"*64,
+                )
+            self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":
