@@ -244,7 +244,7 @@ class LVPreviewTest(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         ledger_text = (wallet / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
         ledger = json.loads(ledger_text.split("```json\n", 1)[1].split("\n```", 1)[0])
-        if ledger.get("gate_status") == "READY_FOR_APPROVAL":
+        if ledger.get("schema_version") == "orchestration.canonical-gate-state.v2":
             self.assertEqual(exit_code, 6)
             self.assertEqual(payload["error_type"], "lv_preview_validation_error")
         else:

@@ -189,8 +189,12 @@ def validate_v2_chain(
 
 def evaluate_production_authorization(
     events: Iterable[Mapping[str, Any]], bindings: ApprovalBindings, *, now: datetime | None = None,
+    historical_predecessor: str | None = None, historical_event_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
-    chain = validate_v2_chain(events, now=now)
+    chain = validate_v2_chain(
+        events, now=now, initial_predecessor=historical_predecessor,
+        known_supersedes=historical_event_ids,
+    )
     event = chain[-1]
     expected: dict[str, object] = {
         "project_id": bindings.project_id,

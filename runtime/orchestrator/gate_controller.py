@@ -146,6 +146,7 @@ def run_gate_lifecycle(context: Mapping[str, Any], adapters: GateControllerAdapt
 def run_production_gate_lifecycle(
     context: Mapping[str, Any], adapters: GateControllerAdapters, *, approval_events: list[Mapping[str, Any]],
     project_root: str, canonical_state: Mapping[str, Any], completion_conditions_sha256: str,
+    historical_predecessor: str | None = None, historical_event_ids: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Production boundary: v2 authorization, Git descendant, state, then lifecycle."""
     required = ("project_id", "gate_id", "plan_sha256", "branch", "baseline_head", "approval_mode", "canonical_lv_scope", "owned_file_scope", "phase")
@@ -163,6 +164,8 @@ def run_production_gate_lifecycle(
                 owned_file_scope={key: tuple(value) for key, value in context["owned_file_scope"].items()},
                 completion_conditions_sha256=completion_conditions_sha256,
             ),
+            historical_predecessor=historical_predecessor,
+            historical_event_ids=historical_event_ids,
         )
         validate_governance_descendant(project_root, str(context["baseline_head"]))
         validate_canonical_gate_state(

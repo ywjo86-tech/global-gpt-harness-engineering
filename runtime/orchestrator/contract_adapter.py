@@ -11,7 +11,7 @@ from typing import Any
 
 from .approval_hash import calculate_record_hash
 from .canonical_transition import validate_canonical_gate_state
-from .production_approval import load_v2_event_log
+from .production_approval import load_v2_event_log, validate_v2_chain
 
 
 MAPPING_DIR = Path(__file__).resolve().parent / "contract_mappings"
@@ -255,11 +255,26 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
         errors.append(str(exc))
     if not events:
         errors.append("no approval events found")
+    raw_events = events
+    events = []
+    production_events: list[dict[str, Any]] = []
     previous: dict[str, Any] | None = None
     approval_ids: set[str] = set()
     lineage_heads: dict[tuple[object, object], dict[str, Any]] = {}
     record_hashes_valid = True
-    for index, event in enumerate(events, start=1):
+    for index, event in enumerate(raw_events, start=1):
+        if event.get("schema_version") == "orchestration.production-approval.v2":
+            production_events.append(event)
+            try:
+                validate_v2_chain(
+                    production_events,
+                    initial_predecessor=previous.get("record_hash") if previous else None,
+                    known_supersedes=approval_ids,
+                )
+            except ValueError as exc:
+                errors.append(f"event {index} production v2 validation failed: {exc}")
+            continue
+        events.append(event)
         approval_id = event.get("approval_id")
         safe_id = approval_id if isinstance(approval_id, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", approval_id) else f"event-{index}"
         missing = sorted(required - set(event))
@@ -298,12 +313,13 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
         previous = event
     return {
         "events": events,
-        "event_count": len(events),
+        "event_count": len(events) + len(production_events),
         "schema_valid": not errors,
         "chain_links_valid": not any("previous_record_hash" in error for error in errors),
         "record_hashes_valid": bool(events) and record_hashes_valid,
         "plan_hash_bound": bool(events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in events),
         "errors": errors,
+        "production_events": production_events,
     }
 
 

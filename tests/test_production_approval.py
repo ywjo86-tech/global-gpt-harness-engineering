@@ -108,6 +108,19 @@ class ProductionApprovalSchemaV2Tests(unittest.TestCase):
         )
         self.assertEqual(validate_v2_chain([first, corrected], now=NOW)[-1]["event_type"], "CORRECTION")
 
+    def test_external_historical_tail_must_be_explicit_for_evaluation(self):
+        corrected = event(
+            event_id="APR-CORRECTION", event_type="CORRECTION", predecessor="d" * 64,
+            supersedes="APR-LEGACY", approved_at="2026-08-28T00:00:00Z",
+        )
+        with self.assertRaisesRegex(ProductionApprovalError, "predecessor"):
+            evaluate_production_authorization([corrected], bindings(), now=NOW)
+        approved = evaluate_production_authorization(
+            [corrected], bindings(), now=NOW, historical_predecessor="d" * 64,
+            historical_event_ids=("APR-LEGACY",),
+        )
+        self.assertEqual(approved["supersedes"], "APR-LEGACY")
+
     def test_v1_is_historical_only(self):
         self.assertEqual(classify_approval_schema({"schema_version": "orchestration.gate-approval.v1"}), "HISTORICAL_READ_ONLY")
         with self.assertRaises(ProductionApprovalError):
