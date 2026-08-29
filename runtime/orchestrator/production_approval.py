@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping
 
+from .approval_hash import calculate_record_hash as calculate_legacy_record_hash
+
 
 SCHEMA_V2 = "orchestration.production-approval.v2"
 SCHEMA_V1 = "orchestration.gate-approval.v1"
@@ -153,11 +155,15 @@ def validate_v2_schema(event: Mapping[str, Any], *, now: datetime | None = None)
     return dict(event)
 
 
-def validate_v2_chain(events: Iterable[Mapping[str, Any]], *, now: datetime | None = None) -> list[dict[str, Any]]:
+def validate_v2_chain(
+    events: Iterable[Mapping[str, Any]], *, now: datetime | None = None,
+    initial_predecessor: str | None = None, known_supersedes: Iterable[str] = (),
+) -> list[dict[str, Any]]:
     validated: list[dict[str, Any]] = []
     ids: set[str] = set()
-    previous_hash: str | None = None
+    previous_hash: str | None = initial_predecessor
     by_id: dict[str, dict[str, Any]] = {}
+    historical_ids = set(known_supersedes)
     for index, raw in enumerate(events, start=1):
         event = validate_v2_schema(raw, now=now)
         event_id = event["event_id"]
@@ -168,9 +174,9 @@ def validate_v2_chain(events: Iterable[Mapping[str, Any]], *, now: datetime | No
         supersedes = event["supersedes"]
         if supersedes is not None:
             prior = by_id.get(supersedes)
-            if prior is None:
+            if prior is None and supersedes not in historical_ids:
                 raise ProductionApprovalError(f"supersedes does not identify a prior event at event {index}")
-            if (prior["project_id"], prior["gate_id"]) != (event["project_id"], event["gate_id"]):
+            if prior is not None and (prior["project_id"], prior["gate_id"]) != (event["project_id"], event["gate_id"]):
                 raise ProductionApprovalError(f"cross-scope correction at event {index}")
         ids.add(event_id)
         by_id[event_id] = event
@@ -217,14 +223,59 @@ def load_v2_event_log(path: str | Path, *, now: datetime | None = None) -> list[
     if not source.is_file() or source.is_symlink() or source.stat().st_size > 1024 * 1024:
         raise ProductionApprovalError("production approval log is missing or unsafe")
     try:
-        raw = json.loads(source.read_text(encoding="utf-8"))
+        text_value = source.read_text(encoding="utf-8")
+        raw = json.loads(text_value)
     except (UnicodeError, json.JSONDecodeError) as exc:
-        raise ProductionApprovalError("production approval log is malformed") from exc
+        if isinstance(exc, UnicodeError):
+            raise ProductionApprovalError("production approval log is malformed") from exc
+        legacy, production = _load_markdown_events(text_value)
+        predecessor = legacy[-1]["record_hash"] if legacy else None
+        return validate_v2_chain(
+            production, now=now, initial_predecessor=predecessor,
+            known_supersedes=(str(item["approval_id"]) for item in legacy),
+        )
     if not isinstance(raw, dict) or set(raw) != {"schema_version", "events"}:
         raise ProductionApprovalError("production approval log schema mismatch")
     if raw["schema_version"] != "orchestration.production-approval-log.v2" or not isinstance(raw["events"], list):
         raise ProductionApprovalError("production approval log schema mismatch")
     return validate_v2_chain(raw["events"], now=now)
+
+
+def _load_markdown_events(text_value: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    blocks = re.findall(r"```json[ \t]*\r?\n(.*?)\r?\n```", text_value, flags=re.DOTALL)
+    if not blocks:
+        raise ProductionApprovalError("production approval log is malformed")
+    legacy: list[dict[str, Any]] = []
+    production: list[dict[str, Any]] = []
+    previous_hash: str | None = None
+    legacy_ids: set[str] = set()
+    for index, block in enumerate(blocks, start=1):
+        try:
+            event = json.loads(block)
+        except json.JSONDecodeError as exc:
+            raise ProductionApprovalError("approval Markdown contains malformed JSON") from exc
+        if not isinstance(event, dict):
+            raise ProductionApprovalError("approval Markdown event must be an object")
+        if event.get("schema_version") == SCHEMA_V2:
+            production.append(event)
+            continue
+        approval_id = event.get("approval_id")
+        record_hash = event.get("record_hash")
+        if not isinstance(approval_id, str) or not approval_id or approval_id in legacy_ids:
+            raise ProductionApprovalError(f"legacy approval event {index} has an invalid or duplicate ID")
+        if event.get("previous_record_hash") != previous_hash:
+            raise ProductionApprovalError(f"legacy approval event {index} has a broken hash chain")
+        if not isinstance(record_hash, str) or not _SHA256.fullmatch(record_hash) or calculate_legacy_record_hash(event) != record_hash:
+            raise ProductionApprovalError(f"legacy approval event {index} record_hash mismatch")
+        legacy_ids.add(approval_id)
+        previous_hash = record_hash
+        legacy.append(event)
+    if production:
+        validate_v2_chain(
+            production, initial_predecessor=previous_hash,
+            known_supersedes=legacy_ids,
+        )
+    return legacy, production
 
 
 def _git(root: Path, *args: str) -> str:
@@ -292,16 +343,35 @@ def write_production_approval(
     relative_output = output.relative_to(root).as_posix()
     root, branch, head = inspect_git_binding(project_root, allowed_dirty_paths=(relative_output,))
     existing: list[dict[str, Any]] = []
+    legacy: list[dict[str, Any]] = []
+    markdown_text: str | None = None
+    markdown_log = False
     if output.exists():
-        existing = load_v2_event_log(output)
-    if correction_of is not None and not existing:
+        try:
+            markdown_text = output.read_text(encoding="utf-8")
+        except UnicodeError as exc:
+            raise ProductionApprovalError("production approval log is malformed") from exc
+        if markdown_text.lstrip().startswith("#"):
+            markdown_log = True
+            legacy, existing = _load_markdown_events(markdown_text)
+        else:
+            existing = load_v2_event_log(output)
+    all_ids = {str(item["approval_id"]) for item in legacy} | {str(item["event_id"]) for item in existing}
+    if correction_of is not None and not (legacy or existing):
         raise ProductionApprovalError("correction requires an existing production approval log")
-    if correction_of is not None and correction_of not in {item["event_id"] for item in existing}:
+    if correction_of is not None and correction_of not in all_ids:
         raise ProductionApprovalError("correction target does not exist")
 
     clock = datetime.now(timezone.utc)
     timestamp = clock.isoformat(timespec="microseconds").replace("+00:00", "Z")
     event_id = f"APR-{gate_id}-{clock.strftime('%Y%m%dT%H%M%S%fZ')}"
+    superseded_event = next(
+        (item for item in [*legacy, *existing] if item.get("approval_id", item.get("event_id")) == correction_of),
+        None,
+    )
+    approved_timestamp = superseded_event.get("approved_at") if superseded_event is not None else timestamp
+    _utc_time(approved_timestamp, "approved_at")
+    predecessor = existing[-1]["record_hash"] if existing else legacy[-1]["record_hash"] if legacy else None
     candidate: dict[str, Any] = {
         "schema_version": SCHEMA_V2,
         "event_id": event_id,
@@ -311,19 +381,23 @@ def write_production_approval(
         "plan_sha256": plan_sha256,
         "branch": branch,
         "baseline_head": head,
-        "approved_at": timestamp,
+        "approved_at": approved_timestamp,
         "recorded_at": timestamp,
         "approval_mode": approval_mode,
         "canonical_lv_scope": list(canonical_lv_scope),
         "owned_file_scope": {key: list(value) for key, value in owned_file_scope.items()},
         "completion_conditions_sha256": completion_conditions_sha256,
-        "predecessor": existing[-1]["record_hash"] if existing else None,
+        "predecessor": predecessor,
         "supersedes": correction_of,
         "authorization_source": authorization_source,
         "record_hash": "0" * 64,
     }
     candidate["record_hash"] = calculate_v2_record_hash(candidate)
-    validate_v2_chain([*existing, candidate], now=clock)
+    validate_v2_chain(
+        [*existing, candidate], now=clock,
+        initial_predecessor=legacy[-1]["record_hash"] if legacy else None,
+        known_supersedes=(str(item["approval_id"]) for item in legacy),
+    )
     result = {
         "status": "DRY_RUN" if dry_run else "READ_ONLY" if read_only else "WRITTEN",
         "mutation_performed": not (dry_run or read_only),
@@ -332,6 +406,12 @@ def write_production_approval(
     }
     if dry_run or read_only:
         return result
-    envelope = {"schema_version": "orchestration.production-approval-log.v2", "events": [*existing, candidate]}
-    _atomic_write(output, canonical_json_bytes(envelope) + b"\n")
+    if markdown_log and markdown_text is not None:
+        heading = f"## Production Approval v2 — {candidate['event_id']}"
+        block = json.dumps(candidate, sort_keys=True, indent=2, ensure_ascii=False)
+        appended = markdown_text.rstrip("\n") + f"\n\n{heading}\n\n```json\n{block}\n```\n"
+        _atomic_write(output, appended.encode("utf-8"))
+    else:
+        envelope = {"schema_version": "orchestration.production-approval-log.v2", "events": [*existing, candidate]}
+        _atomic_write(output, canonical_json_bytes(envelope) + b"\n")
     return result

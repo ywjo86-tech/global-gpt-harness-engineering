@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from runtime.orchestrator.cli import main
 from runtime.orchestrator.production_approval import ProductionApprovalError, load_v2_event_log, write_production_approval
+from runtime.orchestrator.approval_hash import calculate_record_hash as calculate_legacy_record_hash
 
 
 SHA = "a" * 64
@@ -109,6 +110,27 @@ class ProductionApprovalWriterTests(unittest.TestCase):
         with self.assertRaises(ProductionApprovalError) as caught:
             self.write(authorization_source=secret)
         self.assertNotIn(secret, str(caught.exception))
+
+    def test_markdown_legacy_tail_is_preserved_and_superseded_by_v2_correction(self):
+        legacy = {
+            "approval_id": "APR-LEGACY-1", "target_type": "GATE", "target_id": "GATE-1",
+            "approved_at": "2026-08-28T00:00:00Z", "previous_record_hash": None,
+            "record_hash": "0" * 64,
+        }
+        legacy["record_hash"] = calculate_legacy_record_hash(legacy)
+        path = self.root / "approval.md"
+        original = "# Approval Log\n\n```json\n" + json.dumps(legacy, indent=2) + "\n```\n"
+        path.write_text(original, encoding="utf-8")
+        result = self.write(output_path="approval.md", correction_of="APR-LEGACY-1")
+        after = path.read_text(encoding="utf-8")
+        self.assertTrue(after.startswith(original.rstrip("\n")))
+        self.assertEqual(after.count("```json"), 2)
+        corrected = load_v2_event_log(path)[0]
+        self.assertEqual(corrected["predecessor"], legacy["record_hash"])
+        self.assertEqual(corrected["supersedes"], "APR-LEGACY-1")
+        self.assertEqual(corrected["approved_at"], legacy["approved_at"])
+        self.assertNotEqual(corrected["recorded_at"], legacy["approved_at"])
+        self.assertEqual(result["event"]["record_hash"], corrected["record_hash"])
 
 
 if __name__ == "__main__":

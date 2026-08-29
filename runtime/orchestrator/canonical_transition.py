@@ -49,7 +49,7 @@ def validate_governance_descendant(
 
 def validate_canonical_gate_state(
     state: Mapping[str, Any], *, project_id: str, gate_id: str, phase: str,
-    plan_sha256: str, approval_record_hash: str,
+    plan_sha256: str, approval_record_hash: str | None,
 ) -> dict[str, Any]:
     if set(state) != STATE_FIELDS or state.get("schema_version") != "orchestration.canonical-gate-state.v2":
         raise CanonicalTransitionError("canonical Gate state schema mismatch")
@@ -60,11 +60,15 @@ def validate_canonical_gate_state(
     for field, value in expected.items():
         if state.get(field) != value:
             raise CanonicalTransitionError(f"canonical Gate state {field} mismatch")
-    if state.get("gate_status") != "READY_FOR_TRANSITION":
-        raise CanonicalTransitionError("canonical Gate state is not ready for transition")
+    if state.get("gate_status") not in {"READY_FOR_APPROVAL", "READY_FOR_TRANSITION"}:
+        raise CanonicalTransitionError("canonical Gate state is not ready for approval or transition")
+    if state["gate_status"] == "READY_FOR_APPROVAL" and state.get("approval_record_hash") is not None:
+        raise CanonicalTransitionError("pre-approval canonical Gate state must not bind an approval hash")
+    if state["gate_status"] == "READY_FOR_TRANSITION" and not _SHA256.fullmatch(str(state.get("approval_record_hash"))):
+        raise CanonicalTransitionError("transition-ready canonical Gate state approval digest is invalid")
     if state.get("closure_status") != "CLOSED":
         raise CanonicalTransitionError("canonical Gate closure is missing")
-    if not _SHA256.fullmatch(str(state.get("plan_sha256"))) or not _SHA256.fullmatch(str(state.get("approval_record_hash"))):
+    if not _SHA256.fullmatch(str(state.get("plan_sha256"))):
         raise CanonicalTransitionError("canonical Gate state digest is invalid")
     return dict(state)
 

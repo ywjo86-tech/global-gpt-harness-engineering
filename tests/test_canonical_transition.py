@@ -50,5 +50,14 @@ class CanonicalTransitionTests(unittest.TestCase):
         with self.assertRaisesRegex(CanonicalTransitionError, "closure"):
             validate_canonical_gate_state(state, project_id="project", gate_id="GATE-1", phase="PHASE-1", plan_sha256="a"*64, approval_record_hash="b"*64)
 
+    def test_preapproval_state_is_explicit_and_has_no_legacy_approval_binding(self):
+        state = {"schema_version": "orchestration.canonical-gate-state.v2", "project_id": "project", "gate_id": "GATE-1",
+                 "phase": "PHASE-1", "plan_sha256": "a"*64, "gate_status": "READY_FOR_APPROVAL",
+                 "closure_status": "CLOSED", "approval_record_hash": None}
+        self.assertEqual(validate_canonical_gate_state(state, project_id="project", gate_id="GATE-1", phase="PHASE-1", plan_sha256="a"*64, approval_record_hash=None)["gate_status"], "READY_FOR_APPROVAL")
+        state["approval_record_hash"] = "b" * 64
+        with self.assertRaisesRegex(CanonicalTransitionError, "pre-approval"):
+            validate_canonical_gate_state(state, project_id="project", gate_id="GATE-1", phase="PHASE-1", plan_sha256="a"*64, approval_record_hash="b"*64)
+
 
 if __name__ == "__main__": unittest.main()
