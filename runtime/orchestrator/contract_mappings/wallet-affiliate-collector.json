@@ -22,7 +22,6 @@
   "canonical_transition": {
     "gate_approval_ids": {
       "GATE-1": "APR-GATE1-V3-20260829T000000Z"
-    },
-    "gate_1_approval_id": "APR-GATE1-V2-20260827T053453Z"
+    }
   }
 }
