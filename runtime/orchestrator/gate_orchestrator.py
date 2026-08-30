@@ -970,12 +970,17 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         )
         if publication.get("status") != "READY":
             raise GateControllerError(f"REVIEW preflight publication blocked: {publication}")
+        review_attempt = int(context.get("review_attempt", 1))
+        review_root = Path(state["package_root"]) / f"review-attempt-{review_attempt:02d}"
+        # A prior failed review is immutable; publish a successor review
+        # record instead of attempting to overwrite or rerun the worker.
+        while review_root.exists() or review_root.is_symlink():
+            review_attempt += 1
+            review_root = Path(state["package_root"]) / f"review-attempt-{review_attempt:02d}"
         review_result = review_run(
-            run_id,
-            attempt=int(context.get("review_attempt", 1)),
+            run_id, attempt=review_attempt,
             package_root=Path(state["package_root"]),
-            result_path=Path(state["worker_result_path"]),
-            results_root=Path(state["package_root"]) / "review-attempt-01",
+            result_path=Path(state["worker_result_path"]), results_root=review_root,
         )
         if review_result.get("status") not in {"PASS", "FAIL"}:
             raise GateControllerError(f"REVIEW blocked: {review_result}")
