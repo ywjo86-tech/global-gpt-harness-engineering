@@ -206,8 +206,8 @@ def execute_production_worker(request: WorkerRequest, *,
     commands = {
         "worker": {"command": argv, "exit_code": worker_exit, "timeout": timed_out,
                    "stdout_sha256": hashlib.sha256(stdout).hexdigest(), "stderr_sha256": hashlib.sha256(stderr).hexdigest()},
-        "focused_test": _command(root, [str(pytest), "-q", *tests]),
-        "full_regression": _command(root, [str(pytest), "-q"]),
+        "focused_test": _command(root, [str(python), "-m", "pytest", "-q", *tests]),
+        "full_regression": _command(root, [str(python), "-m", "pytest", "-q"]),
         "compile_import": _command(root, [str(python), "-m", "compileall", "-q", *owned]),
         "git_diff_check": _command(root, ["git", "diff", "--check"] if head == baseline else ["git", "diff", "--check", f"{baseline}..{head}"]),
     }
