@@ -75,7 +75,7 @@ def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
     """Read-only discovery of recovery attempts; never manufactures evidence."""
     rejected: list[dict[str, Any]] = []
     run_root = harness_root / "_workspace" / "orchestration-runs" / run_id
-    for attempt_root in sorted(run_root.glob("attempt-[0-9][0-9]"), reverse=True):
+    for attempt_root in sorted(run_root.glob("attempt-[0-9][0-9]*"), reverse=True):
         try: attempt = int(attempt_root.name.split("-")[1])
         except (IndexError, ValueError): continue
         required = {"package.json":"package_sha256","consumption.json":"consumption_sha256",
@@ -93,6 +93,9 @@ def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
             values[name] = value
         product_path = attempt_root / "product-completion.json"
         verdict = None
+        consumption = values.get("consumption.json", {})
+        if consumption.get("status") == "CONSUMED" and consumption.get("completion_eligible") is True:
+            verdict = {"completion_eligible": True, "reasons": []}
         if product_path.is_file() and not product_path.is_symlink():
             try:
                 evidence = _load(product_path)
@@ -103,7 +106,8 @@ def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
                 verdict = verify_product_completion(project_root,evidence,contract,terminal_head=False)
                 reasons.extend(verdict["reasons"])
             except (ResumeBridgeError, ProductCompletionError): reasons.append("PRODUCT_COMPLETION_INVALID")
-        else: reasons.append("PRODUCT_COMPLETION_EVIDENCE_MISSING")
+        elif verdict is None:
+            reasons.append("PRODUCT_COMPLETION_EVIDENCE_MISSING")
         reasons = sorted(set(reasons))
         if not reasons and verdict and verdict["completion_eligible"]:
             return {"lv_id":item.lv_id,"run_id":run_id,"attempt":attempt,"status":"COMPLETE","source":"recovery",
