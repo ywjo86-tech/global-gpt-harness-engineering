@@ -235,11 +235,11 @@ pass in the same stage checkpoint.
 
 | ID | Requirement | Production code | Explicit tests | Status |
 | --- | --- | --- | --- | --- |
-| R3 | Canonical digest/binding contract | `runtime/orchestrator/lifecycle_binding.py` | `tests/test_lifecycle_binding.py` (`LifecycleBindingTests`, 4 tests) | COMPLETE |
-| R4 | Unified lifecycle producers/consumers | `runtime/orchestrator/production_lifecycle.py` (`ARTIFACT_KINDS`, `produce`, `consume`, `transition`) | `tests/test_production_lifecycle.py` (`ProductionLifecycleTests`, 4 tests) | COMPLETE |
-| R5 | Partial workspace recovery state machine | `runtime/orchestrator/partial_workspace_recovery.py` (`PartialRecoveryMachine`, 13 states) | `tests/test_partial_workspace_recovery.py` (`PartialWorkspaceRecoveryTests`, 4 tests) | COMPLETE |
-| R6 | Persistent Gate terminal lifecycle | `runtime/orchestrator/gate_terminal.py` (`GateTerminalController`) | `tests/test_gate_terminal.py` (`GateTerminalTests`, 3 tests) | COMPLETE |
-| R7 | Readiness fixtures and incremental resolution | modules above plus `runtime/orchestrator/incremental_resolution.py` (`IncrementalResolver`) | `tests/test_production_readiness.py` (`ProductionReadinessTests`, 28 tests) | COMPLETE |
+| R3 | Canonical digest/binding contract | `runtime/orchestrator/lifecycle_binding.py` | `tests/test_lifecycle_binding.py` (`LifecycleBindingTests`, 5 tests) | PENDING — audit NO-GO: production source revalidation incomplete |
+| R4 | Unified lifecycle producers/consumers | `runtime/orchestrator/production_lifecycle.py` (`ARTIFACT_KINDS`, `produce`, `consume`, `transition`) | `tests/test_production_lifecycle.py` (`ProductionLifecycleTests`, 4 tests) | PENDING — audit NO-GO: persisted downstream consumers incomplete |
+| R5 | Partial workspace recovery state machine | `runtime/orchestrator/partial_workspace_recovery.py` (`PartialRecoveryMachine`, 13 states) | `tests/test_partial_workspace_recovery.py` (`PartialWorkspaceRecoveryTests`, 4 tests) | PENDING — audit NO-GO: official adoption integration incomplete |
+| R6 | Persistent Gate terminal lifecycle | `runtime/orchestrator/gate_terminal.py` (`GateTerminalController`) | `tests/test_gate_terminal.py` (`GateTerminalTests`, 3 tests) | PENDING — audit NO-GO: CLI/supervisor integration incomplete |
+| R7 | Readiness fixtures and incremental resolution | modules above plus `runtime/orchestrator/incremental_resolution.py` (`IncrementalResolver`) | `tests/test_production_readiness.py` (`ProductionReadinessTests`, 28 tests) | PENDING — audit NO-GO: production fixtures/context integration incomplete |
 
 Independent audit correction: the first audit found the new contracts isolated
 from the existing production entrypoints and found nominal recovery/fixture
