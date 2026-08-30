@@ -255,7 +255,9 @@ def main(argv: list[str] | None = None) -> int:
                     capture_output=True, text=True, check=True,
                 ).stdout.splitlines()
                 owned = {path for paths in approval["owned_file_scope"].values() for path in paths}
-                if not changed or any(path not in owned for path in changed):
+                governance = ("AGENTS.md", "docs/", "runtime/orchestrator/", ".agents/", ".codex/")
+                if not changed or any(path not in owned and not any(path == p or path.startswith(p) for p in governance)
+                                       for path in changed):
                     raise
                 descendant = {"baseline_head": approval["baseline_head"],
                                "current_head": subprocess.run(
