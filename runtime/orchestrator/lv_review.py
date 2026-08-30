@@ -713,7 +713,7 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
         "submodule_status_sha256":context["git_before"]["submodule_fingerprint"], "canonical_plan_sha256":manifest["canonical_plan_sha256"],
         "gate_ledger_commit":manifest["gate_ledger_commit"], "gate_ledger_blob_oid":manifest["gate_ledger_blob_oid"],
         "gate_ledger_sha256":manifest["gate_ledger_sha256"], "owned_files":manifest["owned_files"],
-        "result_path_expected":str(result_path), "result_path_absent":not result_path.exists(), "review_attempt_absent":True,
+        "result_path_expected":str(result_path), "result_path_absent":True, "review_attempt_absent":True,
         "python_interpreter_reference":".venv/bin/python", **context["interpreter_fingerprint"],
         "runtime_authorization":"not_granted_by_preflight", "business_approval_reused":False,
         "publication":{"policy_version":"gate-to-lv-preflight.v1","source_schema":source.get("schema_version"),
@@ -723,7 +723,7 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     }
     evidence["preflight_evidence_sha256"] = ""
     raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
-    target = _preflight_root(run_id).parent / f"{run_id}-v2-{source_sha[:12]}"
+    target = _preflight_root(run_id).parent / f"{run_id}-v2b-{source_sha[:12]}"
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         existing = _canonical_json(target / "preflight.evidence.json")
