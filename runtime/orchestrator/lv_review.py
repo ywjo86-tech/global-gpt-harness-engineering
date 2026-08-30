@@ -800,10 +800,33 @@ def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any],
     expected = {"preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"}
     def valid_candidate(candidate: Path) -> bool:
         try:
+            if not candidate.is_dir() or candidate.is_symlink():
+                return False
+            entries = list(candidate.iterdir())
+            if {entry.name for entry in entries} != expected or not all(entry.is_file() and not entry.is_symlink() for entry in entries):
+                return False
             data = (candidate/"preflight.evidence.json").read_bytes()
-            return (candidate.is_dir() and not candidate.is_symlink() and
-                    (candidate/"preflight.evidence.sha256").read_text(encoding="ascii").strip() == _sha256(data))
-        except (OSError, UnicodeError):
+            digest = _sha256(data)
+            if (candidate/"preflight.evidence.sha256").read_text(encoding="ascii").strip() != digest:
+                return False
+            evidence = json.loads(data)
+            manifest = context["manifest"]
+            identity = {
+                "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
+                "run_id": context["run_id"], "project_id": manifest["project_id"],
+                "gate_id": manifest["gate_id"], "lv_id": manifest["lv_id"],
+                "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+            }
+            if any(evidence.get(key) != value for key, value in identity.items()):
+                return False
+            status = json.loads((candidate/"preflight.status").read_bytes())
+            expected_status = {
+                "schema_version": PREFLIGHT_STATUS_SCHEMA_VERSION, "status": "READY", "hard_stop": True,
+                "package_manifest_sha256": evidence["package_manifest_sha256"],
+                "preflight_evidence_sha256": digest, "runtime_authorization": "not_granted_by_preflight",
+            }
+            return status == expected_status
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
             return False
     candidates = sorted(root.parent.glob(f"{context['run_id']}-v2*"))
     valid = [p for p in candidates if valid_candidate(p)]
