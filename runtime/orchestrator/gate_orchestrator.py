@@ -852,11 +852,25 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                            "preflight_evidence_sha256": state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"),
                            "attempt": 1,
                            "source_snapshot": {key: manifest.get(key) for key in ("source_head", "source_tree", "source_index_fingerprint", "source_worktree_fingerprint")},
-                           "gate_id": plan.gate_id, "lv_id": lv_id,
+                    "gate_id": plan.gate_id, "lv_id": lv_id,
+                    "approval_event_id": getattr(auth, "authorization_id", ""),
                            },
         )
         request_path = package_root / "worker.request.json"
         request_path.write_bytes(canonical_json_bytes(request.to_dict()))
+        # Use the registered production executor for real projects.  It
+        # independently validates scope/tests/commit evidence and resumes a
+        # partial owned workspace without spawning a duplicate child.
+        from .production_worker_executor import execute_production_worker
+        if str(request.extra_context.get("execution_mode")) == "production":
+            try:
+                worker_payload = execute_production_worker(request, timeout=1800)
+            except Exception as exc:
+                raise GateControllerError(f"registered production worker failed: {exc}") from exc
+            result.write_bytes(canonical_json_bytes(worker_payload))
+            state["worker_payload"] = worker_payload
+            state["worker_result_path"] = result
+            return sealed("WORKER", "COMPLETED", _file_sha(result), payload=worker_payload)
         action = seal_action_manifest(
             requirements_sha256=str(_.get("requirements_sha256", "")), project_id=plan.project_id,
             gate_id=plan.gate_id, lv_id=lv_id, run_id=run_id, branch=str(_.get("branch", "")),
