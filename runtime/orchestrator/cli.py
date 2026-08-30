@@ -301,7 +301,12 @@ def main(argv: list[str] | None = None) -> int:
                         record = json.loads(record_path.read_text(encoding="utf-8"))
                         attempt = int(record.get("recovery_attempt", 0))
                         attempt_root = Path(args.harness_root)/"_workspace"/"orchestration-runs"/args.run_id/f"attempt-{attempt:02d}"
-                        checkpoint_path = recovery_root/f"{args.run_id}-recovery-{attempt:02d}.checkpoint.json"
+                        checkpoint_path = record_path.with_name(record_path.stem + ".checkpoint.json")
+                        if (attempt_root/"package.json").is_file():
+                            pkg = json.loads((attempt_root/"package.json").read_text(encoding="utf-8"))
+                            if pkg.get("lv_id") != record.get("lv_id"):
+                                candidate = attempt_root.parent / f"attempt-{attempt:02d}-{record.get('lv_id')}"
+                                if (candidate/"package.json").is_file(): attempt_root = candidate
                         if attempt > 1 and checkpoint_path.is_file() and (attempt_root/"package.json").is_file():
                             active_candidates.append((attempt, record_path, checkpoint_path))
                     except (OSError, ValueError, json.JSONDecodeError):

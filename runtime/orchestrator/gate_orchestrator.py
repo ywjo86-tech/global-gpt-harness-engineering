@@ -695,6 +695,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             def registered_worker(recovery_package: Mapping[str, Any], recovery_preflight: Mapping[str, Any]) -> Mapping[str, Any]:
                 from .recovery_contract import attempt_directory
                 attempt_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id / attempt_directory(attempt)
+                base_package = attempt_root / "package.json"
+                if base_package.is_file():
+                    try:
+                        if json.loads(base_package.read_text(encoding="utf-8")).get("lv_id") != lv_id:
+                            attempt_root = attempt_root.parent / f"{attempt_directory(attempt)}-{lv_id}"
+                    except (OSError, UnicodeError, json.JSONDecodeError):
+                        raise GateControllerError("recovery package is malformed")
                 result = attempt_root / "registered.worker.result.json"
                 request_path = attempt_root / "worker.request.json"
                 task = TaskSlice(thread_id=lv_id, assigned_agent="implementation_agent", input=selected.purpose,
