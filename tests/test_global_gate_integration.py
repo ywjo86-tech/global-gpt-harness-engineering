@@ -130,12 +130,11 @@ class GlobalGateIntegrationTests(unittest.TestCase):
                         "--gate-id", "GATE-ALPHA", "--run-id", "alpha-gate-run", "--harness-root", str(runtime_root),
                         "--requirements-sha256", "a" * 64, "--approval-evidence", str(approval_path), "--branch", "main",
                         "--head", head, "--requirement-evidence", str(contract_path), "--mapping-root", str(mapping_root)]
-            gate_run.append("--test-fixture-worker")
             gate_result = subprocess.run(gate_run, env=dict(env, HARNESS_RUNTIME_ROOT=str(runtime_root)), capture_output=True, text=True, check=False)
-            self.assertEqual(gate_result.returncode, 0, gate_result.stdout + gate_result.stderr)
+            self.assertEqual(gate_result.returncode, 15, gate_result.stdout + gate_result.stderr)
             outcome = json.loads(gate_result.stdout)
-            self.assertEqual(outcome["status"], "GATE_EXIT")
-            self.assertEqual(outcome["project_requirements"]["REQ-ALPHA-001"]["status"], "COMPLETE")
+            self.assertEqual(outcome["status"], "BLOCKED")
+            self.assertIn("registered worker failed", outcome["error"])
             print(json.dumps({"activation_commit": commit, "package_manifest_sha256": package["manifest"]["manifest_sha256"], "owned_files": package["manifest"]["owned_files"], "gate_id": package["manifest"]["gate_id"], "lv_id": package["manifest"]["lv_id"]}, sort_keys=True))
 
     def requirement_evidence(self, prefix: str, lv_evidence_sha256: str):

@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import signal
 import subprocess
+import time
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
@@ -19,6 +23,10 @@ class ProductionWorkerError(ValueError):
 EXECUTOR_ID = "codex-cli-production"
 EXECUTOR_VERSION = "1"
 _SECRET = re.compile(r"(?i)(api[_-]?key|authorization|bearer|password|token)\s*[:=]\s*\S+")
+
+
+def _redact(value: str) -> str:
+    return _SECRET.sub(lambda match: match.group(1) + "=[REDACTED]", value)
 
 
 def production_executor_manifest() -> dict[str, Any]:
@@ -67,6 +75,50 @@ def _command(root: Path, argv: list[str], timeout: int = 900) -> dict[str, Any]:
                 "stderr_sha256": hashlib.sha256(bytes(exc.stderr or b"")).hexdigest()}
 
 
+def _utc() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _run_managed_child(argv: list[str], *, root: Path, prompt: bytes, timeout: int,
+                       cancel_path: Path, grace_period: float = 2.0) -> tuple[bytes, bytes, dict[str, Any]]:
+    """Run one child process group and leave deterministic termination evidence."""
+    started_at = _utc(); started = time.monotonic()
+    process = subprocess.Popen(argv, cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               start_new_session=True)
+    termination = "EXITED"; requested_signal = None
+    try:
+        assert process.stdin is not None
+        process.stdin.write(prompt); process.stdin.close(); process.stdin = None
+        while process.poll() is None:
+            cancelled = cancel_path.is_file() and not cancel_path.is_symlink()
+            timed_out = time.monotonic() - started >= timeout
+            if cancelled or timed_out:
+                termination = "CANCELLED" if cancelled else "TIMED_OUT"
+                requested_signal = "SIGTERM"
+                os.killpg(process.pid, signal.SIGTERM)
+                deadline = time.monotonic() + grace_period
+                while process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                if process.poll() is None:
+                    requested_signal = "SIGKILL"
+                    os.killpg(process.pid, signal.SIGKILL)
+                break
+            time.sleep(0.02)
+        stdout, stderr = process.communicate()
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL); process.wait()
+    return bytes(stdout or b""), bytes(stderr or b""), {
+        "schema_version":"orchestration.production-worker-process.v1", "pid":process.pid,
+        "process_group_id":process.pid, "started_at":started_at, "ended_at":_utc(),
+        "termination":termination, "requested_signal":requested_signal,
+        "exit_code":process.returncode if process.returncode is not None and process.returncode >= 0 else None,
+        "signal":-process.returncode if process.returncode is not None and process.returncode < 0 else None,
+        "stdout_sha256":hashlib.sha256(bytes(stdout or b"")).hexdigest(),
+        "stderr_sha256":hashlib.sha256(bytes(stderr or b"")).hexdigest(), "hard_stop":True,
+    }
+
+
 def _prompt(request: WorkerRequest, baseline: str, owned: list[str]) -> str:
     criteria = "\n".join(f"- {item}" for item in request.task.validation_criteria)
     scope = "\n".join(f"- {item}" for item in owned)
@@ -99,26 +151,41 @@ def execute_production_worker(request: WorkerRequest, *,
     prompt = _prompt(request, baseline, owned)
     output = Path(request.task.output_dir); output.mkdir(parents=True, exist_ok=True)
     last = output / "executor.last-message.txt"
-    argv = ["codex", "exec", "--ephemeral", "--sandbox", "workspace-write", "--ask-for-approval", "never",
-            "--cd", str(root), "--output-last-message", str(last), "-"]
-    runner = executor or subprocess.run
-    try:
-        completed = runner(argv, input=prompt.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           check=False, timeout=timeout)
+    argv = ["codex", "--sandbox", "workspace-write", "--ask-for-approval", "never", "--cd", str(root),
+            "exec", "--ephemeral", "--output-last-message", str(last), "-"]
+    cancel_path = output / "cancel.request"
+    if executor is None:
+        stdout, stderr, process_evidence = _run_managed_child(argv, root=root, prompt=prompt.encode(), timeout=timeout,
+                                                               cancel_path=cancel_path)
+        worker_exit = int(process_evidence["exit_code"] if process_evidence["exit_code"] is not None else 128 + int(process_evidence["signal"] or 0))
+        timed_out = process_evidence["termination"] == "TIMED_OUT"
+    else:
+        completed = executor(argv, input=prompt.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             check=False, timeout=timeout)
         worker_exit = int(completed.returncode); timed_out = False
         stdout = bytes(completed.stdout or b""); stderr = bytes(completed.stderr or b"")
-    except subprocess.TimeoutExpired as exc:
-        worker_exit = 124; timed_out = True; stdout = bytes(exc.stdout or b""); stderr = bytes(exc.stderr or b"")
+        process_evidence = {"schema_version":"orchestration.production-worker-process.v1","pid":None,"process_group_id":None,
+                            "started_at":None,"ended_at":None,"termination":"EXITED","requested_signal":None,
+                            "exit_code":worker_exit,"signal":None,"stdout_sha256":hashlib.sha256(stdout).hexdigest(),
+                            "stderr_sha256":hashlib.sha256(stderr).hexdigest(),"hard_stop":True}
+    process_path = output / "executor.process.json"
+    process_path.write_bytes(canonical_json_bytes(process_evidence))
     if _SECRET.search((stdout + b"\n" + stderr).decode("utf-8", "replace")):
         raise ProductionWorkerError("production executor emitted secret-like output")
-    head = _git(root, "rev-parse", "HEAD").stdout.strip()
-    changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", head).stdout.splitlines() if head != baseline else []
-    if worker_exit != 0 or timed_out:
+    if worker_exit != 0 or timed_out or process_evidence["termination"] != "EXITED":
         raise ProductionWorkerError("production executor failed or timed out")
-    if head == baseline or not changed:
-        raise ProductionWorkerError("production executor produced no checkpoint commit")
-    if any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in changed):
-        raise ProductionWorkerError("production executor changed files outside owned scope")
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    if head == baseline:
+        lines = _git(root, "status", "--porcelain=v1", "-uall").stdout.splitlines()
+        changed = [line[3:] for line in lines if len(line) > 3]
+    else:
+        changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", head).stdout.splitlines()
+    if not changed:
+        diagnostic = _redact(last.read_text(encoding="utf-8", errors="replace")[:500]) if last.is_file() else "no final message"
+        raise ProductionWorkerError(f"production executor produced no product changes: {diagnostic}")
+    outside = [path for path in changed if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned)]
+    if outside:
+        raise ProductionWorkerError(f"production executor changed files outside owned scope: {outside}")
     tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
     if not tests:
         raise ProductionWorkerError("production worker focused test scope is missing")
@@ -131,10 +198,19 @@ def execute_production_worker(request: WorkerRequest, *,
         "focused_test": _command(root, [str(pytest), "-q", *tests]),
         "full_regression": _command(root, [str(pytest), "-q"]),
         "compile_import": _command(root, [str(python), "-m", "compileall", "-q", *owned]),
-        "git_diff_check": _command(root, ["git", "diff", "--check", f"{baseline}..{head}"]),
+        "git_diff_check": _command(root, ["git", "diff", "--check"] if head == baseline else ["git", "diff", "--check", f"{baseline}..{head}"]),
     }
     if any(item["exit_code"] != 0 or item.get("timeout") for item in commands.values()):
         raise ProductionWorkerError("production worker independent command verification failed")
+    if head == baseline:
+        added = _git(root, "add", "--", *changed)
+        if added.returncode != 0:
+            raise ProductionWorkerError("production checkpoint staging failed")
+        committed = _git(root, "commit", "-m", f"feat({request.contract_summary['lv_id']}): production checkpoint")
+        if committed.returncode != 0:
+            raise ProductionWorkerError("production checkpoint commit failed")
+        head = _git(root, "rev-parse", "HEAD").stdout.strip()
+        changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", head).stdout.splitlines()
     status = _git(root, "status", "--porcelain=v1").stdout
     if status:
         raise ProductionWorkerError("production worker did not leave a clean repository")
@@ -153,6 +229,7 @@ def execute_production_worker(request: WorkerRequest, *,
         "executor":{"identity":EXECUTOR_ID,"version":EXECUTOR_VERSION},
         "package_sha256":request.extra_context["package_manifest_sha256"],
         "artifact_sha_chain":{"request":hashlib.sha256(canonical_json_bytes(request.to_dict())).hexdigest(),
-                              "executor_output":hashlib.sha256(stdout+b"\0"+stderr).hexdigest()}, "hard_stop":True}
+                              "executor_output":hashlib.sha256(stdout+b"\0"+stderr).hexdigest(),
+                              "process_evidence":hashlib.sha256(process_path.read_bytes()).hexdigest()}, "hard_stop":True}
     evidence["evidence_sha256"] = hashlib.sha256(canonical_json_bytes(evidence)).hexdigest()
     return evidence

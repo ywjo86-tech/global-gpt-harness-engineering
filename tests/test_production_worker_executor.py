@@ -1,10 +1,10 @@
-import subprocess, tempfile, unittest
+import os, subprocess, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from runtime.orchestrator.production_worker_executor import (
     EXECUTOR_ID, ProductionWorkerError, execute_production_worker,
-    production_executor_manifest,
+    production_executor_manifest, _run_managed_child,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
 
@@ -12,13 +12,16 @@ from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
 class ProductionWorkerExecutorTests(unittest.TestCase):
     def _fixture(self, root: Path, *, scope=None):
         subprocess.run(["git","init","-q","-b","main",root],check=True)
-        (root/"README.md").write_text("base\n"); (root/".gitignore").write_text(".venv/\nout/\n")
+        subprocess.run(["git","-C",root,"config","user.name","Fixture Worker"],check=True)
+        subprocess.run(["git","-C",root,"config","user.email","fixture@example.invalid"],check=True)
+        (root/"README.md").write_text("base\n"); (root/".gitignore").write_text(".venv/\nout/\n__pycache__/\n*.pyc\n")
         subprocess.run(["git","-C",root,"add","README.md",".gitignore"],check=True)
         subprocess.run(["git","-C",root,"-c","user.name=T","-c","user.email=t@x","commit","-qm","base"],check=True)
         base=subprocess.check_output(["git","-C",root,"rev-parse","HEAD"],text=True).strip()
         (root/".venv/bin").mkdir(parents=True); (root/".venv/bin/python").write_text(""); (root/".venv/bin/pytest").write_text("")
-        task=TaskSlice(thread_id="L",assigned_agent="implementation_agent",input="implement x",expected_output="product",
-            validation_criteria=["tests pass"],editable_scope=scope or ["app/x.py","tests/test_x.py"],forbidden_scope=[],merge_point="EXIT",output_dir=str(root/"out"))
+        task=TaskSlice(thread_id="L",assigned_agent="implementation_agent",
+            input="Create app/x.py with function add_one(value) returning value + 1, and tests/test_x.py using unittest to verify 0 becomes 1 and -1 becomes 0.",expected_output="product",
+            validation_criteria=["tests/test_x.py passes"],editable_scope=scope or ["app/x.py","tests/test_x.py"],forbidden_scope=[],merge_point="EXIT",output_dir=str(root/"out"))
         return WorkerRequest(str(root),task,{"project_id":"p","gate_id":"g","lv_id":"L","canonical_plan_sha256":"a"*64},
             {"head":base},{"execution_mode":"production","run_id":"r","attempt":3,"approval_event_id":"APR-1",
                            "package_manifest_sha256":"b"*64,"source_snapshot":{"source_head":base}})
@@ -60,3 +63,31 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             for result in (subprocess.CompletedProcess([],1,b"",b"failed"),):
                 with self.subTest(result=result.returncode), self.assertRaises(ProductionWorkerError):
                     execute_production_worker(request,executor=lambda *a,**k:result)
+
+    def test_timeout_terminates_process_group_and_records_signal(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); cancel=root/"cancel"
+            stdout,stderr,evidence=_run_managed_child(["python3","-c","import time; time.sleep(30)"],root=root,prompt=b"",timeout=0,cancel_path=cancel,grace_period=0.05)
+            self.assertEqual(evidence["termination"],"TIMED_OUT")
+            self.assertIn(evidence["requested_signal"],{"SIGTERM","SIGKILL"})
+            self.assertIsNotNone(evidence["signal"])
+
+    def test_cancel_terminates_process_group_and_excludes_completion(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); cancel=root/"cancel"; cancel.write_text("cancel\n")
+            _,_,evidence=_run_managed_child(["python3","-c","import time; time.sleep(30)"],root=root,prompt=b"",timeout=30,cancel_path=cancel,grace_period=0.05)
+            self.assertEqual(evidence["termination"],"CANCELLED")
+            self.assertTrue(evidence["hard_stop"])
+            self.assertIsNotNone(evidence["ended_at"])
+
+    @unittest.skipUnless(os.getenv("HARNESS_RUN_ACTUAL_CODEX_FIXTURE") == "1", "actual Codex fixture is opt-in")
+    def test_actual_codex_child_implements_tests_and_commits(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); request=self._fixture(root)
+            python=root/".venv/bin/python"; pytest=root/".venv/bin/pytest"
+            python.write_text("#!/bin/sh\nexec python3 \"$@\"\n"); pytest.write_text("#!/bin/sh\nexec python3 -m unittest discover -s tests -q\n")
+            python.chmod(0o755); pytest.chmod(0o755)
+            result=execute_production_worker(request,timeout=300)
+            self.assertEqual(result["status"],"completed")
+            self.assertEqual(result["executor"]["identity"],EXECUTOR_ID)
+            self.assertTrue(result["checkpoint_commit"])

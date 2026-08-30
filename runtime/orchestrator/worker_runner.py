@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     if result_path.exists() and (result_path.is_symlink() or not result_path.is_file()):
         raise WorkerRunnerError("worker result path is unsafe")
     request = _load_request(request_path)
-    if request.extra_context.get("execution_mode") == "production" and request.extra_context.get("test_fixture_worker") is not True:
+    if request.extra_context.get("execution_mode") == "production":
         from runtime.orchestrator.production_worker_executor import execute_production_worker
         result_payload = execute_production_worker(request)
         result_path.parent.mkdir(parents=True, exist_ok=True)

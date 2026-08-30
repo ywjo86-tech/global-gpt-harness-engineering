@@ -841,7 +841,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                            "attempt": 1,
                            "source_snapshot": {key: manifest.get(key) for key in ("source_head", "source_tree", "source_index_fingerprint", "source_worktree_fingerprint")},
                            "gate_id": plan.gate_id, "lv_id": lv_id,
-                           "test_fixture_worker": _.get("test_fixture_worker") is True},
+                           },
         )
         request_path = package_root / "worker.request.json"
         request_path.write_bytes(canonical_json_bytes(request.to_dict()))
@@ -1009,8 +1009,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
                  adapters: GateControllerAdapters | None = None,
-                 requirement_evidence: Mapping[str, Mapping[str, Any]] | None = None,
-                 test_fixture_worker: bool = False) -> dict[str, Any]:
+                 requirement_evidence: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
@@ -1211,7 +1210,6 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         context = {"project_id": plan.project_id, "gate_id": gate_id, "lv_id": lv_id, "run_id": lv_run_id,
                    "plan_sha256": plan.canonical_plan_sha256, "requirements_sha256": requirements_sha256,
                    "branch": branch, "head": head, "resume": resume,
-                   "test_fixture_worker": bool(test_fixture_worker),
                    "completed_plan_items": list(state["completed_lvs"]),
                    "remaining_plan_items": [item.lv_id for item in plan.lvs[lv_index + 1:]]}
         lifecycle = run_gate_lifecycle(context, adapters or _production_adapters(root, plan, auth, lv_id, lv_run_id, harness_root))
