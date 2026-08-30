@@ -46,7 +46,13 @@ def activate_canonical_lv_transition(harness_root: str | Path, *, project_id: st
         comparable_existing = {k: v for k, v in existing.items() if k not in {"created_at", "record_hash"}}
         comparable_new = {k: v for k, v in payload.items() if k not in {"created_at", "record_hash"}}
         if comparable_existing != comparable_new:
-            raise ActiveTransitionError("active transition conflict")
+            # A recovery replay may have advanced the product HEAD after the
+            # transition was sealed.  The transition identity and all policy
+            # bindings remain immutable; only the observed HEAD may advance.
+            replay_existing = {k: v for k, v in comparable_existing.items() if k != "current_head"}
+            replay_new = {k: v for k, v in comparable_new.items() if k != "current_head"}
+            if replay_existing != replay_new:
+                raise ActiveTransitionError("active transition conflict")
         if existing.get("record_hash") != hashlib.sha256(_canonical({k: v for k, v in existing.items() if k != "record_hash"})).hexdigest():
             raise ActiveTransitionError("existing transition hash mismatch")
         return existing
