@@ -87,6 +87,10 @@ class PersistentGateSupervisor:
         from .gate_controller import adopt_terminated_partial
         return adopt_terminated_partial(**kwargs)
 
+    def run_production_terminal(self, **kwargs: Any) -> dict[str, Any]:
+        from .production_terminal import run_terminal_entry
+        return run_terminal_entry(**kwargs)
+
     def _initial(self) -> dict[str, Any]:
         state = {"schema_version":"orchestration.global-gate-supervisor.v1", "project_id":self.project_id,
                  "gate_id":self.gate_id, "run_id":self.run_id, "mode":self.mode, "lv_order":list(self.lv_order),

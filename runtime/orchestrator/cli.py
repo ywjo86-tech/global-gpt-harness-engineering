@@ -6,6 +6,10 @@ def official_partial_adoption_entry(**kwargs):
     """Callable CLI boundary used by the registered production command adapter."""
     from .gate_controller import adopt_terminated_partial
     return adopt_terminated_partial(**kwargs)
+
+def production_terminal_entry(**kwargs):
+    from .production_terminal import run_terminal_entry
+    return run_terminal_entry(**kwargs)
 import json
 import os
 import re
