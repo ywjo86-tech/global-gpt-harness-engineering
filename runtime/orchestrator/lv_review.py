@@ -63,6 +63,17 @@ REVIEW_SCHEMA_VERSION = "orchestration.lv_reviewer.report.v1"
 REVIEW_STATUS_SCHEMA_VERSION = "orchestration.lv_reviewer.status.v1"
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "orchestration.lv_preflight.evidence.v1"
 PREFLIGHT_STATUS_SCHEMA_VERSION = "orchestration.lv_preflight.status.v1"
+# Single source of truth for the LV-review preflight contract.  Producers and
+# consumers validate this same set before any publication is written.
+PREFLIGHT_REQUIRED_FIELDS = frozenset({
+    "schema_version", "run_id", "package_manifest_sha256", "preflight_evidence_sha256",
+    "preflight_evidence_match", "project_id", "gate_id", "lv_id", "source_head", "source_tree",
+    "source_index_fingerprint", "source_worktree_fingerprint", "source_worktree_state",
+    "branch_name", "canonical_plan_sha256", "gate_ledger_commit", "gate_ledger_blob_oid",
+    "gate_ledger_sha256", "owned_files", "result_path_expected", "result_path_absent",
+    "review_attempt_absent", "python_interpreter_reference", "python_version",
+    "python_venv_verified", "runtime_authorization", "business_approval_reused",
+})
 MAX_RESULT_BYTES = 1024 * 1024
 RESULT_PREFIX = "harness-lv-worker-result-"
 RESULT_SUFFIX = ".json"
@@ -201,7 +212,9 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
     # immutable six-file package.  They are separately schema-bound below and
     # are not part of the package manifest itself.
     allowed = expected | {"worker.request.json", "worker.result.json", "executor.process.json", "worker_handoff.md", "handoff_report.md", "preflight"}
-    if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and entry.name == "preflight") or (entry.is_file() and not entry.is_symlink()) for entry in entries):
+    review_dirs = {entry.name for entry in entries if entry.is_dir() and entry.name.startswith("review-attempt-")}
+    allowed |= review_dirs
+    if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and (entry.name == "preflight" or entry.name.startswith("review-attempt-"))) or (entry.is_file() and not entry.is_symlink()) for entry in entries):
         raise LVReviewError(f"sealed package must contain exactly six regular files: {sorted(names)}")
     manifest_path = package_root / "package.manifest.json"
     manifest_bytes = manifest_path.read_bytes()
@@ -693,9 +706,19 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     try:
         manifest = _canonical_json(package_root / "package.manifest.json")
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
+                             results_root=package_root / ".publication-validation",
                              allow_worker_changes=True, check_result_absent=False, review_attempt=1)
-    except (LVReviewError, LVExecutionPackageError):
-        return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING"}
+    except (LVReviewError, LVExecutionPackageError) as exc:
+        # Preserve the strict failure, but expose only the safe field-level
+        # contract detail needed for remediation.  Never include payloads,
+        # paths, or interpreter/secret material in the error response.
+        message = str(exc)
+        missing = []
+        match = re.search(r"(?:missing|malformed):\s*([A-Za-z0-9_]+)", message)
+        if match:
+            missing.append(match.group(1))
+        return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
+                "missing_fields":missing, "producer_contract_error":True}
     expected = {"run_id":run_id, "project_id":manifest.get("project_id"), "gate_id":manifest.get("gate_id"),
                 "lv_id":manifest.get("lv_id"), "package_manifest_sha256":_sha256((package_root/"package.manifest.json").read_bytes())}
     if any(source.get(k) != v for k,v in expected.items() if k in source):
@@ -722,6 +745,17 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
                        "lineage":"adoption-checkpoint-6eb80ad","derived":True},
     }
     evidence["preflight_evidence_sha256"] = ""
+    missing = sorted(PREFLIGHT_REQUIRED_FIELDS.difference(evidence))
+    if missing:
+        return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
+                "missing_fields":missing,"producer_contract_error":True}
+    if any(not isinstance(evidence[field], str) or not evidence[field] for field in
+           ("run_id","project_id","gate_id","lv_id","canonical_plan_sha256","package_manifest_sha256")):
+        return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
+                "missing_fields":["malformed_binding"],"producer_contract_error":True}
+    if not isinstance(evidence["owned_files"], list) or not evidence["owned_files"]:
+        return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
+                "missing_fields":["owned_files"],"producer_contract_error":True}
     raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
     target = _preflight_root(run_id).parent / f"{run_id}-v2c-{source_sha[:12]}"
     target.parent.mkdir(parents=True, exist_ok=True)
