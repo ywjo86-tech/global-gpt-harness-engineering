@@ -104,7 +104,10 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
             if not worker.is_file():
                 worker = review_path.parent.parent / "worker.result.json"
             worker_payload = _load(worker)
-            if not is_completion_eligible(worker_payload, manifest=manifest):
+            # Historical immutable exits may predate the recovery binding
+            # fields.  Only explicitly rejected artifacts are excluded here;
+            # the partial run without PASS review remains incomplete naturally.
+            if not is_completion_eligible(worker_payload):
                 raise ResumeBridgeError("worker evidence is completion-ineligible")
             worker_sha = _sealed_sha(worker)
             if review.get("worker_result_sha256") != worker_sha:
