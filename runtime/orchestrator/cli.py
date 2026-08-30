@@ -281,7 +281,8 @@ def main(argv: list[str] | None = None) -> int:
                     attempt, record_path, checkpoint_path = sorted(active_candidates, key=lambda item: item[0])[-1]
                     completion_recovery = {"recovery":json.loads(record_path.read_text(encoding="utf-8")),
                                            "checkpoint":json.loads(checkpoint_path.read_text(encoding="utf-8")),
-                                           "next_attempt":attempt, "hard_stop":True}
+                                           "next_attempt":attempt, "hard_stop":True,
+                                           "classification":{"status":"REJECTED_COMPLETION_UNPROVEN","completion_eligible":False}}
                 for rejected in ([] if completion_recovery else bridge.get("rejections", [])):
                     rejection = write_completion_rejection(args.harness_root, project_id=plan.project_id,
                         gate_id=args.gate_id, lv_id=rejected["lv_id"], run_id=rejected["run_id"],
