@@ -751,11 +751,12 @@ def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any],
                     (candidate/"preflight.evidence.sha256").read_text(encoding="ascii").strip() == _sha256(data))
         except (OSError, UnicodeError):
             return False
-    if not valid_candidate(root):
-        candidates = sorted(root.parent.glob(f"{context['run_id']}-v2-*"))
-        valid = [p for p in candidates if valid_candidate(p)]
-        if valid:
-            root = valid[-1]
+    candidates = sorted(root.parent.glob(f"{context['run_id']}-v2*"))
+    valid = [p for p in candidates if valid_candidate(p)]
+    if valid:
+        root = valid[-1]
+    elif not valid_candidate(root):
+        root = root
     if not root.is_dir() or root.is_symlink():
         raise LVReviewError("preflight evidence is missing")
     entries = list(root.iterdir())
