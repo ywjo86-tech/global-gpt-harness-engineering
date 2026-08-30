@@ -44,12 +44,27 @@ def _sealed_sha(path: Path) -> str:
     return actual
 
 
-def _attempt(root: Path, run_id: str) -> Path:
+def _attempt(root: Path, run_id: str, lv_id: str | None = None) -> Path:
     candidates = sorted((root / "_workspace" / "orchestration-results" / run_id).glob("attempt-*/reviewer.report.json"))
     candidates += [root / "_workspace" / "orchestration-results" / run_id / "reviewer.report.json"]
     for candidate in reversed(candidates):
         if candidate.is_file() and not candidate.is_symlink():
-            return candidate
+            if lv_id is None:
+                return candidate
+            try:
+                payload = _load(candidate)
+            except ResumeBridgeError:
+                continue
+            if payload.get("lv") == lv_id or payload.get("lv_id") == lv_id:
+                return candidate
+            if not payload.get("lv") and not payload.get("lv_id"):
+                manifest = candidate.parent.parent.parent / "orchestration-runs" / run_id / "package.manifest.json"
+                if manifest.is_file():
+                    try:
+                        if _load(manifest).get("lv_id") == lv_id:
+                            return candidate
+                    except ResumeBridgeError:
+                        pass
     raise ResumeBridgeError(f"immutable review evidence is missing for {run_id}")
 
 
@@ -135,7 +150,7 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
         try:
             package = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id / "package.manifest.json"
             manifest = _load(package)
-            review_path = _attempt(Path(harness_root), run_id)
+            review_path = _attempt(Path(harness_root), run_id, item.lv_id)
             review = _load(review_path)
             if manifest.get("gate_id") != gate_id or manifest.get("lv_id") != item.lv_id:
                 raise ResumeBridgeError("evidence Gate/LV binding mismatch")
