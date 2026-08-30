@@ -690,8 +690,22 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None) -> dict[str, Any]:
+    if package_root is not None:
+        existing_root = Path(package_root) / "preflight"
+        existing = existing_root / "preflight.evidence.json"
+        sidecar = existing_root / "preflight.evidence.sha256"
+        if existing.is_file() and sidecar.is_file() and not existing.is_symlink() and not sidecar.is_symlink():
+            digest = _sha256(existing.read_bytes())
+            if sidecar.read_text(encoding="ascii").strip() != digest:
+                return {"status": "BLOCKED", "run_id": run_id, "reason": "preflight evidence sidecar hash mismatch"}
+            return {"status": "READY", "run_id": run_id, "preflight_root": str(existing_root),
+                    "preflight_evidence_sha256": digest, "idempotent": True}
     try:
         context = _preflight(run_id, package_root=package_root, result_path=result_path, review_attempt=1)
+        # A package-scoped invocation must seal into that package's namespace;
+        # falling back to the run-root preflight would collide with a prior LV.
+        if package_root is not None:
+            context["preflight_root"] = Path(package_root) / "preflight"
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc)}
     try:

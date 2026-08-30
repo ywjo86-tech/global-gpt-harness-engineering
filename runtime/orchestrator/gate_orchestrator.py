@@ -823,7 +823,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         # Publish the same sealed preflight through the production review
         # store so review_run consumes the canonical evidence location.
         published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json")
-        if not isinstance(published.get("status"), dict) or published["status"].get("status") != "READY":
+        if published.get("status") != "READY" and not (isinstance(published.get("status"), dict) and published["status"].get("status") == "READY"):
             raise GateControllerError(f"PREFLIGHT publication failed: {published}")
         state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
         return sealed("PREFLIGHT", "READY", state["preflight_evidence_sha256"], payload=published)
