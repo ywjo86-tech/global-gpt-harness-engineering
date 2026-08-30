@@ -770,7 +770,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         binding = RunBinding(plan.project_id, plan.gate_id, lv_id, run_id,
                              str(context["requirements_sha256"]), plan.canonical_plan_sha256,
                              str(context["branch"]), str(context["head"]), digest, owned_hashes)
-        store = ResumeStore(Path(harness_root) / "_workspace" / "global-gate-resume" / lv_id, binding)
+        store_key = lv_id
+        if str(context.get("head")) != str(manifest.get("source_head")):
+            store_key = f"{lv_id}-adoption-{str(context.get('head'))[:12]}"
+        store = ResumeStore(Path(harness_root) / "_workspace" / "global-gate-resume" / store_key, binding)
         state["store"] = store
         if context.get("resume") and store.verify():
             resumed = store.resume(binding, owned_hashes)
