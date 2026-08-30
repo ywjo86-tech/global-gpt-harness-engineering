@@ -443,6 +443,8 @@ def create_lv_execution_package(
         prompt_hash,
         source_snapshot,
     )
+    if canonical_state_override is not None and isinstance(canonical_state_override.get("transition"), dict):
+        manifest["production_transition"] = canonical_state_override["transition"]
 
     # Production and isolated onboarding fixtures may provide an explicit
     # runtime root; this is a location binding, never a validation bypass.

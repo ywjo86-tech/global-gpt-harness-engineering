@@ -453,6 +453,18 @@ def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
         raise LVReviewError("project contract mapping is required")
     state = evaluate_canonical_state(mapping)
     ledger = _ledger_binding(root, mapping, state)
+    transition = manifest.get("production_transition")
+    if isinstance(transition, dict) and state.get("state") == "GATE1_RESUME_READY":
+        required = {"schema_version", "project_id", "gate_id", "lv_id", "run_id", "approval_event_id", "plan_sha256", "branch", "baseline_head", "current_head", "predecessor_completion_digest", "owned_file_scope", "completion_conditions", "transition_type", "created_at", "record_hash"}
+        if set(transition) != required or transition.get("transition_type") != "SYSTEM_TRANSITION":
+            raise LVReviewError("canonical binding mismatch: production transition")
+        unsigned = {key: value for key, value in transition.items() if key != "record_hash"}
+        if _sha256(canonical_json_bytes(unsigned)) != transition.get("record_hash"):
+            raise LVReviewError("canonical binding mismatch: production transition hash")
+        if transition.get("project_id") != mapping.project_id or transition.get("gate_id") != manifest.get("gate_id") or transition.get("lv_id") != manifest.get("lv_id") or transition.get("run_id") != manifest.get("run_id"):
+            raise LVReviewError("canonical binding mismatch: production transition identity")
+        state = dict(state)
+        state.update({"state": "GATE1_ACTIVE", "gate_id": transition["gate_id"], "active_scope": [transition["lv_id"]], "approval_id": transition["approval_event_id"], "approval_record_hash": manifest.get("approval_record_hash"), "checkpoint_commit": transition["current_head"], "owned_files": transition["owned_file_scope"]})
     if not isinstance(state.get("state"), str) or not state["state"].endswith("_ACTIVE"):
         raise LVReviewError("canonical binding mismatch: gate_state")
     active_scope = state.get("active_scope")
