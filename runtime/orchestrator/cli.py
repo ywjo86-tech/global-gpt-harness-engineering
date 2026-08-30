@@ -277,6 +277,15 @@ def main(argv: list[str] | None = None) -> int:
                 legacy_worker = package_root / "worker.result.json"
                 transition = (Path(args.harness_root) / "_workspace" / "global-gate" / plan.project_id / "state" /
                               f"{args.gate_id}-{args.run_id}-active-transition.json")
+                # A production restart must replay the already-sealed transition
+                # rather than replace its predecessor binding with a newly
+                # rendered resume-bridge digest.  The transition validator below
+                # still compares every canonical field and its record hash.
+                if transition.is_file() and not transition.is_symlink():
+                    existing_transition = json.loads(transition.read_text(encoding="utf-8"))
+                    sealed_predecessor = existing_transition.get("predecessor_completion_digest")
+                    if isinstance(sealed_predecessor, str) and sealed_predecessor:
+                        context["predecessor_completion_digest"] = sealed_predecessor
                 if legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file():
                     from .recovery_contract import prepare_partial_recovery
                     recovery = prepare_partial_recovery(
