@@ -215,7 +215,7 @@ Ledger:
 | --- | --- | --- |
 | R1 | Connect the recovery contract to CLI, controller, and lifecycle | COMPLETE |
 | R2 | Execute attempt 2 package, preflight, and worker in the existing run | COMPLETE |
-| R3 | Exclude rejected attempts from completion consumers | PENDING |
+| R3 | Exclude rejected attempts from completion consumers | COMPLETE |
 | R4 | Enforce one canonical binding across lifecycle artifacts | PENDING |
 | R5 | Validate and consume recovery lineage during review | PENDING |
 | R6 | Connect checkpoint, LV Exit, Gate Exit, and structured handoff | PENDING |

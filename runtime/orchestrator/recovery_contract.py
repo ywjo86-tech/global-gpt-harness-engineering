@@ -77,6 +77,21 @@ def classify_partial_attempt(manifest: Mapping[str, Any], worker: Mapping[str, A
         missing.extend(field for field in ("project_id", "canonical_plan_sha256", "hard_stop") if not worker.get(field))
     return {"status": "REJECTED_UNBOUND_LEGACY" if missing else "BOUND", "missing_bindings": sorted(set(missing)), "completion_eligible": not missing}
 
+def is_completion_eligible(payload: Mapping[str, Any] | None, *,
+                           manifest: Mapping[str, Any] | None = None) -> bool:
+    """Reject retained recovery artifacts that must never be promoted."""
+    if not isinstance(payload, Mapping):
+        return False
+    if payload.get("completion_eligible") is False:
+        return False
+    if payload.get("status") == "REJECTED_UNBOUND_LEGACY":
+        return False
+    if payload.get("rejection_reason_code") == "REJECTED_UNBOUND_LEGACY":
+        return False
+    if manifest is not None and payload.get("attempt") == 1:
+        return bool(classify_partial_attempt(manifest, payload)["completion_eligible"])
+    return True
+
 def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | Path,
                              worker_path: str | Path, transition_path: str | Path,
                              approval_event_id: str) -> dict[str, Any]:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from .lv_execution_package import canonical_json_bytes
+from .recovery_contract import is_completion_eligible
 
 
 class CompletenessError(ValueError):
@@ -181,7 +182,7 @@ def aggregate_project_requirement_evidence(*, contract: Mapping[str, Mapping[str
         changed = w.get("changed_files")
         if isinstance(owned, list) and isinstance(changed, list) and any(path not in owned for path in changed):
             raise CompletenessError(f"{requirement_id} implementation changed file is outside owned scope")
-        if r.get("verdict") != "PASS" or w.get("status") != "IMPLEMENTED":
+        if not is_completion_eligible(w) or not is_completion_eligible(r) or r.get("verdict") != "PASS" or w.get("status") != "IMPLEMENTED":
             final[requirement_id] = {"status": "INCOMPLETE", "worker": dict(w), "review": dict(r)}
             continue
         final[requirement_id] = {"schema_version": PROJECT_REQUIREMENT_EVIDENCE_SCHEMA, "project_id": project_id, "gate_id": gate_id, "lv_id": lv_id, "plan_sha256": plan_sha256, "package_sha256": package_sha256, "approval_sha256": approval_sha256, "contract_sha256": contract_sha256, "requirement_id": requirement_id, "semantic_sha256": item.get("semantic_sha256"), "lifecycle_attempt": lifecycle_attempt, "implementation_evidence": dict(w), "review_evidence": dict(r), "status": "COMPLETE", "verdict": "PASS"}
@@ -214,7 +215,7 @@ def validate_project_requirement_evidence(record: Mapping[str, object], *, proje
             raise CompletenessError(f"project evidence {key} binding mismatch")
     if not isinstance(record.get("semantic_sha256"), str) or not _SHA.fullmatch(record["semantic_sha256"]):
         raise CompletenessError("project evidence semantic SHA is invalid")
-    if record.get("status") != "COMPLETE" or record.get("verdict") != "PASS":
+    if not is_completion_eligible(record) or record.get("status") != "COMPLETE" or record.get("verdict") != "PASS":
         raise CompletenessError("project evidence is not complete")
     worker = record.get("implementation_evidence")
     review = record.get("review_evidence")

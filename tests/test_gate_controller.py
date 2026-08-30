@@ -19,6 +19,14 @@ SHA = "a" * 64
 
 
 class GateControllerTests(unittest.TestCase):
+    def test_rejected_legacy_stage_cannot_advance(self):
+        def rejected(_):
+            return {"status":"REJECTED_UNBOUND_LEGACY","exit_code":0,"evidence_sha256":"b"*64,"hard_stop":True,"completion_eligible":False}
+        good = lambda _: {"status":"READY","exit_code":0,"evidence_sha256":"c"*64,"hard_stop":True}
+        adapters = GateControllerAdapters(rejected, good, good, good, good, good, good, good)
+        with self.assertRaisesRegex(GateControllerError, "completion-ineligible"):
+            run_gate_lifecycle(self.context, adapters)
+
     def setUp(self) -> None:
         self.context = {
             "project_id": "fixture-project",

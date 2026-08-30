@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping
 
 from .canonical_transition import validate_canonical_gate_state, validate_governance_descendant
 from .production_approval import ApprovalBindings, evaluate_production_authorization
+from .recovery_contract import is_completion_eligible
 
 
 class GateControllerError(ValueError):
@@ -44,6 +45,8 @@ def _validated_result(stage: str, value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise GateControllerError(f"{stage} did not return a result mapping")
     result = dict(value)
+    if not is_completion_eligible(result):
+        raise GateControllerError(f"{stage} returned completion-ineligible evidence")
     status = result.get("status")
     exit_code = result.get("exit_code")
     evidence = result.get("evidence_sha256")

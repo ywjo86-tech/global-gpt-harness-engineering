@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from .gate_orchestrator import GatePlan, load_gate_plan
 from .contract_adapter import load_project_mapping
+from .recovery_contract import is_completion_eligible
 
 
 class ResumeBridgeError(ValueError):
@@ -102,6 +103,9 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
             worker = review_path.parent / "worker.result.json"
             if not worker.is_file():
                 worker = review_path.parent.parent / "worker.result.json"
+            worker_payload = _load(worker)
+            if not is_completion_eligible(worker_payload, manifest=manifest):
+                raise ResumeBridgeError("worker evidence is completion-ineligible")
             worker_sha = _sealed_sha(worker)
             if review.get("worker_result_sha256") != worker_sha:
                 raise ResumeBridgeError("review/worker lineage mismatch")

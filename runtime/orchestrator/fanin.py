@@ -7,6 +7,7 @@ from .result_collector import CollectionReport
 from .result_normalizer import normalize_worker_result
 from .summary_rendering import render_fanin_markdown
 from .schemas import FanInReport, TaskSlice, WorkerResult
+from .recovery_contract import is_completion_eligible
 
 
 def _read_result(path: Path) -> dict[str, object] | None:
@@ -47,7 +48,7 @@ def build_fanin_report(project_root: str | Path, planned: list[TaskSlice], outpu
         result_path = task_dir / "result.json"
         payload = _read_result(result_path)
         handoff_exists = _has_handoff(task_dir / "handoff_report.md")
-        if payload is None or not handoff_exists:
+        if payload is None or not handoff_exists or not is_completion_eligible(payload):
             missing_outputs.append(task.thread_id)
             continue
         normalized = normalize_worker_result(
@@ -105,7 +106,7 @@ def build_fanin_report_from_collection(collection: CollectionReport, planned: li
     risk_summary = list(collection.risk_summary)
     failed_workers = list(collection.failed_workers)
     for item in collection.task_outputs:
-        if not item.get("result_exists"):
+        if not item.get("result_exists") or not is_completion_eligible(item):
             continue
         result = WorkerResult(
             thread_id=item["thread_id"],
@@ -141,4 +142,3 @@ def build_fanin_report_from_collection(collection: CollectionReport, planned: li
         next_step_decision=next_step_decision,
         final_handoff_readiness=readiness,
     )
-

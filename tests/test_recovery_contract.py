@@ -1,8 +1,14 @@
 import json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible
 
 class RecoveryContractTests(unittest.TestCase):
+    def test_completion_eligibility_rejects_explicit_and_unbound_legacy(self):
+        manifest={'project_id':'p','canonical_plan_sha256':'a'*64,'hard_stop':True}
+        self.assertFalse(is_completion_eligible({'status':'REJECTED_UNBOUND_LEGACY'}))
+        self.assertFalse(is_completion_eligible({'status':'completed','completion_eligible':False}))
+        self.assertFalse(is_completion_eligible({'status':'completed','attempt':1},manifest=manifest))
+        self.assertTrue(is_completion_eligible({'status':'completed'}))
     def test_attempt_two_package_preflight_worker_path_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); run=root/'_workspace'/'orchestration-runs'/'run-1'; run.mkdir(parents=True)

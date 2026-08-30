@@ -8,6 +8,7 @@ from typing import Any
 from .result_normalizer import normalize_worker_result
 from .summary_rendering import render_collection_markdown
 from .schemas import TaskSlice
+from .recovery_contract import is_completion_eligible
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -124,8 +125,10 @@ def collect_run_outputs(run_root: str | Path) -> CollectionReport:
             if raw_result_payload is not None
             else None
         )
-        result_exists = result_payload is not None
+        result_exists = result_payload is not None and is_completion_eligible(result_payload)
         status = str(result_payload.get("status", "")) if result_payload else "missing"
+        if result_payload is not None and not result_exists:
+            status = "REJECTED_UNBOUND_LEGACY"
         summary = str(result_payload.get("summary", "")) if result_payload else ""
         findings = list(result_payload.get("findings", []) or []) if result_payload else []
         warnings = list(result_payload.get("warnings", []) or []) if result_payload else []
