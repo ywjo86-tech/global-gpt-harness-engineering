@@ -1,7 +1,7 @@
 """Deterministic product-evidence verification for production LV completion."""
 from __future__ import annotations
 
-import re
+import hashlib, json, os, re, tempfile
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -11,6 +11,33 @@ _REQUIRED_IDS = ("project_id", "gate_id", "lv_id", "run_id", "approval_event_id"
 _COMMANDS = ("worker", "focused_test", "full_regression", "compile_import", "git_diff_check")
 
 class ProductCompletionError(ValueError): pass
+
+def write_completion_rejection(harness_root: str | Path, *, project_id: str, gate_id: str,
+                               lv_id: str, run_id: str, attempt: int, reasons: list[str],
+                               source_shas: Mapping[str, str], next_attempt: int) -> dict[str, Any]:
+    """Append one deterministic, replay-safe completion rejection record."""
+    if attempt < 1 or next_attempt != attempt + 1 or not reasons:
+        raise ProductCompletionError("completion rejection binding is invalid")
+    payload = {"schema_version":"orchestration.product-completion-rejection.v1","project_id":project_id,
+               "gate_id":gate_id,"lv_id":lv_id,"run_id":run_id,"attempt":attempt,
+               "status":"REJECTED_COMPLETION_UNPROVEN","reasons":sorted(set(reasons)),
+               "source_shas":dict(sorted(source_shas.items())),"next_attempt":next_attempt,"hard_stop":True}
+    raw=lambda value: json.dumps(value,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+    payload["record_hash"]=hashlib.sha256(raw(payload)).hexdigest()
+    target=Path(harness_root).resolve()/"_workspace"/"global-gate"/project_id/"recovery"/f"{run_id}-attempt-{attempt:02d}-completion-rejection.json"
+    target.parent.mkdir(parents=True,exist_ok=True)
+    if target.exists():
+        existing=json.loads(target.read_text(encoding="utf-8"))
+        if existing != payload: raise ProductCompletionError("completion rejection replay conflict")
+        return existing
+    fd,tmp=tempfile.mkstemp(prefix=target.name+".",dir=str(target.parent))
+    try:
+        with os.fdopen(fd,"wb") as handle: handle.write(raw(payload)); handle.flush(); os.fsync(handle.fileno())
+        try: os.link(tmp,target)
+        except FileExistsError: raise ProductCompletionError("completion rejection already exists")
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+    return payload
 
 def _git(root: Path, *args: str) -> str:
     result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)

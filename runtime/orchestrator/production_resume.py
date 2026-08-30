@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from .gate_orchestrator import GatePlan, load_gate_plan
 from .contract_adapter import load_project_mapping
 from .recovery_contract import is_completion_eligible
+from .production_completion import verify_product_completion, ProductCompletionError
 
 
 class ResumeBridgeError(ValueError):
@@ -69,6 +70,48 @@ def _discover_run_ids(harness_root: Path, gate_id: str) -> dict[str, str]:
             discovered.setdefault(manifest["lv_id"], manifest_path.parent.name)
     return discovered
 
+def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
+                         item: Any, run_id: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """Read-only discovery of recovery attempts; never manufactures evidence."""
+    rejected: list[dict[str, Any]] = []
+    run_root = harness_root / "_workspace" / "orchestration-runs" / run_id
+    for attempt_root in sorted(run_root.glob("attempt-[0-9][0-9]"), reverse=True):
+        try: attempt = int(attempt_root.name.split("-")[1])
+        except (IndexError, ValueError): continue
+        required = {"package.json":"package_sha256","consumption.json":"consumption_sha256",
+                    "lv.exit.json":"lv_exit_sha256","handoff.json":"handoff_sha256"}
+        values: dict[str, dict[str, Any]] = {}
+        reasons: list[str] = []
+        for name, hash_key in required.items():
+            try: value = _load(attempt_root / name)
+            except ResumeBridgeError: reasons.append(f"MISSING_{name.upper().replace('.', '_')}"); continue
+            claimed = value.get(hash_key); unsigned = {k:v for k,v in value.items() if k != hash_key}
+            actual = hashlib.sha256(json.dumps(unsigned,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+            if claimed != actual: reasons.append(f"INVALID_{hash_key.upper()}")
+            if value.get("project_id") != plan.project_id or value.get("gate_id") != plan.gate_id or value.get("lv_id") != item.lv_id or value.get("run_id") != run_id or value.get("attempt") != attempt:
+                reasons.append("RECOVERY_BINDING_MISMATCH")
+            values[name] = value
+        product_path = attempt_root / "product-completion.json"
+        verdict = None
+        if product_path.is_file() and not product_path.is_symlink():
+            try:
+                evidence = _load(product_path)
+                package = values.get("package.json", {})
+                contract = {"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":item.lv_id,"run_id":run_id,
+                            "approval_event_id":package.get("approval_event_id"),"plan_sha256":plan.canonical_plan_sha256,
+                            "owned_files":list(item.owned_files),"allow_no_op":False}
+                verdict = verify_product_completion(project_root,evidence,contract)
+                reasons.extend(verdict["reasons"])
+            except (ResumeBridgeError, ProductCompletionError): reasons.append("PRODUCT_COMPLETION_INVALID")
+        else: reasons.append("PRODUCT_COMPLETION_EVIDENCE_MISSING")
+        reasons = sorted(set(reasons))
+        if not reasons and verdict and verdict["completion_eligible"]:
+            return {"lv_id":item.lv_id,"run_id":run_id,"attempt":attempt,"status":"COMPLETE","source":"recovery",
+                    "product_completion_sha256":_sha(product_path),"handoff_sha256":values["handoff.json"]["handoff_sha256"]}, rejected
+        rejected.append({"attempt":attempt,"status":"REJECTED_COMPLETION_UNPROVEN","reasons":reasons,
+                         "source_shas":{name:_sha(attempt_root/name) for name in required if (attempt_root/name).is_file()}})
+    return None, sorted(rejected,key=lambda x:x["attempt"])
+
 
 def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate_id: str,
                         *, plan_sha256: str, completed_run_ids: Mapping[str, str] | None = None,
@@ -80,6 +123,7 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
     mapping = load_project_mapping(project_root)
     historical = set(mapping.historical_plan_sha256) if mapping else set()
     completed: list[dict[str, Any]] = []
+    rejections: list[dict[str, Any]] = []
     first_incomplete: str | None = None
     for item in plan.lvs:
         run_id = completed_run_ids.get(item.lv_id, _run_id_for(item.lv_id))
@@ -117,6 +161,11 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
                               "worker_sha256": worker_sha,
                               "status": "COMPLETE", "source": "immutable"})
         except ResumeBridgeError:
+            recovered, rejected = _recovery_completion(Path(project_root),Path(harness_root),plan,item,run_id)
+            rejections.extend({"lv_id":item.lv_id,"run_id":run_id,**row} for row in rejected)
+            if recovered is not None:
+                completed.append(recovered)
+                continue
             if item.lv_id in required_completed:
                 raise
             first_incomplete = item.lv_id
@@ -127,7 +176,9 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
     payload = {"schema_version": "orchestration.production-resume-bridge.v1",
                "project_id": plan.project_id, "gate_id": gate_id, "plan_sha256": plan_sha256,
                "completed": completed, "remaining": remaining,
-               "first_incomplete_lv": first_incomplete, "source_immutable": True}
+               "first_incomplete_lv": first_incomplete, "rejections":rejections,
+               "next_attempt":max([row["attempt"] for row in rejections],default=0)+1 if rejections else None,
+               "source_immutable": True}
     payload["bridge_sha256"] = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return payload
 

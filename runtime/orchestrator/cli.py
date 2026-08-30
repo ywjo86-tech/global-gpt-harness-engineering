@@ -259,6 +259,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "production-gate-run":
                 if not args.run_id:
                     raise GateControllerError("--run-id is required for production-gate-run")
+                from .production_completion import write_completion_rejection
+                for rejected in bridge.get("rejections", []):
+                    write_completion_rejection(args.harness_root, project_id=plan.project_id,
+                        gate_id=args.gate_id, lv_id=rejected["lv_id"], run_id=rejected["run_id"],
+                        attempt=int(rejected["attempt"]), reasons=list(rejected["reasons"]),
+                        source_shas=dict(rejected["source_shas"]), next_attempt=int(bridge["next_attempt"]))
                 auth = create_gate_authorization(plan, approval["event_id"], mode=args.mode)
                 import subprocess
                 head = subprocess.run(["git", "-C", args.project_root, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()

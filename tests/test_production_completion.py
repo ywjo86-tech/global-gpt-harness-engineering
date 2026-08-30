@@ -1,8 +1,12 @@
 import subprocess, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.production_completion import verify_product_completion
+from runtime.orchestrator.production_completion import verify_product_completion, write_completion_rejection
 
 class ProductCompletionTests(unittest.TestCase):
+    def test_rejection_is_append_only_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            kw=dict(project_id="p",gate_id="g",lv_id="l",run_id="r",attempt=2,reasons=["MISSING"],source_shas={"a":"b"*64},next_attempt=3)
+            self.assertEqual(write_completion_rejection(d,**kw),write_completion_rejection(d,**kw))
     def test_unproven_lifecycle_is_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); subprocess.run(["git","init","-q",root],check=True)
