@@ -68,3 +68,11 @@ class GateSupervisorTests(unittest.TestCase):
             result=sup.run_lifecycle(handlers)
             self.assertEqual(result.status,"USER_APPROVAL_REQUIRED")
             self.assertIn("REMEDIATION",seen); self.assertEqual(seen.count("WORKER"),1)
+
+    def test_registry_routing_requires_exact_scope_and_capabilities(self):
+        manifests=[{"asset_id":"codex","scope":"global","capabilities":["implement"],"permissions":["write"],"owned_files":["app/"]},
+                   {"asset_id":"review","scope":"global","capabilities":["review"],"permissions":["read"],"owned_files":["app/"]}]
+        result=PersistentGateSupervisor.select_worker_asset(manifests,capabilities={"implement"},permissions={"write"},owned_files=["app/x.py"])
+        self.assertEqual(result["selected"],["codex"])
+        with self.assertRaisesRegex(GateSupervisorError,"ambiguous"):
+            PersistentGateSupervisor.select_worker_asset(manifests+[manifests[0]],capabilities={"implement"},permissions={"write"},owned_files=["app/x.py"])

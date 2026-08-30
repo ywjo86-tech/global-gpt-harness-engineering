@@ -179,3 +179,14 @@ class PersistentGateSupervisor:
                      "REVIEW":"CHECKPOINT", "REMEDIATION":"REVIEW", "CHECKPOINT":"EXIT", "EXIT":"GATE_EXIT"}
             return {**outcome, "next_stage":outcome.get("next_stage", order[stage])}
         return self.run(transition, max_steps=max_steps)
+
+    @staticmethod
+    def select_worker_asset(manifests: Sequence[Mapping[str, Any]], *, capabilities: set[str],
+                            permissions: set[str], owned_files: Sequence[str]) -> dict[str, Any]:
+        """Select an existing registry asset using exact capability/scope matching."""
+        from .project_isolation import AssetManifest, route_assets
+        parsed = [AssetManifest.from_mapping(item) for item in manifests]
+        result = route_assets(parsed, capabilities=set(capabilities), permissions=set(permissions), owned_files=list(owned_files))
+        if len(result["selected"]) != 1:
+            raise GateSupervisorError("worker registry selection is ambiguous or unavailable")
+        return {**result, "registry_sha256": _sha(manifests), "hard_stop": True}
