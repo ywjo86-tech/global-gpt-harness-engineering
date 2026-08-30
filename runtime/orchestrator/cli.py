@@ -348,6 +348,9 @@ def main(argv: list[str] | None = None) -> int:
                     sealed_predecessor = existing_transition.get("predecessor_completion_digest")
                     if isinstance(sealed_predecessor, str) and sealed_predecessor:
                         context["predecessor_completion_digest"] = sealed_predecessor
+                    sealed_head = existing_transition.get("current_head")
+                    if isinstance(sealed_head, str) and sealed_head:
+                        context["current_head"] = sealed_head
                 if recovery is None and legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file():
                     from .recovery_contract import prepare_partial_recovery
                     recovery = prepare_partial_recovery(
