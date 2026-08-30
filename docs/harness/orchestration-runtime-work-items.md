@@ -240,3 +240,12 @@ pass in the same stage checkpoint.
 | R5 | Partial workspace recovery state machine | `runtime/orchestrator/partial_workspace_recovery.py` (`PartialRecoveryMachine`, 13 states) | `tests/test_partial_workspace_recovery.py` (`PartialWorkspaceRecoveryTests`, 4 tests) | COMPLETE |
 | R6 | Persistent Gate terminal lifecycle | `runtime/orchestrator/gate_terminal.py` (`GateTerminalController`) | `tests/test_gate_terminal.py` (`GateTerminalTests`, 3 tests) | COMPLETE |
 | R7 | Readiness fixtures and incremental resolution | modules above plus `runtime/orchestrator/incremental_resolution.py` (`IncrementalResolver`) | `tests/test_production_readiness.py` (`ProductionReadinessTests`, 28 tests) | COMPLETE |
+
+Independent audit correction: the first audit found the new contracts isolated
+from the existing production entrypoints and found nominal recovery/fixture
+coverage. The corrective checkpoint connects `gate_controller.py` and
+`gate_supervisor.py` to the common producer/consumer, recomputes digest roles
+from named sources, publishes remediation successors by generation, uses an
+append-only fsynced journal, and exercises bound GATE_BY_GATE/FULL_PLAN and
+second/new-project fixtures. COMPLETE status depends on the post-correction
+full regression and independent re-audit, not the earlier passing unit tests.

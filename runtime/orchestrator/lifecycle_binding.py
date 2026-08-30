@@ -71,6 +71,29 @@ def build_binding(**values: Any) -> dict[str, Any]:
     return candidate
 
 
+def build_bound_digests(sources: Mapping[str, Any]) -> dict[str, str]:
+    """Build every digest role from its explicitly named source projection."""
+    if set(sources) != DIGEST_FIELDS:
+        raise LifecycleBindingError("digest source roles mismatch")
+    digests = {field: sha256({"role": field, "value": sources[field]})
+               for field in DIGEST_FIELDS}
+    if len(set(digests.values())) != len(digests):
+        raise LifecycleBindingError("digest role collision")
+    return digests
+
+
+def build_binding_from_sources(sources: Mapping[str, Any], **identities: Any) -> dict[str, Any]:
+    return build_binding(**identities, **build_bound_digests(sources))
+
+
+def validate_binding_sources(value: Mapping[str, Any], sources: Mapping[str, Any]) -> dict[str, Any]:
+    validated = validate_binding(value)
+    expected = build_bound_digests(sources)
+    if any(validated[field] != digest for field, digest in expected.items()):
+        raise LifecycleBindingError("digest source binding mismatch")
+    return validated
+
+
 def validate_binding(value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise LifecycleBindingError("binding must be an object")

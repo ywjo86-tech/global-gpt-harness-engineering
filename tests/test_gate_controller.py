@@ -13,6 +13,7 @@ from runtime.orchestrator.gate_controller import (
     run_production_gate_lifecycle,
 )
 from runtime.orchestrator.production_approval import write_production_approval
+from tests.test_production_lifecycle import binding
 
 
 SHA = "a" * 64
@@ -79,6 +80,11 @@ class GateControllerTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "SYSTEM_TRANSITION")
         self.assertFalse(outcome["user_approval_renewal"])
         self.assertFalse(outcome["remediated"])
+
+    def test_actual_controller_seals_all_stages_when_production_binding_is_present(self) -> None:
+        calls=[]; context={**self.context,"lifecycle_binding":binding()}
+        self.assertEqual(run_gate_lifecycle(context,self._adapters(calls))["status"],"SYSTEM_TRANSITION")
+        self.assertEqual(len(calls),7)
 
     def test_failed_review_runs_remediation_and_independent_rereview(self) -> None:
         calls: list[str] = []

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .lv_execution_package import canonical_json_bytes
+from .production_lifecycle import consume as consume_lifecycle, produce as produce_lifecycle
 
 
 class GateSupervisorError(ValueError):
@@ -179,6 +180,23 @@ class PersistentGateSupervisor:
                      "REVIEW":"CHECKPOINT", "REMEDIATION":"REVIEW", "CHECKPOINT":"EXIT", "EXIT":"GATE_EXIT"}
             return {**outcome, "next_stage":outcome.get("next_stage", order[stage])}
         return self.run(transition, max_steps=max_steps)
+
+    def run_bound_lifecycle(self, handlers: Mapping[str, Callable[[dict[str, Any]], Mapping[str, Any]]],
+                            binding: Mapping[str, Any], *, max_steps: int = 128) -> SupervisorResult:
+        """Production supervisor path sealing every handler request/result."""
+        kinds={"PACKAGE":"package","PREFLIGHT":"preflight","WORKER":"worker_result",
+               "REVIEW":"review","REMEDIATION":"recovery_successor","CHECKPOINT":"checkpoint",
+               "EXIT":"lv_exit"}
+        wrapped={}
+        for stage,handler in handlers.items():
+            kind=kinds[stage]
+            def bound(state, _kind=kind, _handler=handler):
+                consume_lifecycle(_kind,produce_lifecycle(_kind,state,binding),binding)
+                result=dict(_handler(state))
+                consume_lifecycle(_kind,produce_lifecycle(_kind,result,binding),binding)
+                return result
+            wrapped[stage]=bound
+        return self.run_lifecycle(wrapped,max_steps=max_steps)
 
     @staticmethod
     def select_worker_asset(manifests: Sequence[Mapping[str, Any]], *, capabilities: set[str],

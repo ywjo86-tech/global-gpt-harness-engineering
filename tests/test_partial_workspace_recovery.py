@@ -39,7 +39,8 @@ class PartialWorkspaceRecoveryTests(unittest.TestCase):
             self.assertEqual(machine.review("FAIL"),"REMEDIATION_REQUIRED")
             # A remediation publishes a distinct machine/result namespace in production;
             # the state transition itself remains generic and replay-safe here.
-            machine.advance("RESULT_PUBLISHED",{"remediated":True}); self.assertEqual(machine.review("PASS"),"REVIEW_PASSED"); machine.complete(); self.assertEqual(machine.state,"LV_EXITED")
+            machine.publish_result({"status":"completed","generation":2}); self.assertEqual(machine.review("PASS"),"REVIEW_PASSED"); machine.complete(); self.assertEqual(machine.state,"LV_EXITED")
+            self.assertTrue((Path(d)/"worker.result.02.json").is_file())
 
 
 if __name__ == "__main__": unittest.main()

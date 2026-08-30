@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tests.test_production_lifecycle import binding
 from runtime.orchestrator.gate_terminal import GateTerminalController, GateTerminalError
+from runtime.orchestrator.gate_supervisor import PersistentGateSupervisor
 from runtime.orchestrator.incremental_resolution import IncrementalResolver
 from runtime.orchestrator.lifecycle_binding import LifecycleBindingError, validate_binding
 from runtime.orchestrator.partial_workspace_recovery import PartialRecoveryError, PartialRecoveryMachine
@@ -13,6 +14,8 @@ from runtime.orchestrator.production_lifecycle import ProductionLifecycleError, 
 
 
 class ProductionReadinessTests(unittest.TestCase):
+    def handlers(self):
+        return {stage:(lambda state:{"status":"PASS"}) for stage in ("PACKAGE","PREFLIGHT","WORKER","REVIEW","REMEDIATION","CHECKPOINT","EXIT")}
     def recovered(self, root):
         m=PartialRecoveryMachine(root,binding());
         for s in ("WORKER_REQUESTED","WORKER_RUNNING","PARTIAL_WORKSPACE_DETECTED"): m.advance(s)
@@ -67,7 +70,10 @@ class ProductionReadinessTests(unittest.TestCase):
     def test_14_checkpoint_restart(self):
         with tempfile.TemporaryDirectory() as d:
             c=GateTerminalController(d,binding(),["a","b"]);c.review_pass("a");self.assertEqual(GateTerminalController(d,binding(),["a","b"]).load()["next_lv"],"b")
-    def test_15_lv_exit_restart(self): self.test_14_checkpoint_restart()
+    def test_15_lv_exit_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            c=GateTerminalController(d,binding(),["a"]);c.review_pass("a")
+            self.assertEqual(GateTerminalController(d,binding(),["a"]).load()["gate_status"],"EXITED")
     def test_16_gate_exit_terminal_replay(self):
         with tempfile.TemporaryDirectory() as d:
             c=GateTerminalController(d,binding(),["a"]);c.review_pass("a");self.assertEqual(c.replay_terminal()["gate_status"],"EXITED")
@@ -75,13 +81,25 @@ class ProductionReadinessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             c=GateTerminalController(d,binding(),["a"]);c.review_pass("a")
             with self.assertRaisesRegex(GateTerminalError,"USER_APPROVAL_REQUIRED"):c.start_next_gate()
-    def test_18_multi_gate_gate_by_gate(self): self.test_17_next_gate_user_approval_required()
+    def test_18_multi_gate_gate_by_gate(self):
+        with tempfile.TemporaryDirectory() as d:
+            first=PersistentGateSupervisor(d,project_id="p",run_id="r1",gate_id="g1",mode="GATE_BY_GATE",lv_order=["a"])
+            self.assertEqual(first.run_bound_lifecycle(self.handlers(),binding()).status,"USER_APPROVAL_REQUIRED")
+            second=PersistentGateSupervisor(d,project_id="p",run_id="r2",gate_id="g2",mode="GATE_BY_GATE",lv_order=["b"])
+            self.assertEqual(second.load()["stage"],"PACKAGE")
     def test_19_full_plan_fixtures_f1_f4(self):
         for project in ("F1","F2","F3","F4"):
             with tempfile.TemporaryDirectory() as d:
-                c=GateTerminalController(d,binding(project_id=project),["a"],mode="FULL_PLAN");self.assertEqual(c.review_pass("a")["gate_status"],"EXITED")
-    def test_20_second_existing_project_fixture(self): self.assertEqual(binding(project_id="jarvis")["project_id"],"jarvis")
-    def test_21_new_project_fixture(self): self.assertEqual(binding(project_id="new-project")["project_id"],"new-project")
+                c=PersistentGateSupervisor(d,project_id=project,run_id="run",gate_id="gate",mode="FULL_PLAN",lv_order=["a","b","c"])
+                self.assertEqual(c.run_bound_lifecycle(self.handlers(),binding(project_id=project)).status,"COMPLETED")
+    def test_20_second_existing_project_fixture(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/"AGENTS.md").write_text("existing");(root/"docs").mkdir();(root/"docs"/"DEVELOPMENT_PLAN.txt").write_text("plan")
+            self.assertEqual(PersistentGateSupervisor(d,project_id="jarvis",run_id="r",gate_id="g",mode="FULL_PLAN",lv_order=["a"]).run_bound_lifecycle(self.handlers(),binding(project_id="jarvis")).status,"COMPLETED")
+    def test_21_new_project_fixture(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/"AGENTS.md").write_text("new");(root/"docs").mkdir();(root/"docs"/"DEVELOPMENT_PLAN.txt").write_text("plan")
+            self.assertEqual(PersistentGateSupervisor(d,project_id="new-project",run_id="r",gate_id="g",mode="GATE_BY_GATE",lv_order=["a"]).run_bound_lifecycle(self.handlers(),binding(project_id="new-project")).status,"USER_APPROVAL_REQUIRED")
     def test_22_symlink_and_traversal(self):
         with self.assertRaises(LifecycleBindingError): validate_binding({**binding(),"project_id":"../escape"})
     def test_23_unsupported_schema(self):

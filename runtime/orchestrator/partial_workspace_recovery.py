@@ -91,15 +91,11 @@ class PartialRecoveryMachine:
                  "predecessor":rows[-1]["event_sha256"] if rows else None}
         event["event_sha256"] = hashlib.sha256(canonical_bytes(event)).hexdigest()
         self.root.mkdir(parents=True, exist_ok=True)
-        # Journal append is serialized as replace-after-fsync; event lineage makes
-        # crash replay deterministic and rejects partial/corrupt writes.
-        data = b"".join(canonical_bytes(row)+b"\n" for row in [*rows,event])
-        fd,tmp=tempfile.mkstemp(prefix="journal.",dir=self.root)
-        try:
-            with os.fdopen(fd,"wb") as stream: stream.write(data); stream.flush(); os.fsync(stream.fileno())
-            os.replace(tmp,self.journal)
-        finally:
-            if os.path.exists(tmp): os.unlink(tmp)
+        with self.journal.open("ab") as stream:
+            stream.write(canonical_bytes(event)+b"\n"); stream.flush(); os.fsync(stream.fileno())
+        directory_fd=os.open(self.root,os.O_RDONLY)
+        try: os.fsync(directory_fd)
+        finally: os.close(directory_fd)
         return event
 
     def classify_worker(self, *, recorded_pid: int, recorded_start: str,
@@ -130,7 +126,16 @@ class PartialRecoveryMachine:
         if self.state not in {"ADOPTION_VALIDATED","REMEDIATION_REQUIRED"}:
             raise PartialRecoveryError("validated adoption or remediation required")
         artifact=produce("worker_result",payload,self.binding)
-        _atomic_create(self.root/"worker.result.json",artifact)
+        generation=1+sum(row["state"]=="REMEDIATION_REQUIRED" for row in self.events())
+        target=self.root/f"worker.result.{generation:02d}.json"
+        _atomic_create(target,artifact)
+        # A canonical index is create-once per generation; consumers never
+        # accept a manually manufactured unindexed result.
+        _atomic_create(self.root/f"result.index.{generation:02d}.json",
+                       {"schema_version":"orchestration.partial-result-index.v1",
+                        "generation":generation,"artifact":target.name,
+                        "envelope_sha256":artifact["envelope_sha256"]})
+        (self.root/"worker.result.json").write_bytes(canonical_bytes(artifact))
         self.advance("RESULT_PUBLISHED",{"envelope_sha256":artifact["envelope_sha256"]})
         return artifact
 
@@ -141,6 +146,6 @@ class PartialRecoveryMachine:
         self.advance(target,{"verdict":verdict}); return target
 
     def complete(self) -> None:
-        if not (self.root/"worker.result.json").is_file(): raise PartialRecoveryError("result required before completion")
+        if not list(self.root.glob("result.index.*.json")): raise PartialRecoveryError("result required before completion")
         if self.state != "REVIEW_PASSED": raise PartialRecoveryError("review PASS required")
         self.advance("CHECKPOINTED"); self.advance("LV_EXITED")

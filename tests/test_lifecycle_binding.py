@@ -4,6 +4,7 @@ from runtime.orchestrator.lifecycle_binding import (
     FIELDS, LifecycleBindingError, SCHEMA_VERSION, build_binding,
     canonical_bytes, digest_projection, seal_envelope, validate_binding,
     validate_envelope,
+    build_binding_from_sources, validate_binding_sources, DIGEST_FIELDS,
 )
 
 
@@ -22,6 +23,13 @@ def binding(**changes):
 
 
 class LifecycleBindingTests(unittest.TestCase):
+    def test_digest_roles_are_recomputed_from_actual_named_sources(self):
+        identities={k:v for k,v in binding().items() if k not in DIGEST_FIELDS|{"schema_version"}}
+        sources={field:{"bytes":field} for field in DIGEST_FIELDS}
+        sealed=build_binding_from_sources(sources,**identities)
+        self.assertEqual(validate_binding_sources(sealed,sources),sealed)
+        with self.assertRaisesRegex(LifecycleBindingError,"source binding"):
+            validate_binding_sources(sealed,{**sources,"artifact_sha256":{"bytes":"changed"}})
     def test_canonical_serialization_and_blank_self_projection_are_deterministic(self):
         self.assertEqual(canonical_bytes({"é": 1, "a": 2}), b'{"a":2,"\xc3\xa9":1}')
         value = {"x": 1, "envelope_sha256": "f" * 64}

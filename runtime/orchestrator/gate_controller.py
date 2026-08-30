@@ -7,6 +7,8 @@ from typing import Any, Callable, Mapping
 from .canonical_transition import validate_canonical_gate_state, validate_governance_descendant
 from .production_approval import ApprovalBindings, evaluate_production_authorization
 from .recovery_contract import is_completion_eligible
+from .production_lifecycle import consume as consume_lifecycle, produce as produce_lifecycle
+from .lifecycle_binding import DIGEST_FIELDS, build_binding_from_sources
 
 
 class GateControllerError(ValueError):
@@ -97,7 +99,19 @@ def run_gate_lifecycle(context: Mapping[str, Any], adapters: GateControllerAdapt
     def invoke(stage: str, adapter: StageCallable) -> dict[str, Any]:
         request = dict(state)
         request["prior_evidence"] = dict(evidence)
+        lifecycle_binding = context.get("lifecycle_binding")
+        kind = {"PACKAGE":"package", "PREFLIGHT":"preflight", "WORKER":"worker_result",
+                "REVIEW":"review", "REMEDIATION":"recovery_successor", "CHECKPOINT":"checkpoint",
+                "EXIT":"lv_exit", "HANDOFF":"handoff"}[stage]
+        if lifecycle_binding is not None:
+            sealed_request = produce_lifecycle("worker_request" if stage == "WORKER" else kind,
+                                               request, lifecycle_binding)
+            consume_lifecycle("worker_request" if stage == "WORKER" else kind,
+                              sealed_request, lifecycle_binding)
         result = _validated_result(stage, adapter(request))
+        if lifecycle_binding is not None:
+            sealed_result = produce_lifecycle(kind, result, lifecycle_binding)
+            consume_lifecycle(kind, sealed_result, lifecycle_binding)
         evidence[stage.lower()] = result["evidence_sha256"]
         trace.append(stage)
         state["last_stage"] = stage
@@ -215,6 +229,22 @@ def run_production_gate_lifecycle(
             "checkpoint_commit": transition["current_head"], "owned_files": list(context["owned_file_scope"][context["lv_id"]]),
             "ledger_path": "docs/GATE_STATE.md", "transition": transition,
         }
+    context = dict(context)
+    if "lifecycle_binding" not in context:
+        digest_sources = {
+            field: {"field": field, "context": context.get(field.removesuffix("_sha256")),
+                    "project_id": context["project_id"], "gate_id": context["gate_id"],
+                    "lv_id": context["lv_id"], "run_id": context["run_id"]}
+            for field in DIGEST_FIELDS
+        }
+        context["lifecycle_binding"] = build_binding_from_sources(
+            digest_sources, project_id=str(context["project_id"]), gate_id=str(context["gate_id"]),
+            lv_id=str(context["lv_id"]), run_id=str(context["run_id"]),
+            attempt=int(context.get("attempt", 1)), recovery_id=str(context.get("recovery_id", "none")),
+            approval_event_id=str(approval["event_id"]), branch=str(context["branch"]),
+            baseline_head=str(context["baseline_head"]), current_head=str(context.get("current_head") or context["baseline_head"]),
+            hard_stop=True,
+        )
     outcome = run_gate_lifecycle(context, adapters)
     outcome["production_approval_schema"] = approval["schema_version"]
     outcome["production_approval_record_hash"] = approval["record_hash"]
