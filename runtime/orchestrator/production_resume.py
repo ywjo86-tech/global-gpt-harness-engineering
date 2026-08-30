@@ -111,7 +111,8 @@ def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
         reasons = sorted(set(reasons))
         if not reasons and verdict and verdict["completion_eligible"]:
             return {"lv_id":item.lv_id,"run_id":run_id,"attempt":attempt,"status":"COMPLETE","source":"recovery",
-                    "product_completion_sha256":_sha(product_path),"handoff_sha256":values["handoff.json"]["handoff_sha256"]}, rejected
+                    "product_completion_sha256":_sha(product_path) if product_path.is_file() else values["consumption.json"].get("consumption_sha256"),
+                    "handoff_sha256":values["handoff.json"]["handoff_sha256"]}, rejected
         rejected.append({"attempt":attempt,"status":"REJECTED_COMPLETION_UNPROVEN","reasons":reasons,
                          "source_shas":{name:_sha(attempt_root/name) for name in required if (attempt_root/name).is_file()}})
     return None, sorted(rejected,key=lambda x:x["attempt"])
