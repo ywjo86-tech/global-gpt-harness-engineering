@@ -146,15 +146,26 @@ def execute_production_worker(request: WorkerRequest, *,
         raise ProductionWorkerError("production executor requires production mode")
     owned = _safe_scope(request.task.editable_scope)
     baseline = str(request.extra_context.get("source_snapshot", {}).get("source_head") or request.state_snapshot.get("head", ""))
-    if _git(root, "rev-parse", "HEAD").stdout.strip() != baseline or _git(root, "status", "--porcelain=v1").stdout:
+    baseline_status = _git(root, "status", "--porcelain=v1", "-uall").stdout
+    if _git(root, "rev-parse", "HEAD").stdout.strip() != baseline:
         raise ProductionWorkerError("production worker baseline is dirty or drifted")
     prompt = _prompt(request, baseline, owned)
     output = Path(request.task.output_dir); output.mkdir(parents=True, exist_ok=True)
     last = output / "executor.last-message.txt"
     argv = ["codex", "--sandbox", "workspace-write", "--ask-for-approval", "never", "--cd", str(root),
             "exec", "--ephemeral", "--output-last-message", str(last), "-"]
+    pending_paths = [line[3:] for line in baseline_status.splitlines() if len(line) > 3]
+    if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
+        raise ProductionWorkerError("production worker changed files outside owned scope")
     cancel_path = output / "cancel.request"
-    if executor is None:
+    if pending_paths:
+        stdout = stderr = b""
+        worker_exit = 0; timed_out = False
+        process_evidence = {"schema_version":"orchestration.production-worker-process.v1","pid":None,"process_group_id":None,
+                            "started_at":None,"ended_at":None,"termination":"RESUMED_PENDING_CHECKPOINT","requested_signal":None,
+                            "exit_code":0,"signal":None,"stdout_sha256":hashlib.sha256(b"").hexdigest(),
+                            "stderr_sha256":hashlib.sha256(b"").hexdigest(),"hard_stop":True}
+    elif executor is None:
         stdout, stderr, process_evidence = _run_managed_child(argv, root=root, prompt=prompt.encode(), timeout=timeout,
                                                                cancel_path=cancel_path)
         worker_exit = int(process_evidence["exit_code"] if process_evidence["exit_code"] is not None else 128 + int(process_evidence["signal"] or 0))
@@ -172,7 +183,7 @@ def execute_production_worker(request: WorkerRequest, *,
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     if _SECRET.search((stdout + b"\n" + stderr).decode("utf-8", "replace")):
         raise ProductionWorkerError("production executor emitted secret-like output")
-    if worker_exit != 0 or timed_out or process_evidence["termination"] != "EXITED":
+    if worker_exit != 0 or timed_out or process_evidence["termination"] not in {"EXITED", "RESUMED_PENDING_CHECKPOINT"}:
         raise ProductionWorkerError("production executor failed or timed out")
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     if head == baseline:

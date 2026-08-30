@@ -721,7 +721,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 audit_path = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.attempt-{attempt:02d}.runner.audit.jsonl"
                 execution = run_sealed_action(action, expected_project_id=plan.project_id,
                     expected_requirements_sha256=str(context["requirements_sha256"]), audit_path=audit_path,
-                    execution_root=attempt_root)
+                    execution_root=attempt_root, timeout=1800.0)
                 if execution["exit_code"] != 0 or not result.is_file() or result.is_symlink():
                     raise GateControllerError("recovery registered worker failed")
                 return json.loads(result.read_text(encoding="utf-8"))
@@ -855,7 +855,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         audit_path = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.runner.audit.jsonl"
         execution = run_sealed_action(action, expected_project_id=plan.project_id,
                                        expected_requirements_sha256=str(_.get("requirements_sha256", "")), audit_path=audit_path,
-                                       execution_root=package_root)
+                                       execution_root=package_root, timeout=1800.0)
         if execution["exit_code"] != 0 or not result.is_file() or result.is_symlink():
             raise GateControllerError("WORKER_RESULT_REQUIRED: registered worker failed or produced no result")
         try: worker_payload = json.loads(result.read_text(encoding="utf-8"))

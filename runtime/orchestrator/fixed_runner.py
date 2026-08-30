@@ -208,7 +208,8 @@ def run_sealed_action(manifest: Mapping[str, object], *, expected_project_id: st
                       expected_requirements_sha256: str, audit_path: str | Path,
                       executor: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
                       registry: Mapping[str, RegisteredCommand] = COMMAND_REGISTRY,
-                      execution_root: str | Path | None = None) -> dict[str, object]:
+                      execution_root: str | Path | None = None,
+                      timeout: float = 1800.0) -> dict[str, object]:
     command = validate_action_manifest(manifest, expected_project_id=expected_project_id,
                                        expected_requirements_sha256=expected_requirements_sha256,
                                        registry=registry)
@@ -230,16 +231,24 @@ def run_sealed_action(manifest: Mapping[str, object], *, expected_project_id: st
             if candidate.is_symlink():
                 raise FixedRunnerError("command parameter may not be a symlink")
     argv = [parameters.get(arg[1:-1], arg) if isinstance(arg, str) and arg.startswith("{") and arg.endswith("}") else arg for arg in command.argv]
-    completed = executor(argv, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-    stdout = bytes(completed.stdout or b"")
-    stderr = bytes(completed.stderr or b"")
+    timed_out = False
+    try:
+        completed = executor(argv, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=timeout)
+        stdout = bytes(completed.stdout or b"")
+        stderr = bytes(completed.stderr or b"")
+        exit_code = int(completed.returncode)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        stdout = bytes(exc.stdout or b"")
+        stderr = bytes(exc.stderr or b"")
+        exit_code = 124
     artifact_sha = hashlib.sha256(stdout + b"\0" + stderr).hexdigest()
     audit = {
         "schema_version": "orchestration.fixed-run.audit.v1",
         "command_id": command.command_id,
         "manifest_sha256": manifest["manifest_sha256"],
         "input_sha256": payload["input_sha256"],
-        "exit_code": int(completed.returncode),
+        "exit_code": exit_code,
         "artifact_sha256": artifact_sha,
         "project_id": payload["project_id"],
         "gate_id": payload["gate_id"],
@@ -248,4 +257,4 @@ def run_sealed_action(manifest: Mapping[str, object], *, expected_project_id: st
     }
     audit["audit_entry_sha256"] = _hash(audit)
     _append_audit(Path(audit_path), audit)
-    return {"command_id": command.command_id, "exit_code": int(completed.returncode), "artifact_sha256": artifact_sha}
+    return {"command_id": command.command_id, "exit_code": exit_code, "artifact_sha256": artifact_sha, "timeout": timed_out}
