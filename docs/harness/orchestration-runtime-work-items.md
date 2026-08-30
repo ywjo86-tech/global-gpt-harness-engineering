@@ -219,7 +219,7 @@ Ledger:
 | R4 | Enforce one canonical binding across lifecycle artifacts | COMPLETE |
 | R5 | Validate and consume recovery lineage during review | COMPLETE |
 | R6 | Connect checkpoint, LV Exit, Gate Exit, and structured handoff | COMPLETE |
-| R7 | Cover state transitions with fault, restart, and replay tests | PENDING |
+| R7 | Cover state transitions with fault, restart, and replay tests | COMPLETE |
 
 Completion constraints:
 - All seven rows must be COMPLETE before independent release audit begins.
