@@ -235,7 +235,34 @@ def main(argv: list[str] | None = None) -> int:
                 historical_predecessor=event.get("predecessor"),
                 historical_event_ids=((event["supersedes"],) if event.get("supersedes") else ()),
             )
-            descendant = validate_governance_descendant(args.project_root, approval["baseline_head"])
+            try:
+                descendant = validate_governance_descendant(args.project_root, approval["baseline_head"])
+            except Exception as exc:
+                # A resumed recovery may already contain the product checkpoint
+                # created by its registered worker.  Permit only descendants
+                # whose changes remain inside the approval-owned scope; all
+                # other stale/drifted approvals still hard-stop.
+                import subprocess
+                recovery_root = Path(args.harness_root)/"_workspace"/"global-gate"/plan.project_id/"recovery"
+                active_recovery = any(
+                    p.is_file() and not p.is_symlink() and p.name.startswith(f"{args.run_id}-recovery-")
+                    for p in recovery_root.glob(f"{args.run_id}-recovery-*.json")
+                ) if args.run_id else False
+                if not active_recovery:
+                    raise
+                changed = subprocess.run(
+                    ["git", "-C", args.project_root, "diff", "--name-only", f"{approval['baseline_head']}..HEAD"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.splitlines()
+                owned = {path for paths in approval["owned_file_scope"].values() for path in paths}
+                if not changed or any(path not in owned for path in changed):
+                    raise
+                descendant = {"baseline_head": approval["baseline_head"],
+                               "current_head": subprocess.run(
+                                   ["git", "-C", args.project_root, "rev-parse", "HEAD"],
+                                   capture_output=True, text=True, check=True,
+                               ).stdout.strip(), "changed_files": changed,
+                               "governance_only": False, "recovery_owned_descendant": True}
             state_text = (Path(args.project_root) / "docs" / "GATE_STATE.md").read_text(encoding="utf-8")
             blocks = re.findall(r"```json[ \t]*\r?\n(.*?)\r?\n```", state_text, flags=re.DOTALL)
             if not blocks:
