@@ -770,7 +770,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         binding = RunBinding(plan.project_id, plan.gate_id, lv_id, run_id,
                              str(context["requirements_sha256"]), plan.canonical_plan_sha256,
                              str(context["branch"]), str(context["head"]), digest, owned_hashes)
-        store = ResumeStore(Path(harness_root) / "_workspace" / "global-gate-resume", binding)
+        store = ResumeStore(Path(harness_root) / "_workspace" / "global-gate-resume" / lv_id, binding)
         state["store"] = store
         if context.get("resume") and store.verify():
             resumed = store.resume(binding, owned_hashes)
