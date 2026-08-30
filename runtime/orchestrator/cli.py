@@ -261,13 +261,33 @@ def main(argv: list[str] | None = None) -> int:
                     raise GateControllerError("--run-id is required for production-gate-run")
                 from .production_completion import write_completion_rejection
                 completion_recovery = None
-                for rejected in bridge.get("rejections", []):
+                recovery_root = Path(args.harness_root)/"_workspace"/"global-gate"/plan.project_id/"recovery"
+                # A restart must resume an already-created active attempt before
+                # deriving another rejection from its incomplete lifecycle.
+                active_candidates = []
+                for record_path in recovery_root.glob(f"{args.run_id}-recovery-*.json"):
+                    if record_path.is_symlink():
+                        continue
+                    try:
+                        record = json.loads(record_path.read_text(encoding="utf-8"))
+                        attempt = int(record.get("recovery_attempt", 0))
+                        attempt_root = Path(args.harness_root)/"_workspace"/"orchestration-runs"/args.run_id/f"attempt-{attempt:02d}"
+                        checkpoint_path = recovery_root/f"{args.run_id}-recovery-{attempt:02d}.checkpoint.json"
+                        if attempt > 1 and checkpoint_path.is_file() and (attempt_root/"package.json").is_file():
+                            active_candidates.append((attempt, record_path, checkpoint_path))
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        continue
+                if active_candidates:
+                    attempt, record_path, checkpoint_path = sorted(active_candidates, key=lambda item: item[0])[-1]
+                    completion_recovery = {"recovery":json.loads(record_path.read_text(encoding="utf-8")),
+                                           "checkpoint":json.loads(checkpoint_path.read_text(encoding="utf-8")),
+                                           "next_attempt":attempt, "hard_stop":True}
+                for rejected in ([] if completion_recovery else bridge.get("rejections", [])):
                     rejection = write_completion_rejection(args.harness_root, project_id=plan.project_id,
                         gate_id=args.gate_id, lv_id=rejected["lv_id"], run_id=rejected["run_id"],
                         attempt=int(rejected["attempt"]), reasons=list(rejected["reasons"]),
                         source_shas=dict(rejected["source_shas"]), next_attempt=int(bridge["next_attempt"]))
                     from .recovery_contract import prepare_completion_recovery
-                    recovery_root = Path(args.harness_root)/"_workspace"/"global-gate"/plan.project_id/"recovery"
                     completion_recovery = prepare_completion_recovery(args.harness_root,
                         prior_record_path=recovery_root/f"{args.run_id}-recovery-{int(rejected['attempt']):02d}.json",
                         rejection_path=recovery_root/f"{args.run_id}-attempt-{int(rejected['attempt']):02d}-completion-rejection.json")
