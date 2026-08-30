@@ -723,7 +723,7 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     }
     evidence["preflight_evidence_sha256"] = ""
     raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
-    target = _preflight_root(run_id).parent / f"{run_id}-v2b-{source_sha[:12]}"
+    target = _preflight_root(run_id).parent / f"{run_id}-v2c-{source_sha[:12]}"
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         existing = _canonical_json(target / "preflight.evidence.json")
