@@ -226,3 +226,17 @@ Completion constraints:
 - Rejected source artifacts are append-only and byte-identical.
 - Recovery uses the existing run ID and a strictly increasing attempt number.
 - The next Gate remains `USER_APPROVAL_REQUIRED` and cannot auto-run.
+
+## Work Item 8: R3-R7 Production Readiness
+
+All rows begin `PENDING`. A row becomes `COMPLETE` only when the named
+production code and explicit tests exist and both focused and full regressions
+pass in the same stage checkpoint.
+
+| ID | Requirement | Production code | Explicit tests | Status |
+| --- | --- | --- | --- | --- |
+| R3 | Canonical digest/binding contract | `runtime/orchestrator/lifecycle_binding.py` | `tests/test_lifecycle_binding.py` (`LifecycleBindingTests`, 4 tests) | COMPLETE |
+| R4 | Unified lifecycle producers/consumers | `runtime/orchestrator/production_lifecycle.py` | `tests/test_production_lifecycle.py` | PENDING |
+| R5 | Partial workspace recovery state machine | `runtime/orchestrator/partial_workspace_recovery.py` | `tests/test_partial_workspace_recovery.py` | PENDING |
+| R6 | Persistent Gate terminal lifecycle | `runtime/orchestrator/gate_terminal.py` | `tests/test_gate_terminal.py` | PENDING |
+| R7 | Readiness fixtures and incremental resolution | modules above | `tests/test_production_readiness.py` | PENDING |
