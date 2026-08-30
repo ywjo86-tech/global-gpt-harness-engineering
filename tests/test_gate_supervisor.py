@@ -52,3 +52,19 @@ class GateSupervisorTests(unittest.TestCase):
             result=sup.run(lambda _: {"status":"FAIL","error_signature":"same"})
             self.assertEqual(result.status,"HARD_STOP"); self.assertEqual(result.state["retries"],{"same":1})
             self.assertEqual(result.state["metrics"]["model_invocations"],0)
+
+    def test_canonical_lifecycle_review_fail_remediates_then_exits(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="GATE_BY_GATE",lv_order=["l1"])
+            seen=[]; review_count=[0]
+            def handler(name, status="PASS"):
+                def call(state):
+                    seen.append(name)
+                    if name == "REVIEW" and review_count[0] == 0:
+                        review_count[0] += 1; return {"status":"FAIL","error_signature":"review-failure","progress_digest":"d1"}
+                    return {"status":status}
+                return call
+            handlers={name:handler(name) for name in ("PACKAGE","PREFLIGHT","WORKER","REVIEW","REMEDIATION","CHECKPOINT","EXIT")}
+            result=sup.run_lifecycle(handlers)
+            self.assertEqual(result.status,"USER_APPROVAL_REQUIRED")
+            self.assertIn("REMEDIATION",seen); self.assertEqual(seen.count("WORKER"),1)

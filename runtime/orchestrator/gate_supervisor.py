@@ -159,3 +159,23 @@ class PersistentGateSupervisor:
             state.update({"status":"GATE_EXECUTION_RESUME_REQUIRED", "terminal":False}); self._persist(state, {"event":"PAUSE", "reason":"STEP_BUDGET_EXHAUSTED"}); return SupervisorResult("GATE_EXECUTION_RESUME_REQUIRED", state, invocations, True)
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN); handle.close()
+
+    def run_lifecycle(self, handlers: Mapping[str, Callable[[dict[str, Any]], Mapping[str, Any]]], *, max_steps: int = 128) -> SupervisorResult:
+        """Drive the canonical lifecycle without returning control between stages."""
+        required = set(STAGES) - {"GATE_EXIT"}
+        if not required.issubset(handlers):
+            raise GateSupervisorError("lifecycle handlers are incomplete")
+        def transition(state: dict[str, Any]) -> Mapping[str, Any]:
+            stage = state["stage"]
+            if stage == "GATE_EXIT": return {"status":"PASS", "next_stage":"GATE_EXIT"}
+            outcome = dict(handlers[stage](dict(state)))
+            status = str(outcome.get("status", ""))
+            if status == "FAIL" and stage == "REVIEW":
+                return {**outcome, "next_stage":"REMEDIATION"}
+            if status == "PASS" and stage == "REMEDIATION":
+                return {**outcome, "next_stage":"REVIEW"}
+            if status in {"FAIL", "BLOCKED"}: return outcome
+            order = {"PACKAGE":"PREFLIGHT", "PREFLIGHT":"WORKER", "WORKER":"REVIEW",
+                     "REVIEW":"CHECKPOINT", "REMEDIATION":"REVIEW", "CHECKPOINT":"EXIT", "EXIT":"GATE_EXIT"}
+            return {**outcome, "next_stage":outcome.get("next_stage", order[stage])}
+        return self.run(transition, max_steps=max_steps)
