@@ -1,6 +1,6 @@
 import tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt
 
 class RecoveryContractTests(unittest.TestCase):
     def test_append_only_replay(self):
@@ -11,3 +11,8 @@ class RecoveryContractTests(unittest.TestCase):
     def test_traversal_rejected(self):
         with self.assertRaises(RecoveryError):
             write_recovery_record(tempfile.mkdtemp(),project_id='p',gate_id='g',lv_id='l',run_id='r',rejected_attempt=1,rejected_artifacts={'../x':'a'*64},reason_code='x',missing_bindings=[],recovery_attempt=2,approval_event_id='e',plan_sha256='b'*64,branch='main',baseline_head='c'*40,current_head='d'*40,active_transition_sha256='f'*64,source_shas={},predecessor=None,supersedes='old')
+
+    def test_unbound_partial_is_not_completion(self):
+        result = classify_partial_attempt({"project_id":"p"}, {"status":"completed"})
+        self.assertEqual(result["status"], "REJECTED_UNBOUND_LEGACY")
+        self.assertFalse(result["completion_eligible"])
