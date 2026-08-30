@@ -1,8 +1,18 @@
 import json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
 
 class RecoveryContractTests(unittest.TestCase):
+    def test_finalization_connects_checkpoint_exit_next_lv_and_handoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); args,_=self._prepared_attempt_two(root)
+            review_recovery_attempt(root,reviewer=lambda *_:{'verdict':'PASS'},**args)
+            first=finalize_recovery_lifecycle(root,run_id='run-1',remaining_lvs=['l2'],gate_complete=False)
+            second=finalize_recovery_lifecycle(root,run_id='run-1',remaining_lvs=['l2'],gate_complete=False)
+            self.assertEqual(first,second); self.assertEqual(first['handoff']['next_lv'],'l2')
+            self.assertIsNone(first['gate_exit'])
+            with self.assertRaisesRegex(RecoveryError,'completeness'):
+                finalize_recovery_lifecycle(root,run_id='run-1',remaining_lvs=[],gate_complete=False)
     def _prepared_attempt_two(self, root):
         run=root/'_workspace'/'orchestration-runs'/'run-1'; run.mkdir(parents=True)
         values=[('package.manifest.json',{'project_id':'p','gate_id':'g','lv_id':'l','run_id':'run-1','canonical_plan_sha256':'a'*64}),('worker.result.json',{'gate_id':'g','lv_id':'l','run_id':'run-1','attempt':1,'status':'completed'}),('transition.json',{'project_id':'p','gate_id':'g','lv_id':'l','run_id':'run-1','branch':'main','baseline_head':'b'*40,'current_head':'c'*40})]

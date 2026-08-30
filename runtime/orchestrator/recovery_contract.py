@@ -315,3 +315,50 @@ def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: s
         consumption["consumption_sha256"] = hashlib.sha256(_bytes(consumption)).hexdigest()
         _write_once(attempt_root / "consumption.json", consumption)
     return {"review":review, "consumption":consumption, "hard_stop":True}
+
+def finalize_recovery_lifecycle(harness_root: str | Path, *, run_id: str,
+                                remaining_lvs: list[str], gate_complete: bool) -> dict[str, Any]:
+    """Seal checkpoint, LV exit, optional Gate exit, and structured handoff."""
+    root = Path(harness_root).resolve()
+    attempt_root = root / "_workspace" / "orchestration-runs" / run_id / "attempt-02"
+    consumption_path = attempt_root / "consumption.json"
+    if not consumption_path.is_file() or consumption_path.is_symlink():
+        raise RecoveryError("reviewed recovery consumption is required")
+    consumption = json.loads(consumption_path.read_text(encoding="utf-8"))
+    if consumption.get("status") != "CONSUMED" or consumption.get("completion_eligible") is not True:
+        raise RecoveryError("recovery consumption is not completion-eligible")
+    digest = consumption.get("consumption_sha256")
+    if digest != hashlib.sha256(_bytes({k:v for k,v in consumption.items() if k != "consumption_sha256"})).hexdigest():
+        raise RecoveryError("recovery consumption hash mismatch")
+    binding_keys = ("project_id","gate_id","lv_id","run_id","recovery_id","attempt",
+                    "canonical_plan_sha256","approval_event_id","active_transition_sha256",
+                    "recovery_record_hash","recovery_checkpoint_sha256","hard_stop")
+    binding = {key:consumption[key] for key in binding_keys}
+    checkpoint = {"schema_version":"orchestration.recovery-lifecycle-checkpoint.v1", **binding,
+                  "consumption_sha256":digest, "status":"CHECKPOINTED"}
+    checkpoint["lifecycle_checkpoint_sha256"] = hashlib.sha256(_bytes(checkpoint)).hexdigest()
+    _write_once(attempt_root / "lifecycle.checkpoint.json", checkpoint)
+    lv_exit = {"schema_version":"orchestration.recovery-lv-exit.v1", **binding,
+               "lifecycle_checkpoint_sha256":checkpoint["lifecycle_checkpoint_sha256"], "status":"EXITED"}
+    lv_exit["lv_exit_sha256"] = hashlib.sha256(_bytes(lv_exit)).hexdigest()
+    _write_once(attempt_root / "lv.exit.json", lv_exit)
+    if gate_complete != (len(remaining_lvs) == 0):
+        raise RecoveryError("Gate completeness and remaining LV set disagree")
+    gate_exit = None
+    if gate_complete:
+        gate_exit = {"schema_version":"orchestration.recovery-gate-exit.v1", **binding,
+                     "lv_exit_sha256":lv_exit["lv_exit_sha256"], "status":"EXITED",
+                     "next_gate_status":"USER_APPROVAL_REQUIRED"}
+        gate_exit["gate_exit_sha256"] = hashlib.sha256(_bytes(gate_exit)).hexdigest()
+        _write_once(attempt_root / "gate.exit.json", gate_exit)
+    handoff = {"schema_version":"orchestration.recovery-handoff.v1", **binding,
+               "lifecycle_checkpoint_sha256":checkpoint["lifecycle_checkpoint_sha256"],
+               "lv_exit_sha256":lv_exit["lv_exit_sha256"], "remaining_lvs":list(remaining_lvs),
+               "next_lv":remaining_lvs[0] if remaining_lvs else None,
+               "gate_complete":gate_complete,
+               "gate_exit_sha256":gate_exit["gate_exit_sha256"] if gate_exit else None,
+               "next_gate_status":"USER_APPROVAL_REQUIRED" if gate_complete else None,
+               "status":"SEALED"}
+    handoff["handoff_sha256"] = hashlib.sha256(_bytes(handoff)).hexdigest()
+    _write_once(attempt_root / "handoff.json", handoff)
+    return {"checkpoint":checkpoint,"lv_exit":lv_exit,"gate_exit":gate_exit,"handoff":handoff,"hard_stop":True}

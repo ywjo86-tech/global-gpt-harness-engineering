@@ -218,7 +218,7 @@ Ledger:
 | R3 | Exclude rejected attempts from completion consumers | COMPLETE |
 | R4 | Enforce one canonical binding across lifecycle artifacts | COMPLETE |
 | R5 | Validate and consume recovery lineage during review | COMPLETE |
-| R6 | Connect checkpoint, LV Exit, Gate Exit, and structured handoff | PENDING |
+| R6 | Connect checkpoint, LV Exit, Gate Exit, and structured handoff | COMPLETE |
 | R7 | Cover state transitions with fault, restart, and replay tests | PENDING |
 
 Completion constraints:
