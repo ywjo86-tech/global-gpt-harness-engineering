@@ -818,16 +818,27 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if state.get("recovery_mode"):
             value = state["recovery_outcome"]["worker_result"]
             return {"status":"COMPLETED","exit_code":0,"evidence_sha256":value["worker_result_sha256"],"hard_stop":True}
-        prior = resumed("WORKER", "COMPLETED")
-        if prior:
-            state["worker_payload"] = {key: value for key, value in prior.items()
-                                       if key not in {"exit_code", "evidence_sha256", "hard_stop"}}
-            return prior
         package_root = state.get("package_root")
         manifest = state.get("package_manifest")
         package_sha = state.get("package_manifest_sha256")
         if not isinstance(package_root, Path) or not isinstance(manifest, dict) or not isinstance(package_sha, str):
             raise GateControllerError("WORKER request cannot be bound to sealed package")
+        # Partial-workspace recovery takes precedence over replaying a stale
+        # WORKER event.  Adoption is allowed only for files inside this LV's
+        # sealed owned scope; the registered executor independently validates,
+        # tests, commits, and collects the result.
+        pending = subprocess.run(["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+                                 capture_output=True, text=True, check=True).stdout.splitlines()
+        owned_scope = list(manifest.get("owned_files", []))
+        partial_owned = [line[3:] for line in pending if len(line) > 3 and
+                         any(line[3:] == scope or (scope.endswith("/") and line[3:].startswith(scope))
+                             for scope in owned_scope)]
+        if not partial_owned:
+            prior = resumed("WORKER", "COMPLETED")
+            if prior:
+                state["worker_payload"] = {key: value for key, value in prior.items()
+                                           if key not in {"exit_code", "evidence_sha256", "hard_stop"}}
+                return prior
         # The worker result is a child of the sealed run package.  Never read a
         # process-global /tmp result: that would permit an unrelated process to
         # satisfy this lifecycle by merely creating a matching filename.
