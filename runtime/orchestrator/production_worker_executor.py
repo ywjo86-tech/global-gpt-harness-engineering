@@ -147,8 +147,15 @@ def execute_production_worker(request: WorkerRequest, *,
     owned = _safe_scope(request.task.editable_scope)
     baseline = str(request.extra_context.get("source_snapshot", {}).get("source_head") or request.state_snapshot.get("head", ""))
     baseline_status = _git(root, "status", "--porcelain=v1", "-uall").stdout
-    if _git(root, "rev-parse", "HEAD").stdout.strip() != baseline:
-        raise ProductionWorkerError("production worker baseline is dirty or drifted")
+    current_before = _git(root, "rev-parse", "HEAD").stdout.strip()
+    adoption = current_before != baseline
+    if adoption:
+        ancestor = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", baseline, current_before], check=False)
+        if ancestor.returncode != 0:
+            raise ProductionWorkerError("production worker baseline is dirty or drifted")
+        adopted_changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", current_before).stdout.splitlines()
+        if not adopted_changed or any(path not in owned for path in adopted_changed):
+            raise ProductionWorkerError("production worker adoption scope violation")
     prompt = _prompt(request, baseline, owned)
     output = Path(request.task.output_dir); output.mkdir(parents=True, exist_ok=True)
     last = output / "executor.last-message.txt"
@@ -158,7 +165,14 @@ def execute_production_worker(request: WorkerRequest, *,
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
     cancel_path = output / "cancel.request"
-    if pending_paths:
+    if adoption:
+        stdout = stderr = b""
+        worker_exit = 0; timed_out = False
+        process_evidence = {"schema_version":"orchestration.production-worker-process.v1","pid":None,"process_group_id":None,
+                            "started_at":None,"ended_at":None,"termination":"ADOPTED_CHECKPOINT","requested_signal":None,
+                            "exit_code":0,"signal":None,"stdout_sha256":hashlib.sha256(b"").hexdigest(),
+                            "stderr_sha256":hashlib.sha256(b"").hexdigest(),"hard_stop":True}
+    elif pending_paths:
         stdout = stderr = b""
         worker_exit = 0; timed_out = False
         process_evidence = {"schema_version":"orchestration.production-worker-process.v1","pid":None,"process_group_id":None,
