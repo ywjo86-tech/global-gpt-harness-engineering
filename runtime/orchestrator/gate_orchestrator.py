@@ -904,7 +904,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             try:
                 worker_payload = execute_production_worker(request, timeout=1800)
             except Exception as exc:
-                raise GateControllerError(f"registered production worker failed: {exc}") from exc
+                raise GateControllerError(f"registered worker failed (production): {exc}") from exc
             result.write_bytes(canonical_json_bytes(worker_payload))
             state["worker_payload"] = worker_payload
             state["worker_result_path"] = result
