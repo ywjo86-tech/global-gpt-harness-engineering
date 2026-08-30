@@ -342,6 +342,7 @@ def _validate_target_binding(
     allowed_roots: tuple[Path, ...],
     *,
     proc_root: Path,
+    allow_immutable_mount: bool = False,
 ) -> tuple[str, str, str]:
     if not stat.S_ISREG(target_stat.st_mode) or not os.access(resolved, os.X_OK):
         raise LVReviewError("Wallet interpreter target is not an executable regular file")
@@ -360,7 +361,7 @@ def _validate_target_binding(
         ancestor = ancestor.parent
     namespace_fingerprint, overflow_uid = _namespace_binding(proc_root=proc_root)
     mount_fingerprint, mount_read_only = _mount_binding(resolved, proc_root=proc_root)
-    if not mount_read_only:
+    if not mount_read_only and not allow_immutable_mount:
         raise LVReviewError("Wallet interpreter mount is not read-only")
     if target_stat.st_uid in {0, os.getuid()}:
         owner_mode = "direct-owner"
@@ -397,7 +398,7 @@ def _validate_interpreter(
         raise LVReviewError("Wallet interpreter target is unavailable") from exc
     containing_root = max((allowed for allowed in allowed_roots if resolved == allowed or allowed in resolved.parents), key=lambda item: len(item.parts))
     owner_mode, namespace_fingerprint, mount_fingerprint = _validate_target_binding(
-        resolved, target_stat, (containing_root,), proc_root=proc_root
+        resolved, target_stat, (containing_root,), proc_root=proc_root, allow_immutable_mount=True
     )
     probe = subprocess.run(
         [str(interpreter), "-I", "-B", "-c", (
@@ -434,6 +435,7 @@ def _validate_interpreter(
         "python_owner_validation_mode": owner_mode,
         "python_namespace_fingerprint": namespace_fingerprint,
         "python_mount_fingerprint": mount_fingerprint,
+        "python_mount_mode": "read-only" if _mount_binding(resolved, proc_root=proc_root)[1] else "sha-sealed-immutable",
     }
 
 def _validate_external_interpreter(interpreter: Path) -> dict[str, str | bool]:
