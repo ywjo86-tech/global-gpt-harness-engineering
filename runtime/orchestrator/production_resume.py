@@ -74,15 +74,21 @@ def _run_id_for(plan_item: str) -> str:
     return plan_item.lower()
 
 
-def _discover_run_ids(harness_root: Path, gate_id: str) -> dict[str, str]:
+def _discover_run_ids(harness_root: Path, gate_id: str, run_id_hint: str | None = None) -> dict[str, str]:
     discovered: dict[str, str] = {}
-    for manifest_path in (harness_root / "_workspace" / "orchestration-runs").glob("*/package.manifest.json"):
+    # LV-scoped package manifests may live below a run namespace; inspect the
+    # sealed manifests recursively so a namespaced successor is not mistaken
+    # for an incomplete LV.
+    for manifest_path in (harness_root / "_workspace" / "orchestration-runs").rglob("package.manifest.json"):
         try:
             manifest = _load(manifest_path)
         except ResumeBridgeError:
             continue
         if manifest.get("gate_id") == gate_id and isinstance(manifest.get("lv_id"), str):
-            discovered.setdefault(manifest["lv_id"], manifest_path.parent.name)
+            # The manifest's sealed run_id is authoritative.  Directory names
+            # may be LV namespaces (for example ``G1-LV3-4``) rather than the
+            # production run, and using them would hide recovery attempts.
+            discovered.setdefault(manifest["lv_id"], str(manifest.get("run_id") or run_id_hint or manifest_path.parent.name))
     return discovered
 
 def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
@@ -135,11 +141,11 @@ def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
 
 def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate_id: str,
                         *, plan_sha256: str, completed_run_ids: Mapping[str, str] | None = None,
-                        required_completed: tuple[str, ...] = ()) -> dict[str, Any]:
+                        required_completed: tuple[str, ...] = (), run_id_hint: str | None = None) -> dict[str, Any]:
     plan: GatePlan = load_gate_plan(project_root, gate_id)
     if plan.canonical_plan_sha256 != plan_sha256:
         raise ResumeBridgeError("resume bridge plan SHA mismatch")
-    completed_run_ids = {**_discover_run_ids(Path(harness_root), gate_id), **dict(completed_run_ids or {})}
+    completed_run_ids = {**_discover_run_ids(Path(harness_root), gate_id, run_id_hint), **dict(completed_run_ids or {})}
     mapping = load_project_mapping(project_root)
     historical = set(mapping.historical_plan_sha256) if mapping else set()
     completed: list[dict[str, Any]] = []
