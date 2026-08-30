@@ -42,7 +42,7 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
                           missing_bindings: list[str], recovery_attempt: int, approval_event_id: str,
                           plan_sha256: str, branch: str, baseline_head: str, current_head: str,
                           active_transition_sha256: str, source_shas: Mapping[str, str], predecessor: str | None,
-                          supersedes: str, hard_stop: bool = True) -> dict[str, Any]:
+                          supersedes: str, hard_stop: bool = True, recovery_id: str | None = None) -> dict[str, Any]:
     if rejected_attempt <= 0 or recovery_attempt != rejected_attempt + 1 or not hard_stop:
         raise RecoveryError("invalid recovery attempt or hard-stop binding")
     if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes)) or not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, branch, supersedes)):
@@ -51,7 +51,10 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
         p = Path(path)
         if p.is_absolute() or ".." in p.parts or not isinstance(digest, str) or not _SHA.fullmatch(digest):
             raise RecoveryError("invalid recovery source path or SHA")
-    payload = {"schema_version":"orchestration.production-recovery.v1","recovery_id":f"{run_id}-recovery-{recovery_attempt:02d}","project_id":project_id,"gate_id":gate_id,"lv_id":lv_id,"run_id":run_id,"rejected_attempt":rejected_attempt,"rejected_artifacts":dict(rejected_artifacts),"rejection_reason_code":reason_code,"missing_bindings":list(missing_bindings),"recovery_attempt":recovery_attempt,"approval_event_id":approval_event_id,"plan_sha256":plan_sha256,"branch":branch,"baseline_head":baseline_head,"current_head":current_head,"active_transition_sha256":active_transition_sha256,"source_shas":dict(source_shas),"predecessor":predecessor,"supersedes":supersedes,"created_at":datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),"hard_stop":True}
+    recovery_id = recovery_id or f"{run_id}-recovery-{recovery_attempt:02d}"
+    if not _ID.fullmatch(recovery_id):
+        raise RecoveryError("recovery ID is invalid")
+    payload = {"schema_version":"orchestration.production-recovery.v1","recovery_id":recovery_id,"project_id":project_id,"gate_id":gate_id,"lv_id":lv_id,"run_id":run_id,"rejected_attempt":rejected_attempt,"rejected_artifacts":dict(rejected_artifacts),"rejection_reason_code":reason_code,"missing_bindings":list(missing_bindings),"recovery_attempt":recovery_attempt,"approval_event_id":approval_event_id,"plan_sha256":plan_sha256,"branch":branch,"baseline_head":baseline_head,"current_head":current_head,"active_transition_sha256":active_transition_sha256,"source_shas":dict(source_shas),"predecessor":predecessor,"supersedes":supersedes,"created_at":datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),"hard_stop":True}
     payload["record_hash"] = hashlib.sha256(_bytes(payload)).hexdigest()
     root = Path(harness_root).resolve()/"_workspace"/"global-gate"/project_id/"recovery"
     root.mkdir(parents=True, exist_ok=True); target=root/(payload["recovery_id"]+".json")
@@ -75,12 +78,22 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
     return payload
 
 def classify_partial_attempt(manifest: Mapping[str, Any], worker: Mapping[str, Any] | None) -> dict[str, Any]:
-    missing = [field for field in ("project_id", "canonical_plan_sha256", "hard_stop") if not manifest.get(field) and field != "hard_stop"]
+    missing = [field for field in ("project_id", "canonical_plan_sha256") if not manifest.get(field)]
     if worker is None:
         missing.append("worker.result")
     else:
         missing.extend(field for field in ("project_id", "canonical_plan_sha256", "hard_stop") if not worker.get(field))
-    return {"status": "REJECTED_UNBOUND_LEGACY" if missing else "BOUND", "missing_bindings": sorted(set(missing)), "completion_eligible": not missing}
+        # A worker result without the preflight digest was never producer-bound;
+        # it must be rejected and can only advance through a new attempt.
+        if not worker.get("preflight_evidence_sha256"):
+            missing.append("preflight_evidence_sha256")
+    status = "BOUND"
+    if missing:
+        status = ("REJECTED_WORKER_RESULT_UNBOUND_PREFLIGHT"
+                  if "preflight_evidence_sha256" in missing and worker is not None
+                  and worker.get("project_id") and (worker.get("canonical_plan_sha256") or worker.get("plan_sha256"))
+                  else "REJECTED_UNBOUND_LEGACY")
+    return {"status": status, "missing_bindings": sorted(set(missing)), "completion_eligible": not missing}
 
 def is_completion_eligible(payload: Mapping[str, Any] | None, *,
                            manifest: Mapping[str, Any] | None = None) -> bool:
@@ -89,9 +102,9 @@ def is_completion_eligible(payload: Mapping[str, Any] | None, *,
         return False
     if payload.get("completion_eligible") is False:
         return False
-    if payload.get("status") == "REJECTED_UNBOUND_LEGACY":
+    if isinstance(payload.get("status"), str) and payload.get("status", "").startswith("REJECTED_"):
         return False
-    if payload.get("rejection_reason_code") == "REJECTED_UNBOUND_LEGACY":
+    if isinstance(payload.get("rejection_reason_code"), str) and payload.get("rejection_reason_code", "").startswith("REJECTED_"):
         return False
     if manifest is not None and payload.get("attempt") == 1:
         return bool(classify_partial_attempt(manifest, payload)["completion_eligible"])
@@ -152,7 +165,7 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
     if not isinstance(worker.get("attempt"), int) or worker["attempt"] <= 0:
         raise RecoveryError("partial worker attempt is invalid")
     classification = classify_partial_attempt(manifest, worker)
-    if classification["status"] != "REJECTED_UNBOUND_LEGACY":
+    if not classification["status"].startswith("REJECTED_"):
         raise RecoveryError("partial attempt is not eligible for legacy recovery")
     relative = [path.resolve().relative_to(root).as_posix() for path in paths]
     shas = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in zip(relative, paths)}
@@ -166,8 +179,20 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
         for candidate in recovery_root.glob(f"{run_id}-recovery-*.json"):
             if candidate.name.endswith(".checkpoint.json"):
                 continue
-            if candidate.name != f"{recovery_id}.json":
+            # Recovery records are namespaced by LV as well as run.  A
+            # completed lineage for another LV must not block this LV's
+            # append-only recovery sequence.
+            try:
+                existing_record = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
                 raise RecoveryError("conflicting active recovery exists")
+            if candidate.name != f"{recovery_id}.json" and existing_record.get("lv_id") == expected["lv_id"]:
+                raise RecoveryError("conflicting active recovery exists")
+            if candidate.name == f"{recovery_id}.json" and existing_record.get("lv_id") != expected["lv_id"]:
+                # Preserve the historical run-level identifier while
+                # avoiding a cross-LV collision in the shared append-only
+                # namespace.
+                recovery_id = f"{run_id}-recovery-{next_attempt:02d}-{expected['lv_id']}"
     transition_sha = shas[relative[2]]
     record = write_recovery_record(
         root, project_id=expected["project_id"], gate_id=expected["gate_id"],
@@ -179,6 +204,7 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
         branch=str(transition.get("branch", "")), baseline_head=str(transition.get("baseline_head", "")),
         current_head=str(transition.get("current_head", "")), active_transition_sha256=transition_sha,
         source_shas=shas, predecessor=None, supersedes=shas[relative[1]], hard_stop=True,
+        recovery_id=recovery_id,
     )
     checkpoint = {
         "schema_version": "orchestration.production-recovery-checkpoint.v1",
@@ -259,14 +285,42 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
         raise RecoveryError("recovery attempt sequence is invalid")
     run_root = root / "_workspace" / "orchestration-runs" / record["run_id"]
     attempt_root = run_root / attempt_directory(attempt)
+    # Attempt numbers are monotonic per LV; shared run roots may contain the
+    # same number for a different LV.  Namespace only on a binding collision.
+    existing_package = attempt_root / "package.json"
+    if existing_package.is_file():
+        try:
+            existing_binding = json.loads(existing_package.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raise RecoveryError("recovery attempt package is malformed")
+        if existing_binding.get("lv_id") != record.get("lv_id"):
+            attempt_root = run_root / f"{attempt_directory(attempt)}-{record['lv_id']}"
     binding = canonical_recovery_binding(record, checkpoint)
-    package = {"schema_version":"orchestration.recovery-package.v1", **binding}
+    package = {"schema_version":"orchestration.recovery-package.v1", **binding,
+               "branch":record.get("branch"), "baseline_head":record.get("baseline_head"),
+               "current_head":record.get("current_head")}
     package["package_sha256"] = hashlib.sha256(_bytes(package)).hexdigest()
-    _write_once(attempt_root / "package.json", package)
+    package_path = attempt_root / "package.json"
+    if package_path.exists():
+        existing = json.loads(package_path.read_text(encoding="utf-8"))
+        if existing.get("package_sha256") != hashlib.sha256(_bytes({k:v for k,v in existing.items() if k != "package_sha256"})).hexdigest():
+            raise RecoveryError("recovery package hash mismatch")
+        if any(existing.get(k) != binding.get(k) for k in binding):
+            raise RecoveryError("recovery package binding mismatch")
+        package = existing
+    else:
+        _write_once(package_path, package)
     preflight = {"schema_version":"orchestration.recovery-preflight.v1", **binding,
                  "package_sha256":package["package_sha256"], "status":"READY"}
     preflight["preflight_sha256"] = hashlib.sha256(_bytes(preflight)).hexdigest()
-    _write_once(attempt_root / "preflight.json", preflight)
+    preflight_path = attempt_root / "preflight.json"
+    if preflight_path.exists():
+        existing = json.loads(preflight_path.read_text(encoding="utf-8"))
+        if existing.get("preflight_sha256") != hashlib.sha256(_bytes({k:v for k,v in existing.items() if k != "preflight_sha256"})).hexdigest():
+            raise RecoveryError("recovery preflight hash mismatch")
+        preflight = existing
+    else:
+        _write_once(preflight_path, preflight)
     existing_result = attempt_root / "worker.result.json"
     if existing_result.exists():
         result = json.loads(existing_result.read_text(encoding="utf-8"))
@@ -279,13 +333,17 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
             raise RecoveryError(f"recovery worker canonical binding conflict: {', '.join(sorted(conflicts))}")
         result = {"schema_version":"orchestration.recovery-worker-result.v1", **dict(raw), **binding,
                   "package_sha256":package["package_sha256"],
-                  "preflight_sha256":preflight["preflight_sha256"]}
+                  "preflight_sha256":preflight["preflight_sha256"],
+                  # Canonical producer binding (distinct from the internal
+                  # recovery preflight field retained for lineage checks).
+                  "preflight_evidence_sha256":preflight["preflight_sha256"]}
         if result.get("status") not in {"completed", "failed", "blocked"}:
             raise RecoveryError("recovery worker status is invalid")
         result["worker_result_sha256"] = hashlib.sha256(_bytes(result)).hexdigest()
         _write_once(existing_result, result)
     expected = {**binding, "package_sha256":package["package_sha256"],
-                "preflight_sha256":preflight["preflight_sha256"]}
+                "preflight_sha256":preflight["preflight_sha256"],
+                "preflight_evidence_sha256":preflight["preflight_sha256"]}
     if any(result.get(key) != value for key, value in expected.items()):
         raise RecoveryError("recovery worker binding mismatch")
     digest = result.get("worker_result_sha256")
@@ -310,6 +368,10 @@ def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: s
         raise RecoveryError("recovery checkpoint hash mismatch")
     binding = canonical_recovery_binding(record, checkpoint)
     attempt_root = root / "_workspace" / "orchestration-runs" / record["run_id"] / attempt_directory(record["recovery_attempt"])
+    if not (attempt_root / "package.json").is_file() or json.loads((attempt_root / "package.json").read_text(encoding="utf-8")).get("lv_id") != record.get("lv_id"):
+        candidate = attempt_root.parent / f"{attempt_directory(record['recovery_attempt'])}-{record['lv_id']}"
+        if (candidate / "package.json").is_file():
+            attempt_root = candidate
     artifacts: dict[str, dict[str, Any]] = {}
     for name in ("package.json", "preflight.json", "worker.result.json"):
         path = attempt_root / name
@@ -325,7 +387,7 @@ def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: s
     if preflight.get("package_sha256") != package["package_sha256"] or preflight.get("preflight_sha256") != hashlib.sha256(_bytes({k:v for k,v in preflight.items() if k != "preflight_sha256"})).hexdigest():
         raise RecoveryError("recovery review preflight lineage mismatch")
     worker_sha = worker_result.get("worker_result_sha256")
-    if worker_result.get("package_sha256") != package["package_sha256"] or worker_result.get("preflight_sha256") != preflight["preflight_sha256"] or worker_sha != hashlib.sha256(_bytes({k:v for k,v in worker_result.items() if k != "worker_result_sha256"})).hexdigest():
+    if worker_result.get("package_sha256") != package["package_sha256"] or worker_result.get("preflight_sha256") != preflight["preflight_sha256"] or worker_result.get("preflight_evidence_sha256") != preflight["preflight_sha256"] or worker_sha != hashlib.sha256(_bytes({k:v for k,v in worker_result.items() if k != "worker_result_sha256"})).hexdigest():
         raise RecoveryError("recovery review worker lineage mismatch")
     existing = attempt_root / "review.json"
     if existing.exists():
@@ -352,10 +414,23 @@ def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: s
     return {"review":review, "consumption":consumption, "hard_stop":True}
 
 def finalize_recovery_lifecycle(harness_root: str | Path, *, run_id: str, attempt: int = 2,
-                                remaining_lvs: list[str], gate_complete: bool) -> dict[str, Any]:
+                                remaining_lvs: list[str], gate_complete: bool, lv_id: str | None = None) -> dict[str, Any]:
     """Seal checkpoint, LV exit, optional Gate exit, and structured handoff."""
     root = Path(harness_root).resolve()
     attempt_root = root / "_workspace" / "orchestration-runs" / run_id / attempt_directory(attempt)
+    package_path = attempt_root / "package.json"
+    if package_path.is_file():
+        try:
+            package_value = json.loads(package_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            package_value = {}
+        # Locate a namespaced LV attempt when the shared numeric directory is
+        # occupied by another recovery lineage.
+        if lv_id and package_value.get("lv_id") and package_value.get("lv_id") != lv_id:
+            matches = sorted(attempt_root.parent.glob(f"{attempt_directory(attempt)}-*"))
+            for candidate in matches:
+                if (candidate / "consumption.json").is_file():
+                    attempt_root = candidate; break
     consumption_path = attempt_root / "consumption.json"
     if not consumption_path.is_file() or consumption_path.is_symlink():
         raise RecoveryError("reviewed recovery consumption is required")
