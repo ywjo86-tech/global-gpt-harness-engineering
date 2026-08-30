@@ -269,9 +269,11 @@ def main(argv: list[str] | None = None) -> int:
                            "owned_file_scope": approval["owned_file_scope"], "phase": "PHASE-1"}
                 outcome = __import__("runtime.orchestrator.gate_controller", fromlist=["run_production_gate_lifecycle"]).run_production_gate_lifecycle(
                     context, _production_adapters(Path(args.project_root), plan, auth, bridge["first_incomplete_lv"], args.run_id, args.harness_root),
-                    approval_events=events, project_root=args.project_root,
+                    approval_events=[approval], project_root=args.project_root,
                     canonical_state=canonical_state,
-                    completion_conditions_sha256=approval["completion_conditions_sha256"])
+                    completion_conditions_sha256=approval["completion_conditions_sha256"],
+                    historical_predecessor=approval.get("predecessor"),
+                    historical_event_ids=((approval["supersedes"],) if approval.get("supersedes") else ()))
                 output.update(outcome)
             _print(output)
             return 0
