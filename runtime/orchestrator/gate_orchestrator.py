@@ -847,7 +847,18 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         # satisfy this lifecycle by merely creating a matching filename.
         result = package_root / "worker.result.json"
         if result.exists() or result.is_symlink():
-            raise GateControllerError("WORKER_RESULT_REQUIRED: stale worker result exists")
+            if result.is_symlink():
+                raise GateControllerError("WORKER_RESULT_REQUIRED: stale worker result exists")
+            try:
+                existing_result = json.loads(result.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise GateControllerError("WORKER_RESULT_REQUIRED: stale worker result exists") from exc
+            if (existing_result.get("project_id") != plan.project_id or existing_result.get("gate_id") != plan.gate_id
+                    or existing_result.get("lv_id") != lv_id or existing_result.get("run_id") != run_id):
+                raise GateControllerError("WORKER_RESULT_REQUIRED: stale worker result exists")
+            state["worker_payload"] = existing_result
+            state["worker_result_path"] = result
+            return sealed("WORKER", "COMPLETED", _file_sha(result), payload=existing_result)
         task = TaskSlice(
             thread_id=lv_id, assigned_agent="implementation_agent",
             input=str(manifest.get("task", {}).get("purpose", "sealed LV worker")),
