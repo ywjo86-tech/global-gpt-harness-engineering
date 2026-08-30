@@ -197,7 +197,7 @@ def execute_production_worker(request: WorkerRequest, *,
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     if _SECRET.search((stdout + b"\n" + stderr).decode("utf-8", "replace")):
         raise ProductionWorkerError("production executor emitted secret-like output")
-    if worker_exit != 0 or timed_out or process_evidence["termination"] not in {"EXITED", "RESUMED_PENDING_CHECKPOINT"}:
+    if worker_exit != 0 or timed_out or process_evidence["termination"] not in {"EXITED", "RESUMED_PENDING_CHECKPOINT", "ADOPTED_CHECKPOINT"}:
         raise ProductionWorkerError("production executor failed or timed out")
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     if head == baseline:
