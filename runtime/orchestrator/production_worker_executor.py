@@ -253,6 +253,7 @@ def execute_production_worker(request: WorkerRequest, *,
         "staged_changes":False, "unstaged_changes":False, "review_verdict":"PASS",
         "executor":{"identity":EXECUTOR_ID,"version":EXECUTOR_VERSION},
         "package_sha256":request.extra_context["package_manifest_sha256"],
+        "preflight_evidence_sha256":request.extra_context.get("preflight_evidence_sha256", ""),
         "artifact_sha_chain":{"request":hashlib.sha256(canonical_json_bytes(request.to_dict())).hexdigest(),
                               "executor_output":hashlib.sha256(stdout+b"\0"+stderr).hexdigest(),
                               "process_evidence":hashlib.sha256(process_path.read_bytes()).hexdigest()}, "hard_stop":True}
