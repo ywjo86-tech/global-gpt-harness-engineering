@@ -147,6 +147,7 @@ def run_production_gate_lifecycle(
     context: Mapping[str, Any], adapters: GateControllerAdapters, *, approval_events: list[Mapping[str, Any]],
     project_root: str, canonical_state: Mapping[str, Any], completion_conditions_sha256: str,
     historical_predecessor: str | None = None, historical_event_ids: tuple[str, ...] = (),
+    harness_root: str | None = None,
 ) -> dict[str, Any]:
     """Production boundary: v2 authorization, Git descendant, state, then lifecycle."""
     required = ("project_id", "gate_id", "plan_sha256", "branch", "baseline_head", "approval_mode", "canonical_lv_scope", "owned_file_scope", "phase")
@@ -175,6 +176,26 @@ def run_production_gate_lifecycle(
         )
     except ValueError as exc:
         raise GateControllerError(str(exc)) from exc
+    if harness_root is not None:
+        from .active_transition import activate_canonical_lv_transition
+        transition = activate_canonical_lv_transition(
+            harness_root, project_id=str(context["project_id"]), gate_id=str(context["gate_id"]),
+            lv_id=str(context["lv_id"]), run_id=str(context["run_id"]), approval_event_id=str(approval["event_id"]),
+            plan_sha256=str(context["plan_sha256"]), branch=str(context["branch"]),
+            baseline_head=str(context["baseline_head"]), current_head=str(context.get("current_head", "")),
+            predecessor_digest=str(context.get("predecessor_completion_digest", "")),
+            owned_files=list(context["owned_file_scope"][context["lv_id"]]),
+            completion_conditions=list(context.get("completion_conditions", [])),
+        )
+        context = dict(context)
+        context["canonical_state_override"] = {
+            "state": "GATE1_ACTIVE", "gate_id": str(context["gate_id"]), "active_scope": [str(context["lv_id"])],
+            "selected_source": __import__("pathlib").Path(project_root).resolve() / "IMPLEMENTATION_PLAN.md",
+            "canonical_plan": "IMPLEMENTATION_PLAN.md", "plan_sha256": str(context["plan_sha256"]),
+            "approval_id": approval["event_id"], "approval_record_hash": approval["record_hash"],
+            "checkpoint_commit": transition["current_head"], "owned_files": list(context["owned_file_scope"][context["lv_id"]]),
+            "ledger_path": "docs/GATE_STATE.md", "transition": transition,
+        }
     outcome = run_gate_lifecycle(context, adapters)
     outcome["production_approval_schema"] = approval["schema_version"]
     outcome["production_approval_record_hash"] = approval["record_hash"]

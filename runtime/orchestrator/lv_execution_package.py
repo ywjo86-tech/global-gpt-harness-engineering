@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
@@ -380,15 +380,16 @@ def create_lv_execution_package(
     run_id: str,
     *,
     output_root: str | Path | None = None,
+    canonical_state_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = _canonical_root(project_root)
     run_id = _safe_run_id(run_id)
     _assert_clean_source(root)
-    preview = preview_lv_read_only(root, gate_id, lv_id)
+    preview = preview_lv_read_only(root, gate_id, lv_id, canonical_state_override=canonical_state_override)
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVExecutionPackageError("a project contract mapping is required")
-    canonical_state = evaluate_canonical_state(mapping)
+    canonical_state = dict(canonical_state_override) if canonical_state_override is not None else evaluate_canonical_state(mapping)
     for field in ("gate_id", "approval_id", "approval_record_hash", "checkpoint_commit", "selected_source", "canonical_plan", "plan_sha256", "active_scope", "owned_files"):
         if canonical_state.get(field) in (None, "", []):
             raise LVExecutionPackageError(f"canonical lifecycle evidence is missing: {field}")

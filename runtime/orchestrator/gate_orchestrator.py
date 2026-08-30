@@ -692,7 +692,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             if sidecar.read_text(encoding="ascii").strip() != digest:
                 raise GateControllerError("PACKAGE manifest drift on resume")
         else:
-            value = create_lv_execution_package(root, plan.gate_id, lv_id, run_id)
+            value = create_lv_execution_package(
+                root, plan.gate_id, lv_id, run_id,
+                canonical_state_override=context.get("canonical_state_override"),
+            )
             digest = value["manifest_sha256"]
         # Persist the package details needed by the registered worker command.
         package_payload = json.loads(manifest_path.read_text(encoding="utf-8"))

@@ -264,16 +264,21 @@ def main(argv: list[str] | None = None) -> int:
                 head = subprocess.run(["git", "-C", args.project_root, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
                 context = {"project_id": plan.project_id, "gate_id": args.gate_id, "lv_id": bridge["first_incomplete_lv"],
                            "run_id": args.run_id, "plan_sha256": plan.canonical_plan_sha256,
+                           "requirements_sha256": "f734be6f2a81c89428f28605a1ffcd12234a511e69ded4c607041a2e0b367361",
                            "branch": approval["branch"], "baseline_head": approval["baseline_head"],
+                           "current_head": head, "head": head, "predecessor_completion_digest": bridge["bridge_sha256"],
                            "approval_mode": args.mode, "canonical_lv_scope": approval["canonical_lv_scope"],
                            "owned_file_scope": approval["owned_file_scope"], "phase": "PHASE-1"}
+                selected_lv = next(item for item in plan.lvs if item.lv_id == bridge["first_incomplete_lv"])
+                context["completion_conditions"] = list(selected_lv.completion_criteria)
                 outcome = __import__("runtime.orchestrator.gate_controller", fromlist=["run_production_gate_lifecycle"]).run_production_gate_lifecycle(
                     context, _production_adapters(Path(args.project_root), plan, auth, bridge["first_incomplete_lv"], args.run_id, args.harness_root),
                     approval_events=[approval], project_root=args.project_root,
                     canonical_state=canonical_state,
                     completion_conditions_sha256=approval["completion_conditions_sha256"],
                     historical_predecessor=approval.get("predecessor"),
-                    historical_event_ids=((approval["supersedes"],) if approval.get("supersedes") else ()))
+                    historical_event_ids=((approval["supersedes"],) if approval.get("supersedes") else ()),
+                    harness_root=args.harness_root)
                 output.update(outcome)
             _print(output)
             return 0

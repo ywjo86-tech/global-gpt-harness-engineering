@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from .read_only_inspector import inspect_read_only
@@ -160,7 +160,7 @@ def parse_lv_definition(
     )
 
 
-def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str) -> dict[str, Any]:
+def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if not gate_id:
         raise LVPreviewValidationError("gate_id is required")
     if not lv_id:
@@ -171,7 +171,7 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str) -> 
         raise LVPreviewValidationError("a project contract mapping is required for LV preview")
 
     inspection = inspect_read_only(root)
-    canonical_state = evaluate_canonical_state(mapping)
+    canonical_state = dict(canonical_state_override) if canonical_state_override is not None else evaluate_canonical_state(mapping)
     state = canonical_state.get("state")
     if not isinstance(state, str) or not state.endswith("_ACTIVE"):
         raise LVPreviewValidationError("LV preview requires an active canonical Gate state")
