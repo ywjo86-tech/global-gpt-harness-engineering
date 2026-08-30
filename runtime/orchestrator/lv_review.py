@@ -723,7 +723,8 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     }
     evidence["preflight_evidence_sha256"] = ""
     raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
-    target = _preflight_root(run_id); target.parent.mkdir(parents=True, exist_ok=True)
+    target = _preflight_root(run_id).parent / f"{run_id}-v2-{source_sha[:12]}"
+    target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         existing = _canonical_json(target / "preflight.evidence.json")
         stable = lambda value: {k:v for k,v in value.items() if k not in {"captured_at","preflight_evidence_sha256"}}
@@ -743,6 +744,18 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
 def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any], str]:
     root = Path(context.get("preflight_root") or _preflight_root(context["run_id"]))
     expected = {"preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"}
+    def valid_candidate(candidate: Path) -> bool:
+        try:
+            data = (candidate/"preflight.evidence.json").read_bytes()
+            return (candidate.is_dir() and not candidate.is_symlink() and
+                    (candidate/"preflight.evidence.sha256").read_text(encoding="ascii").strip() == _sha256(data))
+        except (OSError, UnicodeError):
+            return False
+    if not valid_candidate(root):
+        candidates = sorted(root.parent.glob(f"{context['run_id']}-v2-*"))
+        valid = [p for p in candidates if valid_candidate(p)]
+        if valid:
+            root = valid[-1]
     if not root.is_dir() or root.is_symlink():
         raise LVReviewError("preflight evidence is missing")
     entries = list(root.iterdir())
