@@ -86,7 +86,8 @@ class PersistentGateSupervisor:
         state = {"schema_version":"orchestration.global-gate-supervisor.v1", "project_id":self.project_id,
                  "gate_id":self.gate_id, "run_id":self.run_id, "mode":self.mode, "lv_order":list(self.lv_order),
                  "current_lv":self.lv_order[0], "stage":"PACKAGE", "completed_lvs":[], "retry_budget":self.retry_budget,
-                 "retries":{}, "terminal":False, "hard_stop":True}
+                 "retries":{}, "retry_signatures":{}, "metrics":{"child_invocations":0,"model_invocations":0,"deterministic_transitions":0},
+                 "terminal":False, "hard_stop":True}
         state["state_sha256"] = _sha(state); return state
 
     def load(self) -> dict[str, Any]:
@@ -117,12 +118,19 @@ class PersistentGateSupervisor:
             while invocations < max_steps:
                 if state.get("stage") not in STAGES: raise GateSupervisorError("supervisor stage invalid")
                 invocations += 1
+                state.setdefault("metrics", {}).update({"child_invocations":int(state.get("metrics", {}).get("child_invocations", 0)) + 1,
+                                                         "deterministic_transitions":int(state.get("metrics", {}).get("deterministic_transitions", 0)) + 1})
                 outcome = dict(transition(dict(state)))
                 status = str(outcome.get("status", "")); next_stage = outcome.get("next_stage", state["stage"])
                 if next_stage not in STAGES and next_stage not in TERMINAL: raise GateSupervisorError("illegal supervisor transition")
                 error = outcome.get("error_signature")
                 if status in {"FAIL", "BLOCKED"}:
-                    signature = str(error or status); retries = dict(state.get("retries", {})); count = int(retries.get(signature, 0))
+                    signature = str(error or status); progress = str(outcome.get("progress_digest", "")); retries = dict(state.get("retries", {})); count = int(retries.get(signature, 0))
+                    signatures = dict(state.get("retry_signatures", {}))
+                    if progress and signatures.get(signature) == progress:
+                        state.update({"status":"HARD_STOP", "terminal":True, "hard_stop":True})
+                        self._persist(state, {"event":"HARD_STOP", "reason":"NO_PROGRESS_RETRY", "error_signature":signature}); return SupervisorResult("HARD_STOP", state, invocations, True)
+                    signatures[signature] = progress; state["retry_signatures"] = signatures
                     if count >= self.retry_budget:
                         state.update({"status":"HARD_STOP", "terminal":True, "hard_stop":True})
                         self._persist(state, {"event":"HARD_STOP", "reason":"RETRY_BUDGET_EXHAUSTED", "error_signature":signature}); mutation = True

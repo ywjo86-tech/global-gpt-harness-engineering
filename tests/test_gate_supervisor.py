@@ -51,3 +51,4 @@ class GateSupervisorTests(unittest.TestCase):
             sup=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="FULL_PLAN",lv_order=["l1"],retry_budget=1)
             result=sup.run(lambda _: {"status":"FAIL","error_signature":"same"})
             self.assertEqual(result.status,"HARD_STOP"); self.assertEqual(result.state["retries"],{"same":1})
+            self.assertEqual(result.state["metrics"]["model_invocations"],0)
