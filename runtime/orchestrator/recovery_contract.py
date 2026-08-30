@@ -93,7 +93,13 @@ def write_provenance_rejection(harness_root: str | Path, *, project_id: str,
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     payload["record_hash"] = hashlib.sha256(_bytes(payload)).hexdigest()
-    root = Path(harness_root).resolve() / "_workspace" / "global-gate" / project_id / "recovery"
+    harness_path = Path(harness_root).resolve()
+    # Recovery records belong to the repository-level global-gate store.  A
+    # preflight/publication staging directory is never a valid recovery root;
+    # reject it before creating any directory or file.
+    if "orchestration-preflights" in harness_path.parts:
+        raise RecoveryError("noncanonical recovery destination")
+    root = harness_path / "_workspace" / "global-gate" / project_id / "recovery"
     if root.is_symlink():
         raise RecoveryError("provenance rejection root must not be a symlink")
     root.mkdir(parents=True, exist_ok=True)

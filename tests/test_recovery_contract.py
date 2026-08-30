@@ -40,6 +40,20 @@ class RecoveryContractTests(unittest.TestCase):
         with self.assertRaises(RecoveryError):
             write_provenance_rejection(tempfile.mkdtemp(), **{**kwargs, "project_id": "../escape"})
 
+    def test_provenance_rejection_rejects_staging_destination_before_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            staging = Path(directory) / "orchestration-preflights" / "run"
+            kwargs = dict(project_id="p", run_id="r", gate_id="g", lv_id="l",
+                          schema_version="v1", package_sha256="a" * 64,
+                          source_preflight_sha256="b" * 64, invalid_payload_sha256="c" * 64,
+                          invalid_sidecar_expected_sha256="d" * 64,
+                          invalid_sidecar_file_sha256="e" * 64, predecessor=None,
+                          provenance_audit_ref="audit-1", reason_code="REJECTED_BAD",
+                          validator_version="v1")
+            with self.assertRaisesRegex(RecoveryError, "noncanonical"):
+                write_provenance_rejection(staging, **kwargs)
+            self.assertFalse(staging.exists())
+
     def test_finalization_connects_checkpoint_exit_next_lv_and_handoff(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); args,_=self._prepared_attempt_two(root)
