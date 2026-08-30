@@ -1,8 +1,31 @@
 import json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt
 
 class RecoveryContractTests(unittest.TestCase):
+    def _prepared_attempt_two(self, root):
+        run=root/'_workspace'/'orchestration-runs'/'run-1'; run.mkdir(parents=True)
+        values=[('package.manifest.json',{'project_id':'p','gate_id':'g','lv_id':'l','run_id':'run-1','canonical_plan_sha256':'a'*64}),('worker.result.json',{'gate_id':'g','lv_id':'l','run_id':'run-1','attempt':1,'status':'completed'}),('transition.json',{'project_id':'p','gate_id':'g','lv_id':'l','run_id':'run-1','branch':'main','baseline_head':'b'*40,'current_head':'c'*40})]
+        paths=[]
+        for name,value in values:
+            path=run/name; path.write_text(json.dumps(value)); paths.append(path)
+        prepare_partial_recovery(root,manifest_path=paths[0],worker_path=paths[1],transition_path=paths[2],approval_event_id='APR-1')
+        recovery=root/'_workspace'/'global-gate'/'p'/'recovery'
+        args={'recovery_record_path':recovery/'run-1-recovery-02.json','recovery_checkpoint_path':recovery/'run-1-recovery-02.checkpoint.json'}
+        execute_recovery_attempt(root,worker=lambda *_:{'status':'completed'},**args)
+        return args,paths
+
+    def test_review_validates_and_consumes_attempt_two_recovery_lineage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); args,sources=self._prepared_attempt_two(root); before=[p.read_bytes() for p in sources]
+            calls=[]
+            reviewer=lambda worker,binding: (calls.append((worker,binding)) or {'verdict':'PASS','findings':[]})
+            first=review_recovery_attempt(root,reviewer=reviewer,**args)
+            second=review_recovery_attempt(root,reviewer=lambda *_:self.fail('review reran'),**args)
+            self.assertEqual(first,second); self.assertEqual(len(calls),1)
+            self.assertEqual(first['consumption']['status'],'CONSUMED')
+            self.assertEqual(first['review']['attempt'],2)
+            self.assertEqual(before,[p.read_bytes() for p in sources])
     def test_canonical_binding_covers_project_plan_approval_transition_and_hard_stop(self):
         record={'project_id':'p','gate_id':'g','lv_id':'l','run_id':'r','recovery_id':'r-recovery-02',
                 'recovery_attempt':2,'plan_sha256':'a'*64,'approval_event_id':'APR-1',

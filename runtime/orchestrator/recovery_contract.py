@@ -258,3 +258,60 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
         raise RecoveryError("recovery worker result hash mismatch")
     return {"package":package, "preflight":preflight, "worker_result":result,
             "attempt_root":str(attempt_root), "hard_stop":True}
+
+def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: str | Path,
+                            recovery_checkpoint_path: str | Path, reviewer: Any) -> dict[str, Any]:
+    """Validate attempt-02 lineage and append its independent review/consumption."""
+    root = Path(harness_root).resolve()
+    record_path, checkpoint_path = Path(recovery_record_path), Path(recovery_checkpoint_path)
+    for path in (record_path, checkpoint_path):
+        if not path.is_file() or path.is_symlink() or root not in path.resolve().parents:
+            raise RecoveryError("unsafe recovery review control artifact")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    if record.get("record_hash") != hashlib.sha256(_bytes({k:v for k,v in record.items() if k != "record_hash"})).hexdigest():
+        raise RecoveryError("recovery record hash mismatch")
+    if checkpoint.get("checkpoint_sha256") != hashlib.sha256(_bytes({k:v for k,v in checkpoint.items() if k != "checkpoint_sha256"})).hexdigest():
+        raise RecoveryError("recovery checkpoint hash mismatch")
+    binding = canonical_recovery_binding(record, checkpoint)
+    attempt_root = root / "_workspace" / "orchestration-runs" / record["run_id"] / "attempt-02"
+    artifacts: dict[str, dict[str, Any]] = {}
+    for name in ("package.json", "preflight.json", "worker.result.json"):
+        path = attempt_root / name
+        if not path.is_file() or path.is_symlink():
+            raise RecoveryError(f"recovery review artifact is missing or unsafe: {name}")
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or any(value.get(key) != expected for key, expected in binding.items()):
+            raise RecoveryError(f"recovery review canonical binding mismatch: {name}")
+        artifacts[name] = value
+    package, preflight, worker_result = (artifacts[name] for name in ("package.json", "preflight.json", "worker.result.json"))
+    if package.get("package_sha256") != hashlib.sha256(_bytes({k:v for k,v in package.items() if k != "package_sha256"})).hexdigest():
+        raise RecoveryError("recovery review package hash mismatch")
+    if preflight.get("package_sha256") != package["package_sha256"] or preflight.get("preflight_sha256") != hashlib.sha256(_bytes({k:v for k,v in preflight.items() if k != "preflight_sha256"})).hexdigest():
+        raise RecoveryError("recovery review preflight lineage mismatch")
+    worker_sha = worker_result.get("worker_result_sha256")
+    if worker_result.get("package_sha256") != package["package_sha256"] or worker_result.get("preflight_sha256") != preflight["preflight_sha256"] or worker_sha != hashlib.sha256(_bytes({k:v for k,v in worker_result.items() if k != "worker_result_sha256"})).hexdigest():
+        raise RecoveryError("recovery review worker lineage mismatch")
+    existing = attempt_root / "review.json"
+    if existing.exists():
+        review = json.loads(existing.read_text(encoding="utf-8"))
+    else:
+        raw = reviewer(dict(worker_result), dict(binding))
+        if not isinstance(raw, Mapping) or raw.get("verdict") not in {"PASS", "FAIL"}:
+            raise RecoveryError("recovery reviewer verdict is invalid")
+        review = {"schema_version":"orchestration.recovery-review.v1", **binding,
+                  "package_sha256":package["package_sha256"], "preflight_sha256":preflight["preflight_sha256"],
+                  "worker_result_sha256":worker_sha, "verdict":raw["verdict"],
+                  "findings":list(raw.get("findings", [])), "consumption_eligible":raw["verdict"] == "PASS"}
+        review["review_sha256"] = hashlib.sha256(_bytes(review)).hexdigest()
+        _write_once(existing, review)
+    if review.get("review_sha256") != hashlib.sha256(_bytes({k:v for k,v in review.items() if k != "review_sha256"})).hexdigest():
+        raise RecoveryError("recovery review hash mismatch")
+    consumption = None
+    if review.get("verdict") == "PASS" and review.get("consumption_eligible") is True:
+        consumption = {"schema_version":"orchestration.recovery-consumption.v1", **binding,
+                       "review_sha256":review["review_sha256"], "worker_result_sha256":worker_sha,
+                       "status":"CONSUMED", "completion_eligible":True}
+        consumption["consumption_sha256"] = hashlib.sha256(_bytes(consumption)).hexdigest()
+        _write_once(attempt_root / "consumption.json", consumption)
+    return {"review":review, "consumption":consumption, "hard_stop":True}
