@@ -1,8 +1,21 @@
 import json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding
 
 class RecoveryContractTests(unittest.TestCase):
+    def test_canonical_binding_covers_project_plan_approval_transition_and_hard_stop(self):
+        record={'project_id':'p','gate_id':'g','lv_id':'l','run_id':'r','recovery_id':'r-recovery-02',
+                'recovery_attempt':2,'plan_sha256':'a'*64,'approval_event_id':'APR-1',
+                'active_transition_sha256':'b'*64,'record_hash':'c'*64,'hard_stop':True}
+        checkpoint={'project_id':'p','gate_id':'g','lv_id':'l','run_id':'r','recovery_id':'r-recovery-02',
+                    'checkpoint_sha256':'d'*64,'hard_stop':True}
+        binding=canonical_recovery_binding(record,checkpoint)
+        self.assertEqual(binding['canonical_plan_sha256'],'a'*64)
+        self.assertEqual(binding['approval_event_id'],'APR-1')
+        self.assertEqual(binding['active_transition_sha256'],'b'*64)
+        self.assertTrue(binding['hard_stop'])
+        with self.assertRaisesRegex(RecoveryError,'binding mismatch'):
+            canonical_recovery_binding(record,{**checkpoint,'project_id':'other'})
     def test_completion_eligibility_rejects_explicit_and_unbound_legacy(self):
         manifest={'project_id':'p','canonical_plan_sha256':'a'*64,'hard_stop':True}
         self.assertFalse(is_completion_eligible({'status':'REJECTED_UNBOUND_LEGACY'}))

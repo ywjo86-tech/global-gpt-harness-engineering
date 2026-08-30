@@ -92,6 +92,30 @@ def is_completion_eligible(payload: Mapping[str, Any] | None, *,
         return bool(classify_partial_attempt(manifest, payload)["completion_eligible"])
     return True
 
+def canonical_recovery_binding(record: Mapping[str, Any], checkpoint: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the one lifecycle binding shared by every recovery artifact."""
+    keys = ("project_id", "gate_id", "lv_id", "run_id", "recovery_id")
+    if any(record.get(key) != checkpoint.get(key) for key in keys):
+        raise RecoveryError("recovery control binding mismatch")
+    binding = {key: record.get(key) for key in keys}
+    binding.update({
+        "attempt": record.get("recovery_attempt"),
+        "canonical_plan_sha256": record.get("plan_sha256"),
+        "approval_event_id": record.get("approval_event_id"),
+        "active_transition_sha256": record.get("active_transition_sha256"),
+        "recovery_record_hash": record.get("record_hash"),
+        "recovery_checkpoint_sha256": checkpoint.get("checkpoint_sha256"),
+        "hard_stop": True,
+    })
+    required = ("project_id", "gate_id", "lv_id", "run_id", "recovery_id",
+                "canonical_plan_sha256", "approval_event_id", "active_transition_sha256",
+                "recovery_record_hash", "recovery_checkpoint_sha256")
+    if any(not isinstance(binding.get(key), str) or not binding[key] for key in required):
+        raise RecoveryError("canonical recovery binding is incomplete")
+    if binding["attempt"] != 2 or record.get("hard_stop") is not True or checkpoint.get("hard_stop") is not True:
+        raise RecoveryError("canonical recovery binding attempt or hard-stop mismatch")
+    return binding
+
 def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | Path,
                              worker_path: str | Path, transition_path: str | Path,
                              approval_event_id: str) -> dict[str, Any]:
@@ -196,20 +220,11 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
     checkpoint_hash = checkpoint.get("checkpoint_sha256")
     if checkpoint_hash != hashlib.sha256(_bytes({k:v for k,v in checkpoint.items() if k != "checkpoint_sha256"})).hexdigest():
         raise RecoveryError("recovery checkpoint hash mismatch")
-    keys = ("project_id", "gate_id", "lv_id", "run_id", "recovery_id")
-    if any(record.get(key) != checkpoint.get(key) for key in keys):
-        raise RecoveryError("recovery control binding mismatch")
     if checkpoint.get("next_attempt") != 2 or record.get("recovery_attempt") != 2:
         raise RecoveryError("recovery attempt must be 2")
     run_root = root / "_workspace" / "orchestration-runs" / record["run_id"]
     attempt_root = run_root / "attempt-02"
-    binding = {key: record[key] for key in ("project_id", "gate_id", "lv_id", "run_id")}
-    binding.update({
-        "attempt": 2, "recovery_id": record["recovery_id"],
-        "recovery_record_hash": record["record_hash"],
-        "recovery_checkpoint_sha256": checkpoint_hash,
-        "canonical_plan_sha256": record["plan_sha256"], "hard_stop": True,
-    })
+    binding = canonical_recovery_binding(record, checkpoint)
     package = {"schema_version":"orchestration.recovery-package.v1", **binding}
     package["package_sha256"] = hashlib.sha256(_bytes(package)).hexdigest()
     _write_once(attempt_root / "package.json", package)
@@ -224,9 +239,12 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
         raw = worker(dict(package), dict(preflight))
         if not isinstance(raw, Mapping):
             raise RecoveryError("recovery worker result must be an object")
-        result = {"schema_version":"orchestration.recovery-worker-result.v1", **binding,
+        conflicts = [key for key, value in binding.items() if key in raw and raw[key] != value]
+        if conflicts:
+            raise RecoveryError(f"recovery worker canonical binding conflict: {', '.join(sorted(conflicts))}")
+        result = {"schema_version":"orchestration.recovery-worker-result.v1", **dict(raw), **binding,
                   "package_sha256":package["package_sha256"],
-                  "preflight_sha256":preflight["preflight_sha256"], **dict(raw)}
+                  "preflight_sha256":preflight["preflight_sha256"]}
         if result.get("status") not in {"completed", "failed", "blocked"}:
             raise RecoveryError("recovery worker status is invalid")
         result["worker_result_sha256"] = hashlib.sha256(_bytes(result)).hexdigest()
