@@ -56,3 +56,86 @@ def classify_partial_attempt(manifest: Mapping[str, Any], worker: Mapping[str, A
     else:
         missing.extend(field for field in ("project_id", "canonical_plan_sha256", "hard_stop") if not worker.get(field))
     return {"status": "REJECTED_UNBOUND_LEGACY" if missing else "BOUND", "missing_bindings": sorted(set(missing)), "completion_eligible": not missing}
+
+def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | Path,
+                             worker_path: str | Path, transition_path: str | Path,
+                             approval_event_id: str) -> dict[str, Any]:
+    """Classify one immutable partial attempt and persist its recovery decision.
+
+    This is the controller-facing entry point.  It deliberately returns no
+    completion evidence for a rejected attempt.
+    """
+    root = Path(harness_root).resolve()
+    paths = [Path(value) for value in (manifest_path, worker_path, transition_path)]
+    for path in paths:
+        resolved = path.resolve()
+        if not path.is_file() or path.is_symlink() or root not in resolved.parents:
+            raise RecoveryError("unsafe recovery source artifact")
+    try:
+        manifest, worker, transition = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RecoveryError("malformed recovery source artifact") from exc
+    if not all(isinstance(value, dict) for value in (manifest, worker, transition)):
+        raise RecoveryError("recovery source artifact must be an object")
+    keys = ("project_id", "gate_id", "lv_id", "run_id")
+    expected = {key: manifest.get(key) for key in keys}
+    if not all(isinstance(value, str) and value for value in expected.values()):
+        raise RecoveryError("partial manifest binding is incomplete")
+    if any(transition.get(key) != value for key, value in expected.items()):
+        raise RecoveryError("partial transition binding mismatch")
+    if any(worker.get(key) != value for key, value in expected.items() if key != "project_id"):
+        raise RecoveryError("partial worker binding mismatch")
+    if worker.get("attempt") != 1:
+        raise RecoveryError("partial worker attempt is not the rejected first attempt")
+    classification = classify_partial_attempt(manifest, worker)
+    if classification["status"] != "REJECTED_UNBOUND_LEGACY":
+        raise RecoveryError("partial attempt is not eligible for legacy recovery")
+    relative = [path.resolve().relative_to(root).as_posix() for path in paths]
+    shas = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in zip(relative, paths)}
+    run_id = expected["run_id"]
+    recovery_id = f"{run_id}-recovery-02"
+    recovery_root = root / "_workspace" / "global-gate" / expected["project_id"] / "recovery"
+    if recovery_root.is_symlink():
+        raise RecoveryError("recovery root must not be a symlink")
+    if recovery_root.is_dir():
+        for candidate in recovery_root.glob(f"{run_id}-recovery-*.json"):
+            if candidate.name.endswith(".checkpoint.json"):
+                continue
+            if candidate.name != f"{recovery_id}.json":
+                raise RecoveryError("conflicting active recovery exists")
+    transition_sha = shas[relative[2]]
+    record = write_recovery_record(
+        root, project_id=expected["project_id"], gate_id=expected["gate_id"],
+        lv_id=expected["lv_id"], run_id=run_id, rejected_attempt=1,
+        rejected_artifacts={relative[0]: shas[relative[0]], relative[1]: shas[relative[1]]},
+        reason_code=classification["status"], missing_bindings=classification["missing_bindings"],
+        recovery_attempt=2, approval_event_id=approval_event_id,
+        plan_sha256=str(manifest.get("canonical_plan_sha256", "")),
+        branch=str(transition.get("branch", "")), baseline_head=str(transition.get("baseline_head", "")),
+        current_head=str(transition.get("current_head", "")), active_transition_sha256=transition_sha,
+        source_shas=shas, predecessor=None, supersedes=shas[relative[1]], hard_stop=True,
+    )
+    checkpoint = {
+        "schema_version": "orchestration.production-recovery-checkpoint.v1",
+        "project_id": expected["project_id"], "gate_id": expected["gate_id"],
+        "lv_id": expected["lv_id"], "run_id": run_id, "recovery_id": record["recovery_id"],
+        "rejected_attempt": 1, "next_attempt": 2, "recovery_record_hash": record["record_hash"],
+        "completion_evidence": [], "status": classification["status"], "hard_stop": True,
+    }
+    checkpoint["checkpoint_sha256"] = hashlib.sha256(_bytes(checkpoint)).hexdigest()
+    target = recovery_root / f"{recovery_id}.checkpoint.json"
+    if target.exists():
+        existing = json.loads(target.read_text(encoding="utf-8"))
+        if existing != checkpoint:
+            raise RecoveryError("recovery checkpoint replay conflict")
+    else:
+        fd, tmp = tempfile.mkstemp(prefix=target.name + ".", dir=str(recovery_root))
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(_bytes(checkpoint)); handle.flush(); os.fsync(handle.fileno())
+            try: os.link(tmp, target)
+            except FileExistsError: raise RecoveryError("recovery checkpoint already exists")
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+    return {"classification": classification, "recovery": record, "checkpoint": checkpoint,
+            "next_attempt": 2, "completion_evidence": [], "hard_stop": True}

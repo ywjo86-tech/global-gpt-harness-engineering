@@ -202,3 +202,27 @@ Acceptance:
 - Resume behavior must skip completed threads.
 - Result normalization must preserve manual fallback and stage-gate status contracts.
 - Bridge snapshots must be generated without requiring a separate UI runtime.
+
+## Work Item 7: Production Recovery Lifecycle Batch
+
+Goal:
+- Recover a rejected, unbound partial production attempt inside the same run
+  without treating the rejected attempt as completion evidence.
+
+Ledger:
+
+| ID | Work item | Status |
+| --- | --- | --- |
+| R1 | Connect the recovery contract to CLI, controller, and lifecycle | COMPLETE |
+| R2 | Execute attempt 2 package, preflight, and worker in the existing run | PENDING |
+| R3 | Exclude rejected attempts from completion consumers | PENDING |
+| R4 | Enforce one canonical binding across lifecycle artifacts | PENDING |
+| R5 | Validate and consume recovery lineage during review | PENDING |
+| R6 | Connect checkpoint, LV Exit, Gate Exit, and structured handoff | PENDING |
+| R7 | Cover state transitions with fault, restart, and replay tests | PENDING |
+
+Completion constraints:
+- All seven rows must be COMPLETE before independent release audit begins.
+- Rejected source artifacts are append-only and byte-identical.
+- Recovery uses the existing run ID and a strictly increasing attempt number.
+- The next Gate remains `USER_APPROVAL_REQUIRED` and cannot auto-run.

@@ -652,7 +652,8 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path) -> GateControllerAdapters:
+def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
+                         recovery: Mapping[str, Any] | None = None) -> GateControllerAdapters:
     from .lv_remediation import review_remediation
     from .lv_review import preflight_run
     state: dict[str, Any] = {}
@@ -684,6 +685,8 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return result
 
     def package(context: Mapping[str, Any]) -> dict[str, Any]:
+        if recovery and recovery.get("classification", {}).get("completion_eligible") is False:
+            raise GateControllerError("RECOVERY_ATTEMPT_REQUIRED: rejected legacy attempt is not completion evidence")
         package_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id
         manifest_path = package_root / "package.manifest.json"
         sidecar = package_root / "package.manifest.sha256"

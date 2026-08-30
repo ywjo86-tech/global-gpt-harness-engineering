@@ -271,8 +271,21 @@ def main(argv: list[str] | None = None) -> int:
                            "owned_file_scope": approval["owned_file_scope"], "phase": "PHASE-1"}
                 selected_lv = next(item for item in plan.lvs if item.lv_id == bridge["first_incomplete_lv"])
                 context["completion_conditions"] = list(selected_lv.completion_criteria)
+                recovery = None
+                package_root = Path(args.harness_root) / "_workspace" / "orchestration-runs" / args.run_id
+                legacy_manifest = package_root / "package.manifest.json"
+                legacy_worker = package_root / "worker.result.json"
+                transition = (Path(args.harness_root) / "_workspace" / "global-gate" / plan.project_id / "state" /
+                              f"{args.gate_id}-{args.run_id}-active-transition.json")
+                if legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file():
+                    from .recovery_contract import prepare_partial_recovery
+                    recovery = prepare_partial_recovery(
+                        args.harness_root, manifest_path=legacy_manifest, worker_path=legacy_worker,
+                        transition_path=transition, approval_event_id=approval["event_id"],
+                    )
+                    context["recovery"] = recovery["checkpoint"]
                 outcome = __import__("runtime.orchestrator.gate_controller", fromlist=["run_production_gate_lifecycle"]).run_production_gate_lifecycle(
-                    context, _production_adapters(Path(args.project_root), plan, auth, bridge["first_incomplete_lv"], args.run_id, args.harness_root),
+                    context, _production_adapters(Path(args.project_root), plan, auth, bridge["first_incomplete_lv"], args.run_id, args.harness_root, recovery),
                     approval_events=[approval], project_root=args.project_root,
                     canonical_state=canonical_state,
                     completion_conditions_sha256=approval["completion_conditions_sha256"],
