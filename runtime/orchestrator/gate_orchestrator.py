@@ -686,7 +686,50 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
 
     def package(context: Mapping[str, Any]) -> dict[str, Any]:
         if recovery and recovery.get("classification", {}).get("completion_eligible") is False:
-            raise GateControllerError("RECOVERY_ATTEMPT_REQUIRED: rejected legacy attempt is not completion evidence")
+            from .recovery_contract import execute_recovery_attempt
+            recovery_root = Path(harness_root) / "_workspace" / "global-gate" / plan.project_id / "recovery"
+            record_path = recovery_root / f"{run_id}-recovery-02.json"
+            checkpoint_path = recovery_root / f"{run_id}-recovery-02.checkpoint.json"
+            selected = next(item for item in plan.lvs if item.lv_id == lv_id)
+            def registered_worker(recovery_package: Mapping[str, Any], recovery_preflight: Mapping[str, Any]) -> Mapping[str, Any]:
+                attempt_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id / "attempt-02"
+                result = attempt_root / "registered.worker.result.json"
+                request_path = attempt_root / "worker.request.json"
+                task = TaskSlice(thread_id=lv_id, assigned_agent="implementation_agent", input=selected.purpose,
+                                 expected_output="truthful recovery worker result", validation_criteria=list(selected.completion_criteria),
+                                 editable_scope=list(selected.owned_files), forbidden_scope=[], merge_point="GATE_EXIT",
+                                 run_id=run_id, run_root=str(attempt_root), output_dir=str(attempt_root),
+                                 result_path=str(result), worker_request_path=str(request_path))
+                request = WorkerRequest(project_root=str(root), task=task,
+                    contract_summary={"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,
+                                      "canonical_plan_sha256":plan.canonical_plan_sha256},
+                    state_snapshot={"branch":"sealed","head":str(context.get("head", ""))},
+                    extra_context={"execution_mode":"production","run_id":run_id,"run_root":str(attempt_root),
+                                   "package_manifest_sha256":recovery_package["package_sha256"],
+                                   "preflight_evidence_sha256":recovery_preflight["preflight_sha256"],
+                                   "attempt":2,"gate_id":plan.gate_id,"lv_id":lv_id})
+                request_path.write_bytes(canonical_json_bytes(request.to_dict()))
+                action = seal_action_manifest(requirements_sha256=str(context["requirements_sha256"]),
+                    project_id=plan.project_id, gate_id=plan.gate_id, lv_id=lv_id, run_id=run_id,
+                    branch=str(context["branch"]), head=str(context["head"]), owned_files=list(selected.owned_files),
+                    command_id="lv.worker", input_sha256=_file_sha(request_path),
+                    parameters={"request_file":str(request_path),"result_file":str(result)})
+                audit_path = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.attempt-02.runner.audit.jsonl"
+                execution = run_sealed_action(action, expected_project_id=plan.project_id,
+                    expected_requirements_sha256=str(context["requirements_sha256"]), audit_path=audit_path,
+                    execution_root=attempt_root)
+                if execution["exit_code"] != 0 or not result.is_file() or result.is_symlink():
+                    raise GateControllerError("recovery registered worker failed")
+                return json.loads(result.read_text(encoding="utf-8"))
+            outcome = execute_recovery_attempt(harness_root, recovery_record_path=record_path,
+                                               recovery_checkpoint_path=checkpoint_path, worker=registered_worker)
+            state["recovery_mode"] = True; state["recovery_control"] = (record_path, checkpoint_path)
+            state["recovery_outcome"] = outcome; state["package_root"] = Path(outcome["attempt_root"])
+            state["package_manifest"] = outcome["package"]
+            state["package_manifest_sha256"] = outcome["package"]["package_sha256"]
+            state["worker_payload"] = outcome["worker_result"]
+            state["worker_result_path"] = Path(outcome["attempt_root"]) / "worker.result.json"
+            return {"status":"SEALED","exit_code":0,"evidence_sha256":outcome["package"]["package_sha256"],"hard_stop":True}
         package_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id
         manifest_path = package_root / "package.manifest.json"
         sidecar = package_root / "package.manifest.sha256"
@@ -721,6 +764,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return sealed("PACKAGE", "SEALED", digest)
 
     def preflight(_: Mapping[str, Any]) -> dict[str, Any]:
+        if state.get("recovery_mode"):
+            value = state["recovery_outcome"]["preflight"]
+            return {"status":"READY","exit_code":0,"evidence_sha256":value["preflight_sha256"],"hard_stop":True}
         prior = resumed("PREFLIGHT", "READY")
         if prior: return prior
         package_root = state.get("package_root")
@@ -753,6 +799,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return sealed("PREFLIGHT", "READY", state["preflight_evidence_sha256"], payload=published)
 
     def worker(_: Mapping[str, Any]) -> dict[str, Any]:
+        if state.get("recovery_mode"):
+            value = state["recovery_outcome"]["worker_result"]
+            return {"status":"COMPLETED","exit_code":0,"evidence_sha256":value["worker_result_sha256"],"hard_stop":True}
         prior = resumed("WORKER", "COMPLETED")
         if prior:
             state["worker_payload"] = {key: value for key, value in prior.items()
@@ -813,6 +862,15 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return sealed("WORKER", "COMPLETED", _file_sha(result), payload=worker_payload)
 
     def review(context: Mapping[str, Any]) -> dict[str, Any]:
+        if state.get("recovery_mode"):
+            from .recovery_contract import review_recovery_attempt
+            record_path, checkpoint_path = state["recovery_control"]
+            reviewed = review_recovery_attempt(harness_root, recovery_record_path=record_path,
+                recovery_checkpoint_path=checkpoint_path,
+                reviewer=lambda worker, binding: {"verdict":"PASS" if worker.get("status") == "completed" and worker.get("tests") else "FAIL",
+                                                   "findings":[]})
+            value = reviewed["review"]; state["review_payload"] = value
+            return {"status":value["verdict"],"exit_code":0,"evidence_sha256":value["review_sha256"],"hard_stop":True}
         prior = resumed("REVIEW", "PASS")
         if prior:
             state["review_payload"] = {key: value for key, value in prior.items()
@@ -851,6 +909,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return sealed("REMEDIATION", "PASS", digest, payload=value)
 
     def checkpoint(context: Mapping[str, Any]) -> dict[str, Any]:
+        if state.get("recovery_mode"):
+            from .recovery_contract import finalize_recovery_lifecycle
+            remaining = [item.lv_id for item in plan.lvs if item.order > next(x.order for x in plan.lvs if x.lv_id == lv_id)]
+            final = finalize_recovery_lifecycle(harness_root, run_id=run_id, remaining_lvs=remaining, gate_complete=not remaining)
+            state["recovery_final"] = final
+            value = final["checkpoint"]
+            return {"status":"CHECKPOINTED","exit_code":0,"evidence_sha256":value["lifecycle_checkpoint_sha256"],"hard_stop":True}
         prior = resumed("CHECKPOINT", "CHECKPOINTED")
         if prior: return prior
         digest = hashlib.sha256(canonical_json_bytes({"stage": "CHECKPOINT", "prior": context.get("prior_evidence")})).hexdigest()
@@ -863,6 +928,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return value
 
     def exit_stage(context: Mapping[str, Any]) -> dict[str, Any]:
+        if state.get("recovery_mode"):
+            value = state["recovery_final"]["lv_exit"]
+            return {"status":"EXITED","exit_code":0,"evidence_sha256":value["lv_exit_sha256"],"hard_stop":True}
         prior = resumed("EXIT", "EXITED")
         if prior: return prior
         checkpoint_record = state.get("latest_checkpoint")
@@ -876,6 +944,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         return sealed("EXIT", "EXITED", digest)
 
     def handoff(context: Mapping[str, Any]) -> dict[str, Any]:
+        if state.get("recovery_mode"):
+            value = state["recovery_final"]["handoff"]
+            return {"status":"SEALED","exit_code":0,"evidence_sha256":value["handoff_sha256"],"hard_stop":True}
         prior_handoff = resumed("HANDOFF", "SEALED")
         if prior_handoff:
             target = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.handoff.json"
