@@ -275,7 +275,8 @@ def main(argv: list[str] | None = None) -> int:
                                           phase=str(canonical_state.get("phase")), plan_sha256=plan.canonical_plan_sha256,
                                           approval_record_hash=approval["record_hash"])
             bridge = build_resume_bridge(args.project_root, args.harness_root, args.gate_id,
-                                         plan_sha256=plan.canonical_plan_sha256)
+                                         plan_sha256=plan.canonical_plan_sha256,
+                                         run_id_hint=args.run_id)
             validate_resume_bridge(bridge, project_id=plan.project_id, gate_id=args.gate_id, plan_sha256=plan.canonical_plan_sha256)
             output = {"status": "DRY_RUN", "mutation_performed": False,
                       "approval_event_id": approval["event_id"], "approval_schema": approval["schema_version"],
