@@ -249,3 +249,12 @@ from named sources, publishes remediation successors by generation, uses an
 append-only fsynced journal, and exercises bound GATE_BY_GATE/FULL_PLAN and
 second/new-project fixtures. COMPLETE status depends on the post-correction
 full regression and independent re-audit, not the earlier passing unit tests.
+
+## Work Item 9: I1-I4 Production Integration Closure
+
+| ID | Requirement | Production code | Explicit tests | Status |
+| --- | --- | --- | --- | --- |
+| I1 | Persisted artifact bytes verification | `runtime/orchestrator/persisted_artifact.py` (`publish`, `validate`, `ValidatedArtifact`) | `tests/test_persisted_artifact.py` (5 tests) | COMPLETE |
+| I2 | Official partial adoption production entry | `runtime/orchestrator/official_adoption.py` | `tests/test_official_adoption.py` | PENDING |
+| I3 | Production terminal lifecycle integration | `runtime/orchestrator/production_terminal.py` | `tests/test_production_terminal.py` | PENDING |
+| I4 | Actual-format fixtures and bounded production context | `runtime/orchestrator/production_context.py` | `tests/test_production_integration.py` | PENDING |
