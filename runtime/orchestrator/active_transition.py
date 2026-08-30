@@ -39,6 +39,15 @@ def activate_canonical_lv_transition(harness_root: str | Path, *, project_id: st
     root = Path(harness_root).resolve() / "_workspace" / "global-gate" / project_id / "state"
     root.mkdir(parents=True, exist_ok=True)
     target = root / f"{gate_id}-{run_id}-active-transition.json"
+    if target.is_file() and not target.is_symlink():
+        try:
+            existing_probe = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            existing_probe = {}
+        if existing_probe.get("lv_id") not in {None, lv_id}:
+            # Preserve the historical active transition and seal a distinct
+            # canonical record for the next LV in the same run.
+            target = root / f"{gate_id}-{run_id}-{lv_id}-active-transition.json"
     if target.exists():
         if target.is_symlink() or not target.is_file():
             raise ActiveTransitionError("existing transition artifact is unsafe")
@@ -52,7 +61,8 @@ def activate_canonical_lv_transition(harness_root: str | Path, *, project_id: st
             replay_existing = {k: v for k, v in comparable_existing.items() if k != "current_head"}
             replay_new = {k: v for k, v in comparable_new.items() if k != "current_head"}
             if replay_existing != replay_new:
-                raise ActiveTransitionError("active transition conflict")
+                mismatched = sorted(k for k in replay_existing if replay_existing.get(k) != replay_new.get(k))
+                raise ActiveTransitionError("active transition conflict: " + ",".join(mismatched))
         if existing.get("record_hash") != hashlib.sha256(_canonical({k: v for k, v in existing.items() if k != "record_hash"})).hexdigest():
             raise ActiveTransitionError("existing transition hash mismatch")
         return existing
