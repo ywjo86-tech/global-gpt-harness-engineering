@@ -688,11 +688,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if recovery and recovery.get("classification", {}).get("completion_eligible") is False:
             from .recovery_contract import execute_recovery_attempt
             recovery_root = Path(harness_root) / "_workspace" / "global-gate" / plan.project_id / "recovery"
-            record_path = recovery_root / f"{run_id}-recovery-02.json"
-            checkpoint_path = recovery_root / f"{run_id}-recovery-02.checkpoint.json"
+            attempt = int(recovery["next_attempt"]); recovery_id = recovery["recovery"]["recovery_id"]
+            record_path = recovery_root / f"{recovery_id}.json"
+            checkpoint_path = recovery_root / f"{recovery_id}.checkpoint.json"
             selected = next(item for item in plan.lvs if item.lv_id == lv_id)
             def registered_worker(recovery_package: Mapping[str, Any], recovery_preflight: Mapping[str, Any]) -> Mapping[str, Any]:
-                attempt_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id / "attempt-02"
+                from .recovery_contract import attempt_directory
+                attempt_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id / attempt_directory(attempt)
                 result = attempt_root / "registered.worker.result.json"
                 request_path = attempt_root / "worker.request.json"
                 task = TaskSlice(thread_id=lv_id, assigned_agent="implementation_agent", input=selected.purpose,
@@ -707,14 +709,14 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     extra_context={"execution_mode":"production","run_id":run_id,"run_root":str(attempt_root),
                                    "package_manifest_sha256":recovery_package["package_sha256"],
                                    "preflight_evidence_sha256":recovery_preflight["preflight_sha256"],
-                                   "attempt":2,"gate_id":plan.gate_id,"lv_id":lv_id})
+                                   "attempt":attempt,"gate_id":plan.gate_id,"lv_id":lv_id})
                 request_path.write_bytes(canonical_json_bytes(request.to_dict()))
                 action = seal_action_manifest(requirements_sha256=str(context["requirements_sha256"]),
                     project_id=plan.project_id, gate_id=plan.gate_id, lv_id=lv_id, run_id=run_id,
                     branch=str(context["branch"]), head=str(context["head"]), owned_files=list(selected.owned_files),
                     command_id="lv.worker", input_sha256=_file_sha(request_path),
                     parameters={"request_file":str(request_path),"result_file":str(result)})
-                audit_path = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.attempt-02.runner.audit.jsonl"
+                audit_path = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.attempt-{attempt:02d}.runner.audit.jsonl"
                 execution = run_sealed_action(action, expected_project_id=plan.project_id,
                     expected_requirements_sha256=str(context["requirements_sha256"]), audit_path=audit_path,
                     execution_root=attempt_root)
@@ -912,7 +914,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if state.get("recovery_mode"):
             from .recovery_contract import finalize_recovery_lifecycle
             remaining = [item.lv_id for item in plan.lvs if item.order > next(x.order for x in plan.lvs if x.lv_id == lv_id)]
-            final = finalize_recovery_lifecycle(harness_root, run_id=run_id, remaining_lvs=remaining, gate_complete=not remaining)
+            final = finalize_recovery_lifecycle(harness_root, run_id=run_id, attempt=int(state["recovery_outcome"]["package"]["attempt"]), remaining_lvs=remaining, gate_complete=not remaining)
             state["recovery_final"] = final
             value = final["checkpoint"]
             return {"status":"CHECKPOINTED","exit_code":0,"evidence_sha256":value["lifecycle_checkpoint_sha256"],"hard_stop":True}

@@ -9,6 +9,11 @@ class RecoveryError(ValueError): pass
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 
+def attempt_directory(attempt: object) -> str:
+    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt <= 0:
+        raise RecoveryError("recovery attempt must be a positive integer")
+    return f"attempt-{attempt:02d}"
+
 def _bytes(v: object) -> bytes:
     return json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
@@ -38,7 +43,7 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
                           plan_sha256: str, branch: str, baseline_head: str, current_head: str,
                           active_transition_sha256: str, source_shas: Mapping[str, str], predecessor: str | None,
                           supersedes: str, hard_stop: bool = True) -> dict[str, Any]:
-    if rejected_attempt <= 0 or recovery_attempt <= rejected_attempt or not hard_stop:
+    if rejected_attempt <= 0 or recovery_attempt != rejected_attempt + 1 or not hard_stop:
         raise RecoveryError("invalid recovery attempt or hard-stop binding")
     if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes)) or not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, branch, supersedes)):
         raise RecoveryError("recovery binding is incomplete")
@@ -112,7 +117,7 @@ def canonical_recovery_binding(record: Mapping[str, Any], checkpoint: Mapping[st
                 "recovery_record_hash", "recovery_checkpoint_sha256")
     if any(not isinstance(binding.get(key), str) or not binding[key] for key in required):
         raise RecoveryError("canonical recovery binding is incomplete")
-    if binding["attempt"] != 2 or record.get("hard_stop") is not True or checkpoint.get("hard_stop") is not True:
+    if not isinstance(binding["attempt"], int) or binding["attempt"] <= 0 or checkpoint.get("next_attempt") != binding["attempt"] or record.get("hard_stop") is not True or checkpoint.get("hard_stop") is not True:
         raise RecoveryError("canonical recovery binding attempt or hard-stop mismatch")
     return binding
 
@@ -144,15 +149,16 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
         raise RecoveryError("partial transition binding mismatch")
     if any(worker.get(key) != value for key, value in expected.items() if key != "project_id"):
         raise RecoveryError("partial worker binding mismatch")
-    if worker.get("attempt") != 1:
-        raise RecoveryError("partial worker attempt is not the rejected first attempt")
+    if not isinstance(worker.get("attempt"), int) or worker["attempt"] <= 0:
+        raise RecoveryError("partial worker attempt is invalid")
     classification = classify_partial_attempt(manifest, worker)
     if classification["status"] != "REJECTED_UNBOUND_LEGACY":
         raise RecoveryError("partial attempt is not eligible for legacy recovery")
     relative = [path.resolve().relative_to(root).as_posix() for path in paths]
     shas = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in zip(relative, paths)}
     run_id = expected["run_id"]
-    recovery_id = f"{run_id}-recovery-02"
+    rejected_attempt = int(worker["attempt"]); next_attempt = rejected_attempt + 1
+    recovery_id = f"{run_id}-recovery-{next_attempt:02d}"
     recovery_root = root / "_workspace" / "global-gate" / expected["project_id"] / "recovery"
     if recovery_root.is_symlink():
         raise RecoveryError("recovery root must not be a symlink")
@@ -165,10 +171,10 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
     transition_sha = shas[relative[2]]
     record = write_recovery_record(
         root, project_id=expected["project_id"], gate_id=expected["gate_id"],
-        lv_id=expected["lv_id"], run_id=run_id, rejected_attempt=1,
+        lv_id=expected["lv_id"], run_id=run_id, rejected_attempt=rejected_attempt,
         rejected_artifacts={relative[0]: shas[relative[0]], relative[1]: shas[relative[1]]},
         reason_code=classification["status"], missing_bindings=classification["missing_bindings"],
-        recovery_attempt=2, approval_event_id=approval_event_id,
+        recovery_attempt=next_attempt, approval_event_id=approval_event_id,
         plan_sha256=str(manifest.get("canonical_plan_sha256", "")),
         branch=str(transition.get("branch", "")), baseline_head=str(transition.get("baseline_head", "")),
         current_head=str(transition.get("current_head", "")), active_transition_sha256=transition_sha,
@@ -178,7 +184,7 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
         "schema_version": "orchestration.production-recovery-checkpoint.v1",
         "project_id": expected["project_id"], "gate_id": expected["gate_id"],
         "lv_id": expected["lv_id"], "run_id": run_id, "recovery_id": record["recovery_id"],
-        "rejected_attempt": 1, "next_attempt": 2, "recovery_record_hash": record["record_hash"],
+        "rejected_attempt": rejected_attempt, "next_attempt": next_attempt, "recovery_record_hash": record["record_hash"],
         "completion_evidence": [], "status": classification["status"], "hard_stop": True,
     }
     checkpoint["checkpoint_sha256"] = hashlib.sha256(_bytes(checkpoint)).hexdigest()
@@ -197,12 +203,40 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
         finally:
             if os.path.exists(tmp): os.unlink(tmp)
     return {"classification": classification, "recovery": record, "checkpoint": checkpoint,
-            "next_attempt": 2, "completion_evidence": [], "hard_stop": True}
+            "next_attempt": next_attempt, "completion_evidence": [], "hard_stop": True}
+
+def prepare_completion_recovery(harness_root: str | Path, *, prior_record_path: str | Path,
+                                rejection_path: str | Path) -> dict[str, Any]:
+    """Advance exactly one attempt from an append-only completion rejection."""
+    root=Path(harness_root).resolve(); prior_path=Path(prior_record_path); rejected_path=Path(rejection_path)
+    for path in (prior_path,rejected_path):
+        if not path.is_file() or path.is_symlink() or root not in path.resolve().parents:
+            raise RecoveryError("unsafe completion recovery source")
+    prior=json.loads(prior_path.read_text(encoding="utf-8")); rejected=json.loads(rejected_path.read_text(encoding="utf-8"))
+    rejected_attempt=rejected.get("attempt"); next_attempt=rejected.get("next_attempt")
+    if rejected.get("status") != "REJECTED_COMPLETION_UNPROVEN" or not isinstance(rejected_attempt,int) or next_attempt != rejected_attempt+1 or prior.get("recovery_attempt") != rejected_attempt:
+        raise RecoveryError("completion recovery attempt sequence is invalid")
+    keys=("project_id","gate_id","lv_id","run_id")
+    if any(prior.get(k) != rejected.get(k) for k in keys): raise RecoveryError("completion recovery binding mismatch")
+    relative=rejected_path.resolve().relative_to(root).as_posix(); digest=hashlib.sha256(rejected_path.read_bytes()).hexdigest()
+    record=write_recovery_record(root,project_id=prior["project_id"],gate_id=prior["gate_id"],lv_id=prior["lv_id"],run_id=prior["run_id"],
+        rejected_attempt=rejected_attempt,rejected_artifacts={relative:digest},reason_code="REJECTED_COMPLETION_UNPROVEN",
+        missing_bindings=list(rejected.get("reasons",[])),recovery_attempt=next_attempt,approval_event_id=prior["approval_event_id"],
+        plan_sha256=prior["plan_sha256"],branch=prior["branch"],baseline_head=prior["baseline_head"],current_head=prior["current_head"],
+        active_transition_sha256=prior["active_transition_sha256"],source_shas={relative:digest},predecessor=prior["record_hash"],
+        supersedes=rejected["record_hash"],hard_stop=True)
+    checkpoint={"schema_version":"orchestration.production-recovery-checkpoint.v1","project_id":prior["project_id"],"gate_id":prior["gate_id"],
+        "lv_id":prior["lv_id"],"run_id":prior["run_id"],"recovery_id":record["recovery_id"],"rejected_attempt":rejected_attempt,
+        "next_attempt":next_attempt,"recovery_record_hash":record["record_hash"],"completion_evidence":[],"status":"REJECTED_COMPLETION_UNPROVEN","hard_stop":True}
+    checkpoint["checkpoint_sha256"]=hashlib.sha256(_bytes(checkpoint)).hexdigest()
+    target=rejected_path.parent/f"{record['recovery_id']}.checkpoint.json"; _write_once(target,checkpoint)
+    return {"classification":{"status":"REJECTED_COMPLETION_UNPROVEN","completion_eligible":False,"missing_bindings":list(rejected.get("reasons",[]))},
+            "recovery":record,"checkpoint":checkpoint,"next_attempt":next_attempt,"completion_evidence":[],"hard_stop":True}
 
 def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: str | Path,
                              recovery_checkpoint_path: str | Path,
                              worker: Any) -> dict[str, Any]:
-    """Execute package, preflight, and worker for attempt 2 in the existing run.
+    """Execute package, preflight, and worker for the ledger-selected attempt.
 
     ``worker`` receives the sealed package and preflight objects and must return
     a mapping.  Every artifact is create-once and a replay must be byte-identical.
@@ -220,10 +254,11 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
     checkpoint_hash = checkpoint.get("checkpoint_sha256")
     if checkpoint_hash != hashlib.sha256(_bytes({k:v for k,v in checkpoint.items() if k != "checkpoint_sha256"})).hexdigest():
         raise RecoveryError("recovery checkpoint hash mismatch")
-    if checkpoint.get("next_attempt") != 2 or record.get("recovery_attempt") != 2:
-        raise RecoveryError("recovery attempt must be 2")
+    attempt = record.get("recovery_attempt")
+    if checkpoint.get("next_attempt") != attempt or not isinstance(attempt, int) or attempt <= record.get("rejected_attempt", 0):
+        raise RecoveryError("recovery attempt sequence is invalid")
     run_root = root / "_workspace" / "orchestration-runs" / record["run_id"]
-    attempt_root = run_root / "attempt-02"
+    attempt_root = run_root / attempt_directory(attempt)
     binding = canonical_recovery_binding(record, checkpoint)
     package = {"schema_version":"orchestration.recovery-package.v1", **binding}
     package["package_sha256"] = hashlib.sha256(_bytes(package)).hexdigest()
@@ -261,7 +296,7 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
 
 def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: str | Path,
                             recovery_checkpoint_path: str | Path, reviewer: Any) -> dict[str, Any]:
-    """Validate attempt-02 lineage and append its independent review/consumption."""
+    """Validate one attempt lineage and append its independent review/consumption."""
     root = Path(harness_root).resolve()
     record_path, checkpoint_path = Path(recovery_record_path), Path(recovery_checkpoint_path)
     for path in (record_path, checkpoint_path):
@@ -274,7 +309,7 @@ def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: s
     if checkpoint.get("checkpoint_sha256") != hashlib.sha256(_bytes({k:v for k,v in checkpoint.items() if k != "checkpoint_sha256"})).hexdigest():
         raise RecoveryError("recovery checkpoint hash mismatch")
     binding = canonical_recovery_binding(record, checkpoint)
-    attempt_root = root / "_workspace" / "orchestration-runs" / record["run_id"] / "attempt-02"
+    attempt_root = root / "_workspace" / "orchestration-runs" / record["run_id"] / attempt_directory(record["recovery_attempt"])
     artifacts: dict[str, dict[str, Any]] = {}
     for name in ("package.json", "preflight.json", "worker.result.json"):
         path = attempt_root / name
@@ -316,11 +351,11 @@ def review_recovery_attempt(harness_root: str | Path, *, recovery_record_path: s
         _write_once(attempt_root / "consumption.json", consumption)
     return {"review":review, "consumption":consumption, "hard_stop":True}
 
-def finalize_recovery_lifecycle(harness_root: str | Path, *, run_id: str,
+def finalize_recovery_lifecycle(harness_root: str | Path, *, run_id: str, attempt: int = 2,
                                 remaining_lvs: list[str], gate_complete: bool) -> dict[str, Any]:
     """Seal checkpoint, LV exit, optional Gate exit, and structured handoff."""
     root = Path(harness_root).resolve()
-    attempt_root = root / "_workspace" / "orchestration-runs" / run_id / "attempt-02"
+    attempt_root = root / "_workspace" / "orchestration-runs" / run_id / attempt_directory(attempt)
     consumption_path = attempt_root / "consumption.json"
     if not consumption_path.is_file() or consumption_path.is_symlink():
         raise RecoveryError("reviewed recovery consumption is required")

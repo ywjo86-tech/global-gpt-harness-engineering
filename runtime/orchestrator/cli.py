@@ -260,11 +260,17 @@ def main(argv: list[str] | None = None) -> int:
                 if not args.run_id:
                     raise GateControllerError("--run-id is required for production-gate-run")
                 from .production_completion import write_completion_rejection
+                completion_recovery = None
                 for rejected in bridge.get("rejections", []):
-                    write_completion_rejection(args.harness_root, project_id=plan.project_id,
+                    rejection = write_completion_rejection(args.harness_root, project_id=plan.project_id,
                         gate_id=args.gate_id, lv_id=rejected["lv_id"], run_id=rejected["run_id"],
                         attempt=int(rejected["attempt"]), reasons=list(rejected["reasons"]),
                         source_shas=dict(rejected["source_shas"]), next_attempt=int(bridge["next_attempt"]))
+                    from .recovery_contract import prepare_completion_recovery
+                    recovery_root = Path(args.harness_root)/"_workspace"/"global-gate"/plan.project_id/"recovery"
+                    completion_recovery = prepare_completion_recovery(args.harness_root,
+                        prior_record_path=recovery_root/f"{args.run_id}-recovery-{int(rejected['attempt']):02d}.json",
+                        rejection_path=recovery_root/f"{args.run_id}-attempt-{int(rejected['attempt']):02d}-completion-rejection.json")
                 auth = create_gate_authorization(plan, approval["event_id"], mode=args.mode)
                 import subprocess
                 head = subprocess.run(["git", "-C", args.project_root, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
@@ -277,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
                            "owned_file_scope": approval["owned_file_scope"], "phase": "PHASE-1"}
                 selected_lv = next(item for item in plan.lvs if item.lv_id == bridge["first_incomplete_lv"])
                 context["completion_conditions"] = list(selected_lv.completion_criteria)
-                recovery = None
+                recovery = completion_recovery
                 package_root = Path(args.harness_root) / "_workspace" / "orchestration-runs" / args.run_id
                 legacy_manifest = package_root / "package.manifest.json"
                 legacy_worker = package_root / "worker.result.json"
@@ -292,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
                     sealed_predecessor = existing_transition.get("predecessor_completion_digest")
                     if isinstance(sealed_predecessor, str) and sealed_predecessor:
                         context["predecessor_completion_digest"] = sealed_predecessor
-                if legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file():
+                if recovery is None and legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file():
                     from .recovery_contract import prepare_partial_recovery
                     recovery = prepare_partial_recovery(
                         args.harness_root, manifest_path=legacy_manifest, worker_path=legacy_worker,
