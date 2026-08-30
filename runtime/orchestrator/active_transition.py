@@ -43,8 +43,12 @@ def activate_canonical_lv_transition(harness_root: str | Path, *, project_id: st
         if target.is_symlink() or not target.is_file():
             raise ActiveTransitionError("existing transition artifact is unsafe")
         existing = json.loads(target.read_text(encoding="utf-8"))
-        if existing != payload:
+        comparable_existing = {k: v for k, v in existing.items() if k not in {"created_at", "record_hash"}}
+        comparable_new = {k: v for k, v in payload.items() if k not in {"created_at", "record_hash"}}
+        if comparable_existing != comparable_new:
             raise ActiveTransitionError("active transition conflict")
+        if existing.get("record_hash") != hashlib.sha256(_canonical({k: v for k, v in existing.items() if k != "record_hash"})).hexdigest():
+            raise ActiveTransitionError("existing transition hash mismatch")
         return existing
     fd, temporary = tempfile.mkstemp(prefix=target.name + ".", dir=str(root))
     try:
