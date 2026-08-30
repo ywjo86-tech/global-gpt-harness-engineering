@@ -334,6 +334,10 @@ def main(argv: list[str] | None = None) -> int:
                 selected_lv = next(item for item in plan.lvs if item.lv_id == bridge["first_incomplete_lv"])
                 context["completion_conditions"] = list(selected_lv.completion_criteria)
                 recovery = completion_recovery
+                if recovery is not None:
+                    recovery_lv = recovery.get("recovery", {}).get("lv_id") or recovery.get("checkpoint", {}).get("lv_id")
+                    if recovery_lv != selected_lv.lv_id:
+                        recovery = None
                 package_root = Path(args.harness_root) / "_workspace" / "orchestration-runs" / args.run_id
                 legacy_manifest = package_root / "package.manifest.json"
                 legacy_worker = package_root / "worker.result.json"
