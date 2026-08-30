@@ -238,5 +238,5 @@ pass in the same stage checkpoint.
 | R3 | Canonical digest/binding contract | `runtime/orchestrator/lifecycle_binding.py` | `tests/test_lifecycle_binding.py` (`LifecycleBindingTests`, 4 tests) | COMPLETE |
 | R4 | Unified lifecycle producers/consumers | `runtime/orchestrator/production_lifecycle.py` (`ARTIFACT_KINDS`, `produce`, `consume`, `transition`) | `tests/test_production_lifecycle.py` (`ProductionLifecycleTests`, 4 tests) | COMPLETE |
 | R5 | Partial workspace recovery state machine | `runtime/orchestrator/partial_workspace_recovery.py` (`PartialRecoveryMachine`, 13 states) | `tests/test_partial_workspace_recovery.py` (`PartialWorkspaceRecoveryTests`, 4 tests) | COMPLETE |
-| R6 | Persistent Gate terminal lifecycle | `runtime/orchestrator/gate_terminal.py` | `tests/test_gate_terminal.py` | PENDING |
+| R6 | Persistent Gate terminal lifecycle | `runtime/orchestrator/gate_terminal.py` (`GateTerminalController`) | `tests/test_gate_terminal.py` (`GateTerminalTests`, 3 tests) | COMPLETE |
 | R7 | Readiness fixtures and incremental resolution | modules above | `tests/test_production_readiness.py` | PENDING |
