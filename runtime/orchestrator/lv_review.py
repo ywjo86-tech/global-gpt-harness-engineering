@@ -200,7 +200,7 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
     # Registered worker execution materializes request/result beside the
     # immutable six-file package.  They are separately schema-bound below and
     # are not part of the package manifest itself.
-    allowed = expected | {"worker.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md", "preflight"}
+    allowed = expected | {"worker.request.json", "worker.result.json", "executor.process.json", "worker_handoff.md", "handoff_report.md", "preflight"}
     if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and entry.name == "preflight") or (entry.is_file() and not entry.is_symlink()) for entry in entries):
         raise LVReviewError(f"sealed package must contain exactly six regular files: {sorted(names)}")
     manifest_path = package_root / "package.manifest.json"
