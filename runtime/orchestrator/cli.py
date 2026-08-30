@@ -355,7 +355,14 @@ def main(argv: list[str] | None = None) -> int:
                     sealed_head = existing_transition.get("current_head")
                     if isinstance(sealed_head, str) and sealed_head:
                         context["current_head"] = sealed_head
-                if recovery is None and legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file():
+                transition_lv = None
+                if transition.is_file() and not transition.is_symlink():
+                    try:
+                        transition_lv = json.loads(transition.read_text(encoding="utf-8")).get("lv_id")
+                    except (OSError, UnicodeError, json.JSONDecodeError):
+                        transition_lv = None
+                if (recovery is None and legacy_manifest.is_file() and legacy_worker.is_file() and transition.is_file()
+                        and transition_lv == selected_lv.lv_id):
                     from .recovery_contract import prepare_partial_recovery
                     recovery = prepare_partial_recovery(
                         args.harness_root, manifest_path=legacy_manifest, worker_path=legacy_worker,
