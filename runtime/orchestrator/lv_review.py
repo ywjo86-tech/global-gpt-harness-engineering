@@ -757,7 +757,10 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
         return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
                 "missing_fields":["owned_files"],"producer_contract_error":True}
     raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
-    target = _preflight_root(run_id).parent / f"{run_id}-v2c-{source_sha[:12]}"
+    # Namespace derived publications by the immutable package/LV binding;
+    # source preflight bytes may legitimately be shared across sequential
+    # LV attempts in one run.
+    target = _preflight_root(run_id).parent / f"{run_id}-v2c-{manifest['lv_id']}-{expected['package_manifest_sha256'][:12]}-{source_sha[:12]}"
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         existing = _canonical_json(target / "preflight.evidence.json")
