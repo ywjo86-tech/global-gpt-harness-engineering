@@ -787,7 +787,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             value = state["recovery_outcome"]["preflight"]
             return {"status":"READY","exit_code":0,"evidence_sha256":value["preflight_sha256"],"hard_stop":True}
         prior = resumed("PREFLIGHT", "READY")
-        if prior: return prior
+        if prior:
+            package_root = state.get("package_root")
+            if isinstance(package_root, Path):
+                published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json")
+                if isinstance(published.get("status"), dict) and published["status"].get("status") == "READY":
+                    state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
+            return prior
         package_root = state.get("package_root")
         manifest = state.get("package_manifest")
         if not isinstance(package_root, Path) or not isinstance(manifest, dict):
