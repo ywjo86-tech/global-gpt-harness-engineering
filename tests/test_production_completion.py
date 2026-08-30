@@ -26,3 +26,18 @@ class ProductCompletionTests(unittest.TestCase):
             evidence={**ids,"attempt":3,"hard_stop":True,"changed_files":["x.py"],"commands":commands,"review_verdict":"PASS","staged_changes":False,"unstaged_changes":False,"checkpoint_commit":head,"current_head":head,"current_tree":tree,"baseline_head":base,"baseline_tree":base_tree,"artifact_sha_chain":{"a":"c"*64}}
             result=verify_product_completion(root,evidence,{**ids,"owned_files":["x.py"]})
             self.assertEqual(result["status"],"PASS")
+
+    def test_prior_checkpoint_accepts_valid_ancestor(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); subprocess.run(["git","init","-q",root],check=True)
+            env=["git","-C",root,"-c","user.name=T","-c","user.email=t@x"]
+            subprocess.run(env+["commit","--allow-empty","-qm","base"],check=True)
+            base=subprocess.check_output(["git","-C",root,"rev-parse","HEAD"],text=True).strip(); base_tree=subprocess.check_output(["git","-C",root,"rev-parse","HEAD^{tree}"],text=True).strip()
+            (root/"x.py").write_text("x=1\n"); subprocess.run([*env,"add","x.py"],check=True); subprocess.run([*env,"commit","-qm","x"],check=True)
+            checkpoint=subprocess.check_output(["git","-C",root,"rev-parse","HEAD"],text=True).strip(); checkpoint_tree=subprocess.check_output(["git","-C",root,"rev-parse","HEAD^{tree}"],text=True).strip()
+            (root/"notes.txt").write_text("later\n"); subprocess.run([*env,"add","notes.txt"],check=True); subprocess.run([*env,"commit","-qm","later"],check=True)
+            ids={"project_id":"p","gate_id":"g","lv_id":"l","run_id":"r","approval_event_id":"a","plan_sha256":"b"*64}
+            commands={k:{"command":[k],"exit_code":0} for k in ("worker","focused_test","full_regression","compile_import","git_diff_check")}
+            evidence={**ids,"attempt":3,"hard_stop":True,"changed_files":["x.py"],"commands":commands,"review_verdict":"PASS","staged_changes":False,"unstaged_changes":False,"checkpoint_commit":checkpoint,"current_head":checkpoint,"current_tree":checkpoint_tree,"baseline_head":base,"baseline_tree":base_tree,"artifact_sha_chain":{"a":"c"*64}}
+            result=verify_product_completion(root,evidence,{**ids,"owned_files":["x.py"]},terminal_head=False)
+            self.assertEqual(result["status"],"PASS")

@@ -51,7 +51,7 @@ def _safe_paths(values: object) -> list[str]:
     return list(values)
 
 def verify_product_completion(project_root: str | Path, evidence: Mapping[str, Any],
-                              contract: Mapping[str, Any]) -> dict[str, Any]:
+                              contract: Mapping[str, Any], *, terminal_head: bool = True) -> dict[str, Any]:
     """Verify Git and command evidence independently; return structured reasons."""
     root = Path(project_root).resolve(); reasons: list[str] = []
     if not root.is_dir() or not isinstance(evidence, Mapping) or not isinstance(contract, Mapping):
@@ -82,8 +82,14 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
         try:
             head = _git(root, "rev-parse", "HEAD"); tree = _git(root, "rev-parse", f"{checkpoint}^{{tree}}")
             files = set(_git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines())
-            if head != checkpoint: reasons.append("CHECKPOINT_NOT_HEAD")
-            if evidence.get("current_head") != checkpoint or evidence.get("current_tree") != tree: reasons.append("CHECKPOINT_BINDING_MISMATCH")
+            if terminal_head and head != checkpoint: reasons.append("CHECKPOINT_NOT_HEAD")
+            if evidence.get("current_head") != checkpoint: reasons.append("CHECKPOINT_BINDING_MISMATCH")
+            if not terminal_head:
+                ancestor = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, head], check=False)
+                if ancestor.returncode != 0: reasons.append("CHECKPOINT_NOT_ANCESTOR")
+                else:
+                    later = set(_git(root, "diff", "--name-only", f"{checkpoint}..{head}").splitlines())
+                    if later.intersection(set(owned)): reasons.append("PRIOR_LV_SCOPE_INVALIDATED")
             if not set(changed).issubset(files): reasons.append("CHECKPOINT_FILES_MISSING")
             if _git(root, "status", "--porcelain=v1"): reasons.append("WORKTREE_NOT_CLEAN")
         except ProductCompletionError:

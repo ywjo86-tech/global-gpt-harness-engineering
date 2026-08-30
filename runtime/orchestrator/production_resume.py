@@ -100,7 +100,7 @@ def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
                 contract = {"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":item.lv_id,"run_id":run_id,
                             "approval_event_id":package.get("approval_event_id"),"plan_sha256":plan.canonical_plan_sha256,
                             "owned_files":list(item.owned_files),"allow_no_op":False}
-                verdict = verify_product_completion(project_root,evidence,contract)
+                verdict = verify_product_completion(project_root,evidence,contract,terminal_head=False)
                 reasons.extend(verdict["reasons"])
             except (ResumeBridgeError, ProductCompletionError): reasons.append("PRODUCT_COMPLETION_INVALID")
         else: reasons.append("PRODUCT_COMPLETION_EVIDENCE_MISSING")
