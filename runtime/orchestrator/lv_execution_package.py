@@ -380,6 +380,7 @@ def create_lv_execution_package(
     run_id: str,
     *,
     output_root: str | Path | None = None,
+    output_dir: str | Path | None = None,
     canonical_state_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = _canonical_root(project_root)
@@ -451,7 +452,7 @@ def create_lv_execution_package(
     harness_root = Path(os.environ.get("HARNESS_RUNTIME_ROOT", str(Path(__file__).resolve().parents[2]))).resolve()
     base = Path(output_root).resolve() if output_root is not None else harness_root / "_workspace" / "orchestration-runs"
     base.mkdir(parents=True, exist_ok=True)
-    final_dir = base / run_id
+    final_dir = Path(output_dir).resolve() if output_dir is not None else base / run_id
     if final_dir.exists() or final_dir.is_symlink():
         raise LVExecutionPackageError("run_id already exists")
     temp_dir = Path(tempfile.mkdtemp(prefix=f".{run_id}.tmp-", dir=str(base)))

@@ -737,6 +737,17 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         package_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id
         manifest_path = package_root / "package.manifest.json"
         sidecar = package_root / "package.manifest.sha256"
+        if manifest_path.is_file() and not manifest_path.is_symlink():
+            try:
+                existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                existing_manifest = {}
+            if existing_manifest.get("lv_id") not in {None, lv_id}:
+                # Keep the prior LV package immutable; each subsequent LV gets
+                # its own canonical package namespace in the same run.
+                package_root = package_root / lv_id
+                manifest_path = package_root / "package.manifest.json"
+                sidecar = package_root / "package.manifest.sha256"
         if manifest_path.is_file() and sidecar.is_file() and not manifest_path.is_symlink() and not sidecar.is_symlink():
             digest = _file_sha(manifest_path)
             if sidecar.read_text(encoding="ascii").strip() != digest:
@@ -744,6 +755,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         else:
             value = create_lv_execution_package(
                 root, plan.gate_id, lv_id, run_id,
+                output_dir=package_root,
                 canonical_state_override=context.get("canonical_state_override"),
             )
             digest = value["manifest_sha256"]
