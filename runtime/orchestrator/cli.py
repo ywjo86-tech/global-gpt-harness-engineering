@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import argparse
+
+def official_partial_adoption_entry(**kwargs):
+    """Callable CLI boundary used by the registered production command adapter."""
+    from .gate_controller import adopt_terminated_partial
+    return adopt_terminated_partial(**kwargs)
 import json
 import os
 import re

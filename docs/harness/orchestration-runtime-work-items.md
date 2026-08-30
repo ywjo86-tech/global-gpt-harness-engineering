@@ -255,6 +255,6 @@ full regression and independent re-audit, not the earlier passing unit tests.
 | ID | Requirement | Production code | Explicit tests | Status |
 | --- | --- | --- | --- | --- |
 | I1 | Persisted artifact bytes verification | `runtime/orchestrator/persisted_artifact.py` (`publish`, `validate`, `ValidatedArtifact`) | `tests/test_persisted_artifact.py` (5 tests) | COMPLETE |
-| I2 | Official partial adoption production entry | `runtime/orchestrator/official_adoption.py` | `tests/test_official_adoption.py` | PENDING |
+| I2 | Official partial adoption production entry | `runtime/orchestrator/official_adoption.py` plus CLI/controller/supervisor entrypoints | `tests/test_official_adoption.py` (5 tests) | COMPLETE |
 | I3 | Production terminal lifecycle integration | `runtime/orchestrator/production_terminal.py` | `tests/test_production_terminal.py` | PENDING |
 | I4 | Actual-format fixtures and bounded production context | `runtime/orchestrator/production_context.py` | `tests/test_production_integration.py` | PENDING |

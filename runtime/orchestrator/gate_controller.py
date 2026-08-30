@@ -14,6 +14,11 @@ from .lifecycle_binding import DIGEST_FIELDS, build_binding_from_sources
 class GateControllerError(ValueError):
     """Fail-closed error raised at an orchestration lifecycle boundary."""
 
+def adopt_terminated_partial(**kwargs: Any) -> dict[str, Any]:
+    """Controller-owned official adoption route; no direct artifact fabrication."""
+    from .official_adoption import official_adopt
+    return official_adopt(**kwargs)
+
 
 StageCallable = Callable[[Mapping[str, Any]], Mapping[str, Any]]
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
