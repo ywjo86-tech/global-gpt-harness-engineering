@@ -741,7 +741,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             state["worker_payload"] = outcome["worker_result"]
             state["worker_result_path"] = Path(outcome["attempt_root"]) / "worker.result.json"
             return {"status":"SEALED","exit_code":0,"evidence_sha256":outcome["package"]["package_sha256"],"hard_stop":True}
-        package_root = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id
+        from .canonical_paths import canonical_lv_path
+        package_root = canonical_lv_path(harness_root, project_id=plan.project_id, run_id=run_id,
+                                         gate_id=plan.gate_id, lv_id=lv_id)
         manifest_path = package_root / "package.manifest.json"
         sidecar = package_root / "package.manifest.sha256"
         if manifest_path.is_file() and not manifest_path.is_symlink():
@@ -750,11 +752,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             except (OSError, UnicodeError, json.JSONDecodeError):
                 existing_manifest = {}
             if existing_manifest.get("lv_id") not in {None, lv_id}:
-                # Keep the prior LV package immutable; each subsequent LV gets
-                # its own canonical package namespace in the same run.
-                package_root = package_root / lv_id
-                manifest_path = package_root / "package.manifest.json"
-                sidecar = package_root / "package.manifest.sha256"
+                raise GateControllerError("STALE_NAMESPACE_SELECTION")
         if manifest_path.is_file() and sidecar.is_file() and not manifest_path.is_symlink() and not sidecar.is_symlink():
             digest = _file_sha(manifest_path)
             if sidecar.read_text(encoding="ascii").strip() != digest:
@@ -762,7 +760,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         else:
             value = create_lv_execution_package(
                 root, plan.gate_id, lv_id, run_id,
-                output_dir=package_root,
+                output_root=package_root.parent, output_dir=package_root,
                 canonical_state_override=context.get("canonical_state_override"),
             )
             digest = value["manifest_sha256"]
