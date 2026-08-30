@@ -679,6 +679,66 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
         **sealed,
     }
 
+def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, source_root: Path,
+                                       result_path: Path) -> dict[str, Any]:
+    """Publish a derived LV-review attestation for an immutable Gate preflight."""
+    source_file = source_root / "preflight.evidence.json"
+    sidecar = source_root / "preflight.evidence.sha256"
+    if not source_file.is_file() or source_file.is_symlink() or not sidecar.is_file() or sidecar.is_symlink():
+        return {"status":"REJECTED","error_code":"EVIDENCE_NOT_FOUND"}
+    source_bytes = source_file.read_bytes(); source_sha = _sha256(source_bytes)
+    if sidecar.read_text(encoding="ascii").strip() != source_sha:
+        return {"status":"REJECTED","error_code":"EVIDENCE_SOURCE_SHA_MISMATCH"}
+    source = _canonical_json(source_file)
+    try:
+        manifest = _canonical_json(package_root / "package.manifest.json")
+        context = _preflight(run_id, package_root=package_root, result_path=result_path,
+                             allow_worker_changes=True, check_result_absent=False, review_attempt=1)
+    except (LVReviewError, LVExecutionPackageError):
+        return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING"}
+    expected = {"run_id":run_id, "project_id":manifest.get("project_id"), "gate_id":manifest.get("gate_id"),
+                "lv_id":manifest.get("lv_id"), "package_manifest_sha256":_sha256((package_root/"package.manifest.json").read_bytes())}
+    if any(source.get(k) != v for k,v in expected.items() if k in source):
+        return {"status":"REJECTED","error_code":"EVIDENCE_IDENTITY_MISMATCH"}
+    evidence = {
+        "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION, "run_id": run_id,
+        "package_manifest_sha256": expected["package_manifest_sha256"],
+        "preflight_evidence_sha256":"", "preflight_evidence_match":True,
+        "project_id":manifest["project_id"], "gate_id":manifest["gate_id"], "lv_id":manifest["lv_id"],
+        "captured_at":datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source_head":manifest["source_head"], "source_tree":manifest["source_tree"],
+        "source_index_fingerprint":manifest["source_index_fingerprint"], "source_worktree_fingerprint":manifest["source_worktree_fingerprint"],
+        "source_worktree_state":"clean", "branch_name":context["git_before"]["branch"],
+        "local_git_config_sha256":context["git_before"]["local_config_fingerprint"], "remote_config_sha256":context["git_before"]["remote_fingerprint"],
+        "submodule_status_sha256":context["git_before"]["submodule_fingerprint"], "canonical_plan_sha256":manifest["canonical_plan_sha256"],
+        "gate_ledger_commit":manifest["gate_ledger_commit"], "gate_ledger_blob_oid":manifest["gate_ledger_blob_oid"],
+        "gate_ledger_sha256":manifest["gate_ledger_sha256"], "owned_files":manifest["owned_files"],
+        "result_path_expected":str(result_path), "result_path_absent":not result_path.exists(), "review_attempt_absent":True,
+        "python_interpreter_reference":".venv/bin/python", **context["interpreter_fingerprint"],
+        "runtime_authorization":"not_granted_by_preflight", "business_approval_reused":False,
+        "publication":{"policy_version":"gate-to-lv-preflight.v1","source_schema":source.get("schema_version"),
+                       "source_relative_id":str(source_file.relative_to(package_root.parent.parent.parent.parent)),
+                       "source_sha256":source_sha,"source_identity":{"run_id":run_id,"gate_id":manifest["gate_id"],"lv_id":manifest["lv_id"]},
+                       "lineage":"adoption-checkpoint-6eb80ad","derived":True},
+    }
+    evidence["preflight_evidence_sha256"] = ""
+    raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
+    target = _preflight_root(run_id); target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        existing = _canonical_json(target / "preflight.evidence.json")
+        stable = lambda value: {k:v for k,v in value.items() if k not in {"captured_at","preflight_evidence_sha256"}}
+        if stable(existing) != stable(evidence): return {"status":"REJECTED","error_code":"EVIDENCE_PUBLICATION_CONFLICT"}
+        return {"status":"READY","preflight_evidence_sha256":_sha256((target/"preflight.evidence.json").read_bytes()),"idempotent":True}
+    temp = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=str(target.parent)))
+    try:
+        (temp/"preflight.evidence.json").write_bytes(canonical_json_bytes(evidence))
+        (temp/"preflight.evidence.sha256").write_text(evidence_sha, encoding="ascii")
+        (temp/"preflight.status").write_bytes(canonical_json_bytes({"schema_version":PREFLIGHT_STATUS_SCHEMA_VERSION,"status":"READY","hard_stop":True,"package_manifest_sha256":expected["package_manifest_sha256"],"preflight_evidence_sha256":evidence_sha,"runtime_authorization":"not_granted_by_preflight"}))
+        os.replace(temp, target)
+    finally:
+        if temp.exists(): import shutil; shutil.rmtree(temp)
+    return {"status":"READY","preflight_evidence_sha256":evidence_sha,"idempotent":False}
+
 
 def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any], str]:
     root = Path(context.get("preflight_root") or _preflight_root(context["run_id"]))

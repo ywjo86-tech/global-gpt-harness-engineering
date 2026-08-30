@@ -955,6 +955,14 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             raise GateControllerError("REVIEW requires a completed registered worker result")
         if not isinstance(worker_payload.get("tests"), list) or not worker_payload["tests"]:
             raise GateControllerError("REVIEW blocked: worker test evidence is absent")
+        from .lv_review import publish_gate_preflight_attestation
+        publication = publish_gate_preflight_attestation(
+            run_id, package_root=Path(state["package_root"]),
+            source_root=Path(state["package_root"]) / "preflight",
+            result_path=Path(state["worker_result_path"]),
+        )
+        if publication.get("status") != "READY":
+            raise GateControllerError(f"REVIEW preflight publication blocked: {publication}")
         review_result = review_run(
             run_id,
             attempt=int(context.get("review_attempt", 1)),
