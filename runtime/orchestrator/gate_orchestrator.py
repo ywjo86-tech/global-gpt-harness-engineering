@@ -709,7 +709,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     extra_context={"execution_mode":"production","run_id":run_id,"run_root":str(attempt_root),
                                    "package_manifest_sha256":recovery_package["package_sha256"],
                                    "preflight_evidence_sha256":recovery_preflight["preflight_sha256"],
-                                   "attempt":attempt,"gate_id":plan.gate_id,"lv_id":lv_id})
+                                   "attempt":attempt,"gate_id":plan.gate_id,"lv_id":lv_id,
+                                   "approval_event_id":recovery_package["approval_event_id"],
+                                   "source_snapshot":{"source_head":str(context.get("head", ""))}})
                 request_path.write_bytes(canonical_json_bytes(request.to_dict()))
                 action = seal_action_manifest(requirements_sha256=str(context["requirements_sha256"]),
                     project_id=plan.project_id, gate_id=plan.gate_id, lv_id=lv_id, run_id=run_id,
@@ -838,7 +840,8 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                            "preflight_evidence_sha256": state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"),
                            "attempt": 1,
                            "source_snapshot": {key: manifest.get(key) for key in ("source_head", "source_tree", "source_index_fingerprint", "source_worktree_fingerprint")},
-                           "gate_id": plan.gate_id, "lv_id": lv_id},
+                           "gate_id": plan.gate_id, "lv_id": lv_id,
+                           "test_fixture_worker": _.get("test_fixture_worker") is True},
         )
         request_path = package_root / "worker.request.json"
         request_path.write_bytes(canonical_json_bytes(request.to_dict()))
@@ -872,6 +875,18 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 reviewer=lambda worker, binding: {"verdict":"PASS" if worker.get("status") == "completed" and worker.get("tests") else "FAIL",
                                                    "findings":[]})
             value = reviewed["review"]; state["review_payload"] = value
+            if value["verdict"] == "PASS":
+                from .production_completion import verify_product_completion
+                evidence = dict(state["recovery_outcome"]["worker_result"])
+                evidence["review_verdict"] = "PASS"
+                contract = {"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,"run_id":run_id,
+                            "approval_event_id":evidence.get("approval_event_id"),"plan_sha256":plan.canonical_plan_sha256,
+                            "owned_files":list(next(item for item in plan.lvs if item.lv_id == lv_id).owned_files)}
+                verdict = verify_product_completion(root, evidence, contract)
+                if verdict["status"] != "PASS":
+                    raise GateControllerError(f"product completion verification failed: {verdict['reasons']}")
+                evidence["product_verdict_sha256"] = hashlib.sha256(canonical_json_bytes(verdict)).hexdigest()
+                _atomic_json(Path(state["recovery_outcome"]["attempt_root"]) / "product-completion.json", evidence)
             return {"status":value["verdict"],"exit_code":0,"evidence_sha256":value["review_sha256"],"hard_stop":True}
         prior = resumed("REVIEW", "PASS")
         if prior:
@@ -994,7 +1009,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
                  adapters: GateControllerAdapters | None = None,
-                 requirement_evidence: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
+                 requirement_evidence: Mapping[str, Mapping[str, Any]] | None = None,
+                 test_fixture_worker: bool = False) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
@@ -1195,6 +1211,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         context = {"project_id": plan.project_id, "gate_id": gate_id, "lv_id": lv_id, "run_id": lv_run_id,
                    "plan_sha256": plan.canonical_plan_sha256, "requirements_sha256": requirements_sha256,
                    "branch": branch, "head": head, "resume": resume,
+                   "test_fixture_worker": bool(test_fixture_worker),
                    "completed_plan_items": list(state["completed_lvs"]),
                    "remaining_plan_items": [item.lv_id for item in plan.lvs[lv_index + 1:]]}
         lifecycle = run_gate_lifecycle(context, adapters or _production_adapters(root, plan, auth, lv_id, lv_run_id, harness_root))

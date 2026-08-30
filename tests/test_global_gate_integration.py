@@ -130,6 +130,7 @@ class GlobalGateIntegrationTests(unittest.TestCase):
                         "--gate-id", "GATE-ALPHA", "--run-id", "alpha-gate-run", "--harness-root", str(runtime_root),
                         "--requirements-sha256", "a" * 64, "--approval-evidence", str(approval_path), "--branch", "main",
                         "--head", head, "--requirement-evidence", str(contract_path), "--mapping-root", str(mapping_root)]
+            gate_run.append("--test-fixture-worker")
             gate_result = subprocess.run(gate_run, env=dict(env, HARNESS_RUNTIME_ROOT=str(runtime_root)), capture_output=True, text=True, check=False)
             self.assertEqual(gate_result.returncode, 0, gate_result.stdout + gate_result.stderr)
             outcome = json.loads(gate_result.stdout)

@@ -65,6 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     if result_path.exists() and (result_path.is_symlink() or not result_path.is_file()):
         raise WorkerRunnerError("worker result path is unsafe")
     request = _load_request(request_path)
+    if request.extra_context.get("execution_mode") == "production" and request.extra_context.get("test_fixture_worker") is not True:
+        from runtime.orchestrator.production_worker_executor import execute_production_worker
+        result_payload = execute_production_worker(request)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        if result_path.exists():
+            raise WorkerRunnerError("production worker result already exists")
+        result_path.write_bytes(canonical_json_bytes(result_payload))
+        return 0
     agent_class = get_agent_class(request.task.assigned_agent)
     agent = agent_class()
     result = agent.run(request)

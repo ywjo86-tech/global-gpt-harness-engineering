@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--head", required=True)
             sub.add_argument("--requirement-evidence", required=True)
             sub.add_argument("--mapping-root")
+            sub.add_argument("--test-fixture-worker", action="store_true", help=argparse.SUPPRESS)
         elif name in {"production-gate-dry-run", "production-gate-run"}:
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--gate-id", required=True)
@@ -333,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode=args.mode, resume=args.resume, requirements_sha256=args.requirements_sha256, approval_evidence=args.approval_evidence,
                 branch=args.branch, head=args.head,
                 requirement_evidence=artifact["requirements"],
+                test_fixture_worker=args.test_fixture_worker,
             )
             _print(outcome)
             return 0 if outcome.get("status") in {"SYSTEM_TRANSITION", "GATE_EXIT"} else 10
