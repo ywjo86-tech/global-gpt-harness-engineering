@@ -148,6 +148,6 @@ class PersistentGateSupervisor:
                     if state["stage"] == "PACKAGE": state["current_lv"] = self.lv_order[len(completed)]
                 else: state["stage"] = next_stage
                 self._persist(state, {"event":"TRANSITION", "status":status, "stage":state["stage"], "lv_id":state["current_lv"]}); mutation = True
-            state.update({"status":"HARD_STOP", "terminal":True}); self._persist(state, {"event":"HARD_STOP", "reason":"STEP_BUDGET_EXHAUSTED"}); return SupervisorResult("HARD_STOP", state, invocations, True)
+            state.update({"status":"GATE_EXECUTION_RESUME_REQUIRED", "terminal":False}); self._persist(state, {"event":"PAUSE", "reason":"STEP_BUDGET_EXHAUSTED"}); return SupervisorResult("GATE_EXECUTION_RESUME_REQUIRED", state, invocations, True)
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN); handle.close()

@@ -36,3 +36,18 @@ class GateSupervisorTests(unittest.TestCase):
             finally:
                 import fcntl
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN); lock.close()
+
+    def test_restart_resumes_persisted_stage_without_user_input(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="FULL_PLAN",lv_order=["l1"])
+            first=sup.run(lambda state:{"status":"PASS","next_stage":"CHECKPOINT"},max_steps=1)
+            self.assertEqual(first.status,"GATE_EXECUTION_RESUME_REQUIRED")
+            resumed=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="FULL_PLAN",lv_order=["l1"])
+            result=resumed.run(lambda state:{"status":"PASS","next_stage":"GATE_EXIT" if state["stage"] == "GATE_EXIT" else "EXIT"})
+            self.assertEqual(result.status,"COMPLETED"); self.assertEqual(result.state["completed_lvs"],["l1"])
+
+    def test_failure_retries_then_hard_stops_without_loop(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="FULL_PLAN",lv_order=["l1"],retry_budget=1)
+            result=sup.run(lambda _: {"status":"FAIL","error_signature":"same"})
+            self.assertEqual(result.status,"HARD_STOP"); self.assertEqual(result.state["retries"],{"same":1})
