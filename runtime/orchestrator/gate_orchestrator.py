@@ -771,7 +771,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                              str(context["requirements_sha256"]), plan.canonical_plan_sha256,
                              str(context["branch"]), str(context["head"]), digest, owned_hashes)
         store_key = lv_id
-        if str(context.get("head")) != str(manifest.get("source_head")):
+        if str(context.get("head")) != str(package_payload.get("source_head")):
             store_key = f"{lv_id}-adoption-{str(context.get('head'))[:12]}"
         store = ResumeStore(Path(harness_root) / "_workspace" / "global-gate-resume" / store_key, binding)
         state["store"] = store
