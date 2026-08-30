@@ -1052,6 +1052,8 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
         raise LVReviewError("immutable input directory is missing or unsafe")
     entries = list(root.iterdir())
     ignored = {"preflight", "worker.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md"}
+    ignored_dirs = {path.name for path in entries if path.is_dir() and path.name.startswith("review-attempt-")}
+    ignored |= ignored_dirs
     if any(path.is_symlink() or (not path.is_file() and path.name not in ignored) for path in entries):
         raise LVReviewError("immutable input directory contains an unsafe entry")
     return {path.name: _file_snapshot(path) for path in entries if path.name not in ignored}
