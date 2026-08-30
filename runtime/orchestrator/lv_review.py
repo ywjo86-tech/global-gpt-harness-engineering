@@ -123,6 +123,20 @@ class LVReviewError(ValueError):
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
+def _preflight_projection_digest(payload: dict[str, Any]) -> str:
+    """Digest the finalized payload projection without a self-referential field.
+
+    ``preflight_evidence_sha256`` is retained as an empty compatibility field
+    in v1; the detached sidecar is the source of the projection digest.  A
+    non-empty value would make the payload/sidecar contract ambiguous and is
+    rejected rather than silently re-hashed.
+    """
+    if payload.get("preflight_evidence_sha256") not in ("", None):
+        raise LVReviewError("preflight self-binding digest is not allowed")
+    projection = dict(payload)
+    projection["preflight_evidence_sha256"] = ""
+    return _sha256(canonical_json_bytes(projection))
+
 
 def _harness_root() -> Path:
     return Path(os.environ.get("HARNESS_RUNTIME_ROOT", str(Path(__file__).resolve().parents[2]))).resolve()
@@ -756,7 +770,10 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     if not isinstance(evidence["owned_files"], list) or not evidence["owned_files"]:
         return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
                 "missing_fields":["owned_files"],"producer_contract_error":True}
-    raw = canonical_json_bytes(evidence); evidence_sha = _sha256(raw)
+    # The v1 compatibility field is deliberately blank.  Hashing a payload
+    # after inserting its own digest creates a circular, non-reproducible
+    # contract; the detached sidecar carries this projection digest instead.
+    evidence_sha = _preflight_projection_digest(evidence)
     # Namespace derived publications by the immutable package/LV binding;
     # source preflight bytes may legitimately be shared across sequential
     # LV attempts in one run.

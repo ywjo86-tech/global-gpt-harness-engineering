@@ -26,6 +26,7 @@ from runtime.orchestrator.lv_review import (
     _verify_legacy_lineage,
     _preflight,
     _seal_preflight_evidence,
+    _preflight_projection_digest,
     _package_root,
     _owned_content_snapshot,
     preflight_run,
@@ -38,6 +39,15 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_preflight_digest_projection_rejects_self_binding_and_is_deterministic(self) -> None:
+        payload = {"schema_version": "orchestration.lv_preflight.evidence.v1",
+                   "preflight_evidence_sha256": "", "project_id": "p"}
+        first = _preflight_projection_digest(payload)
+        second = _preflight_projection_digest(dict(payload))
+        self.assertEqual(first, second)
+        with self.assertRaisesRegex(LVReviewError, "self-binding"):
+            _preflight_projection_digest({**payload, "preflight_evidence_sha256": "a" * 64})
+
     def test_interpreter_accepts_standard_venv_symlink_chain_with_verified_probe(self) -> None:
         with TemporaryDirectory() as directory:
             base = Path(directory)

@@ -1,9 +1,45 @@
 import json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, classify_partial_attempt, prepare_partial_recovery, prepare_completion_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, write_provenance_rejection, classify_partial_attempt, prepare_partial_recovery, prepare_completion_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
 from runtime.orchestrator.production_completion import write_completion_rejection
 
 class RecoveryContractTests(unittest.TestCase):
+    def test_provenance_rejection_is_append_only_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            kwargs = dict(
+                project_id="p", run_id="r", gate_id="g", lv_id="l",
+                schema_version="orchestration.lv_preflight.evidence.v1",
+                package_sha256="a" * 64, source_preflight_sha256="b" * 64,
+                invalid_payload_sha256="c" * 64,
+                invalid_sidecar_expected_sha256="d" * 64,
+                invalid_sidecar_file_sha256="e" * 64,
+                predecessor="f" * 64, provenance_audit_ref="audit-1",
+                reason_code="REJECTED_DERIVED_ATTESTATION_INVALID_FROM_CREATION",
+                validator_version="v1", attempt=1, recovery_id="r-recovery-01",
+            )
+            first = write_provenance_rejection(directory, **kwargs)
+            second = write_provenance_rejection(directory, **kwargs)
+            self.assertEqual(first, second)
+            self.assertFalse(first["completion_eligible"])
+            path = Path(directory) / "_workspace" / "global-gate" / "p" / "recovery" / "r-provenance-rejection-l.json"
+            before = path.read_bytes()
+            with self.assertRaisesRegex(RecoveryError, "replay conflict"):
+                write_provenance_rejection(directory, **{**kwargs, "invalid_payload_sha256": "0" * 64})
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_provenance_rejection_rejects_invalid_digest_or_identity(self):
+        kwargs = dict(project_id="p", run_id="r", gate_id="g", lv_id="l",
+                      schema_version="v1", package_sha256="a" * 64,
+                      source_preflight_sha256="b" * 64, invalid_payload_sha256="c" * 64,
+                      invalid_sidecar_expected_sha256="d" * 64,
+                      invalid_sidecar_file_sha256="e" * 64, predecessor=None,
+                      provenance_audit_ref="audit-1", reason_code="REJECTED_BAD",
+                      validator_version="v1")
+        with self.assertRaises(RecoveryError):
+            write_provenance_rejection(tempfile.mkdtemp(), **{**kwargs, "package_sha256": "bad"})
+        with self.assertRaises(RecoveryError):
+            write_provenance_rejection(tempfile.mkdtemp(), **{**kwargs, "project_id": "../escape"})
+
     def test_finalization_connects_checkpoint_exit_next_lv_and_handoff(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); args,_=self._prepared_attempt_two(root)

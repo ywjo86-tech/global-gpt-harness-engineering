@@ -37,6 +37,81 @@ def _write_once(path: Path, payload: Mapping[str, Any]) -> dict[str, Any]:
         if os.path.exists(tmp): os.unlink(tmp)
     return dict(payload)
 
+def write_provenance_rejection(harness_root: str | Path, *, project_id: str,
+                               run_id: str, gate_id: str, lv_id: str,
+                               schema_version: str, package_sha256: str,
+                               source_preflight_sha256: str,
+                               invalid_payload_sha256: str,
+                               invalid_sidecar_expected_sha256: str,
+                               invalid_sidecar_file_sha256: str,
+                               predecessor: str | None,
+                               provenance_audit_ref: str,
+                               reason_code: str,
+                               validator_version: str,
+                               attempt: int | None = None,
+                               recovery_id: str | None = None) -> dict[str, Any]:
+    """Persist an immutable, provenance-bound rejection exactly once.
+
+    This record deliberately lives beside recovery records and never mutates
+    the rejected payload or sidecar.  Replays return the original bytes;
+    conflicting identity or digest data is rejected.
+    """
+    values = (project_id, run_id, gate_id, lv_id, schema_version, package_sha256,
+              source_preflight_sha256, invalid_payload_sha256,
+              invalid_sidecar_expected_sha256, invalid_sidecar_file_sha256,
+              provenance_audit_ref, reason_code, validator_version)
+    if not all(isinstance(value, str) and value for value in values):
+        raise RecoveryError("provenance rejection binding is incomplete")
+    if not all(_SHA.fullmatch(value) for value in (package_sha256,
+                                                   source_preflight_sha256,
+                                                   invalid_payload_sha256,
+                                                   invalid_sidecar_expected_sha256,
+                                                   invalid_sidecar_file_sha256)):
+        raise RecoveryError("provenance rejection digest is invalid")
+    if attempt is not None and (not isinstance(attempt, int) or isinstance(attempt, bool) or attempt <= 0):
+        raise RecoveryError("provenance rejection attempt is invalid")
+    if recovery_id is not None and (not isinstance(recovery_id, str) or not _ID.fullmatch(recovery_id)):
+        raise RecoveryError("provenance rejection recovery ID is invalid")
+    if not all(_ID.fullmatch(value) for value in (project_id, run_id, gate_id, lv_id, reason_code, validator_version)):
+        raise RecoveryError("provenance rejection identity is invalid")
+    payload = {
+        "schema_version": "orchestration.provenance-rejection.v1",
+        "project_id": project_id, "run_id": run_id, "gate_id": gate_id, "lv_id": lv_id,
+        "attempt": attempt, "recovery_id": recovery_id,
+        "rejected_schema_version": schema_version,
+        "package_sha256": package_sha256,
+        "source_preflight_sha256": source_preflight_sha256,
+        "invalid_payload_sha256": invalid_payload_sha256,
+        "invalid_sidecar_expected_sha256": invalid_sidecar_expected_sha256,
+        "invalid_sidecar_file_sha256": invalid_sidecar_file_sha256,
+        "predecessor": predecessor,
+        "provenance_audit_ref": provenance_audit_ref,
+        "reason_code": reason_code,
+        "validator_version": validator_version,
+        "completion_eligible": False,
+        "hard_stop": True,
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    payload["record_hash"] = hashlib.sha256(_bytes(payload)).hexdigest()
+    root = Path(harness_root).resolve() / "_workspace" / "global-gate" / project_id / "recovery"
+    if root.is_symlink():
+        raise RecoveryError("provenance rejection root must not be a symlink")
+    root.mkdir(parents=True, exist_ok=True)
+    suffix = f"-{lv_id}" if lv_id else ""
+    target = root / f"{run_id}-provenance-rejection{suffix}.json"
+    if target.exists():
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RecoveryError("provenance rejection replay is malformed") from exc
+        if existing.get("record_hash") != hashlib.sha256(_bytes({k: v for k, v in existing.items() if k != "record_hash"})).hexdigest():
+            raise RecoveryError("provenance rejection hash mismatch")
+        if {k: v for k, v in existing.items() if k not in {"created_at", "record_hash"}} != {k: v for k, v in payload.items() if k not in {"created_at", "record_hash"}}:
+            raise RecoveryError("provenance rejection replay conflict")
+        return existing
+    _write_once(target, payload)
+    return payload
+
 def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id: str, lv_id: str, run_id: str,
                           rejected_attempt: int, rejected_artifacts: Mapping[str, str], reason_code: str,
                           missing_bindings: list[str], recovery_attempt: int, approval_event_id: str,
