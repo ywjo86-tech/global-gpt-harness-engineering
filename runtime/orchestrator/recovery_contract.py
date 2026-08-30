@@ -12,6 +12,26 @@ _SHA = re.compile(r"[0-9a-f]{64}\Z")
 def _bytes(v: object) -> bytes:
     return json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
+def _write_once(path: Path, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Atomically create a canonical JSON artifact, allowing identical replay."""
+    data = _bytes(payload)
+    if path.exists():
+        if path.is_symlink() or path.read_bytes() != data:
+            raise RecoveryError(f"recovery artifact replay conflict: {path.name}")
+        return dict(payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.is_symlink():
+        raise RecoveryError("recovery artifact parent must not be a symlink")
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data); handle.flush(); os.fsync(handle.fileno())
+        try: os.link(tmp, path)
+        except FileExistsError: raise RecoveryError(f"recovery artifact already exists: {path.name}")
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+    return dict(payload)
+
 def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id: str, lv_id: str, run_id: str,
                           rejected_attempt: int, rejected_artifacts: Mapping[str, str], reason_code: str,
                           missing_bindings: list[str], recovery_attempt: int, approval_event_id: str,
@@ -139,3 +159,69 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
             if os.path.exists(tmp): os.unlink(tmp)
     return {"classification": classification, "recovery": record, "checkpoint": checkpoint,
             "next_attempt": 2, "completion_evidence": [], "hard_stop": True}
+
+def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: str | Path,
+                             recovery_checkpoint_path: str | Path,
+                             worker: Any) -> dict[str, Any]:
+    """Execute package, preflight, and worker for attempt 2 in the existing run.
+
+    ``worker`` receives the sealed package and preflight objects and must return
+    a mapping.  Every artifact is create-once and a replay must be byte-identical.
+    """
+    root = Path(harness_root).resolve()
+    record_path, checkpoint_path = Path(recovery_record_path), Path(recovery_checkpoint_path)
+    for path in (record_path, checkpoint_path):
+        resolved = path.resolve()
+        if not path.is_file() or path.is_symlink() or root not in resolved.parents:
+            raise RecoveryError("unsafe recovery control artifact")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    if record.get("record_hash") != hashlib.sha256(_bytes({k:v for k,v in record.items() if k != "record_hash"})).hexdigest():
+        raise RecoveryError("recovery record hash mismatch")
+    checkpoint_hash = checkpoint.get("checkpoint_sha256")
+    if checkpoint_hash != hashlib.sha256(_bytes({k:v for k,v in checkpoint.items() if k != "checkpoint_sha256"})).hexdigest():
+        raise RecoveryError("recovery checkpoint hash mismatch")
+    keys = ("project_id", "gate_id", "lv_id", "run_id", "recovery_id")
+    if any(record.get(key) != checkpoint.get(key) for key in keys):
+        raise RecoveryError("recovery control binding mismatch")
+    if checkpoint.get("next_attempt") != 2 or record.get("recovery_attempt") != 2:
+        raise RecoveryError("recovery attempt must be 2")
+    run_root = root / "_workspace" / "orchestration-runs" / record["run_id"]
+    attempt_root = run_root / "attempt-02"
+    binding = {key: record[key] for key in ("project_id", "gate_id", "lv_id", "run_id")}
+    binding.update({
+        "attempt": 2, "recovery_id": record["recovery_id"],
+        "recovery_record_hash": record["record_hash"],
+        "recovery_checkpoint_sha256": checkpoint_hash,
+        "canonical_plan_sha256": record["plan_sha256"], "hard_stop": True,
+    })
+    package = {"schema_version":"orchestration.recovery-package.v1", **binding}
+    package["package_sha256"] = hashlib.sha256(_bytes(package)).hexdigest()
+    _write_once(attempt_root / "package.json", package)
+    preflight = {"schema_version":"orchestration.recovery-preflight.v1", **binding,
+                 "package_sha256":package["package_sha256"], "status":"READY"}
+    preflight["preflight_sha256"] = hashlib.sha256(_bytes(preflight)).hexdigest()
+    _write_once(attempt_root / "preflight.json", preflight)
+    existing_result = attempt_root / "worker.result.json"
+    if existing_result.exists():
+        result = json.loads(existing_result.read_text(encoding="utf-8"))
+    else:
+        raw = worker(dict(package), dict(preflight))
+        if not isinstance(raw, Mapping):
+            raise RecoveryError("recovery worker result must be an object")
+        result = {"schema_version":"orchestration.recovery-worker-result.v1", **binding,
+                  "package_sha256":package["package_sha256"],
+                  "preflight_sha256":preflight["preflight_sha256"], **dict(raw)}
+        if result.get("status") not in {"completed", "failed", "blocked"}:
+            raise RecoveryError("recovery worker status is invalid")
+        result["worker_result_sha256"] = hashlib.sha256(_bytes(result)).hexdigest()
+        _write_once(existing_result, result)
+    expected = {**binding, "package_sha256":package["package_sha256"],
+                "preflight_sha256":preflight["preflight_sha256"]}
+    if any(result.get(key) != value for key, value in expected.items()):
+        raise RecoveryError("recovery worker binding mismatch")
+    digest = result.get("worker_result_sha256")
+    if digest != hashlib.sha256(_bytes({k:v for k,v in result.items() if k != "worker_result_sha256"})).hexdigest():
+        raise RecoveryError("recovery worker result hash mismatch")
+    return {"package":package, "preflight":preflight, "worker_result":result,
+            "attempt_root":str(attempt_root), "hard_stop":True}
