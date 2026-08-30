@@ -1,4 +1,4 @@
-import tempfile, unittest
+import subprocess, tempfile, unittest
 from pathlib import Path
 from runtime.orchestrator.gate_supervisor import GateSupervisorError, PersistentGateSupervisor
 
@@ -76,3 +76,19 @@ class GateSupervisorTests(unittest.TestCase):
         self.assertEqual(result["selected"],["codex"])
         with self.assertRaisesRegex(GateSupervisorError,"ambiguous"):
             PersistentGateSupervisor.select_worker_asset(manifests+[manifests[0]],capabilities={"implement"},permissions={"write"},owned_files=["app/x.py"])
+
+    def test_unattended_two_child_subprocesses_restart_and_terminal_replay(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="FULL_PLAN",lv_order=["l1","l2"])
+            seen=[]; failed=[False]
+            def child(state):
+                seen.append((state["current_lv"],state["stage"]))
+                if state["stage"] == "REVIEW" and not failed[0]:
+                    failed[0]=True; return {"status":"FAIL","error_signature":"review","progress_digest":"first"}
+                subprocess.run(["python3","-c","print('child')"],check=True,capture_output=True)
+                return {"status":"PASS"}
+            result=sup.run_lifecycle({name:child for name in ("PACKAGE","PREFLIGHT","WORKER","REVIEW","REMEDIATION","CHECKPOINT","EXIT")})
+            self.assertEqual(result.status,"COMPLETED"); self.assertEqual(result.state["completed_lvs"],["l1","l2"])
+            self.assertGreaterEqual(len({lv for lv,_ in seen}),2)
+            replay=sup.run_lifecycle({name:lambda _:self.fail("terminal replay invoked child") for name in ("PACKAGE","PREFLIGHT","WORKER","REVIEW","REMEDIATION","CHECKPOINT","EXIT")})
+            self.assertFalse(replay.mutation_performed); self.assertEqual(replay.invocations,0)
