@@ -13,6 +13,7 @@ from .schemas import CandidateAdoptionState, CandidateEvaluationState, Candidate
 from .skill_candidate_evaluator import CandidateEvaluationResult, verify_evaluation_evidence
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_IMMUTABLE_REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 INSTALL_METHOD_UNVERIFIED = "INSTALL_METHOD_UNVERIFIED"
 
 
@@ -22,8 +23,11 @@ class SupplyChainReview:
     source: str
     repository: str
     maintainer: str
+    provider: str
     immutable_revision: str
+    candidate_path: str
     skill_md_digest: str
+    resolver_evidence_digest: str
     license: str
     package_install_required: bool
     shell_execution: bool
@@ -54,8 +58,10 @@ class SupplyChainReview:
         return (
             self.review_state == "COMPLETE" and self.install_scope in {"project", "global"}
             and all((self.candidate_id, self.source, self.repository, self.maintainer,
-                     self.immutable_revision, self.license))
+                     self.provider, self.candidate_path, self.license))
+            and bool(_IMMUTABLE_REVISION.fullmatch(self.immutable_revision))
             and bool(_SHA256.fullmatch(self.skill_md_digest))
+            and bool(_SHA256.fullmatch(self.resolver_evidence_digest))
             and self.provenance_state == "VERIFIED"
             and bool(_SHA256.fullmatch(self.evaluator_evidence_digest))
             and self.review_digest == self.expected_digest()
@@ -207,7 +213,12 @@ def decide_adoption(
         state = CandidateAdoptionState.PENDING_SUPPLY_CHAIN_REVIEW; blocked = "supply-chain review is incomplete"
     elif (not review.valid() or review.candidate_id != candidate_id
           or review.evaluator_evidence_digest != evidence_digest
-          or review.skill_md_digest != evaluation.evidence.get("skill_md_digest")):
+          or review.skill_md_digest != evaluation.evidence.get("skill_md_digest")
+          or review.provider != evaluation.evidence.get("provider")
+          or review.repository != evaluation.evidence.get("repository")
+          or review.immutable_revision != evaluation.evidence.get("immutable_revision")
+          or review.candidate_path != evaluation.evidence.get("candidate_path")
+          or review.resolver_evidence_digest != evaluation.evidence.get("resolver_evidence_digest")):
         blocked = "supply-chain review provenance or binding mismatch"
     elif review.secret_required or review.destructive_action or review.deployment or review.paid_service:
         state = CandidateAdoptionState.ESCALATION_REQUIRED; escalated = "supply-chain review requires escalation"

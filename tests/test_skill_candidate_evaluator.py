@@ -4,6 +4,7 @@ import hashlib
 import json
 import unittest
 
+from runtime.orchestrator.candidate_content_resolver import RESOLUTION_CONTRACT
 from runtime.orchestrator.project_isolation import AssetManifest
 from runtime.orchestrator.schemas import CandidateEvaluationState, CapabilityRequirement, DiscoveryStatus
 from runtime.orchestrator.skill_candidate_evaluator import (
@@ -39,16 +40,26 @@ def request(**overrides: object) -> CandidateEvaluationRequest:
         "requirement": requirement(), "project_id": "project", "gate_id": "GATE-1", "lv_id": "LV-1",
         "candidate_id": "owner/repo@python-testing", "source": "fixture", "repository": "owner/repo",
         "maintainer": "owner", "candidate_metadata": metadata(), "skill_md_text": SKILL_TEXT,
-        "provenance": "fixture:owner/repo", "content_digest": hashlib.sha256(SKILL_TEXT.encode()).hexdigest(),
+        "content_digest": hashlib.sha256(SKILL_TEXT.encode()).hexdigest(),
         "permissions": ("read",), "owned_files": ("tests/",), "timestamp": "2026-09-01T00:00:00Z",
     }
     value.update(overrides)
-    candidate_metadata = value["candidate_metadata"]
-    if isinstance(candidate_metadata, dict) and "provenance_digest" not in candidate_metadata:
-        provenance_payload = {key: value[key] for key in ("candidate_id", "source", "repository", "maintainer", "content_digest", "provenance")}
-        candidate_metadata["provenance_digest"] = hashlib.sha256(
-            json.dumps(provenance_payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+    resolution = {
+        "schema_version": RESOLUTION_CONTRACT, "candidate_id": value["candidate_id"],
+        "source": value["source"], "repository": value["repository"], "owner": "owner",
+        "provider": "fixture", "source_url": "file:///fixture/owner/repo",
+        "immutable_revision": "b" * 40, "candidate_path": "skills/python-testing",
+        "skill_md_relative_path": "skills/python-testing/SKILL.md", "skill_md_digest": value["content_digest"],
+        "source_evidence_reference": "fixture:index", "source_evidence_digest": "c" * 64,
+        "project_id": value["project_id"], "gate_id": value["gate_id"], "lv_id": value["lv_id"],
+        "timestamp": value["timestamp"], "provenance_state": "VERIFIED", "install_authorized": False,
+        "candidate_use_authorized": False, "gate_passed": False,
+    }
+    resolution["evidence_digest"] = hashlib.sha256(
+        json.dumps(resolution, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    value.setdefault("resolution_evidence", resolution)
+    value.setdefault("provenance", f"sha256:{resolution['evidence_digest']}")
     return CandidateEvaluationRequest(**value)
 
 
@@ -87,7 +98,7 @@ class CandidateEvaluatorTests(unittest.TestCase):
         original = request()
         result = evaluate_candidate(request(candidate_metadata=dict(original.candidate_metadata), provenance="unrelated"))
         self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
-        self.assertIn("provenance binding mismatch", result.blocked_reasons)
+        self.assertIn("resolver provenance binding mismatch", result.blocked_reasons)
 
     # TEST 28-31
     def test_escalation_risks(self) -> None:

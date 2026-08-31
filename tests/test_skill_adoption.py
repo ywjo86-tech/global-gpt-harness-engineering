@@ -5,6 +5,7 @@ import json
 import unittest
 from dataclasses import replace
 
+from runtime.orchestrator.candidate_content_resolver import RESOLUTION_CONTRACT
 from runtime.orchestrator.project_isolation import AssetManifest
 from runtime.orchestrator.schemas import CandidateAdoptionState, CandidateEvaluationState, CandidateRisk, CapabilityRequirement
 from runtime.orchestrator.skill_adoption import (
@@ -28,16 +29,21 @@ class SkillAdoptionTests(unittest.TestCase):
             "credential_required": False, "project_applicable": True, "global_install_required": False,
         }
         digest = hashlib.sha256(SKILL.encode()).hexdigest()
-        provenance = {"candidate_id":"owner/repo@safe","source":"fixture","repository":"owner/repo",
-                      "maintainer":"owner","content_digest":digest,"provenance":"fixture:owner/repo"}
-        metadata["provenance_digest"] = hashlib.sha256(json.dumps(provenance, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        resolution = {"schema_version":RESOLUTION_CONTRACT,"candidate_id":"owner/repo@safe","source":"fixture",
+            "repository":"owner/repo","owner":"owner","provider":"fixture","source_url":"file:///fixture/owner/repo",
+            "immutable_revision":"b"*40,"candidate_path":"skills/safe","skill_md_relative_path":"skills/safe/SKILL.md",
+            "skill_md_digest":digest,"source_evidence_reference":"fixture:index","source_evidence_digest":"c"*64,
+            "project_id":"project","gate_id":"GATE-1","lv_id":"LV-1","timestamp":"2026-09-01T00:00:00Z",
+            "provenance_state":"VERIFIED","install_authorized":False,"candidate_use_authorized":False,"gate_passed":False}
+        resolution["evidence_digest"] = hashlib.sha256(json.dumps(resolution, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         request = CandidateEvaluationRequest(self.req, "project", "GATE-1", "LV-1", "owner/repo@safe",
-            "fixture", "owner/repo", "owner", metadata, SKILL, "fixture:owner/repo", digest,
-            ("read",), ("tests/",), "2026-09-01T00:00:00Z")
+            "fixture", "owner/repo", "owner", metadata, SKILL, "sha256:"+resolution["evidence_digest"], digest,
+            ("read",), ("tests/",), "2026-09-01T00:00:00Z", resolution)
         self.evaluation = evaluate_candidate(request)
         self.review = seal_supply_chain_review(candidate_id="owner/repo@safe", source="fixture",
-            repository="owner/repo", maintainer="owner", immutable_revision="b"*40,
-            skill_md_digest=digest, license="MIT", package_install_required=False,
+            repository="owner/repo", maintainer="owner", provider="fixture", immutable_revision="b"*40,
+            candidate_path="skills/safe", skill_md_digest=digest, resolver_evidence_digest=resolution["evidence_digest"],
+            license="MIT", package_install_required=False,
             shell_execution=False, network_required=False, secret_required=False,
             file_write_scope=("tests/",), install_scope="project", external_service=False,
             paid_service=False, deployment=False, destructive_action=False,
@@ -86,6 +92,17 @@ class SkillAdoptionTests(unittest.TestCase):
         bad = replace(self.review, repository="", review_digest="")
         bad = replace(bad, review_digest=bad.expected_digest())
         self.assertEqual(self.decide(review=bad).adoption_state, CandidateAdoptionState.BLOCKED)
+
+    def test_resolved_provenance_drift_blocks_supply_chain_review(self) -> None:
+        for field, value in (
+            ("provider", "other"), ("repository", "other/repo"),
+            ("immutable_revision", "c" * 40), ("candidate_path", "skills/other"),
+            ("resolver_evidence_digest", "0" * 64),
+        ):
+            review = replace(self.review, **{field: value}, review_digest="")
+            review = replace(review, review_digest=review.expected_digest())
+            with self.subTest(field=field):
+                self.assertEqual(self.decide(review=review).adoption_state, CandidateAdoptionState.BLOCKED)
 
     def test_permission_and_owned_file_mismatch_block(self) -> None:
         for field in ("requested_permissions", "owned_file_scope"):

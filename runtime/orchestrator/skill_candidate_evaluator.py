@@ -5,6 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
+from .candidate_content_resolver import verify_resolution_evidence
 from .lv_execution_package import canonical_json_bytes
 from .project_isolation import AssetManifest, ProjectIsolation, route_assets
 from .schemas import CandidateEvaluationState, CandidateRisk, CapabilityRequirement, DiscoveryStatus
@@ -47,6 +48,7 @@ class CandidateEvaluationRequest:
     permissions: tuple[str, ...]
     owned_files: tuple[str, ...]
     timestamp: str
+    resolution_evidence: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,14 +168,27 @@ def evaluate_candidate(
             blocked.append("SKILL.md validation failed")
         if not _SHA256.fullmatch(request.content_digest) or actual_digest != request.content_digest:
             blocked.append("SKILL.md digest mismatch")
-        provenance_payload = {
-            "candidate_id": request.candidate_id, "source": request.source,
-            "repository": request.repository, "maintainer": request.maintainer,
-            "content_digest": request.content_digest, "provenance": request.provenance,
-        }
-        expected_provenance_digest = hashlib.sha256(canonical_json_bytes(provenance_payload)).hexdigest()
-        if request.candidate_metadata.get("provenance_digest") != expected_provenance_digest:
-            blocked.append("provenance binding mismatch")
+        resolution = request.resolution_evidence
+        if not isinstance(resolution, Mapping) or not verify_resolution_evidence(resolution):
+            blocked.append("resolver provenance evidence is missing or has drifted")
+        else:
+            resolver_digest = str(resolution.get("evidence_digest", ""))
+            expected_reference = f"sha256:{resolver_digest}"
+            bindings = (
+                (resolution.get("candidate_id"), request.candidate_id),
+                (resolution.get("source"), request.source),
+                (resolution.get("repository"), request.repository),
+                (resolution.get("skill_md_digest"), request.content_digest),
+                (resolution.get("project_id"), request.project_id),
+                (resolution.get("gate_id"), request.gate_id),
+                (resolution.get("lv_id"), request.lv_id),
+                (resolution.get("provenance_state"), "VERIFIED"),
+                (request.provenance, expected_reference),
+            )
+            if any(actual != expected for actual, expected in bindings):
+                blocked.append("resolver provenance binding mismatch")
+            if not resolution.get("immutable_revision") or not resolution.get("candidate_path"):
+                blocked.append("resolver immutable revision or candidate path is missing")
         if not blocked:
             completed.append(CandidateEvaluationState.CONTENT_VALIDATED)
             state = CandidateEvaluationState.CONTENT_VALIDATED
@@ -249,6 +264,10 @@ def evaluate_candidate(
             "capability_requirement": request.requirement.capability_id,
             "candidate_id": request.candidate_id, "source": request.source,
             "repository": request.repository, "skill_md_digest": request.content_digest,
+            "provider": resolution.get("provider", "") if isinstance(resolution, Mapping) else "",
+            "immutable_revision": resolution.get("immutable_revision", "") if isinstance(resolution, Mapping) else "",
+            "candidate_path": resolution.get("candidate_path", "") if isinstance(resolution, Mapping) else "",
+            "resolver_evidence_digest": resolution.get("evidence_digest", "") if isinstance(resolution, Mapping) else "",
             "evaluation_state": state.value, "completed_states": [item.value for item in completed],
             "risk_flags": list(risk_flags), "blocked_reasons": blocked,
             "escalation_reasons": escalated, "duplicate_status": duplicate,
@@ -274,7 +293,8 @@ def evaluate_candidate(
             "project_id": _redact(getattr(request, "project_id", "")), "gate_id": _redact(getattr(request, "gate_id", "")),
             "lv_id": _redact(getattr(request, "lv_id", "")), "capability_requirement": "",
             "candidate_id": _redact(getattr(request, "candidate_id", "")), "source": "", "repository": "",
-            "skill_md_digest": "", "evaluation_state": state.value, "completed_states": [], "risk_flags": [],
+            "skill_md_digest": "", "provider": "", "immutable_revision": "", "candidate_path": "", "resolver_evidence_digest": "",
+            "evaluation_state": state.value, "completed_states": [], "risk_flags": [],
             "blocked_reasons": blocked, "escalation_reasons": [], "duplicate_status": "UNKNOWN",
             "evaluator_contract": EVALUATOR_CONTRACT, "evaluator_version": EVALUATOR_VERSION,
             "timestamp": _redact(getattr(request, "timestamp", "")), "execution_allowed": False,
