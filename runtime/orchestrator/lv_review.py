@@ -119,6 +119,10 @@ REVIEW_STATUS_FIELDS = {
 class LVReviewError(ValueError):
     pass
 
+def build_bounded_review_context(request: dict[str, Any]) -> dict[str, Any]:
+    from .production_context import build_production_context
+    return build_production_context(request)
+
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -1685,6 +1689,8 @@ def review_run(
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
     context["review_attempt"] = review_attempt
+    if context.get("production_context_request"):
+        context["bounded_production_context"] = build_bounded_review_context(context["production_context_request"])
     worker_hash = ""
     worker_bytes = b""
     independent_checks: list[dict[str, Any]] = []

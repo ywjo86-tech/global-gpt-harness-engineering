@@ -120,6 +120,11 @@ def _run_managed_child(argv: list[str], *, root: Path, prompt: bytes, timeout: i
 
 
 def _prompt(request: WorkerRequest, baseline: str, owned: list[str]) -> str:
+    bounded = ""
+    if request.extra_context.get("production_context_request"):
+        from .production_context import build_production_context
+        context = build_production_context(request.extra_context["production_context_request"])
+        bounded = "\nValidated minimal artifact context:\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
     criteria = "\n".join(f"- {item}" for item in request.task.validation_criteria)
     scope = "\n".join(f"- {item}" for item in owned)
     return f"""Execute this sealed production LV implementation in the current repository.
@@ -131,7 +136,7 @@ Owned files (do not modify anything else):
 {scope}
 Completion criteria:
 {criteria}
-Use the existing project interpreter/environment. Do not use network, packages, secrets, system changes, push, reset, rebase, clean, stash, or the next Gate. Implement and test the task, run focused and full tests plus compile/import and git diff checks, then create one local checkpoint commit containing only owned files. Finish with a clean index and worktree. Do not manufacture orchestration artifacts; the controller collects evidence independently.
+Use the existing project interpreter/environment. Do not use network, packages, secrets, system changes, push, reset, rebase, clean, stash, or the next Gate. Implement and test the task, run focused and full tests plus compile/import and git diff checks, then create one local checkpoint commit containing only owned files. Finish with a clean index and worktree. Do not manufacture orchestration artifacts; the controller collects evidence independently.{bounded}
 """
 
 
