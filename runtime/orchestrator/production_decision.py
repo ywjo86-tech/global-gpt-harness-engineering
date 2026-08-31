@@ -108,13 +108,21 @@ def build_production_decision(*, project_root: str | Path, harness_root: str | P
                             capture_output=True, text=True, check=True).stdout.splitlines()
     changed = [line[3:] for line in status if len(line) > 3]
     outside = [path for path in changed if path not in scope]
-    if outside or not changed or set(changed) != set(scope):
+    if outside or (changed and set(changed) != set(scope)):
         raise ProductionDecisionError("partial workspace does not match owned scope")
     process_path = artifact / "executor.process.json"
     process = _json(process_path) if process_path.exists() else None
     process_state, live = _process_state(process)
-    selected = "WAIT_EXISTING_WORKER" if live else "OFFICIAL_PARTIAL_ADOPTION"
-    recovery = "LIVE_BOUND_WORKER" if live else "TERMINATED_ADOPTABLE_PARTIAL"
+    if live:
+        selected="WAIT_EXISTING_WORKER"; recovery="LIVE_BOUND_WORKER"
+    elif changed:
+        selected="OFFICIAL_PARTIAL_ADOPTION"; recovery="TERMINATED_ADOPTABLE_PARTIAL"
+    else:
+        result_path=artifact/"worker.result.json"
+        result=_json(result_path)
+        if (result.get("project_id"),result.get("gate_id"),result.get("lv_id"),result.get("run_id")) != expected:
+            raise ProductionDecisionError("persisted worker result binding mismatch")
+        selected="REPLAY_SEALED_WORKER_RESULT"; recovery="ADOPTION_CHECKPOINTED"
     digest = hashlib.sha256(json.dumps(scope, sort_keys=False, separators=(",", ":")).encode()).hexdigest()
     return {
         "project_id": project_id, "gate_id": gate_id, "run_id": run_id, "mode": mode,

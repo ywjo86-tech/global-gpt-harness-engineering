@@ -78,3 +78,13 @@ class ProductionDecisionTests(unittest.TestCase):
             self.assertEqual(before,after); self.assertEqual(first,second)
         source=Path("runtime/orchestrator/production_decision.py").read_text()
         self.assertNotIn("wallet-gate1",source); self.assertNotIn("deduplicator.py",source)
+
+    def test_clean_restart_replays_bound_worker_result(self):
+        with tempfile.TemporaryDirectory() as d:
+            args,art=self.fixture(Path(d)); project=Path(args["project_root"])
+            subprocess.run(["git","-C",str(project),"add","app/a.py","tests/test_a.py"],check=True)
+            subprocess.run(["git","-C",str(project),"commit","-qm","checkpoint"],check=True)
+            write(art/"worker.result.json",{"project_id":"fixture","gate_id":"G1","lv_id":"L1","run_id":"fixture-run"})
+            out=build_production_decision(**args)
+            self.assertEqual(out["selected_action"],"REPLAY_SEALED_WORKER_RESULT")
+            self.assertEqual(out["recovery_state"],"ADOPTION_CHECKPOINTED")
