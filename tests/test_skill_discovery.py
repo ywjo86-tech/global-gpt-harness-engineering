@@ -5,6 +5,8 @@ import hashlib
 import subprocess
 import tempfile
 import unittest
+import urllib.parse
+from dataclasses import replace
 from pathlib import Path
 
 from runtime.orchestrator.approval_gate import CAUTION, DANGEROUS, classify_discovery_intent
@@ -20,10 +22,18 @@ from runtime.orchestrator.project_isolation import ProjectIsolation
 from runtime.orchestrator.lv_execution_package import canonical_json_bytes
 from runtime.orchestrator.skill_discovery import (
     DISCOVERY_INTENT,
+    HTTP_TRANSPORT_TYPE,
+    LEGACY_HTTP_TRANSPORT,
+    LEGACY_HTTP_OUTPUT_CONTRACT,
+    MUTABLE_UPSTREAM,
     OUTPUT_CONTRACT,
+    UNDOCUMENTED_UPSTREAM_INTERNAL,
     DiscoveryApproval,
     DiscoveryRequest,
     DiscoveryRuntime,
+    DiscoveryTransportContract,
+    HTTPDiscoveryResponse,
+    run_http_read_only_discovery,
     run_read_only_discovery,
 )
 
@@ -337,6 +347,292 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
         self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
         self.assertEqual(result.evidence_reference, "")
         self.assertIn("persistence", result.blocked_reason)
+
+
+class HTTPDiscoveryTransportTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name) / "project"
+        self.root.mkdir()
+        approval_payload = {
+            "schema_version": "orchestration.skill-discovery.approval.v1", "intent": DISCOVERY_INTENT,
+            "classification": DANGEROUS, "status": "ACTIVE", "project_id": "project",
+            "gate_id": "GATE-1", "lv_id": "LV-1",
+        }
+        envelope = {"payload": approval_payload,
+                    "record_hash": hashlib.sha256(canonical_json_bytes(approval_payload)).hexdigest()}
+        self.approval_path = self.root / "approvals" / "discovery-1.json"
+        self.approval_path.parent.mkdir()
+        self.approval_path.write_bytes(canonical_json_bytes(envelope))
+        self.http_calls: list[dict[str, object]] = []
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def approval(self) -> DiscoveryApproval:
+        return DiscoveryApproval(
+            intent=DISCOVERY_INTENT, classification=DANGEROUS, approved=True,
+            project_id="project", gate_id="GATE-1", lv_id="LV-1",
+            evidence_reference="approvals/discovery-1.json",
+            evidence_sha256=hashlib.sha256(self.approval_path.read_bytes()).hexdigest(),
+        )
+
+    def transport(self, **overrides: object) -> DiscoveryTransportContract:
+        relevant_source_digest = hashlib.sha256(b"observed upstream search implementation").hexdigest()
+        observed_contract_digest = hashlib.sha256(b"observed legacy API contract").hexdigest()
+        provenance = {
+            "provenance_status": MUTABLE_UPSTREAM,
+            "repository": "vercel-labs/skills",
+            "ref": "main",
+            "source_file": "src/find.ts",
+            "relevant_source_digest": relevant_source_digest,
+            "observed_contract_digest": observed_contract_digest,
+        }
+        values: dict[str, object] = {
+            "transport_id": "skills.sh.legacy-search",
+            "transport_type": HTTP_TRANSPORT_TYPE,
+            "scheme": "https", "host": "skills.sh", "path": "/api/search",
+            "method": "GET", "allowed_query_parameters": ("q", "limit", "owner"),
+            "response_content_types": ("application/json",),
+            "response_contract": LEGACY_HTTP_OUTPUT_CONTRACT,
+            "max_response_bytes": 65536, "timeout_seconds": 5.0,
+            "redirect_allowed": False, "authentication_required": False,
+            "secret_required": False, "write_allowed": False,
+            "allowed_status_codes": (200,), "result_limit": 5,
+            "stability": UNDOCUMENTED_UPSTREAM_INTERNAL,
+            "provenance_status": MUTABLE_UPSTREAM,
+            "upstream_repository": "vercel-labs/skills", "upstream_ref": "main",
+            "upstream_source_path": "src/find.ts",
+            "relevant_source_digest": relevant_source_digest,
+            "observed_contract_digest": observed_contract_digest,
+            "upstream_evidence_digest": hashlib.sha256(canonical_json_bytes(provenance)).hexdigest(),
+            "enabled": True, "contract_sha256": "",
+        }
+        values.update(overrides)
+        provisional = DiscoveryTransportContract(**values)
+        values["contract_sha256"] = hashlib.sha256(
+            canonical_json_bytes(provisional.contract_payload())
+        ).hexdigest()
+        return DiscoveryTransportContract(**values)
+
+    def request(self, **overrides: object) -> DiscoveryRequest:
+        values: dict[str, object] = {
+            "query": "python testing", "requirement": requirement(),
+            "project_root": str(self.root), "project_id": "project",
+            "gate_id": "GATE-1", "lv_id": "LV-1", "approval": self.approval(),
+            "result_limit": 5, "runtime": None, "timestamp": "2026-09-01T00:00:00Z",
+            "transport": self.transport(), "owner": "",
+        }
+        values.update(overrides)
+        return DiscoveryRequest(**values)
+
+    @staticmethod
+    def legacy_body(count: int = 1, **overrides: object) -> bytes:
+        payload: dict[str, object] = {
+            "query": "python testing", "searchType": "semantic",
+            "searchVersion": "observed-opaque-version",
+            "skills": [
+                {"id": f"owner/repo/skill-{index}", "name": f"skill-{index}",
+                 "skillId": f"skill-{index}", "installs": index, "source": "owner/repo"}
+                for index in range(count)
+            ],
+            "count": count, "duration_ms": 12,
+        }
+        payload.update(overrides)
+        return json.dumps(payload).encode()
+
+    def http_executor(self, **kwargs: object) -> HTTPDiscoveryResponse:
+        self.http_calls.append(dict(kwargs))
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(str(kwargs["url"])).query)["q"][0]
+        return HTTPDiscoveryResponse(
+            200, "application/json; charset=utf-8", self.legacy_body(query=query)
+        )
+
+    def run_http(self, request: DiscoveryRequest | None = None, executor: object | None = None):
+        request = request or self.request()
+        transport = request.transport
+        registry = {} if transport is None else {transport.contract_sha256: transport}
+        return run_http_read_only_discovery(
+            request, http_executor=executor or self.http_executor,
+            transport_registry=registry,
+        )
+
+    # TEST A, N, O, P, Q
+    def test_valid_search_is_discovery_only(self) -> None:
+        result = self.run_http()
+        self.assertEqual(result.status, DiscoveryStatus.DISCOVERY_COMPLETED)
+        self.assertEqual(result.candidates[0].candidate_id, "owner/repo/skill-0")
+        self.assertEqual(result.candidates[0].skill_id, "skill-0")
+        self.assertEqual(result.candidates[0].repository, "UNKNOWN")
+        self.assertEqual(result.candidates[0].maintainer, "UNKNOWN")
+        self.assertEqual(result.candidates[0].description, "UNKNOWN")
+        self.assertEqual(result.candidates[0].reference, "UNKNOWN")
+        self.assertEqual(result.candidates[0].evaluation_state, "UNASSESSED")
+        projection = result.handoff_projection()
+        self.assertFalse(projection["candidate_use_authorized"])
+        self.assertNotIn("used_assets", projection)
+        self.assertNotIn("gate_status", projection)
+
+    def test_registered_legacy_contract_is_trusted_with_conditions(self) -> None:
+        self.assertTrue(LEGACY_HTTP_TRANSPORT.trusted_with_conditions)
+        self.assertEqual(LEGACY_HTTP_TRANSPORT.provenance_status, MUTABLE_UPSTREAM)
+        self.assertEqual(LEGACY_HTTP_TRANSPORT.upstream_ref, "main")
+        request = self.request(transport=LEGACY_HTTP_TRANSPORT)
+        result = run_http_read_only_discovery(request, http_executor=self.http_executor)
+        self.assertEqual(result.status, DiscoveryStatus.DISCOVERY_COMPLETED)
+        resolution = result.evidence["transport_resolution"]
+        self.assertEqual(resolution["provenance_status"], MUTABLE_UPSTREAM)
+        self.assertEqual(resolution["upstream_evidence_digest"], LEGACY_HTTP_TRANSPORT.upstream_evidence_digest)
+        self.assertEqual(resolution["observed_contract_digest"], LEGACY_HTTP_TRANSPORT.observed_contract_digest)
+
+    # TEST B, E
+    def test_http_executor_uses_get_without_credentials_or_body(self) -> None:
+        self.run_http()
+        call = self.http_calls[0]
+        self.assertEqual(call["method"], "GET")
+        self.assertEqual(call["headers"], {})
+        self.assertIsNone(call["body"])
+
+    # TEST C, D, E, T
+    def test_unsafe_or_credential_transport_is_blocked_before_execution(self) -> None:
+        contracts = (
+            self.transport(scheme="http"),
+            self.transport(host="example.invalid"),
+            self.transport(path="/api/changed"),
+            self.transport(method="POST"),
+            self.transport(authentication_required=True),
+            self.transport(path="/api/v1/skills/search", authentication_required=True,
+                           stability="DOCUMENTED_V1", response_contract="skills.sh.v1.search.json"),
+        )
+        for transport in contracts:
+            with self.subTest(transport=transport):
+                result = self.run_http(self.request(transport=transport))
+                self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+                self.assertFalse(result.execution_attempted)
+        self.assertEqual(self.http_calls, [])
+
+    # TEST F, G, H
+    def test_redirect_timeout_and_oversize_fail_closed(self) -> None:
+        def redirect(**kwargs: object) -> HTTPDiscoveryResponse:
+            return HTTPDiscoveryResponse(302, "application/json", b"{}", redirected=True)
+        def timeout(**kwargs: object) -> HTTPDiscoveryResponse:
+            raise TimeoutError("fixture timeout")
+        def oversized(**kwargs: object) -> HTTPDiscoveryResponse:
+            return HTTPDiscoveryResponse(200, "application/json", b"x" * 65537)
+        for executor in (redirect, timeout, oversized):
+            with self.subTest(executor=executor.__name__):
+                self.assertEqual(self.run_http(executor=executor).status, DiscoveryStatus.BLOCKED)
+
+    # TEST I, J, K and count/query mismatch
+    def test_invalid_json_schema_candidate_and_count_fail_closed(self) -> None:
+        responses = (
+            b"not-json",
+            json.dumps({"skills": []}).encode(),
+            self.legacy_body(skills=[{"id": "only-id"}], count=1),
+            self.legacy_body(count=2, skills=[]),
+            self.legacy_body(query="different query"),
+        )
+        for body in responses:
+            with self.subTest(body=body):
+                def malformed(**kwargs: object) -> HTTPDiscoveryResponse:
+                    return HTTPDiscoveryResponse(200, "application/json", body)
+                result = self.run_http(executor=malformed)
+                self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+                self.assertEqual(result.candidates, ())
+
+    def test_observed_additive_fields_are_required_and_accepted(self) -> None:
+        result = self.run_http(executor=lambda **kwargs: HTTPDiscoveryResponse(
+            200, "application/json", self.legacy_body(searchVersion=2)
+        ))
+        self.assertEqual(result.status, DiscoveryStatus.DISCOVERY_COMPLETED)
+        self.assertEqual(result.candidates[0].skill_id, "skill-0")
+
+        for missing in ("searchVersion", "skillId"):
+            with self.subTest(missing=missing):
+                payload = json.loads(self.legacy_body())
+                if missing == "searchVersion":
+                    del payload[missing]
+                else:
+                    del payload["skills"][0][missing]
+                response = lambda **kwargs: HTTPDiscoveryResponse(  # noqa: E731
+                    200, "application/json", json.dumps(payload).encode()
+                )
+                self.assertEqual(self.run_http(executor=response).status, DiscoveryStatus.BLOCKED)
+
+    def test_unknown_fields_are_contract_drift_and_blocked(self) -> None:
+        payloads = []
+        top = json.loads(self.legacy_body())
+        top["futureField"] = "unexpected"
+        payloads.append(top)
+        candidate = json.loads(self.legacy_body())
+        candidate["skills"][0]["futureField"] = "unexpected"
+        payloads.append(candidate)
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                response = lambda **kwargs: HTTPDiscoveryResponse(  # noqa: E731
+                    200, "application/json", json.dumps(payload).encode()
+                )
+                result = self.run_http(executor=response)
+                self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+                self.assertIn("CONTRACT_DRIFT", result.blocked_reason)
+
+    def test_wrong_observed_field_types_fail_closed(self) -> None:
+        overrides = (
+            {"searchVersion": None}, {"searchVersion": True}, {"searchVersion": ""},
+            {"duration_ms": "12"}, {"count": True}, {"skills": {}},
+        )
+        for changed in overrides:
+            with self.subTest(changed=changed):
+                response = lambda **kwargs: HTTPDiscoveryResponse(  # noqa: E731
+                    200, "application/json", self.legacy_body(**changed)
+                )
+                self.assertEqual(self.run_http(executor=response).status, DiscoveryStatus.BLOCKED)
+
+    def test_non_json_content_type_fails_closed(self) -> None:
+        def text_response(**kwargs: object) -> HTTPDiscoveryResponse:
+            return HTTPDiscoveryResponse(200, "text/plain", self.legacy_body())
+        self.assertEqual(self.run_http(executor=text_response).status, DiscoveryStatus.BLOCKED)
+
+    # TEST L
+    def test_result_limit_is_enforced(self) -> None:
+        def many(**kwargs: object) -> HTTPDiscoveryResponse:
+            return HTTPDiscoveryResponse(200, "application/json", self.legacy_body(5))
+        result = self.run_http(self.request(result_limit=3), many)
+        self.assertEqual(len(result.candidates), 3)
+
+    # TEST M
+    def test_query_and_owner_use_safe_url_encoding(self) -> None:
+        result = self.run_http(self.request(query="python testing & QA", owner="Vercel-Labs"))
+        self.assertEqual(result.status, DiscoveryStatus.DISCOVERY_COMPLETED)
+        url = str(self.http_calls[0]["url"])
+        self.assertNotIn("python testing", url)
+        self.assertEqual(
+            urllib.parse.parse_qs(urllib.parse.urlsplit(url).query),
+            {"q": ["python testing & QA"], "limit": ["5"], "owner": ["vercel-labs"]},
+        )
+
+    # TEST R
+    def test_transport_contract_digest_drift_is_blocked(self) -> None:
+        transport = replace(self.transport(), contract_sha256="a" * 64)
+        result = self.run_http(self.request(transport=transport))
+        self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+        self.assertFalse(result.execution_attempted)
+
+    def test_upstream_provenance_tamper_is_blocked(self) -> None:
+        transport = self.transport(upstream_evidence_digest="a" * 64)
+        self.assertFalse(transport.trusted_with_conditions)
+        result = self.run_http(self.request(transport=transport))
+        self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+        self.assertFalse(result.execution_attempted)
+
+    # TEST S
+    def test_cli_transport_remains_not_trusted_without_runtime(self) -> None:
+        result = run_read_only_discovery(
+            self.request(transport=None), executor=lambda *args, **kwargs: self.fail("executor called"),
+            runtime_registry={},
+        )
+        self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+        self.assertFalse(result.execution_attempted)
 
 
 if __name__ == "__main__":
