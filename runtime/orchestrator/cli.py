@@ -405,14 +405,48 @@ def main(argv: list[str] | None = None) -> int:
                         transition_path=transition, approval_event_id=approval["event_id"],
                     )
                     context["recovery"] = recovery["checkpoint"]
-                outcome = __import__("runtime.orchestrator.gate_controller", fromlist=["run_production_gate_lifecycle"]).run_production_gate_lifecycle(
-                    context, _production_adapters(Path(args.project_root), plan, auth, bridge["first_incomplete_lv"], args.run_id, args.harness_root, recovery),
-                    approval_events=[approval], project_root=args.project_root,
-                    canonical_state=canonical_state,
-                    completion_conditions_sha256=approval["completion_conditions_sha256"],
-                    historical_predecessor=approval.get("predecessor"),
-                    historical_event_ids=((approval["supersedes"],) if approval.get("supersedes") else ()),
-                    harness_root=args.harness_root)
+                from .production_gate_runner import ProductionGateRunner
+                from .production_terminal import run_terminal_entry
+                from .lifecycle_binding import DIGEST_FIELDS, build_binding_from_sources
+                controller = __import__("runtime.orchestrator.gate_controller", fromlist=["run_production_gate_lifecycle"])
+                initial_lv = bridge["first_incomplete_lv"]
+                prior_outcome = {}
+                def execute_one(lv_id):
+                    nonlocal prior_outcome
+                    selected = next(item for item in plan.lvs if item.lv_id == lv_id)
+                    current = subprocess.run(["git", "-C", args.project_root, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+                    lv_context = dict(context)
+                    lv_context.update({"lv_id":lv_id,"current_head":current,"head":current,
+                                       "completion_conditions":list(selected.completion_criteria),
+                                       "completed_plan_items":[item["lv_id"] for item in bridge["completed"]] + list(prior_outcome.get("completed_in_call", [])),
+                                       "remaining_plan_items":[item.lv_id for item in plan.lvs if item.order > selected.order]})
+                    if lv_id != initial_lv:
+                        lv_context.pop("recovery",None)
+                        lv_context["predecessor_completion_digest"] = str(prior_outcome.get("evidence",{}).get("exit") or lv_context["predecessor_completion_digest"])
+                    result = controller.run_production_gate_lifecycle(
+                        lv_context, _production_adapters(Path(args.project_root), plan, auth, lv_id, args.run_id, args.harness_root, recovery if lv_id == initial_lv else None),
+                        approval_events=[approval], project_root=args.project_root, canonical_state=canonical_state,
+                        completion_conditions_sha256=approval["completion_conditions_sha256"],
+                        historical_predecessor=approval.get("predecessor"),
+                        historical_event_ids=((approval["supersedes"],) if approval.get("supersedes") else ()),
+                        harness_root=args.harness_root)
+                    result["completed_in_call"] = list(prior_outcome.get("completed_in_call", [])) + [lv_id]
+                    prior_outcome = result
+                    return result
+                terminal_sources={field:{"field":field,"project_id":plan.project_id,"gate_id":args.gate_id,
+                                  "lv_id":plan.lvs[-1].lv_id,"run_id":args.run_id} for field in DIGEST_FIELDS}
+                terminal_binding=build_binding_from_sources(terminal_sources,project_id=plan.project_id,gate_id=args.gate_id,
+                    lv_id=plan.lvs[-1].lv_id,run_id=args.run_id,attempt=1,recovery_id="gate-terminal",
+                    approval_event_id=approval["event_id"],branch=approval["branch"],baseline_head=approval["baseline_head"],
+                    current_head=head,hard_stop=True)
+                def finalize(completed):
+                    return run_terminal_entry(root=Path(args.harness_root)/"_workspace"/"production-terminal"/args.run_id,
+                        binding=terminal_binding,lvs=[item.lv_id for item in plan.lvs],reviewed_lvs=completed,
+                        source_sha256=plan.canonical_plan_sha256,predecessor=bridge["bridge_sha256"],mode=args.mode)
+                runner=ProductionGateRunner(args.harness_root,project_id=plan.project_id,gate_id=args.gate_id,run_id=args.run_id,
+                    mode=args.mode,canonical_lvs=[item.lv_id for item in plan.lvs],
+                    inherited_completed_lvs=[item["lv_id"] for item in bridge["completed"]])
+                outcome=runner.run(execute_one,finalize)
                 output.update(outcome)
             _print(output)
             return 0
