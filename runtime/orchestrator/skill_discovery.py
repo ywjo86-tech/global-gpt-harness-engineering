@@ -20,6 +20,7 @@ OUTPUT_CONTRACT = "skills.find.json.v1"
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _QUERY_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]{0,63}\Z")
 _SECRET_KEY = re.compile(r"(?:api[_-]?key|authorization|credential|password|secret|token)", re.I)
 _SECRET_VALUE = re.compile(r"(?i)\b(api[_-]?key|authorization|credential|password|secret|token)\s*[:=]\s*\S+")
 _SECRET_INPUT = re.compile(r"(?i)(?:\bbearer\s+\S+|https?://[^\s/:]+:[^\s/@]+@|\b(?:api[_-]?key|authorization|credential|password|secret|token)\s*[:=])")
@@ -46,12 +47,51 @@ class DiscoveryApproval:
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryRuntime:
-    executable: str
+    runtime_id: str
+    executable_identity: str
+    resolved_executable: str
+    executable_sha256: str
     version: str
+    invocation_argv: tuple[str, ...]
     output_contract: str
-    contract_verified: bool
+    output_contract_verified: bool
+    timeout_seconds: float
+    result_limit: int
+    network_required: bool
+    package_auto_install_allowed: bool
+    shell_allowed: bool
+    environment_allowlist: tuple[str, ...]
+    working_directory_policy: str
     contract_sha256: str
-    package_auto_install: bool
+
+    def contract_payload(self) -> dict[str, Any]:
+        return {
+            "runtime_id": self.runtime_id,
+            "executable_identity": self.executable_identity,
+            "resolved_executable": self.resolved_executable,
+            "executable_sha256": self.executable_sha256,
+            "version": self.version,
+            "invocation_argv": list(self.invocation_argv),
+            "output_contract": self.output_contract,
+            "output_contract_verified": self.output_contract_verified,
+            "timeout_seconds": self.timeout_seconds,
+            "result_limit": self.result_limit,
+            "network_required": self.network_required,
+            "package_auto_install_allowed": self.package_auto_install_allowed,
+            "shell_allowed": self.shell_allowed,
+            "environment_allowlist": list(self.environment_allowlist),
+            "working_directory_policy": self.working_directory_policy,
+        }
+
+    @property
+    def runtime_trusted(self) -> bool:
+        return (
+            self.output_contract_verified
+            and self.output_contract == OUTPUT_CONTRACT
+            and self.package_auto_install_allowed is False
+            and self.shell_allowed is False
+            and self.contract_sha256 == hashlib.sha256(canonical_json_bytes(self.contract_payload())).hexdigest()
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +134,8 @@ class DiscoveryAdapterResult:
         return {
             "discovery_evidence_references": [self.evidence_reference] if self.evidence_reference else [],
             "discovered_candidates": [item.candidate_id for item in self.candidates],
+            "evaluated_candidates": [],
+            "selected_candidate": "",
             "candidate_use_authorized": False,
             "selection_rationale": "discovery only; candidate evaluation and use remain unauthorized",
         }
@@ -190,19 +232,25 @@ def _runtime_reason(runtime: DiscoveryRuntime | None, registry: Mapping[str, Dis
         return "discovery executable is unavailable"
     if registry.get(runtime.contract_sha256) != runtime:
         return "discovery runtime is not in the trusted allowlist"
-    path = Path(runtime.executable)
+    path = Path(runtime.resolved_executable)
     name = path.name.lower()
     if name in {"npx", "npm", "node"}:
         return "automatic package installation path is forbidden"
-    if runtime.package_auto_install:
+    if runtime.package_auto_install_allowed or runtime.shell_allowed:
         return "automatic package installation path is forbidden"
-    if (not runtime.contract_verified or runtime.output_contract != OUTPUT_CONTRACT or not runtime.version
-            or not _SHA256.fullmatch(runtime.contract_sha256)):
+    if (not runtime.runtime_trusted or not runtime.version or runtime.invocation_argv != ("find", "{query}")
+            or runtime.working_directory_policy != "verified_project_root"
+            or runtime.result_limit < 1 or runtime.timeout_seconds <= 0
+            or not runtime.runtime_id or not runtime.executable_identity
+            or runtime.executable_identity != path.name
+            or any(not _ENV_NAME.fullmatch(name) or _SECRET_KEY.search(name) for name in runtime.environment_allowlist)
+            or not _SHA256.fullmatch(runtime.contract_sha256)
+            or not _SHA256.fullmatch(runtime.executable_sha256)):
         return "runtime contract is unverified or incompatible"
     if not path.is_absolute() or not path.is_file() or path.is_symlink() or not os.access(path, os.X_OK):
         return "discovery executable is unavailable or unsafe"
     try:
-        if hashlib.sha256(path.read_bytes()).hexdigest() != runtime.contract_sha256:
+        if hashlib.sha256(path.read_bytes()).hexdigest() != runtime.executable_sha256:
             return "runtime executable digest does not match the verified contract"
     except OSError:
         return "discovery executable is unavailable or unsafe"
@@ -267,7 +315,8 @@ def _evidence(
         "adapter_preflight": preflight,
         "executable_resolution": {
             "resolved": executable_resolved,
-            "executable_name": Path(request.runtime.executable).name if request.runtime else "",
+            "runtime_id": request.runtime.runtime_id if request.runtime else "",
+            "executable_name": Path(request.runtime.resolved_executable).name if request.runtime else "",
             "version": request.runtime.version if request.runtime and executable_resolved else "",
             "output_contract": request.runtime.output_contract if request.runtime and executable_resolved else "",
             "contract_sha256": request.runtime.contract_sha256 if request.runtime and executable_resolved else "",
@@ -313,6 +362,8 @@ def run_read_only_discovery(
         blocked_reason = _approval_reason(request, root)
         if not blocked_reason:
             blocked_reason = _runtime_reason(request.runtime, runtime_registry)
+        if not blocked_reason and request.runtime is not None and request.result_limit > request.runtime.result_limit:
+            blocked_reason = "request result limit exceeds trusted runtime contract"
         if blocked_reason:
             evidence = _evidence(request, status=DiscoveryStatus.BLOCKED, preflight="BLOCKED", attempted=False,
                                  candidates=(), blocked_reason=blocked_reason,
@@ -320,10 +371,12 @@ def run_read_only_discovery(
             reference = _persist(isolation, evidence)
             return DiscoveryAdapterResult(DiscoveryStatus.BLOCKED, False, (), blocked_reason, evidence, reference)
         assert request.runtime is not None
-        argv = [request.runtime.executable, "find", request.query]
+        argv = [request.runtime.resolved_executable, "find", request.query]
+        allowed_env = {name: os.environ[name] for name in request.runtime.environment_allowlist if name in os.environ}
         attempted = True
         completed = executor(argv, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             check=False, timeout=timeout)
+                             check=False, timeout=request.runtime.timeout_seconds,
+                             env=allowed_env, cwd=str(root))
         stdout = bytes(completed.stdout or b"")
         stderr = bytes(completed.stderr or b"")
         execution_digest = hashlib.sha256(stdout + b"\0" + stderr).hexdigest()

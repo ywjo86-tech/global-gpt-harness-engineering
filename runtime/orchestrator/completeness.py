@@ -25,6 +25,8 @@ _ROW_FIELDS = {
     "item_id", "item_kind", "gate_id", "lv_id", "order", "owned_files", "selected_assets",
     "excluded_assets", "selection_rationale", "tests", "evidence_sha256", "status",
     "checkpoint_ref", "exit_ref", "handoff_ref",
+    "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
+    "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references",
 }
 _HANDOFF_FIELDS = {
     "schema_version", "project_id", "gate_id", "lv_id", "run_id", "requirements_sha256",
@@ -32,13 +34,21 @@ _HANDOFF_FIELDS = {
     "changed_files", "tests", "review", "artifact_sha256", "checkpoint_ref", "exit_ref",
     "ledger_sha256", "known_issues", "deferred_items", "next_condition", "permissions",
     "forbidden_actions", "selected_assets", "excluded_assets", "selection_rationale",
+    "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
+    "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references",
 }
 
 PROJECT_REQUIREMENT_EVIDENCE_SCHEMA = "orchestration.project-requirement-evidence.v1"
+COMPLETENESS_LEDGER_SCHEMA = "orchestration.completeness-ledger.v2"
+STRUCTURED_HANDOFF_SCHEMA = "orchestration.structured-handoff.v2"
 
 
 def _hash(value: object) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _unique_strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) and bool(item) for item in value) and len(value) == len(set(value))
 
 
 def build_ledger(*, project_id: str, requirements_sha256: str, plan_sha256: str,
@@ -56,7 +66,7 @@ def build_ledger(*, project_id: str, requirements_sha256: str, plan_sha256: str,
         value = dict(requirements[requirement_id]); value["item_id"] = requirement_id
         rows.append(_row(value, "REQUIREMENT", len(rows) + 1))
     payload = {
-        "schema_version": "orchestration.completeness-ledger.v1", "project_id": project_id,
+        "schema_version": COMPLETENESS_LEDGER_SCHEMA, "project_id": project_id,
         "requirements_sha256": requirements_sha256, "plan_sha256": plan_sha256, "items": rows,
     }
     validate_ledger(payload, plan_items=plan_items, requirements=requirements, expected_requirement_ids=expected_ids)
@@ -68,6 +78,9 @@ def _row(source: Mapping[str, object], kind: str, order: int) -> dict[str, objec
         "item_id": "", "gate_id": "", "lv_id": "", "owned_files": [], "selected_assets": [],
         "excluded_assets": [], "selection_rationale": "", "tests": [], "evidence_sha256": "",
         "status": "PENDING", "checkpoint_ref": "", "exit_ref": "", "handoff_ref": "",
+        "used_assets": [], "discovered_candidates": [],
+        "evaluated_candidates": [], "selected_candidate": "", "candidate_use_authorized": False,
+        "discovery_evidence_references": [], "evaluation_evidence_references": [],
     }
     defaults.update(source)
     defaults["item_kind"] = kind; defaults["order"] = order
@@ -80,7 +93,7 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
                     requirements: Mapping[str, Mapping[str, object]] | None = None,
                     requirements_sha256: str | None = None, plan_sha256: str | None = None,
                     require_exit: bool = False, expected_requirement_ids: Sequence[str] | None = None) -> None:
-    if set(payload) != {"schema_version", "project_id", "requirements_sha256", "plan_sha256", "items"} or payload.get("schema_version") != "orchestration.completeness-ledger.v1":
+    if set(payload) != {"schema_version", "project_id", "requirements_sha256", "plan_sha256", "items"} or payload.get("schema_version") != COMPLETENESS_LEDGER_SCHEMA:
         raise CompletenessError("ledger schema mismatch")
     if requirements_sha256 is not None and payload.get("requirements_sha256") != requirements_sha256:
         raise CompletenessError("requirements SHA drift")
@@ -107,6 +120,18 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
             raise CompletenessError("invalid ledger files/tests")
         if not isinstance(row["selected_assets"], list) or not isinstance(row["excluded_assets"], list) or not row["selection_rationale"]:
             raise CompletenessError("Skill/Agent selection evidence is incomplete")
+        candidate_fields = ("used_assets", "discovered_candidates", "evaluated_candidates",
+                            "discovery_evidence_references", "evaluation_evidence_references")
+        if any(not _unique_strings(row[field]) for field in candidate_fields) or not isinstance(row["selected_candidate"], str) or not isinstance(row["candidate_use_authorized"], bool):
+            raise CompletenessError("Skill Discovery ledger evidence is malformed")
+        if set(row["discovered_candidates"]) & set(row["used_assets"]):
+            raise CompletenessError("discovered candidate cannot be recorded as a used asset")
+        if not set(row["evaluated_candidates"]).issubset(row["discovered_candidates"]):
+            raise CompletenessError("evaluated candidate is not a discovered candidate")
+        if row["selected_candidate"] and row["selected_candidate"] not in row["evaluated_candidates"]:
+            raise CompletenessError("selected candidate is not an evaluated candidate")
+        if row["candidate_use_authorized"] is not False:
+            raise CompletenessError("candidate use authorization is outside Phase 3A")
         if row["status"] in {"VERIFIED", "CHECKPOINTED", "EXITED"} and not _SHA.fullmatch(str(row["evidence_sha256"])):
             raise CompletenessError("verified item lacks evidence SHA")
         if row["status"] in {"CHECKPOINTED", "EXITED"} and not row["checkpoint_ref"]:
@@ -121,8 +146,15 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
         else:
             source = None
         if source is not None:
-            for field in ("gate_id", "lv_id", "owned_files", "selected_assets", "excluded_assets", "selection_rationale", "tests"):
-                if row[field] != source.get(field):
+            defaults_by_field = {
+                "used_assets": [], "discovered_candidates": [],
+                "evaluated_candidates": [], "selected_candidate": "", "candidate_use_authorized": False,
+                "discovery_evidence_references": [], "evaluation_evidence_references": [],
+            }
+            for field in ("gate_id", "lv_id", "owned_files", "selected_assets", "excluded_assets", "selection_rationale", "tests",
+                          "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
+                          "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references"):
+                if row[field] != source.get(field, defaults_by_field.get(field)):
                     raise CompletenessError(f"ledger canonical {field} linkage mismatch")
     if require_exit and any(row["status"] != "EXITED" for row in items):
         raise CompletenessError("ledger is not fully exited")
@@ -229,7 +261,7 @@ def validate_project_requirement_evidence(record: Mapping[str, object], *, proje
 
 def seal_handoff(payload: Mapping[str, object]) -> dict[str, object]:
     value = dict(payload)
-    if set(value) != _HANDOFF_FIELDS or value.get("schema_version") != "orchestration.structured-handoff.v1":
+    if set(value) != _HANDOFF_FIELDS or value.get("schema_version") != STRUCTURED_HANDOFF_SCHEMA:
         raise CompletenessError("handoff required fields mismatch")
     return {"payload": value, "handoff_sha256": _hash(value)}
 
@@ -269,3 +301,18 @@ def validate_handoff(envelope: Mapping[str, object], *, ledger_envelope: Mapping
         raise CompletenessError("handoff test/review evidence incomplete")
     if handoff.get("selected_assets") != matches[0].get("selected_assets") or handoff.get("excluded_assets") != matches[0].get("excluded_assets") or handoff.get("selection_rationale") != matches[0].get("selection_rationale"):
         raise CompletenessError("handoff asset rationale differs from ledger")
+    discovery_fields = ("used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
+                        "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references")
+    if any(handoff.get(field) != matches[0].get(field) for field in discovery_fields):
+        raise CompletenessError("handoff Skill Discovery evidence differs from ledger")
+    if set(handoff.get("discovered_candidates", [])) & set(handoff.get("used_assets", [])):
+        raise CompletenessError("discovered candidate cannot be recorded as a used asset")
+    if any(not _unique_strings(handoff.get(field)) for field in ("used_assets", "discovered_candidates", "evaluated_candidates",
+                                                                  "discovery_evidence_references", "evaluation_evidence_references")):
+        raise CompletenessError("handoff Skill Discovery identifiers are malformed or duplicated")
+    if not set(handoff.get("evaluated_candidates", [])).issubset(handoff.get("discovered_candidates", [])):
+        raise CompletenessError("evaluated candidate is not a discovered candidate")
+    if handoff.get("selected_candidate") and handoff.get("selected_candidate") not in handoff.get("evaluated_candidates", []):
+        raise CompletenessError("selected candidate is not an evaluated candidate")
+    if handoff.get("candidate_use_authorized") is not False:
+        raise CompletenessError("candidate use authorization is outside Phase 3A")

@@ -14,7 +14,11 @@ from runtime.orchestrator.completeness import (
 R = "a"*64; P = "b"*64; ART = "c"*64; HEAD = "d"*40
 PLAN = [{"item_id":"G1-LV3-1","gate_id":"GATE-1","lv_id":"G1-LV3-1","owned_files":["app/a.py"],
          "selected_assets":["worker"],"excluded_assets":["other"],"selection_rationale":"manifest capability match",
-         "tests":["tests/test_a.py"]}]
+         "tests":["tests/test_a.py"], "used_assets":["worker"],
+         "discovered_candidates":["owner/repo@candidate"], "evaluated_candidates":["owner/repo@candidate"],
+         "selected_candidate":"owner/repo@candidate", "candidate_use_authorized":False,
+         "discovery_evidence_references":["artifact/skill-discovery/evidence.json"],
+         "evaluation_evidence_references":["artifact/skill-candidate-evaluation/evidence.json"]}]
 REQS = {key:{"gate_id":"GATE-1","lv_id":"G1-LV3-1","owned_files":[],"selected_assets":["worker"],
              "excluded_assets":["other"],"selection_rationale":"registry permission match","tests":["tests/test_req.py"]}
         for key in REQUIREMENT_IDS}
@@ -35,6 +39,28 @@ class CompletenessTests(unittest.TestCase):
     def test_all_plan_items_and_r01_r25_are_ordered(self):
         env=self.envelope(); ids=[x["item_id"] for x in env["payload"]["items"]]
         self.assertEqual(ids, ["G1-LV3-1"]+list(REQUIREMENT_IDS))
+
+    def test_planned_asset_is_not_automatically_a_used_asset(self):
+        plan = [{"item_id":"LV-1","gate_id":"G","lv_id":"LV-1","owned_files":["app/"],
+                 "selected_assets":["planned-only"],"excluded_assets":[],"selection_rationale":"planned",
+                 "tests":["test"]}]
+        req = {"REQ": {"gate_id":"G","lv_id":"LV-1","owned_files":[],"selected_assets":[],
+                        "excluded_assets":[],"selection_rationale":"planned","tests":["test"]}}
+        ledger = build_ledger(project_id="project", requirements_sha256=R, plan_sha256=P,
+                              plan_items=plan, requirements=req, expected_requirement_ids=("REQ",))
+        self.assertEqual(ledger["payload"]["items"][0]["used_assets"], [])
+
+    def test_candidate_state_relationships_fail_closed(self):
+        for fields in (
+            {"discovered_candidates":["a"], "evaluated_candidates":["ghost"]},
+            {"discovered_candidates":["a"], "evaluated_candidates":["a"], "selected_candidate":"other"},
+            {"discovered_candidates":["a", "a"]},
+            {"discovered_candidates":[""]},
+        ):
+            plan = [dict(PLAN[0], **fields)]
+            with self.subTest(fields=fields), self.assertRaises(CompletenessError):
+                build_ledger(project_id="project", requirements_sha256=R, plan_sha256=P,
+                             plan_items=plan, requirements=REQS)
 
     def test_project_requirement_ids_are_plan_driven(self):
         reqs = {"REQ-ALPHA-001": {"gate_id":"GATE-ALPHA","lv_id":"ALPHA-LV1","owned_files":[],"selected_assets":["worker"],"excluded_assets":[],"selection_rationale":"project contract","tests":["tests/test_alpha.py"]}}
@@ -73,20 +99,27 @@ class CompletenessTests(unittest.TestCase):
 
     def handoff(self, ledger):
         ids=[x["item_id"] for x in ledger["payload"]["items"]]
-        return seal_handoff({"schema_version":"orchestration.structured-handoff.v1","project_id":"project","gate_id":"GATE-1",
+        return seal_handoff({"schema_version":"orchestration.structured-handoff.v2","project_id":"project","gate_id":"GATE-1",
             "lv_id":"G1-LV3-1","run_id":"run-1","requirements_sha256":R,"plan_sha256":P,"branch":"main","head":HEAD,
             "completed_items":ids,"remaining_items":[],"owned_files":["app/a.py"],"changed_files":["app/a.py"],
             "tests":[{"status":"PASS","evidence_sha256":"f"*64}],"review":{"verdict":"PASS","evidence_sha256":"f"*64},
             "artifact_sha256":ART,"checkpoint_ref":"cp","exit_ref":"exit","ledger_sha256":ledger["ledger_sha256"],
             "known_issues":[],"deferred_items":[],"next_condition":"next Gate approval","permissions":["same Gate"],
             "forbidden_actions":["next Gate"],"selected_assets":["worker"],"excluded_assets":["other"],
-            "selection_rationale":"manifest capability match"})
+            "selection_rationale":"manifest capability match", "used_assets":["worker"],
+            "discovered_candidates":["owner/repo@candidate"], "evaluated_candidates":["owner/repo@candidate"],
+            "selected_candidate":"owner/repo@candidate", "candidate_use_authorized":False,
+            "discovery_evidence_references":["artifact/skill-discovery/evidence.json"],
+            "evaluation_evidence_references":["artifact/skill-candidate-evaluation/evidence.json"]})
 
     def test_strong_handoff_consistency(self):
         ledger=self.exited(); handoff=self.handoff(ledger)
         args=dict(ledger_envelope=ledger,project_id="project",gate_id="GATE-1",lv_id="G1-LV3-1",run_id="run-1",
                   requirements_sha256=R,plan_sha256=P,branch="main",head=HEAD,artifact_sha256=ART,checkpoint_ref="cp",exit_ref="exit")
         validate_handoff(handoff,**args)
+        row = ledger["payload"]["items"][0]
+        self.assertNotIn("owner/repo@candidate", row["used_assets"])
+        self.assertFalse(row["candidate_use_authorized"])
         for key,value in (("run_id","other"),("head","e"*40),("artifact_sha256","f"*64),("checkpoint_ref","other")):
             bad=dict(args); bad[key]=value
             with self.subTest(key=key), self.assertRaises(CompletenessError): validate_handoff(handoff,**bad)

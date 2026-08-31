@@ -39,7 +39,7 @@ def candidate(**overrides: object) -> CapabilityCandidate:
     values: dict[str, object] = {
         "candidate_id": "owner/repo@python-testing", "source": "skills.sh",
         "repository": "owner/repo", "maintainer": "owner", "scope": "project",
-        "metadata": {"skill_md_verified": True, "permissions": ["read"], "owned_files": ["tests/"]}, "evaluation_state": "PASS",
+        "metadata": {"skill_md_verified": True, "permissions": ["read"], "owned_files": ["tests/"]}, "evaluation_state": "SAFE_FOR_CONSIDERATION",
         "risk": CandidateRisk(),
     }
     values.update(overrides)
@@ -132,13 +132,20 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
         return DiscoveryApproval(**values)
 
     def runtime(self, **overrides: object) -> DiscoveryRuntime:
+        executable_sha256 = hashlib.sha256(self.executable.read_bytes()).hexdigest()
         values: dict[str, object] = {
-            "executable": str(self.executable), "version": "verified-fixture-1",
-            "output_contract": OUTPUT_CONTRACT, "contract_verified": True,
-            "contract_sha256": hashlib.sha256(self.executable.read_bytes()).hexdigest(),
-            "package_auto_install": False,
+            "runtime_id": "fixture.skills", "executable_identity": "verified-skills",
+            "resolved_executable": str(self.executable), "executable_sha256": executable_sha256,
+            "version": "verified-fixture-1", "invocation_argv": ("find", "{query}"),
+            "output_contract": OUTPUT_CONTRACT, "output_contract_verified": True,
+            "timeout_seconds": 30.0, "result_limit": 5, "network_required": False,
+            "package_auto_install_allowed": False, "shell_allowed": False,
+            "environment_allowlist": (), "working_directory_policy": "verified_project_root",
+            "contract_sha256": "",
         }
         values.update(overrides)
+        provisional = DiscoveryRuntime(**values)
+        values["contract_sha256"] = hashlib.sha256(canonical_json_bytes(provisional.contract_payload())).hexdigest()
         return DiscoveryRuntime(**values)
 
     def request(self, **overrides: object) -> DiscoveryRequest:
@@ -193,8 +200,8 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
 
     # TEST 14
     def test_package_auto_install_and_npx_are_blocked(self) -> None:
-        for runtime in (self.runtime(package_auto_install=True), self.runtime(executable="/usr/bin/npx")):
-            with self.subTest(runtime=runtime.executable):
+        for runtime in (self.runtime(package_auto_install_allowed=True), self.runtime(resolved_executable="/usr/bin/npx")):
+            with self.subTest(runtime=runtime.resolved_executable):
                 result = self.run_adapter(self.request(runtime=runtime))
                 self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
         self.assertEqual(self.calls, [])
@@ -203,6 +210,14 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
         result = run_read_only_discovery(self.request(), executor=self.executor)
         self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
         self.assertIn("trusted allowlist", result.blocked_reason)
+        self.assertEqual(self.calls, [])
+
+    # TEST 44
+    def test_unverified_runtime_output_contract_blocks_execution(self) -> None:
+        runtime = self.runtime(output_contract_verified=False)
+        result = self.run_adapter(self.request(runtime=runtime))
+        self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
+        self.assertFalse(result.execution_attempted)
         self.assertEqual(self.calls, [])
 
     def test_approval_evidence_drift_blocks_execution(self) -> None:
@@ -221,6 +236,9 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
         argv, kwargs = self.calls[0]
         self.assertEqual(argv, [str(self.executable), "find", query])
         self.assertIs(kwargs["shell"], False)
+        self.assertEqual(kwargs["env"], {})
+        self.assertEqual(kwargs["cwd"], str(self.root))
+        self.assertEqual(kwargs["timeout"], 30.0)
         self.assertNotIn("npx", argv)
 
     # TEST 16

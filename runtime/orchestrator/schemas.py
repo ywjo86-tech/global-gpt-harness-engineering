@@ -23,6 +23,16 @@ class DiscoveryStatus(str, Enum):
     ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
 
 
+class CandidateEvaluationState(str, Enum):
+    UNASSESSED = "UNASSESSED"
+    METADATA_VALIDATED = "METADATA_VALIDATED"
+    CONTENT_VALIDATED = "CONTENT_VALIDATED"
+    POLICY_EVALUATED = "POLICY_EVALUATED"
+    SAFE_FOR_CONSIDERATION = "SAFE_FOR_CONSIDERATION"
+    BLOCKED = "BLOCKED"
+    ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
+
+
 @dataclass(frozen=True, slots=True)
 class CandidateRisk:
     network: bool = False
@@ -77,7 +87,7 @@ class CapabilityCandidate:
             raise ValueError("candidate scope is unknown")
         if not isinstance(self.metadata, dict) or self.metadata.get("skill_md_verified") is not True:
             raise ValueError("candidate SKILL.md verification is incomplete")
-        if self.evaluation_state not in {"PASS", "FAIL", "BLOCKED"}:
+        if self.evaluation_state not in {state.value for state in CandidateEvaluationState}:
             raise ValueError("candidate evaluation is unknown")
         if not isinstance(self.risk, CandidateRisk):
             raise ValueError("candidate risk is invalid")
@@ -124,7 +134,8 @@ class DiscoveryDecision:
             raise ValueError("candidate list contains an invalid item")
         if self.selected_candidate:
             selected = next((candidate for candidate in self.candidate_list if candidate.candidate_id == self.selected_candidate), None)
-            if selected is None or not selected.matches(self.requirement) or selected.risk.dangerous:
+            if (selected is None or selected.evaluation_state != CandidateEvaluationState.SAFE_FOR_CONSIDERATION.value
+                    or not selected.matches(self.requirement) or selected.risk.dangerous):
                 raise ValueError("selected candidate does not satisfy the capability contract")
 
     @property
