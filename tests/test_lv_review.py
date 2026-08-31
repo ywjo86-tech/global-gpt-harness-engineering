@@ -29,6 +29,7 @@ from runtime.orchestrator.lv_review import (
     _preflight_projection_digest,
     _package_root,
     _owned_content_snapshot,
+    publish_gate_preflight_attestation,
     preflight_run,
     review_run,
 )
@@ -39,6 +40,80 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_published_preflight_reuses_private_result_successor_but_rejects_binding_conflict(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            package = base / "packages" / "gate" / "lv" / "package"
+            source = base / "source-preflight"
+            publication_root = base / "publications" / RUN_ID
+            package.mkdir(parents=True)
+            source.mkdir()
+            manifest = {
+                "project_id": "wallet-affiliate-collector",
+                "gate_id": "GATE-1",
+                "lv_id": "G1-LV3-5",
+                "source_head": "a" * 40,
+                "source_tree": "b" * 40,
+                "source_index_fingerprint": "c" * 64,
+                "source_worktree_fingerprint": "d" * 64,
+                "canonical_plan_sha256": "e" * 64,
+                "gate_ledger_commit": "f" * 40,
+                "gate_ledger_blob_oid": "1" * 40,
+                "gate_ledger_sha256": "2" * 64,
+                "owned_files": ["app/services/deduplicator.py", "tests/test_deduplicator.py"],
+            }
+            (package / "package.manifest.json").write_bytes(canonical_json_bytes(manifest))
+            source_evidence = {
+                "schema_version": "orchestration.lv_preflight.evidence.v1",
+                "run_id": RUN_ID,
+                "project_id": manifest["project_id"],
+                "gate_id": manifest["gate_id"],
+                "lv_id": manifest["lv_id"],
+            }
+            source_bytes = canonical_json_bytes(source_evidence)
+            (source / "preflight.evidence.json").write_bytes(source_bytes)
+            (source / "preflight.evidence.sha256").write_text(_sha256(source_bytes), encoding="ascii")
+            context = {
+                "git_before": {
+                    "branch": "main",
+                    "local_config_fingerprint": "3" * 64,
+                    "remote_fingerprint": "4" * 64,
+                    "submodule_fingerprint": "5" * 64,
+                },
+                "interpreter_fingerprint": {
+                    "python_version": "3.12.0",
+                    "python_executable_sha256": "6" * 64,
+                    "python_prefix_fingerprint": "7" * 64,
+                    "python_base_prefix_fingerprint": "8" * 64,
+                    "python_venv_verified": True,
+                    "python_owner_validation_mode": "direct-owner",
+                    "python_namespace_fingerprint": "9" * 64,
+                    "python_mount_fingerprint": "0" * 64,
+                },
+            }
+            with patch("runtime.orchestrator.lv_review._preflight", return_value=context), patch(
+                "runtime.orchestrator.lv_review._preflight_root", return_value=publication_root
+            ):
+                first = publish_gate_preflight_attestation(
+                    RUN_ID, package_root=package, source_root=source, result_path=base / "worker.result.json"
+                )
+                replay = publish_gate_preflight_attestation(
+                    RUN_ID, package_root=package, source_root=source, result_path=base / "worker.result.private-01.json"
+                )
+                self.assertEqual(first["status"], "READY")
+                self.assertFalse(first["idempotent"])
+                self.assertEqual(replay["status"], "READY")
+                self.assertTrue(replay["idempotent"])
+
+                target = next(publication_root.parent.glob(f"{RUN_ID}-v2c-*"))
+                persisted = json.loads((target / "preflight.evidence.json").read_bytes())
+                persisted["canonical_plan_sha256"] = "a" * 64
+                (target / "preflight.evidence.json").write_bytes(canonical_json_bytes(persisted))
+                conflict = publish_gate_preflight_attestation(
+                    RUN_ID, package_root=package, source_root=source, result_path=base / "worker.result.private-02.json"
+                )
+                self.assertEqual(conflict, {"status": "REJECTED", "error_code": "EVIDENCE_PUBLICATION_CONFLICT"})
+
     def test_preflight_digest_projection_rejects_self_binding_and_is_deterministic(self) -> None:
         payload = {"schema_version": "orchestration.lv_preflight.evidence.v1",
                    "preflight_evidence_sha256": "", "project_id": "p"}

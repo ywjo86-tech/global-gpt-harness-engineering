@@ -800,7 +800,10 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         existing = _canonical_json(target / "preflight.evidence.json")
-        stable = lambda value: {k:v for k,v in value.items() if k not in {"captured_at","preflight_evidence_sha256"}}
+        # The result path is a local replay destination and may legitimately
+        # move to an append-only private successor; persisted source identity
+        # and all policy bindings remain immutable.
+        stable = lambda value: {k:v for k,v in value.items() if k not in {"captured_at","preflight_evidence_sha256","result_path_expected"}}
         if stable(existing) != stable(evidence): return {"status":"REJECTED","error_code":"EVIDENCE_PUBLICATION_CONFLICT"}
         return {"status":"READY","preflight_evidence_sha256":_sha256((target/"preflight.evidence.json").read_bytes()),"idempotent":True}
     temp = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=str(target.parent)))
