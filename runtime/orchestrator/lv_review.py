@@ -229,7 +229,8 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
     # Registered worker execution materializes request/result beside the
     # immutable six-file package.  They are separately schema-bound below and
     # are not part of the package manifest itself.
-    allowed = expected | {"worker.request.json", "worker.result.json", "executor.process.json", "worker_handoff.md", "handoff_report.md", "preflight"}
+    allowed = expected | {"worker.request.json", "worker.result.json", "worker.result.private-01.json",
+                          "executor.process.json", "worker_handoff.md", "handoff_report.md", "preflight"}
     review_dirs = {entry.name for entry in entries if entry.is_dir() and entry.name.startswith("review-attempt-")}
     allowed |= review_dirs
     if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and (entry.name == "preflight" or entry.name.startswith("review-attempt-"))) or (entry.is_file() and not entry.is_symlink()) for entry in entries):
