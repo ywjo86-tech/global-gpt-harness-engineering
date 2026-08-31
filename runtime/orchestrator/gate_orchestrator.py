@@ -778,7 +778,17 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         store_key = lv_id
         if str(context.get("head")) != str(package_payload.get("source_head")):
             store_key = f"{lv_id}-adoption-{str(context.get('head'))[:12]}"
-        store = ResumeStore(Path(harness_root) / "_workspace" / "global-gate-resume" / store_key, binding)
+        store_base = Path(harness_root) / "_workspace" / "global-gate-resume" / store_key
+        event_one = store_base / plan.project_id / plan.gate_id / lv_id / run_id / "events" / "000001.json"
+        if event_one.is_file() and not event_one.is_symlink():
+            persisted = json.loads(event_one.read_text(encoding="utf-8")).get("binding")
+            if not isinstance(persisted, dict):
+                raise GateControllerError("persisted run binding is malformed")
+            stable = {key:value for key,value in binding.payload().items() if key != "owned_content_sha256"}
+            if {key:value for key,value in persisted.items() if key != "owned_content_sha256"} != stable:
+                raise GateControllerError("persisted run binding identity drift")
+            binding = RunBinding(**persisted)
+        store = ResumeStore(store_base, binding)
         state["store"] = store
         if context.get("resume") and store.verify():
             resumed = store.resume(binding, owned_hashes)
