@@ -110,7 +110,9 @@ class CompletenessTests(unittest.TestCase):
             "discovered_candidates":["owner/repo@candidate"], "evaluated_candidates":["owner/repo@candidate"],
             "selected_candidate":"owner/repo@candidate", "candidate_use_authorized":False,
             "discovery_evidence_references":["artifact/skill-discovery/evidence.json"],
-            "evaluation_evidence_references":["artifact/skill-candidate-evaluation/evidence.json"]})
+            "evaluation_evidence_references":["artifact/skill-candidate-evaluation/evidence.json"],
+            "capability_requirements":[], "capability_gaps":[], "discovery_required":False,
+            "capability_inventory_evidence_references":[]})
 
     def test_strong_handoff_consistency(self):
         ledger=self.exited(); handoff=self.handoff(ledger)

@@ -27,6 +27,8 @@ _ROW_FIELDS = {
     "checkpoint_ref", "exit_ref", "handoff_ref",
     "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
     "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references",
+    "capability_requirements", "capability_gaps", "discovery_required",
+    "capability_inventory_evidence_references",
 }
 _HANDOFF_FIELDS = {
     "schema_version", "project_id", "gate_id", "lv_id", "run_id", "requirements_sha256",
@@ -36,6 +38,8 @@ _HANDOFF_FIELDS = {
     "forbidden_actions", "selected_assets", "excluded_assets", "selection_rationale",
     "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
     "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references",
+    "capability_requirements", "capability_gaps", "discovery_required",
+    "capability_inventory_evidence_references",
 }
 
 PROJECT_REQUIREMENT_EVIDENCE_SCHEMA = "orchestration.project-requirement-evidence.v1"
@@ -81,6 +85,8 @@ def _row(source: Mapping[str, object], kind: str, order: int) -> dict[str, objec
         "used_assets": [], "discovered_candidates": [],
         "evaluated_candidates": [], "selected_candidate": "", "candidate_use_authorized": False,
         "discovery_evidence_references": [], "evaluation_evidence_references": [],
+        "capability_requirements": [], "capability_gaps": [], "discovery_required": False,
+        "capability_inventory_evidence_references": [],
     }
     defaults.update(source)
     defaults["item_kind"] = kind; defaults["order"] = order
@@ -121,7 +127,9 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
         if not isinstance(row["selected_assets"], list) or not isinstance(row["excluded_assets"], list) or not row["selection_rationale"]:
             raise CompletenessError("Skill/Agent selection evidence is incomplete")
         candidate_fields = ("used_assets", "discovered_candidates", "evaluated_candidates",
-                            "discovery_evidence_references", "evaluation_evidence_references")
+                            "discovery_evidence_references", "evaluation_evidence_references",
+                            "capability_requirements", "capability_gaps",
+                            "capability_inventory_evidence_references")
         if any(not _unique_strings(row[field]) for field in candidate_fields) or not isinstance(row["selected_candidate"], str) or not isinstance(row["candidate_use_authorized"], bool):
             raise CompletenessError("Skill Discovery ledger evidence is malformed")
         if set(row["discovered_candidates"]) & set(row["used_assets"]):
@@ -131,7 +139,9 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
         if row["selected_candidate"] and row["selected_candidate"] not in row["evaluated_candidates"]:
             raise CompletenessError("selected candidate is not an evaluated candidate")
         if row["candidate_use_authorized"] is not False:
-            raise CompletenessError("candidate use authorization is outside Phase 3A")
+            raise CompletenessError("candidate use authorization is outside this phase")
+        if not isinstance(row["discovery_required"], bool) or row["discovery_required"] != bool(row["capability_gaps"]):
+            raise CompletenessError("capability gap/discovery decision is inconsistent")
         if row["status"] in {"VERIFIED", "CHECKPOINTED", "EXITED"} and not _SHA.fullmatch(str(row["evidence_sha256"])):
             raise CompletenessError("verified item lacks evidence SHA")
         if row["status"] in {"CHECKPOINTED", "EXITED"} and not row["checkpoint_ref"]:
@@ -150,10 +160,14 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
                 "used_assets": [], "discovered_candidates": [],
                 "evaluated_candidates": [], "selected_candidate": "", "candidate_use_authorized": False,
                 "discovery_evidence_references": [], "evaluation_evidence_references": [],
+                "capability_requirements": [], "capability_gaps": [], "discovery_required": False,
+                "capability_inventory_evidence_references": [],
             }
             for field in ("gate_id", "lv_id", "owned_files", "selected_assets", "excluded_assets", "selection_rationale", "tests",
                           "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
-                          "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references"):
+                          "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references",
+                          "capability_requirements", "capability_gaps", "discovery_required",
+                          "capability_inventory_evidence_references"):
                 if row[field] != source.get(field, defaults_by_field.get(field)):
                     raise CompletenessError(f"ledger canonical {field} linkage mismatch")
     if require_exit and any(row["status"] != "EXITED" for row in items):
@@ -302,7 +316,9 @@ def validate_handoff(envelope: Mapping[str, object], *, ledger_envelope: Mapping
     if handoff.get("selected_assets") != matches[0].get("selected_assets") or handoff.get("excluded_assets") != matches[0].get("excluded_assets") or handoff.get("selection_rationale") != matches[0].get("selection_rationale"):
         raise CompletenessError("handoff asset rationale differs from ledger")
     discovery_fields = ("used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
-                        "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references")
+                        "candidate_use_authorized", "discovery_evidence_references", "evaluation_evidence_references",
+                        "capability_requirements", "capability_gaps", "discovery_required",
+                        "capability_inventory_evidence_references")
     if any(handoff.get(field) != matches[0].get(field) for field in discovery_fields):
         raise CompletenessError("handoff Skill Discovery evidence differs from ledger")
     if set(handoff.get("discovered_candidates", [])) & set(handoff.get("used_assets", [])):
@@ -315,4 +331,6 @@ def validate_handoff(envelope: Mapping[str, object], *, ledger_envelope: Mapping
     if handoff.get("selected_candidate") and handoff.get("selected_candidate") not in handoff.get("evaluated_candidates", []):
         raise CompletenessError("selected candidate is not an evaluated candidate")
     if handoff.get("candidate_use_authorized") is not False:
-        raise CompletenessError("candidate use authorization is outside Phase 3A")
+        raise CompletenessError("candidate use authorization is outside this phase")
+    if handoff.get("discovery_required") != bool(handoff.get("capability_gaps")):
+        raise CompletenessError("handoff capability gap/discovery decision is inconsistent")

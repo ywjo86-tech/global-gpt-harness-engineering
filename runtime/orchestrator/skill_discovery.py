@@ -40,7 +40,10 @@ _SECRET_VALUE = re.compile(r"(?i)\b(api[_-]?key|authorization|credential|passwor
 _SECRET_INPUT = re.compile(r"(?i)(?:\bbearer\s+\S+|https?://[^\s/:]+:[^\s/@]+@|\b(?:api[_-]?key|authorization|credential|password|secret|token)\s*[:=])")
 _SECRET_BEARER = re.compile(r"(?i)\bbearer\s+\S+")
 _SECRET_URL = re.compile(r"(?i)(https?://)[^\s/:]+:[^\s/@]+@")
-_APPROVAL_FIELDS = {"schema_version", "intent", "classification", "status", "project_id", "gate_id", "lv_id"}
+_APPROVAL_FIELDS = {
+    "schema_version", "intent", "classification", "status", "project_id", "gate_id", "lv_id",
+    "canonical_plan_sha256", "discovery_contract_sha256",
+}
 
 
 class SkillDiscoveryError(ValueError):
@@ -57,6 +60,8 @@ class DiscoveryApproval:
     lv_id: str
     evidence_reference: str
     evidence_sha256: str
+    canonical_plan_sha256: str
+    discovery_contract_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +326,7 @@ class DiscoveryRequest:
     result_limit: int
     runtime: DiscoveryRuntime | None
     timestamp: str
+    canonical_plan_sha256: str
     transport: DiscoveryTransportContract | None = None
     owner: str = ""
 
@@ -377,6 +383,8 @@ def _validate_request(request: DiscoveryRequest) -> Path:
         raise SkillDiscoveryError("project or Gate/LV identity is invalid")
     if request.requirement.gate_id != request.gate_id or request.requirement.lv_id != request.lv_id:
         raise SkillDiscoveryError("capability requirement binding mismatch")
+    if not _SHA256.fullmatch(request.canonical_plan_sha256):
+        raise SkillDiscoveryError("canonical plan binding is invalid")
     if any(_SECRET_KEY.search(permission) for permission in request.requirement.required_permissions):
         raise SkillDiscoveryError("discovery requiring a Secret is forbidden")
     root = Path(request.project_root)
@@ -407,6 +415,11 @@ def _approval_reason(request: DiscoveryRequest, root: Path) -> str:
         and not Path(approval.evidence_reference).is_absolute()
         and not _SECRET_KEY.search(approval.evidence_reference)
         and bool(_SHA256.fullmatch(approval.evidence_sha256))
+        and approval.canonical_plan_sha256 == request.canonical_plan_sha256
+        and approval.discovery_contract_sha256 == (
+            request.transport.contract_sha256 if request.transport else
+            request.runtime.contract_sha256 if request.runtime else ""
+        )
     )
     if not structurally_valid:
         return "dangerous discovery approval required or binding mismatch"
@@ -428,6 +441,11 @@ def _approval_reason(request: DiscoveryRequest, root: Path) -> str:
         "schema_version": "orchestration.skill-discovery.approval.v1", "intent": DISCOVERY_INTENT,
         "classification": DANGEROUS, "status": "ACTIVE", "project_id": request.project_id,
         "gate_id": request.gate_id, "lv_id": request.lv_id,
+        "canonical_plan_sha256": request.canonical_plan_sha256,
+        "discovery_contract_sha256": (
+            request.transport.contract_sha256 if request.transport else
+            request.runtime.contract_sha256 if request.runtime else ""
+        ),
     }
     if set(payload) != _APPROVAL_FIELDS or payload != expected or envelope["record_hash"] != hashlib.sha256(canonical_json_bytes(payload)).hexdigest():
         return "dangerous discovery approval evidence binding mismatch"
@@ -606,6 +624,7 @@ def _evidence(
         "project_id": request.project_id,
         "gate_id": request.gate_id,
         "lv_id": request.lv_id,
+        "canonical_plan_sha256": request.canonical_plan_sha256,
         "discovery_level": DiscoveryLevel.DISCOVERY.value,
         "discovery_status": status.value,
         "query": _safe_text(request.query),
@@ -615,6 +634,8 @@ def _evidence(
             "approved": request.approval.approved,
             "evidence_reference": request.approval.evidence_reference if not _SECRET_KEY.search(request.approval.evidence_reference) else "[REDACTED]",
             "evidence_sha256": request.approval.evidence_sha256,
+            "canonical_plan_sha256": request.approval.canonical_plan_sha256,
+            "discovery_contract_sha256": request.approval.discovery_contract_sha256,
         },
         "adapter_preflight": preflight,
         "executable_resolution": {
@@ -629,6 +650,10 @@ def _evidence(
             "resolved": bool(request.transport and executable_resolved),
             "transport_id": request.transport.transport_id if request.transport else "",
             "transport_type": request.transport.transport_type if request.transport else "",
+            "scheme": request.transport.scheme if request.transport else "",
+            "host": request.transport.host if request.transport else "",
+            "path": request.transport.path if request.transport else "",
+            "method": request.transport.method if request.transport else "",
             "stability": request.transport.stability if request.transport else "",
             "response_contract": request.transport.response_contract if request.transport else "",
             "provenance_status": request.transport.provenance_status if request.transport else "",

@@ -117,10 +117,13 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
         self.executable = self.root / "verified-skills"
         self.executable.write_text("fake executable; never invoked directly", encoding="utf-8")
         self.executable.chmod(0o700)
+        self.discovery_contract_sha256 = self.runtime().contract_sha256
         approval_payload = {
             "schema_version": "orchestration.skill-discovery.approval.v1", "intent": DISCOVERY_INTENT,
             "classification": DANGEROUS, "status": "ACTIVE", "project_id": "project",
             "gate_id": "GATE-1", "lv_id": "LV-1",
+            "canonical_plan_sha256": "a" * 64,
+            "discovery_contract_sha256": self.discovery_contract_sha256,
         }
         approval_envelope = {"payload": approval_payload, "record_hash": hashlib.sha256(canonical_json_bytes(approval_payload)).hexdigest()}
         self.approval_path = self.root / "approvals" / "discovery-1.json"
@@ -131,12 +134,23 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def approval(self, **overrides: object) -> DiscoveryApproval:
+    def approval(self, discovery_contract_sha256: str | None = None, **overrides: object) -> DiscoveryApproval:
+        contract = discovery_contract_sha256 or self.discovery_contract_sha256
+        payload = {
+            "schema_version": "orchestration.skill-discovery.approval.v1", "intent": DISCOVERY_INTENT,
+            "classification": DANGEROUS, "status": "ACTIVE", "project_id": "project",
+            "gate_id": "GATE-1", "lv_id": "LV-1", "canonical_plan_sha256": "a" * 64,
+            "discovery_contract_sha256": contract,
+        }
+        envelope = {"payload": payload, "record_hash": hashlib.sha256(canonical_json_bytes(payload)).hexdigest()}
+        self.approval_path.write_bytes(canonical_json_bytes(envelope))
         values: dict[str, object] = {
             "intent": DISCOVERY_INTENT, "classification": DANGEROUS, "approved": True,
             "project_id": "project", "gate_id": "GATE-1", "lv_id": "LV-1",
             "evidence_reference": "approvals/discovery-1.json",
             "evidence_sha256": hashlib.sha256(self.approval_path.read_bytes()).hexdigest(),
+            "canonical_plan_sha256": "a" * 64,
+            "discovery_contract_sha256": contract,
         }
         values.update(overrides)
         return DiscoveryApproval(**values)
@@ -164,8 +178,12 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
             "project_root": str(self.root), "project_id": "project",
             "gate_id": "GATE-1", "lv_id": "LV-1", "approval": self.approval(),
             "result_limit": 5, "runtime": self.runtime(), "timestamp": "2026-08-31T00:00:00Z",
+            "canonical_plan_sha256": "a" * 64,
         }
         values.update(overrides)
+        runtime = values.get("runtime")
+        if "approval" not in overrides and isinstance(runtime, DiscoveryRuntime):
+            values["approval"] = self.approval(runtime.contract_sha256)
         return DiscoveryRequest(**values)
 
     @staticmethod
@@ -205,7 +223,7 @@ class SkillDiscoveryAdapterTests(unittest.TestCase):
     def test_missing_executable_is_blocked_without_install_attempt(self) -> None:
         result = self.run_adapter(self.request(runtime=None))
         self.assertEqual(result.status, DiscoveryStatus.BLOCKED)
-        self.assertIn("unavailable", result.blocked_reason)
+        self.assertIn("binding mismatch", result.blocked_reason)
         self.assertEqual(self.calls, [])
 
     # TEST 14
@@ -354,10 +372,13 @@ class HTTPDiscoveryTransportTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / "project"
         self.root.mkdir()
+        self.discovery_contract_sha256 = self.transport().contract_sha256
         approval_payload = {
             "schema_version": "orchestration.skill-discovery.approval.v1", "intent": DISCOVERY_INTENT,
             "classification": DANGEROUS, "status": "ACTIVE", "project_id": "project",
             "gate_id": "GATE-1", "lv_id": "LV-1",
+            "canonical_plan_sha256": "a" * 64,
+            "discovery_contract_sha256": self.discovery_contract_sha256,
         }
         envelope = {"payload": approval_payload,
                     "record_hash": hashlib.sha256(canonical_json_bytes(approval_payload)).hexdigest()}
@@ -369,12 +390,23 @@ class HTTPDiscoveryTransportTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def approval(self) -> DiscoveryApproval:
+    def approval(self, discovery_contract_sha256: str | None = None) -> DiscoveryApproval:
+        contract = discovery_contract_sha256 or self.discovery_contract_sha256
+        payload = {
+            "schema_version": "orchestration.skill-discovery.approval.v1", "intent": DISCOVERY_INTENT,
+            "classification": DANGEROUS, "status": "ACTIVE", "project_id": "project",
+            "gate_id": "GATE-1", "lv_id": "LV-1", "canonical_plan_sha256": "a" * 64,
+            "discovery_contract_sha256": contract,
+        }
+        envelope = {"payload": payload, "record_hash": hashlib.sha256(canonical_json_bytes(payload)).hexdigest()}
+        self.approval_path.write_bytes(canonical_json_bytes(envelope))
         return DiscoveryApproval(
             intent=DISCOVERY_INTENT, classification=DANGEROUS, approved=True,
             project_id="project", gate_id="GATE-1", lv_id="LV-1",
             evidence_reference="approvals/discovery-1.json",
             evidence_sha256=hashlib.sha256(self.approval_path.read_bytes()).hexdigest(),
+            canonical_plan_sha256="a" * 64,
+            discovery_contract_sha256=contract,
         )
 
     def transport(self, **overrides: object) -> DiscoveryTransportContract:
@@ -422,8 +454,12 @@ class HTTPDiscoveryTransportTests(unittest.TestCase):
             "gate_id": "GATE-1", "lv_id": "LV-1", "approval": self.approval(),
             "result_limit": 5, "runtime": None, "timestamp": "2026-09-01T00:00:00Z",
             "transport": self.transport(), "owner": "",
+            "canonical_plan_sha256": "a" * 64,
         }
         values.update(overrides)
+        transport = values.get("transport")
+        if "approval" not in overrides and isinstance(transport, DiscoveryTransportContract):
+            values["approval"] = self.approval(transport.contract_sha256)
         return DiscoveryRequest(**values)
 
     @staticmethod

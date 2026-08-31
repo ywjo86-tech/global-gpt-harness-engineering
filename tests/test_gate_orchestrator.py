@@ -201,7 +201,7 @@ class GateOrchestratorTests(unittest.TestCase):
         result = select_assets([manifest("global-project-orchestrator","global",["orchestrate"])],
                                [manifest("project-specialist","project",["orchestrate"])], ["orchestrate"],
                                permissions=["execute"], owned_files=["app/model.py"])
-        self.assertEqual(result["selected"], ["global-project-orchestrator", "project-specialist"])
+        self.assertEqual(result["selected"], ["project-specialist", "global-project-orchestrator"])
         self.assertFalse(result["substring_matching_used"]); self.assertFalse(result["global_creation_authorized"])
 
     def test_onboarding_fixture_fails_closed_until_contract_complete(self) -> None:

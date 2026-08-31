@@ -365,7 +365,8 @@ def namespace_root(harness_root: str | Path, project_id: str, kind: str) -> Path
 def select_assets(global_assets: list[Mapping[str, Any]], project_assets: list[Mapping[str, Any]],
                   required: list[str], *, permissions: list[str], owned_files: list[str]) -> dict[str, Any]:
     from .project_isolation import AssetManifest, route_assets
-    manifests = [AssetManifest.from_mapping(item) for item in global_assets + project_assets]
+    # Project-local exact capabilities are authoritative before allowed global assets.
+    manifests = [AssetManifest.from_mapping(item) for item in project_assets + global_assets]
     routed = route_assets(manifests, capabilities=set(required), permissions=set(permissions), owned_files=owned_files)
     return {**routed, "strategy": "EXACT_REGISTRY_MANIFEST", "capability_gaps": required if not routed["selected"] else [],
             "global_creation_authorized": False}
