@@ -65,7 +65,7 @@ PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "orchestration.lv_preflight.evidence.v1"
 PREFLIGHT_STATUS_SCHEMA_VERSION = "orchestration.lv_preflight.status.v1"
 LEGACY_STATUS_CLASSIFICATIONS = frozenset({
     "LEGACY_STATUS_UPGRADABLE", "LEGACY_STATUS_INVALID", "LEGACY_STATUS_AMBIGUOUS",
-    "CURRENT_STATUS_VALID", "CURRENT_STATUS_INVALID",
+    "CURRENT_STATUS_VALID", "CURRENT_STATUS_INVALID", "UNSUPPORTED_FUTURE_STATUS_SCHEMA",
 })
 # Single source of truth for the LV-review preflight contract.  Producers and
 # consumers validate this same set before any publication is written.
@@ -974,7 +974,7 @@ def classify_derived_preflight_status(root: Path, manifest: dict[str, Any]) -> d
         return {"classification": "CURRENT_STATUS_VALID", "completion_eligible": True,
                 "evidence_sha256": detached}
     if "schema_version" in status:
-        return {"classification": "LEGACY_STATUS_INVALID", "completion_eligible": False}
+        return {"classification": "UNSUPPORTED_FUTURE_STATUS_SCHEMA", "completion_eligible": False}
     legacy_fields = {"status", "hard_stop", "evidence_sha256"}
     missing = sorted(set(_derived_preflight_status(evidence, manifest, detached)).difference(status))
     if set(status) != legacy_fields or status != {"status": "READY", "hard_stop": True, "evidence_sha256": detached}:
@@ -1057,6 +1057,17 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
 
     candidates = sorted(_preflight_root(run_id).parent.glob(f"{run_id}-v2*"))
     classified = [(path, classify_derived_preflight_status(path, manifest)) for path in candidates]
+    invalid = [(path, value) for path, value in classified if value.get("classification") in {
+        "LEGACY_STATUS_INVALID", "CURRENT_STATUS_INVALID", "UNSUPPORTED_FUTURE_STATUS_SCHEMA",
+    }]
+    if invalid:
+        # Invalid candidates are never treated as crash debris and can never be
+        # bypassed by selecting a different valid candidate.  Only expose a
+        # bounded namespace label; never return paths or artifact contents.
+        path, value = invalid[0]
+        return {"status": "REJECTED", "error_code": "EVIDENCE_PUBLICATION_INVALID",
+                "classification": value["classification"],
+                "candidate_id": f"candidate-{_sha256(path.name.encode('utf-8'))[:12]}"}
     current = [item for item in classified if item[1]["classification"] == "CURRENT_STATUS_VALID"]
     legacy = [item for item in classified if item[1]["classification"] == "LEGACY_STATUS_UPGRADABLE"]
     if len(current) > 1 or len(legacy) > 1:

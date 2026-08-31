@@ -169,6 +169,72 @@ class LegacyPreflightCompatibilityTests(unittest.TestCase):
                 classified = classify_derived_preflight_status(fixture["legacy"], fixture["manifest"])
                 self.assertEqual(classified["classification"], "LEGACY_STATUS_INVALID")
 
+    def test_invalid_candidates_fail_closed_before_successor_or_review(self) -> None:
+        mutations = {
+            "evidence": lambda f: (f["legacy"] / "preflight.evidence.json").write_bytes(b"{}"),
+            "sidecar": lambda f: (f["legacy"] / "preflight.evidence.sha256").write_text("0" * 64),
+            "status": lambda f: (f["legacy"] / "preflight.status").write_bytes(b"{"),
+            "future": lambda f: (f["legacy"] / "preflight.status").write_bytes(canonical_json_bytes({
+                "schema_version": "orchestration.lv_preflight.status.v999", "status": "READY"})),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name), TemporaryDirectory() as directory:
+                fixture = self._fixture(Path(directory)); mutate(fixture)
+                with patch("runtime.orchestrator.lv_review._preflight_root", return_value=fixture["publication_parent"] / fixture["run_id"]), \
+                     patch("runtime.orchestrator.lv_review._project_root_for", return_value=Path(directory)), \
+                     patch("runtime.orchestrator.lv_review._assert_canonical_binding"), \
+                     patch("runtime.orchestrator.lv_review.publish_gate_preflight_attestation") as publish:
+                    result = resolve_derived_preflight_publication(
+                        fixture["run_id"], package_root=fixture["package"], source_root=fixture["source"],
+                        result_path=fixture["worker"], review_request_path=fixture["request_path"])
+                self.assertEqual(result["status"], "REJECTED")
+                self.assertIn(result["classification"], {
+                    "LEGACY_STATUS_INVALID", "UNSUPPORTED_FUTURE_STATUS_SCHEMA"})
+                publish.assert_not_called()
+                self.assertEqual(sorted(item.name for item in fixture["legacy"].iterdir()),
+                                 ["preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"])
+
+    def test_invalid_and_valid_candidates_never_mix(self) -> None:
+        combinations = ("legacy_invalid", "current_invalid", "future_with_current", "future_with_legacy")
+        for combination in combinations:
+            with self.subTest(combination=combination), TemporaryDirectory() as directory:
+                fixture = self._fixture(Path(directory))
+                with patch("runtime.orchestrator.lv_review._preflight_root", return_value=fixture["publication_parent"] / fixture["run_id"]), \
+                     patch("runtime.orchestrator.lv_review._preflight", return_value=fixture["context"]), \
+                     patch("runtime.orchestrator.lv_review._project_root_for", return_value=Path(directory)), \
+                     patch("runtime.orchestrator.lv_review._assert_canonical_binding"):
+                    if combination in {"current_invalid", "future_with_current"}:
+                        first = resolve_derived_preflight_publication(
+                            fixture["run_id"], package_root=fixture["package"], source_root=fixture["source"],
+                            result_path=fixture["worker"], review_request_path=fixture["request_path"])
+                        self.assertEqual(first["status"], "READY")
+                        current = next(fixture["publication_parent"].glob(f"{fixture['run_id']}-v2c-*"))
+                        if combination == "current_invalid":
+                            (current / "preflight.status").write_bytes(b"{")
+                        else:
+                            future = current.with_name(current.name + "-future")
+                            future.mkdir()
+                            for item in current.iterdir():
+                                (future / item.name).write_bytes(item.read_bytes())
+                            (future / "preflight.status").write_bytes(canonical_json_bytes({
+                                "schema_version": "orchestration.lv_preflight.status.v999", "status": "READY"}))
+                    elif combination in {"legacy_invalid", "future_with_legacy"}:
+                        bad = fixture["legacy"].with_name(fixture["legacy"].name + "-bad")
+                        bad.mkdir()
+                        for item in fixture["legacy"].iterdir():
+                            (bad / item.name).write_bytes(item.read_bytes())
+                        if combination == "legacy_invalid":
+                            (bad / "preflight.status").write_bytes(b"{")
+                        else:
+                            (bad / "preflight.status").write_bytes(canonical_json_bytes({
+                                "schema_version": "orchestration.lv_preflight.status.v999", "status": "READY"}))
+                    result = resolve_derived_preflight_publication(
+                        fixture["run_id"], package_root=fixture["package"], source_root=fixture["source"],
+                        result_path=fixture["worker"], review_request_path=fixture["request_path"])
+                self.assertEqual(result["status"], "REJECTED")
+                self.assertIn(result["classification"], {
+                    "LEGACY_STATUS_INVALID", "CURRENT_STATUS_INVALID", "UNSUPPORTED_FUTURE_STATUS_SCHEMA"})
+
 
 if __name__ == "__main__":
     unittest.main()
