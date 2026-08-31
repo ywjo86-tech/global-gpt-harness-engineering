@@ -877,6 +877,18 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             if (existing_result.get("project_id") != plan.project_id or existing_result.get("gate_id") != plan.gate_id
                     or existing_result.get("lv_id") != lv_id or existing_result.get("run_id") != run_id):
                 raise GateControllerError("WORKER_RESULT_REQUIRED: stale worker result exists")
+            result_stat = result.lstat()
+            if result_stat.st_uid != os.getuid() or result_stat.st_mode & 0o022:
+                successor = package_root / "worker.result.private-01.json"
+                original = result.read_bytes()
+                if successor.exists():
+                    if successor.is_symlink() or not successor.is_file() or successor.read_bytes() != original or successor.lstat().st_mode & 0o022:
+                        raise GateControllerError("WORKER_RESULT_REQUIRED: unsafe private successor")
+                else:
+                    fd = os.open(successor, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                    with os.fdopen(fd, "wb") as handle:
+                        handle.write(original); handle.flush(); os.fsync(handle.fileno())
+                result = successor
             state["worker_payload"] = existing_result
             state["worker_result_path"] = result
             return sealed("WORKER", "COMPLETED", _file_sha(result), payload=existing_result)
@@ -913,7 +925,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 worker_payload = execute_production_worker(request, timeout=1800)
             except Exception as exc:
                 raise GateControllerError(f"registered worker failed (production): {exc}") from exc
-            result.write_bytes(canonical_json_bytes(worker_payload))
+            data = canonical_json_bytes(worker_payload)
+            fd = os.open(result, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data); handle.flush(); os.fsync(handle.fileno())
             state["worker_payload"] = worker_payload
             state["worker_result_path"] = result
             return sealed("WORKER", "COMPLETED", _file_sha(result), payload=worker_payload)
