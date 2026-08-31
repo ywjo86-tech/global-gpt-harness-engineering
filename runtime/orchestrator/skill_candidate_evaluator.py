@@ -70,14 +70,13 @@ class CandidateEvaluationResult:
             CandidateEvaluationState.POLICY_EVALUATED,
             CandidateEvaluationState.SAFE_FOR_CONSIDERATION,
         } else []
-        selected = candidate_id if self.evaluation_state == CandidateEvaluationState.SAFE_FOR_CONSIDERATION else ""
         return {
             "discovery_evidence_references": [self.evidence_reference] if self.evidence_reference else [],
             "discovered_candidates": [candidate_id] if candidate_id else [],
             "evaluated_candidates": evaluated,
-            "selected_candidate": selected,
+            "selected_candidate": "",
             "candidate_use_authorized": False,
-            "selection_rationale": "evaluation only; approval, installation, use, and Gate PASS remain separate",
+            "selection_rationale": "evaluation only; selection, approval, installation, use, and Gate PASS remain separate",
         }
 
     def ledger_projection(self) -> dict[str, Any]:
