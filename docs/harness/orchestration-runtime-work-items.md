@@ -258,3 +258,10 @@ full regression and independent re-audit, not the earlier passing unit tests.
 | I2 | Official partial adoption production entry | `runtime/orchestrator/official_adoption.py` plus CLI/controller/supervisor entrypoints | `tests/test_official_adoption.py` (5 tests) | COMPLETE |
 | I3 | Production terminal lifecycle integration | `runtime/orchestrator/production_terminal.py` plus CLI/supervisor entrypoints | `tests/test_production_terminal.py` (5 tests) | COMPLETE |
 | I4 | Actual-format fixtures and bounded production context | `runtime/orchestrator/production_context.py` plus worker/reviewer integration | `tests/test_production_integration.py` (6 tests) | COMPLETE |
+
+I1-I4 follow-up audit record: terminal replay persisted-artifact tamper was
+reproduced and fixed in `ba5f5c4`. A separate read-only procedure then
+verified CLI command registration, persisted validator edges, adoption
+reconciliation, terminal replay rejection, strict contract fixtures,
+compile/import, full regression, and Wallet immutability. No Wallet
+production action was performed.
