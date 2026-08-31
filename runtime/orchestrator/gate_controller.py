@@ -9,6 +9,7 @@ from .production_approval import ApprovalBindings, evaluate_production_authoriza
 from .recovery_contract import is_completion_eligible
 from .production_lifecycle import consume as consume_lifecycle, produce as produce_lifecycle
 from .lifecycle_binding import DIGEST_FIELDS, build_binding_from_sources
+from .persisted_artifact import publish as publish_persisted, validate as validate_persisted
 
 
 class GateControllerError(ValueError):
@@ -113,10 +114,20 @@ def run_gate_lifecycle(context: Mapping[str, Any], adapters: GateControllerAdapt
                                                request, lifecycle_binding)
             consume_lifecycle("worker_request" if stage == "WORKER" else kind,
                               sealed_request, lifecycle_binding)
+        artifact_root=context.get("lifecycle_artifact_root")
+        if lifecycle_binding is not None and artifact_root:
+            source=str(context["lifecycle_source_sha256"]); predecessor=str(context["lifecycle_predecessor"])
+            rel=f"{len(trace):02d}-{kind}.request.json"; request_kind="worker_request" if stage=="WORKER" else kind
+            publish_persisted(artifact_root,rel,kind=request_kind,payload=request,binding=lifecycle_binding,source_artifact_sha256=source,predecessor_digest=predecessor)
+            request=dict(validate_persisted(artifact_root,rel,expected_kind=request_kind,expected_binding=lifecycle_binding,expected_source_sha256=source,expected_predecessor=predecessor).payload)
         result = _validated_result(stage, adapter(request))
         if lifecycle_binding is not None:
             sealed_result = produce_lifecycle(kind, result, lifecycle_binding)
             consume_lifecycle(kind, sealed_result, lifecycle_binding)
+        if lifecycle_binding is not None and artifact_root:
+            rel=f"{len(trace):02d}-{kind}.result.json"
+            publish_persisted(artifact_root,rel,kind=kind,payload=result,binding=lifecycle_binding,source_artifact_sha256=source,predecessor_digest=predecessor)
+            result=_validated_result(stage,validate_persisted(artifact_root,rel,expected_kind=kind,expected_binding=lifecycle_binding,expected_source_sha256=source,expected_predecessor=predecessor).payload)
         evidence[stage.lower()] = result["evidence_sha256"]
         trace.append(stage)
         state["last_stage"] = stage
@@ -250,6 +261,10 @@ def run_production_gate_lifecycle(
             baseline_head=str(context["baseline_head"]), current_head=str(context.get("current_head") or context["baseline_head"]),
             hard_stop=True,
         )
+    if harness_root is not None:
+        context["lifecycle_artifact_root"] = str(__import__("pathlib").Path(harness_root)/"_workspace"/"production-lifecycle"/str(context["run_id"]))
+        context["lifecycle_source_sha256"] = str(context["plan_sha256"])
+        context["lifecycle_predecessor"] = str(context.get("predecessor_completion_digest") or "0"*64)
     outcome = run_gate_lifecycle(context, adapters)
     outcome["production_approval_schema"] = approval["schema_version"]
     outcome["production_approval_record_hash"] = approval["record_hash"]

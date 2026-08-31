@@ -17,10 +17,11 @@ def _atomic(path:Path,data:bytes)->None:
  finally:
   if os.path.exists(tmp):os.unlink(tmp)
 
-def reconcile(root:Path,generation:int)->str:
+def reconcile(root:Path,generation:int,*,binding:Mapping[str,Any],source_sha256:str,predecessor:str)->str:
  base=root/f"publication-{generation:02d}";canonical=base/"worker.result.json";alias=root/"worker.result.current.json";commit=base/"COMMITTED"
  if commit.exists():
   if not canonical.is_file() or not alias.is_file():raise OfficialAdoptionError("committed adoption publication is incomplete")
+  validate(base,"worker.result.json",expected_kind="worker_result",expected_binding=binding,expected_source_sha256=source_sha256,expected_predecessor=predecessor)
   pointer=json.loads(alias.read_text());
   if pointer.get("canonical")!=canonical.relative_to(root).as_posix():raise OfficialAdoptionError("conflicting adoption alias")
   return "COMMITTED"
@@ -42,7 +43,7 @@ def official_adopt(*,control_root:str|Path,artifact_root:str|Path,binding:Mappin
  if machine.state=="INVALID_OR_AMBIGUOUS_PARTIAL":raise OfficialAdoptionError("partial workspace is outside owned scope")
  if machine.state=="TERMINATED_ADOPTABLE_PARTIAL":machine.adopt(diff,owned_scope)
  generation=1;base=root/f"publication-{generation:02d}"
- status=reconcile(root,generation)
+ status=reconcile(root,generation,binding=binding,source_sha256=source_sha256,predecessor=predecessor)
  if status=="COMMITTED":
   if machine.state=="ADOPTION_VALIDATED":machine.advance("RESULT_PUBLISHED",{"publication":base.name});machine.advance("REVIEW_PENDING")
   _atomic(root/"review.queue.json",canonical_bytes({"schema_version":"orchestration.review-queue.v1","publication":base.name}))
@@ -60,6 +61,11 @@ def official_adopt(*,control_root:str|Path,artifact_root:str|Path,binding:Mappin
 def reconcile_and_resume(**kwargs:Any)->dict[str,Any]:
  root=Path(kwargs["control_root"]);base=root/"publication-01";alias=root/"worker.result.current.json"
  if base.joinpath("worker.result.json").exists() and not alias.exists():
+  validate(base,"worker.result.json",expected_kind="worker_result",expected_binding=kwargs["binding"],expected_source_sha256=kwargs["source_sha256"],expected_predecessor=kwargs["predecessor"])
   canonical=base/"worker.result.json";_atomic(alias,canonical_bytes({"schema_version":"orchestration.adoption-alias.v1","canonical":canonical.relative_to(root).as_posix()}))
- if alias.exists() and base.joinpath("worker.result.json").exists() and not base.joinpath("COMMITTED").exists():_atomic(base/"COMMITTED",b"COMMITTED\n")
+ if alias.exists() and base.joinpath("worker.result.json").exists() and not base.joinpath("COMMITTED").exists():
+  validate(base,"worker.result.json",expected_kind="worker_result",expected_binding=kwargs["binding"],expected_source_sha256=kwargs["source_sha256"],expected_predecessor=kwargs["predecessor"])
+  pointer=json.loads(alias.read_text())
+  if pointer.get("canonical")!="publication-01/worker.result.json":raise OfficialAdoptionError("conflicting adoption alias")
+  _atomic(base/"COMMITTED",b"COMMITTED\n")
  return official_adopt(**kwargs)

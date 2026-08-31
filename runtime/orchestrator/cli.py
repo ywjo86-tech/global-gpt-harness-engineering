@@ -43,9 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "production-gate-dry-run", "production-gate-run", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "production-gate-dry-run", "production-gate-run", "production-adopt-partial", "production-terminal", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
         sub = subparsers.add_parser(name)
-        if name in {"lv-plan", "lv-package"}:
+        if name in {"production-adopt-partial", "production-terminal"}:
+            sub.add_argument("--request", required=True)
+        elif name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--gate-id", required=True)
             sub.add_argument("--lv-id", required=True)
@@ -150,6 +152,16 @@ def main(argv: list[str] | None = None) -> int:
         # The child lifecycle commands inherit this process-local registry choice.
         os.environ["HARNESS_CONTRACT_MAPPING_ROOT"] = args.mapping_root
     try:
+        if args.command in {"production-adopt-partial", "production-terminal"}:
+            request_path=Path(args.request)
+            if not request_path.is_file() or request_path.is_symlink(): raise ValueError("unsafe production request")
+            request=json.loads(request_path.read_text(encoding="utf-8"))
+            if args.command=="production-adopt-partial":
+                status=request.pop("process_status",None)
+                request["process_probe"]=(lambda pid: request.get("recorded_start")) if status=="live" else (lambda pid: None)
+                outcome=official_partial_adoption_entry(**request)
+            else: outcome=production_terminal_entry(**request)
+            _print(outcome);return 0
         if args.command == "production-mapping-migrate":
             from .mapping_migration import migrate_plan_sha_mapping
             _print(migrate_plan_sha_mapping(

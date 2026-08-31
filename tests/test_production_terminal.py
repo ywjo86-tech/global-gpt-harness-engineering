@@ -2,6 +2,7 @@ import tempfile,unittest
 from pathlib import Path
 from tests.test_production_lifecycle import binding
 from runtime.orchestrator.cli import production_terminal_entry
+from runtime.orchestrator.cli import main as cli_main
 from runtime.orchestrator.gate_supervisor import PersistentGateSupervisor
 from runtime.orchestrator.production_terminal import ProductionTerminalLifecycle,run_plan_fixture
 SRC="a"*64;PRE="b"*64
@@ -9,6 +10,10 @@ class ProductionTerminalTests(unittest.TestCase):
  def test_cli_invocation_graph_reaches_handoff_and_approval_boundary(self):
   with tempfile.TemporaryDirectory() as d:
    s=production_terminal_entry(root=d,binding=binding(),lvs=["a","b","c"],reviewed_lvs=["a","b","c"],source_sha256=SRC,predecessor=PRE);self.assertEqual(s["stage"],"HANDOFF_SEALED");self.assertEqual(s["next_gate_status"],"USER_APPROVAL_REQUIRED")
+ def test_actual_argparse_terminal_command(self):
+  import json
+  with tempfile.TemporaryDirectory() as d:
+   p=Path(d)/"request.json";p.write_text(json.dumps({"root":str(Path(d)/"terminal"),"binding":binding(),"lvs":["a"],"reviewed_lvs":["a"],"source_sha256":SRC,"predecessor":PRE,"mode":"GATE_BY_GATE"}));self.assertEqual(cli_main(["production-terminal","--request",str(p)]),0)
  def test_supervisor_graph_and_persisted_artifacts(self):
   with tempfile.TemporaryDirectory() as d:
    s=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="GATE_BY_GATE",lv_order=["a"]);out=s.run_production_terminal(root=Path(d)/"terminal",binding=binding(),lvs=["a"],reviewed_lvs=["a"],source_sha256=SRC,predecessor=PRE);self.assertEqual(out["gate_status"],"EXITED");self.assertTrue((Path(d)/"terminal/artifacts/gate.handoff.json").is_file())

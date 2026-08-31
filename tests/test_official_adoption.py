@@ -4,6 +4,7 @@ from tests.test_production_lifecycle import binding
 from runtime.orchestrator.persisted_artifact import publish
 from runtime.orchestrator.official_adoption import OfficialAdoptionError,official_adopt,reconcile_and_resume
 from runtime.orchestrator.cli import official_partial_adoption_entry
+from runtime.orchestrator.cli import main as cli_main
 from runtime.orchestrator.gate_supervisor import PersistentGateSupervisor
 
 SRC="a"*64;PRE="b"*64
@@ -15,6 +16,11 @@ class OfficialAdoptionTests(unittest.TestCase):
  def test_cli_to_controller_official_path_and_duplicate_idempotency(self):
   with tempfile.TemporaryDirectory() as d:
    kw=self.setup(d);self.assertEqual(official_partial_adoption_entry(**kw)["status"],"REVIEW_PENDING");self.assertTrue(official_partial_adoption_entry(**kw)["idempotent"])
+ def test_actual_argparse_cli_command_reaches_adoption(self):
+  import json
+  with tempfile.TemporaryDirectory() as d:
+   kw=self.setup(d);kw.pop("process_probe");kw["process_status"]="terminated";kw["control_root"]=str(kw["control_root"]);kw["artifact_root"]=str(kw["artifact_root"]);p=Path(d)/"request.json";p.write_text(json.dumps(kw))
+   self.assertEqual(cli_main(["production-adopt-partial","--request",str(p)]),0)
  def test_supervisor_reaches_same_official_path(self):
   with tempfile.TemporaryDirectory() as d:
    kw=self.setup(d);s=PersistentGateSupervisor(d,project_id="p",run_id="r",gate_id="g",mode="GATE_BY_GATE",lv_order=["l"]);self.assertEqual(s.adopt_terminated_partial(**kw)["status"],"REVIEW_PENDING")
@@ -23,6 +29,12 @@ class OfficialAdoptionTests(unittest.TestCase):
    kw=self.setup(d)
    with self.assertRaises(OfficialAdoptionError):official_adopt(**kw,failpoint="after_canonical")
    self.assertFalse((Path(d)/"control/review.queue.json").exists());self.assertEqual(reconcile_and_resume(**kw)["status"],"REVIEW_PENDING")
+ def test_reconciliation_revalidates_canonical_bytes(self):
+  with tempfile.TemporaryDirectory() as d:
+   kw=self.setup(d)
+   with self.assertRaises(OfficialAdoptionError):official_adopt(**kw,failpoint="after_canonical")
+   (Path(d)/"control/publication-01/worker.result.json").write_text("{}")
+   with self.assertRaises(Exception):reconcile_and_resume(**kw)
  def test_alias_without_canonical_and_conflicting_alias_fail(self):
   with tempfile.TemporaryDirectory() as d:
    kw=self.setup(d);root=Path(d)/"control";root.mkdir();(root/"worker.result.current.json").write_text('{}')

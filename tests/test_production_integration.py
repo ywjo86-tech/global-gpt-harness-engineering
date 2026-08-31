@@ -7,6 +7,7 @@ from runtime.orchestrator.production_context import ProductionContextBuilder,bui
 from runtime.orchestrator.production_worker_executor import _prompt
 from runtime.orchestrator.schemas import TaskSlice,WorkerRequest
 from runtime.orchestrator.lv_review import build_bounded_review_context
+from runtime.orchestrator.contract_loader import load_contract
 
 SRC="a"*64;PRE="b"*64
 class ProductionIntegrationTests(unittest.TestCase):
@@ -15,12 +16,13 @@ class ProductionIntegrationTests(unittest.TestCase):
   return root,[{"path":"a.json","kind":"package","lv_id":"done"},{"path":"b.json","kind":"review","lv_id":"next","checkpoint_summary":"cp"}]
  def test_actual_format_project_fixtures_are_temporary_and_sources_unchanged(self):
   harness=Path(__file__).resolve().parents[1];mapping=next((harness/"runtime/orchestrator/contract_mappings").glob("*.json"));spec=json.loads(mapping.read_text());source=harness.parent/spec["project_id"]
-  candidates=[(source,Path(spec["canonical_implementation_source"]["path"])),(harness/"runtime/examples/sample_project_contract",Path("docs/DEVELOPMENT_PLAN.txt"))]
+  second=next(p for p in harness.parent.iterdir() if p!=source and (p/"AGENTS.md").is_file() and (p/"docs/DEVELOPMENT_PLAN.txt").is_file())
+  candidates=[(source,Path(spec["canonical_implementation_source"]["path"])),(second,Path("docs/DEVELOPMENT_PLAN.txt"))]
   before=[]
   with tempfile.TemporaryDirectory() as d:
    for index,(root,relative) in enumerate(candidates):
-    raw=(root/relative).read_bytes();before.append((root/relative,hashlib.sha256(raw).hexdigest()));target=Path(d)/f"fixture-{index}";target.mkdir();(target/"AGENTS.md").write_bytes((root/"AGENTS.md").read_bytes() if (root/"AGENTS.md").is_file() else b"fixture\n");(target/relative.name).write_bytes(raw);self.assertTrue((target/relative.name).is_file())
-   new=Path(d)/"new";new.mkdir();(new/"AGENTS.md").write_text("fixture\n");(new/"DEVELOPMENT_PLAN.txt").write_text("Gate 1\n")
+    raw=(root/relative).read_bytes();before.append((root/relative,hashlib.sha256(raw).hexdigest()));target=Path(d)/f"fixture-{index}";(target/"docs/harness").mkdir(parents=True);(target/"logs").mkdir();(target/"AGENTS.md").write_bytes((root/"AGENTS.md").read_bytes());(target/"docs/DEVELOPMENT_PLAN.txt").write_bytes(raw);(target/"CHANGELOG.txt").write_text("fixture\n");(target/"logs/app.log").write_text("");(target/"docs/harness/orchestration-state.md").write_text("Current phase: Gate 1\n");self.assertTrue(load_contract(target,strict=True).development_plan_text)
+   new=Path(d)/"new";(new/"docs/harness").mkdir(parents=True);(new/"logs").mkdir();(new/"AGENTS.md").write_text("fixture\n");(new/"docs/DEVELOPMENT_PLAN.txt").write_text("Current phase: Gate 1\n");(new/"CHANGELOG.txt").write_text("fixture\n");(new/"logs/app.log").write_text("");(new/"docs/harness/orchestration-state.md").write_text("Current phase: Gate 1\n");self.assertEqual(load_contract(new,strict=True).current_phase,"Gate 1")
   for path,digest in before:self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),digest)
  def test_production_builder_dedup_completed_cache_and_invalidation(self):
   with tempfile.TemporaryDirectory() as d:
