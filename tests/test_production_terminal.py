@@ -25,6 +25,10 @@ class ProductionTerminalTests(unittest.TestCase):
    x=ProductionTerminalLifecycle(d,binding(),["a","b"],source_sha256=SRC,predecessor=PRE)
    with self.assertRaises(Exception):x.review_pass("b")
    first=x.review_pass("a");self.assertEqual(first,x.review_pass("a"))
+ def test_tampered_persisted_handoff_is_rejected_on_terminal_replay(self):
+  with tempfile.TemporaryDirectory() as d:
+   x=ProductionTerminalLifecycle(d,binding(),["a"],source_sha256=SRC,predecessor=PRE);x.review_pass("a");p=Path(d)/"artifacts/gate.handoff.json";p.write_text("{}")
+   with self.assertRaises(Exception):ProductionTerminalLifecycle(d,binding(),["a"],source_sha256=SRC,predecessor=PRE).replay()
  def test_multi_gate_gate_by_gate_and_full_plan_f1_f4(self):
   gates=[{"gate_id":f"F{i}","binding":binding(gate_id=f"F{i}"),"lvs":["a","b","c"],"source_sha256":SRC,"predecessor":PRE} for i in range(1,5)]
   with tempfile.TemporaryDirectory() as d:self.assertEqual(run_plan_fixture(d,gates,mode="GATE_BY_GATE")["completed_gates"],1)

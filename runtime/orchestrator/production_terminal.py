@@ -29,7 +29,7 @@ class ProductionTerminalLifecycle:
    self._persist("gate_checkpoint","gate",{"status":"CHECKPOINTED"})
    self._persist("gate_exit","gate",{"status":"EXITED"})
    self._persist("handoff","gate",{"status":"SEALED","next_gate_status":"USER_APPROVAL_REQUIRED","hard_stop":True})
-  return state
+  return self.controller.load()
  def replay(self)->dict[str,Any]:
   state=self.controller.load()
   for lv in state["completed_lvs"]:
@@ -41,10 +41,11 @@ class ProductionTerminalLifecycle:
 def run_terminal_entry(*,root:str|Path,binding:Mapping[str,Any],lvs:Sequence[str],reviewed_lvs:Sequence[str],source_sha256:str,predecessor:str,mode:str="GATE_BY_GATE")->dict[str,Any]:
  lifecycle=ProductionTerminalLifecycle(root,binding,lvs,source_sha256=source_sha256,predecessor=predecessor,mode=mode)
  state=lifecycle.controller.load()
+ if state["stage"]=="HANDOFF_SEALED": return lifecycle.replay()
  for lv in reviewed_lvs:
   if lv not in state["completed_lvs"]:state=lifecycle.review_pass(lv)
  if state["stage"]=="HANDOFF_SEALED" and state.get("next_gate_status")!="USER_APPROVAL_REQUIRED":raise ProductionTerminalError("next Gate approval boundary missing")
- return state
+ return lifecycle.controller.load()
 
 def run_plan_fixture(root:str|Path,gates:Sequence[Mapping[str,Any]],*,mode:str)->dict[str,Any]:
  results=[]
