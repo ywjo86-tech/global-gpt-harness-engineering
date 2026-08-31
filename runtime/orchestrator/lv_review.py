@@ -798,87 +798,150 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     # LV attempts in one run.
     target = _preflight_root(run_id).parent / f"{run_id}-v2c-{manifest['lv_id']}-{expected['package_manifest_sha256'][:12]}-{source_sha[:12]}"
     target.parent.mkdir(parents=True, exist_ok=True)
+    status = _derived_preflight_status(evidence, manifest, evidence_sha)
     if target.exists():
-        existing = _canonical_json(target / "preflight.evidence.json")
+        try:
+            existing, persisted_sha, _ = _read_validated_preflight_publication(target, manifest)
+        except LVReviewError:
+            return {"status":"REJECTED","error_code":"EVIDENCE_PUBLICATION_INVALID"}
         # The result path is a local replay destination and may legitimately
         # move to an append-only private successor; persisted source identity
         # and all policy bindings remain immutable.
         stable = lambda value: {k:v for k,v in value.items() if k not in {"captured_at","preflight_evidence_sha256","result_path_expected"}}
         if stable(existing) != stable(evidence): return {"status":"REJECTED","error_code":"EVIDENCE_PUBLICATION_CONFLICT"}
-        return {"status":"READY","preflight_evidence_sha256":_sha256((target/"preflight.evidence.json").read_bytes()),"idempotent":True}
+        return {"status":"READY","preflight_evidence_sha256":persisted_sha,"idempotent":True}
     temp = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=str(target.parent)))
     try:
         (temp/"preflight.evidence.json").write_bytes(canonical_json_bytes(evidence))
         (temp/"preflight.evidence.sha256").write_text(evidence_sha, encoding="ascii")
-        (temp/"preflight.status").write_bytes(canonical_json_bytes({"schema_version":PREFLIGHT_STATUS_SCHEMA_VERSION,"status":"READY","hard_stop":True,"package_manifest_sha256":expected["package_manifest_sha256"],"preflight_evidence_sha256":evidence_sha,"runtime_authorization":"not_granted_by_preflight"}))
+        (temp/"preflight.status").write_bytes(canonical_json_bytes(status))
         os.replace(temp, target)
     finally:
         if temp.exists(): import shutil; shutil.rmtree(temp)
     return {"status":"READY","preflight_evidence_sha256":evidence_sha,"idempotent":False}
 
 
-def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    root = Path(context.get("preflight_root") or _preflight_root(context["run_id"]))
-    expected = {"preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"}
-    def valid_candidate(candidate: Path) -> bool:
-        try:
-            if not candidate.is_dir() or candidate.is_symlink():
-                return False
-            entries = list(candidate.iterdir())
-            if {entry.name for entry in entries} != expected or not all(entry.is_file() and not entry.is_symlink() for entry in entries):
-                return False
-            data = (candidate/"preflight.evidence.json").read_bytes()
-            digest = _sha256(data)
-            if (candidate/"preflight.evidence.sha256").read_text(encoding="ascii").strip() != digest:
-                return False
-            evidence = json.loads(data)
-            manifest = context["manifest"]
-            identity = {
-                "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
-                "run_id": context["run_id"], "project_id": manifest["project_id"],
-                "gate_id": manifest["gate_id"], "lv_id": manifest["lv_id"],
-                "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
-            }
-            if any(evidence.get(key) != value for key, value in identity.items()):
-                return False
-            status = json.loads((candidate/"preflight.status").read_bytes())
-            expected_status = {
-                "schema_version": PREFLIGHT_STATUS_SCHEMA_VERSION, "status": "READY", "hard_stop": True,
-                "package_manifest_sha256": evidence["package_manifest_sha256"],
-                "preflight_evidence_sha256": digest, "runtime_authorization": "not_granted_by_preflight",
-            }
-            return status == expected_status
-        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
-            return False
-    candidates = sorted(root.parent.glob(f"{context['run_id']}-v2*"))
-    valid = [p for p in candidates if valid_candidate(p)]
-    if valid:
-        root = valid[-1]
-    elif not valid_candidate(root):
-        root = root
-    if not root.is_dir() or root.is_symlink():
-        raise LVReviewError("preflight evidence is missing")
-    entries = list(root.iterdir())
-    if {entry.name for entry in entries} != expected or not all(entry.is_file() and not entry.is_symlink() for entry in entries):
-        raise LVReviewError("preflight evidence must contain exactly three regular files")
-    evidence_path = root / "preflight.evidence.json"
-    evidence_bytes = evidence_path.read_bytes()
-    evidence_hash = _sha256(evidence_bytes)
-    if (root / "preflight.evidence.sha256").read_text(encoding="ascii").strip() != evidence_hash:
-        raise LVReviewError("preflight evidence sidecar hash mismatch")
-    evidence = _canonical_json(evidence_path)
-    status = _canonical_json(root / "preflight.status")
-    expected_status = {
+def _derived_preflight_status(evidence: dict[str, Any], manifest: dict[str, Any], evidence_sha: str) -> dict[str, Any]:
+    transition = manifest.get("production_transition")
+    transition_sha = _sha256(canonical_json_bytes(transition)) if isinstance(transition, dict) else ""
+    predecessor = transition.get("predecessor_completion_digest", "") if isinstance(transition, dict) else ""
+    return {
         "schema_version": PREFLIGHT_STATUS_SCHEMA_VERSION,
         "status": "READY",
         "hard_stop": True,
+        "run_id": evidence["run_id"],
+        "project_id": evidence["project_id"],
+        "gate_id": evidence["gate_id"],
+        "lv_id": evidence["lv_id"],
+        "review_attempt": 1,
         "package_manifest_sha256": evidence["package_manifest_sha256"],
-        "preflight_evidence_sha256": evidence_hash,
+        "preflight_evidence_sha256": evidence_sha,
+        "canonical_plan_sha256": evidence["canonical_plan_sha256"],
+        "approval_id": manifest.get("approval_id"),
+        "approval_record_hash": manifest.get("approval_record_hash"),
+        "production_transition_sha256": transition_sha,
+        "predecessor_completion_digest": predecessor,
         "runtime_authorization": "not_granted_by_preflight",
     }
-    if status != expected_status:
+
+
+def _read_validated_preflight_publication(root: Path, manifest: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    """Read and validate one sealed three-file publication without reopening it."""
+    expected_names = {"preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"}
+    if root.is_symlink() or not root.is_dir() or root.absolute() != root.resolve():
+        raise LVReviewError("preflight publication is invalid")
+    directory_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    descriptors: list[int] = []
+    try:
+        if set(os.listdir(directory_fd)) != expected_names:
+            raise LVReviewError("preflight publication file set is invalid")
+        raw_files: dict[str, bytes] = {}
+        inodes: set[tuple[int, int]] = set()
+        for name in sorted(expected_names):
+            fd = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=directory_fd)
+            descriptors.append(fd)
+            metadata = os.fstat(fd)
+            identity = (metadata.st_dev, metadata.st_ino)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or identity in inodes:
+                raise LVReviewError("preflight publication entry is invalid")
+            inodes.add(identity)
+            raw_files[name] = os.read(fd, metadata.st_size + 1)
+    except (OSError, UnicodeError) as exc:
+        raise LVReviewError("preflight publication is invalid") from exc
+    finally:
+        for fd in descriptors:
+            os.close(fd)
+        os.close(directory_fd)
+    evidence_raw = raw_files["preflight.evidence.json"]
+    status_raw = raw_files["preflight.status"]
+    try:
+        evidence = json.loads(evidence_raw)
+        status_payload = json.loads(status_raw)
+        detached_raw = raw_files["preflight.evidence.sha256"].decode("ascii")
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise LVReviewError("preflight publication encoding is invalid") from exc
+    if not isinstance(evidence, dict) or canonical_json_bytes(evidence) != evidence_raw:
+        raise LVReviewError("preflight evidence is invalid")
+    if not isinstance(status_payload, dict) or canonical_json_bytes(status_payload) != status_raw:
         raise LVReviewError("preflight status is invalid")
+    if re.fullmatch(r"[0-9a-f]{64}\n?", detached_raw) is None:
+        raise LVReviewError("preflight sidecar is invalid")
+    evidence_sha = _sha256(evidence_raw)
+    if detached_raw.rstrip("\n") != evidence_sha:
+        raise LVReviewError("preflight sidecar digest mismatch")
+    required_evidence = {"schema_version", "run_id", "project_id", "gate_id", "lv_id", "canonical_plan_sha256", "package_manifest_sha256"}
+    if evidence.get("schema_version") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION or not required_evidence.issubset(evidence):
+        raise LVReviewError("preflight evidence schema is invalid")
+    expected_status = _derived_preflight_status(evidence, manifest, evidence_sha)
+    if status_payload != expected_status:
+        raise LVReviewError("preflight status binding is invalid")
+    return evidence, evidence_sha, status_payload
+
+
+def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    root = Path(context.get("preflight_root") or _preflight_root(context["run_id"]))
+    expected = {"preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"}
     manifest = context["manifest"]
+    identity = {
+        "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
+        "run_id": context["run_id"], "project_id": manifest["project_id"],
+        "gate_id": manifest["gate_id"], "lv_id": manifest["lv_id"],
+        "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+    }
+    candidates = sorted(root.parent.glob(f"{context['run_id']}-v2*"))
+    valid: list[tuple[Path, dict[str, Any], str]] = []
+    for candidate in candidates:
+        try:
+            candidate_evidence, candidate_hash, _ = _read_validated_preflight_publication(candidate, manifest)
+        except LVReviewError:
+            continue
+        if all(candidate_evidence.get(key) == value for key, value in identity.items()):
+            valid.append((candidate, candidate_evidence, candidate_hash))
+    if valid:
+        root, evidence, evidence_hash = valid[-1]
+    else:
+        if not root.is_dir() or root.is_symlink():
+            raise LVReviewError("preflight evidence is missing")
+        entries = list(root.iterdir())
+        if {entry.name for entry in entries} != expected or not all(entry.is_file() and not entry.is_symlink() for entry in entries):
+            raise LVReviewError("preflight evidence must contain exactly three regular files")
+        evidence_path = root / "preflight.evidence.json"
+        evidence_bytes = evidence_path.read_bytes()
+        evidence_hash = _sha256(evidence_bytes)
+        if (root / "preflight.evidence.sha256").read_text(encoding="ascii").strip() != evidence_hash:
+            raise LVReviewError("preflight evidence sidecar hash mismatch")
+        evidence = _canonical_json(evidence_path)
+        status = _canonical_json(root / "preflight.status")
+        expected_status = {
+            "schema_version": PREFLIGHT_STATUS_SCHEMA_VERSION,
+            "status": "READY",
+            "hard_stop": True,
+            "package_manifest_sha256": evidence["package_manifest_sha256"],
+            "preflight_evidence_sha256": evidence_hash,
+            "runtime_authorization": "not_granted_by_preflight",
+        }
+        if status != expected_status:
+            raise LVReviewError("preflight status is invalid")
     checks = {
         "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
         "run_id": context["run_id"],

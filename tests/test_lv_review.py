@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -106,9 +107,93 @@ class LVReviewTest(unittest.TestCase):
                 self.assertTrue(replay["idempotent"])
 
                 target = next(publication_root.parent.glob(f"{RUN_ID}-v2c-*"))
+                names = ("preflight.evidence.json", "preflight.evidence.sha256", "preflight.status")
+                original = {name: (target / name).read_bytes() for name in names}
+
+                def reset_publication() -> None:
+                    for entry in list(target.iterdir()):
+                        if entry.is_dir() and not entry.is_symlink():
+                            shutil.rmtree(entry)
+                        else:
+                            entry.unlink()
+                    for name, data in original.items():
+                        (target / name).write_bytes(data)
+
+                def replay_after(mutate) -> dict:
+                    reset_publication()
+                    mutate()
+                    result = publish_gate_preflight_attestation(
+                        RUN_ID, package_root=package, source_root=source,
+                        result_path=base / "worker.result.private-replay.json"
+                    )
+                    self.assertEqual(result, {"status": "REJECTED", "error_code": "EVIDENCE_PUBLICATION_INVALID"})
+                    return result
+
+                def mutate_status(field: str, value: object) -> None:
+                    payload = json.loads(original["preflight.status"])
+                    payload[field] = value
+                    (target / "preflight.status").write_bytes(canonical_json_bytes(payload))
+
+                invalid_cases = {
+                    "tampered_evidence_bytes": lambda: (target / "preflight.evidence.json").write_bytes(original["preflight.evidence.json"] + b" "),
+                    "tampered_sidecar": lambda: (target / "preflight.evidence.sha256").write_text("0" * 64, encoding="ascii"),
+                    "malformed_sidecar": lambda: (target / "preflight.evidence.sha256").write_text("not-a-digest", encoding="ascii"),
+                    "tampered_status": lambda: (target / "preflight.status").write_bytes(canonical_json_bytes({"status": "READY"})),
+                    "malformed_status_json": lambda: (target / "preflight.status").write_text("{", encoding="utf-8"),
+                    "wrong_status_digest": lambda: mutate_status("preflight_evidence_sha256", "0" * 64),
+                    "wrong_status_run": lambda: mutate_status("run_id", "other-run"),
+                    "wrong_status_gate": lambda: mutate_status("gate_id", "OTHER-GATE"),
+                    "wrong_status_lv": lambda: mutate_status("lv_id", "OTHER-LV"),
+                    "wrong_status_attempt": lambda: mutate_status("review_attempt", 2),
+                    "wrong_status_value": lambda: mutate_status("status", "PASS"),
+                    "wrong_status_plan": lambda: mutate_status("canonical_plan_sha256", "0" * 64),
+                    "wrong_status_approval": lambda: mutate_status("approval_id", "other-approval"),
+                    "wrong_status_approval_hash": lambda: mutate_status("approval_record_hash", "0" * 64),
+                    "wrong_status_transition": lambda: mutate_status("production_transition_sha256", "0" * 64),
+                    "wrong_status_predecessor": lambda: mutate_status("predecessor_completion_digest", "0" * 64),
+                    "unsupported_status_schema": lambda: mutate_status("schema_version", "unsupported"),
+                    "missing_evidence": lambda: (target / "preflight.evidence.json").unlink(),
+                    "missing_sidecar": lambda: (target / "preflight.evidence.sha256").unlink(),
+                    "missing_status": lambda: (target / "preflight.status").unlink(),
+                    "extra_file": lambda: (target / "unexpected").write_text("x", encoding="utf-8"),
+                    "evidence_directory": lambda: ((target / "preflight.evidence.json").unlink(), (target / "preflight.evidence.json").mkdir()),
+                    "hardlink_alias": lambda: ((target / "preflight.status").unlink(), os.link(target / "preflight.evidence.json", target / "preflight.status")),
+                }
+                for name, mutate in invalid_cases.items():
+                    with self.subTest(name=name):
+                        replay_after(mutate)
+
+                for name in names:
+                    with self.subTest(name=f"symlink_{name}"):
+                        replay_after(lambda name=name: ((target / name).unlink(), (target / name).symlink_to(source / "preflight.evidence.json")))
+
+                reset_publication()
+                replacement = target.with_name(target.name + "-directory-backup")
+                target.rename(replacement)
+                target.write_text("not-a-directory", encoding="utf-8")
+                try:
+                    self.assertEqual(
+                        publish_gate_preflight_attestation(
+                            RUN_ID, package_root=package, source_root=source,
+                            result_path=base / "worker.result.private-target-file.json"
+                        ),
+                        {"status": "REJECTED", "error_code": "EVIDENCE_PUBLICATION_INVALID"},
+                    )
+                finally:
+                    target.unlink()
+                    replacement.rename(target)
+
+                reset_publication()
                 persisted = json.loads((target / "preflight.evidence.json").read_bytes())
                 persisted["canonical_plan_sha256"] = "a" * 64
-                (target / "preflight.evidence.json").write_bytes(canonical_json_bytes(persisted))
+                persisted_bytes = canonical_json_bytes(persisted)
+                persisted_sha = _sha256(persisted_bytes)
+                (target / "preflight.evidence.json").write_bytes(persisted_bytes)
+                (target / "preflight.evidence.sha256").write_text(persisted_sha, encoding="ascii")
+                persisted_status = json.loads(original["preflight.status"])
+                persisted_status["canonical_plan_sha256"] = persisted["canonical_plan_sha256"]
+                persisted_status["preflight_evidence_sha256"] = persisted_sha
+                (target / "preflight.status").write_bytes(canonical_json_bytes(persisted_status))
                 conflict = publish_gate_preflight_attestation(
                     RUN_ID, package_root=package, source_root=source, result_path=base / "worker.result.private-02.json"
                 )
