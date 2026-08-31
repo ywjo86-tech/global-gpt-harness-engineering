@@ -239,7 +239,7 @@ def run_production_gate_lifecycle(
         context = dict(context)
         context["canonical_state_override"] = {
             "state": "GATE1_ACTIVE", "gate_id": str(context["gate_id"]), "active_scope": [str(context["lv_id"])],
-            "selected_source": __import__("pathlib").Path(project_root).resolve() / "IMPLEMENTATION_PLAN.md",
+            "selected_source": str(__import__("pathlib").Path(project_root).resolve() / "IMPLEMENTATION_PLAN.md"),
             "canonical_plan": "IMPLEMENTATION_PLAN.md", "plan_sha256": str(context["plan_sha256"]),
             "approval_id": approval["event_id"], "approval_record_hash": approval["record_hash"],
             "checkpoint_commit": transition["current_head"], "owned_files": list(context["owned_file_scope"][context["lv_id"]]),
