@@ -299,6 +299,14 @@ def main(argv: list[str] | None = None) -> int:
                                          plan_sha256=plan.canonical_plan_sha256,
                                          run_id_hint=args.run_id)
             validate_resume_bridge(bridge, project_id=plan.project_id, gate_id=args.gate_id, plan_sha256=plan.canonical_plan_sha256)
+            from .production_decision import build_production_decision
+            decision = build_production_decision(
+                project_root=args.project_root, harness_root=args.harness_root,
+                project_id=plan.project_id, gate_id=args.gate_id, run_id=args.run_id,
+                mode=args.mode, current_lv=bridge["first_incomplete_lv"],
+                inherited_completed_lvs=[item["lv_id"] for item in bridge["completed"]],
+                remaining_lvs=bridge["remaining"],
+            )
             output = {"status": "DRY_RUN", "mutation_performed": False,
                       "approval_event_id": approval["event_id"], "approval_schema": approval["schema_version"],
                       "approval_record_hash": approval["record_hash"], "mode": args.mode,
@@ -306,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
                       "plan_sha256": plan.canonical_plan_sha256, "branch": approval["branch"],
                       "baseline_head": approval["baseline_head"], "current_head": descendant["current_head"],
                       "governance_only": descendant["governance_only"], "scope": approval["canonical_lv_scope"],
-                      "resume_bridge": bridge, "next_gate": "USER_APPROVAL_REQUIRED", "hard_stop": True}
+                      "resume_bridge": bridge, "decision": decision,
+                      "next_gate": "USER_APPROVAL_REQUIRED", "hard_stop": True}
             if args.command == "production-gate-run":
                 if not args.run_id:
                     raise GateControllerError("--run-id is required for production-gate-run")
