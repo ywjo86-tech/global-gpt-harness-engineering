@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 import subprocess
 from dataclasses import asdict, dataclass
@@ -652,6 +653,13 @@ def _file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _private_worker_result_ok(path: Path) -> bool:
+    if path.is_symlink() or not path.is_file():
+        return False
+    value = path.lstat()
+    return value.st_uid == os.getuid() and stat.S_IMODE(value.st_mode) == 0o600
+
+
 def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
                          recovery: Mapping[str, Any] | None = None) -> GateControllerAdapters:
     from .lv_remediation import review_remediation
@@ -882,12 +890,14 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 successor = package_root / "worker.result.private-01.json"
                 original = result.read_bytes()
                 if successor.exists():
-                    if successor.is_symlink() or not successor.is_file() or successor.read_bytes() != original or successor.lstat().st_mode & 0o022:
+                    if not _private_worker_result_ok(successor) or successor.read_bytes() != original:
                         raise GateControllerError("WORKER_RESULT_REQUIRED: unsafe private successor")
                 else:
                     fd = os.open(successor, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
                     with os.fdopen(fd, "wb") as handle:
                         handle.write(original); handle.flush(); os.fsync(handle.fileno())
+                    if not _private_worker_result_ok(successor):
+                        raise GateControllerError("WORKER_RESULT_REQUIRED: private successor mode mismatch")
                 result = successor
             state["worker_payload"] = existing_result
             state["worker_result_path"] = result
@@ -929,6 +939,8 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             fd = os.open(result, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data); handle.flush(); os.fsync(handle.fileno())
+            if not _private_worker_result_ok(result):
+                raise GateControllerError("WORKER_RESULT_REQUIRED: private result mode mismatch")
             state["worker_payload"] = worker_payload
             state["worker_result_path"] = result
             return sealed("WORKER", "COMPLETED", _file_sha(result), payload=worker_payload)
