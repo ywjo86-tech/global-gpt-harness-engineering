@@ -63,6 +63,10 @@ REVIEW_SCHEMA_VERSION = "orchestration.lv_reviewer.report.v1"
 REVIEW_STATUS_SCHEMA_VERSION = "orchestration.lv_reviewer.status.v1"
 PREFLIGHT_EVIDENCE_SCHEMA_VERSION = "orchestration.lv_preflight.evidence.v1"
 PREFLIGHT_STATUS_SCHEMA_VERSION = "orchestration.lv_preflight.status.v1"
+LEGACY_STATUS_CLASSIFICATIONS = frozenset({
+    "LEGACY_STATUS_UPGRADABLE", "LEGACY_STATUS_INVALID", "LEGACY_STATUS_AMBIGUOUS",
+    "CURRENT_STATUS_VALID", "CURRENT_STATUS_INVALID",
+})
 # Single source of truth for the LV-review preflight contract.  Producers and
 # consumers validate this same set before any publication is written.
 PREFLIGHT_REQUIRED_FIELDS = frozenset({
@@ -726,7 +730,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
     }
 
 def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, source_root: Path,
-                                       result_path: Path) -> dict[str, Any]:
+                                       result_path: Path, successor_lineage: dict[str, str] | None = None,
+                                       review_attempt: int = 1) -> dict[str, Any]:
     """Publish a derived LV-review attestation for an immutable Gate preflight."""
     source_file = source_root / "preflight.evidence.json"
     sidecar = source_root / "preflight.evidence.sha256"
@@ -756,6 +761,7 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
                 "lv_id":manifest.get("lv_id"), "package_manifest_sha256":_sha256((package_root/"package.manifest.json").read_bytes())}
     if any(source.get(k) != v for k,v in expected.items() if k in source):
         return {"status":"REJECTED","error_code":"EVIDENCE_IDENTITY_MISMATCH"}
+    review_attempt = parse_review_attempt(review_attempt)
     evidence = {
         "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION, "run_id": run_id,
         "package_manifest_sha256": expected["package_manifest_sha256"],
@@ -777,6 +783,18 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
                        "source_sha256":source_sha,"source_identity":{"run_id":run_id,"gate_id":manifest["gate_id"],"lv_id":manifest["lv_id"]},
                        "lineage":"adoption-checkpoint-6eb80ad","derived":True},
     }
+    if successor_lineage is not None:
+        evidence["review_attempt"] = review_attempt
+        required_lineage = {"predecessor_artifact_sha256", "source_evidence_sha256", "review_request_sha256"}
+        if set(successor_lineage) != required_lineage or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(successor_lineage.get(field, ""))) is None
+            for field in required_lineage
+        ):
+            return {"status":"REJECTED","error_code":"EVIDENCE_SUCCESSOR_LINEAGE_INVALID"}
+        evidence["publication"] = {**evidence["publication"], "successor": {
+            "schema_version": "orchestration.lv_preflight.successor-lineage.v1",
+            **successor_lineage, "legacy_completion_eligible": False,
+        }}
     evidence["preflight_evidence_sha256"] = ""
     missing = sorted(PREFLIGHT_REQUIRED_FIELDS.difference(evidence))
     if missing:
@@ -796,7 +814,8 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
     # Namespace derived publications by the immutable package/LV binding;
     # source preflight bytes may legitimately be shared across sequential
     # LV attempts in one run.
-    target = _preflight_root(run_id).parent / f"{run_id}-v2c-{manifest['lv_id']}-{expected['package_manifest_sha256'][:12]}-{source_sha[:12]}"
+    successor_suffix = "" if successor_lineage is None else f"-a{review_attempt}-{successor_lineage['predecessor_artifact_sha256'][:12]}"
+    target = _preflight_root(run_id).parent / f"{run_id}-v2c-{manifest['lv_id']}-{expected['package_manifest_sha256'][:12]}-{source_sha[:12]}{successor_suffix}"
     target.parent.mkdir(parents=True, exist_ok=True)
     status = _derived_preflight_status(evidence, manifest, evidence_sha)
     if target.exists():
@@ -833,7 +852,7 @@ def _derived_preflight_status(evidence: dict[str, Any], manifest: dict[str, Any]
         "project_id": evidence["project_id"],
         "gate_id": evidence["gate_id"],
         "lv_id": evidence["lv_id"],
-        "review_attempt": 1,
+        "review_attempt": parse_review_attempt(evidence.get("review_attempt", 1)),
         "package_manifest_sha256": evidence["package_manifest_sha256"],
         "preflight_evidence_sha256": evidence_sha,
         "canonical_plan_sha256": evidence["canonical_plan_sha256"],
@@ -896,6 +915,169 @@ def _read_validated_preflight_publication(root: Path, manifest: dict[str, Any]) 
     if status_payload != expected_status:
         raise LVReviewError("preflight status binding is invalid")
     return evidence, evidence_sha, status_payload
+
+
+def _read_publication_bytes(root: Path) -> dict[str, bytes]:
+    """Read an immutable publication through no-follow descriptors.
+
+    This deliberately mirrors the strict current reader's filesystem checks so
+    legacy classification cannot become a weaker side door around the sidecar.
+    """
+    names = {"preflight.evidence.json", "preflight.evidence.sha256", "preflight.status"}
+    if root.is_symlink() or not root.is_dir() or root.absolute() != root.resolve():
+        raise LVReviewError("preflight publication is invalid")
+    directory_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    descriptors: list[int] = []
+    try:
+        if set(os.listdir(directory_fd)) != names:
+            raise LVReviewError("preflight publication file set is invalid")
+        raw: dict[str, bytes] = {}
+        identities: set[tuple[int, int]] = set()
+        for name in sorted(names):
+            fd = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=directory_fd)
+            descriptors.append(fd)
+            metadata = os.fstat(fd)
+            identity = (metadata.st_dev, metadata.st_ino)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or identity in identities:
+                raise LVReviewError("preflight publication entry is invalid")
+            identities.add(identity)
+            raw[name] = os.read(fd, metadata.st_size + 1)
+        return raw
+    except OSError as exc:
+        raise LVReviewError("preflight publication is invalid") from exc
+    finally:
+        for fd in descriptors:
+            os.close(fd)
+        os.close(directory_fd)
+
+
+def classify_derived_preflight_status(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    """Classify current or precisely-recognised legacy derived publications."""
+    try:
+        raw = _read_publication_bytes(root)
+        evidence = json.loads(raw["preflight.evidence.json"])
+        status = json.loads(raw["preflight.status"])
+        detached = raw["preflight.evidence.sha256"].decode("ascii").rstrip("\n")
+        if (not isinstance(evidence, dict) or not isinstance(status, dict)
+                or canonical_json_bytes(evidence) != raw["preflight.evidence.json"]
+                or canonical_json_bytes(status) != raw["preflight.status"]
+                or re.fullmatch(r"[0-9a-f]{64}", detached) is None
+                or detached != _sha256(raw["preflight.evidence.json"])):
+            raise LVReviewError("legacy publication bytes are invalid")
+    except (LVReviewError, UnicodeError, json.JSONDecodeError):
+        return {"classification": "LEGACY_STATUS_INVALID", "completion_eligible": False}
+    if status.get("schema_version") == PREFLIGHT_STATUS_SCHEMA_VERSION:
+        try:
+            _read_validated_preflight_publication(root, manifest)
+        except LVReviewError:
+            return {"classification": "CURRENT_STATUS_INVALID", "completion_eligible": False}
+        return {"classification": "CURRENT_STATUS_VALID", "completion_eligible": True,
+                "evidence_sha256": detached}
+    if "schema_version" in status:
+        return {"classification": "LEGACY_STATUS_INVALID", "completion_eligible": False}
+    legacy_fields = {"status", "hard_stop", "evidence_sha256"}
+    missing = sorted(set(_derived_preflight_status(evidence, manifest, detached)).difference(status))
+    if set(status) != legacy_fields or status != {"status": "READY", "hard_stop": True, "evidence_sha256": detached}:
+        return {"classification": "LEGACY_STATUS_INVALID", "completion_eligible": False, "missing_fields": missing}
+    required_evidence = {"schema_version", "run_id", "project_id", "gate_id", "lv_id", "package_manifest_sha256", "canonical_plan_sha256"}
+    if evidence.get("schema_version") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION or not required_evidence.issubset(evidence):
+        return {"classification": "LEGACY_STATUS_INVALID", "completion_eligible": False, "missing_fields": missing}
+    return {"classification": "LEGACY_STATUS_UPGRADABLE", "completion_eligible": False,
+            "missing_fields": missing, "evidence_sha256": detached}
+
+
+def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, source_root: Path,
+                                          result_path: Path, review_request_path: Path) -> dict[str, Any]:
+    """Resolve a derived publication without ever treating legacy as READY."""
+    try:
+        request_raw = review_request_path.read_bytes()
+        request = json.loads(request_raw)
+        manifest_path = package_root / "package.manifest.json"
+        manifest = _canonical_json(manifest_path)
+        manifest_sha = _sha256(manifest_path.read_bytes())
+        manifest_sidecar = package_root / "package.manifest.sha256"
+        if (not manifest_sidecar.is_file() or manifest_sidecar.is_symlink()
+                or manifest_sidecar.read_text(encoding="ascii").strip() != manifest_sha):
+            raise LVReviewError("package manifest sidecar is invalid")
+        worker_request_path = package_root / "worker.request.json"
+        worker_request_raw = worker_request_path.read_bytes()
+        worker_request = json.loads(worker_request_raw)
+        if not isinstance(worker_request, dict) or canonical_json_bytes(worker_request) != worker_request_raw:
+            raise LVReviewError("worker request is invalid")
+        contract = worker_request.get("contract_summary", {})
+        extra = worker_request.get("extra_context", {})
+        if (not isinstance(contract, dict) or not isinstance(extra, dict)
+                or (contract.get("project_id"), contract.get("gate_id"), contract.get("lv_id")) !=
+                   (manifest.get("project_id"), manifest.get("gate_id"), manifest.get("lv_id"))
+                or contract.get("canonical_plan_sha256") != manifest.get("canonical_plan_sha256")
+                or extra.get("run_id") != run_id or extra.get("package_manifest_sha256") != manifest_sha):
+            raise LVReviewError("worker request binding is invalid")
+        worker_raw = result_path.read_bytes()
+        worker_payload = json.loads(worker_raw)
+        if (not isinstance(worker_payload, dict) or worker_payload.get("status") != "completed"
+                or any(worker_payload.get(field) != manifest.get(field) for field in ("project_id", "gate_id", "lv_id"))
+                or worker_payload.get("run_id") != run_id):
+            raise LVReviewError("sealed worker result binding is invalid")
+        required = {"schema_version", "run_id", "project_id", "gate_id", "lv_id", "review_attempt",
+                    "package_manifest_sha256", "worker_result_sha256", "canonical_plan_sha256",
+                    "approval_id", "approval_record_hash", "production_transition_sha256",
+                    "predecessor_completion_digest"}
+        transition = manifest.get("production_transition")
+        expected = {
+            "schema_version": "orchestration.production.review-request.v1", "run_id": run_id,
+            "project_id": manifest.get("project_id"), "gate_id": manifest.get("gate_id"),
+            "lv_id": manifest.get("lv_id"), "review_attempt": parse_review_attempt(request.get("review_attempt")),
+            "package_manifest_sha256": manifest_sha,
+            "worker_result_sha256": _sha256(worker_raw),
+            "canonical_plan_sha256": manifest.get("canonical_plan_sha256"),
+            "approval_id": manifest.get("approval_id"), "approval_record_hash": manifest.get("approval_record_hash"),
+            "production_transition_sha256": _sha256(canonical_json_bytes(transition)) if isinstance(transition, dict) else "",
+            "predecessor_completion_digest": transition.get("predecessor_completion_digest", "") if isinstance(transition, dict) else "",
+        }
+        if review_request_path.name != f"production.review-request-{expected['review_attempt']:02d}.json":
+            raise LVReviewError("production review request attempt namespace is invalid")
+        if (not isinstance(request, dict) or set(request) != required or request != expected
+                or canonical_json_bytes(request) != request_raw):
+            raise LVReviewError("production review request binding is invalid")
+        _assert_canonical_binding(_project_root_for(str(manifest["project_id"])), manifest)
+        source_raw = _read_publication_bytes(source_root)
+        source_evidence = json.loads(source_raw["preflight.evidence.json"])
+        source_status = json.loads(source_raw["preflight.status"])
+        source_digest = _sha256(source_raw["preflight.evidence.json"])
+        if source_raw["preflight.evidence.sha256"].decode("ascii").strip() != source_digest:
+            raise LVReviewError("source Gate preflight sidecar is invalid")
+        if source_status != {"status": "READY", "hard_stop": True, "evidence_sha256": source_digest}:
+            raise LVReviewError("source Gate preflight status is invalid")
+        identity = {"run_id": run_id, "project_id": manifest["project_id"], "gate_id": manifest["gate_id"],
+                    "lv_id": manifest["lv_id"], "package_manifest_sha256": expected["package_manifest_sha256"]}
+        if any(source_evidence.get(key) != value for key, value in identity.items()):
+            raise LVReviewError("source Gate preflight binding is invalid")
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, LVReviewError) as exc:
+        return {"status": "REJECTED", "error_code": "EVIDENCE_PUBLICATION_INVALID", "reason": str(exc)}
+
+    candidates = sorted(_preflight_root(run_id).parent.glob(f"{run_id}-v2*"))
+    classified = [(path, classify_derived_preflight_status(path, manifest)) for path in candidates]
+    current = [item for item in classified if item[1]["classification"] == "CURRENT_STATUS_VALID"]
+    legacy = [item for item in classified if item[1]["classification"] == "LEGACY_STATUS_UPGRADABLE"]
+    if len(current) > 1 or len(legacy) > 1:
+        return {"status": "REJECTED", "error_code": "EVIDENCE_PUBLICATION_AMBIGUOUS",
+                "classification": "LEGACY_STATUS_AMBIGUOUS"}
+    if current:
+        return {"status": "READY", "preflight_evidence_sha256": current[0][1].get("evidence_sha256", ""),
+                "classification": "CURRENT_STATUS_VALID", "idempotent": True}
+    lineage = None
+    if legacy:
+        lineage = {"predecessor_artifact_sha256": legacy[0][1]["evidence_sha256"],
+                   "source_evidence_sha256": source_digest,
+                   "review_request_sha256": _sha256(request_raw)}
+    published = publish_gate_preflight_attestation(run_id, package_root=package_root, source_root=source_root,
+                                                   result_path=result_path, successor_lineage=lineage,
+                                                   review_attempt=request["review_attempt"])
+    if published.get("status") == "READY" and legacy:
+        published = {**published, "classification": "LEGACY_STATUS_UPGRADABLE",
+                     "legacy_completion_eligible": False, "review_request_sha256": _sha256(request_raw),
+                     "predecessor_artifact_sha256": legacy[0][1]["evidence_sha256"]}
+    return published
 
 
 def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any], str]:

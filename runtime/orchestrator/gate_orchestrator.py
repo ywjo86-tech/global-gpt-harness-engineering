@@ -997,11 +997,32 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             raise GateControllerError("REVIEW requires a completed registered worker result")
         if not isinstance(worker_payload.get("tests"), list) or not worker_payload["tests"]:
             raise GateControllerError("REVIEW blocked: worker test evidence is absent")
-        from .lv_review import publish_gate_preflight_attestation
-        publication = publish_gate_preflight_attestation(
+        from .lv_review import resolve_derived_preflight_publication
+        package_root = Path(state["package_root"])
+        manifest = state["package_manifest"]
+        transition = manifest.get("production_transition")
+        requested_review_attempt = int(context.get("review_attempt", 1))
+        review_request = {
+            "schema_version": "orchestration.production.review-request.v1",
+            "run_id": run_id, "project_id": plan.project_id, "gate_id": plan.gate_id, "lv_id": lv_id,
+            "review_attempt": requested_review_attempt, "package_manifest_sha256": state["package_manifest_sha256"],
+            "worker_result_sha256": _file_sha(Path(state["worker_result_path"])),
+            "canonical_plan_sha256": plan.canonical_plan_sha256,
+            "approval_id": manifest.get("approval_id"), "approval_record_hash": manifest.get("approval_record_hash"),
+            "production_transition_sha256": _sha(canonical_json_bytes(transition)) if isinstance(transition, dict) else "",
+            "predecessor_completion_digest": transition.get("predecessor_completion_digest", "") if isinstance(transition, dict) else "",
+        }
+        review_request_path = package_root / f"production.review-request-{requested_review_attempt:02d}.json"
+        if review_request_path.exists() or review_request_path.is_symlink():
+            if review_request_path.is_symlink() or review_request_path.read_bytes() != canonical_json_bytes(review_request):
+                raise GateControllerError("REVIEW request replay conflict")
+        else:
+            _atomic_json(review_request_path, review_request)
+        publication = resolve_derived_preflight_publication(
             run_id, package_root=Path(state["package_root"]),
             source_root=Path(state["package_root"]) / "preflight",
             result_path=Path(state["worker_result_path"]),
+            review_request_path=review_request_path,
         )
         if publication.get("status") != "READY":
             raise GateControllerError(f"REVIEW preflight publication blocked: {publication}")
