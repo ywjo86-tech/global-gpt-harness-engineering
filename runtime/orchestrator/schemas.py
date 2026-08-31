@@ -1,8 +1,138 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
+
+
+class DiscoveryLevel(str, Enum):
+    EXISTING_CAPABILITY = "EXISTING_CAPABILITY"
+    DISCOVERY = "DISCOVERY"
+    PROJECT_INSTALL = "PROJECT_INSTALL"
+    GLOBAL_INSTALL = "GLOBAL_INSTALL"
+
+
+class DiscoveryStatus(str, Enum):
+    EXISTING = "EXISTING"
+    DISCOVERY_REQUIRED = "DISCOVERY_REQUIRED"
+    CANDIDATE_EVALUATED = "CANDIDATE_EVALUATED"
+    INSTALL_REQUIRED = "INSTALL_REQUIRED"
+    BLOCKED = "BLOCKED"
+    ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRisk:
+    network: bool = False
+    shell: bool = False
+    package_install: bool = False
+    secret: bool = False
+    file_write: bool = False
+    external_service: bool = False
+    paid_service: bool = False
+    deployment: bool = False
+    global_change: bool = False
+    destructive_action: bool = False
+
+    @property
+    def dangerous(self) -> bool:
+        return any(asdict(self).values())
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityRequirement:
+    capability_id: str
+    gate_id: str
+    lv_id: str
+    required_permissions: tuple[str, ...]
+    owned_files: tuple[str, ...]
+    optional: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.capability_id or not self.gate_id or not self.lv_id:
+            raise ValueError("capability requirement binding is incomplete")
+        if not self.required_permissions or not self.owned_files:
+            raise ValueError("capability requirement permissions and owned files are required")
+        if any(not isinstance(value, str) or not value for value in (*self.required_permissions, *self.owned_files)):
+            raise ValueError("capability requirement contains an invalid value")
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityCandidate:
+    candidate_id: str
+    source: str
+    repository: str
+    maintainer: str
+    scope: str
+    metadata: dict[str, Any]
+    evaluation_state: str
+    risk: CandidateRisk
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(value, str) and value for value in (self.candidate_id, self.source, self.repository, self.maintainer)):
+            raise ValueError("candidate provenance is incomplete")
+        if self.scope not in {"global", "project"}:
+            raise ValueError("candidate scope is unknown")
+        if not isinstance(self.metadata, dict) or self.metadata.get("skill_md_verified") is not True:
+            raise ValueError("candidate SKILL.md verification is incomplete")
+        if self.evaluation_state not in {"PASS", "FAIL", "BLOCKED"}:
+            raise ValueError("candidate evaluation is unknown")
+        if not isinstance(self.risk, CandidateRisk):
+            raise ValueError("candidate risk is invalid")
+
+    def matches(self, requirement: CapabilityRequirement) -> bool:
+        """Return true only for an exact permission and owned-file contract match."""
+        permissions = self.metadata.get("permissions")
+        owned_files = self.metadata.get("owned_files")
+        if not isinstance(permissions, (list, tuple, set)) or not isinstance(owned_files, (list, tuple, set)):
+            return False
+        return set(requirement.required_permissions).issubset(permissions) and set(requirement.owned_files).issubset(owned_files)
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryDecision:
+    requirement: CapabilityRequirement
+    discovery_level: DiscoveryLevel
+    discovery_status: DiscoveryStatus
+    selected_existing_asset: str = ""
+    candidate_list: tuple[CapabilityCandidate, ...] = ()
+    selected_candidate: str = ""
+    blocked_reason: str = ""
+    escalation_reason: str = ""
+    approval_required: bool = False
+    evidence_references: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.requirement, CapabilityRequirement):
+            raise ValueError("discovery requirement is invalid")
+        if self.discovery_status == DiscoveryStatus.EXISTING:
+            if self.discovery_level != DiscoveryLevel.EXISTING_CAPABILITY or not self.selected_existing_asset:
+                raise ValueError("existing capability decision is incomplete")
+        elif self.discovery_level == DiscoveryLevel.EXISTING_CAPABILITY:
+            raise ValueError("existing capability level requires EXISTING status")
+        if self.discovery_status in {DiscoveryStatus.BLOCKED, DiscoveryStatus.ESCALATION_REQUIRED} and not (self.blocked_reason or self.escalation_reason):
+            raise ValueError("blocked or escalated decision requires a reason")
+        if self.discovery_status == DiscoveryStatus.DISCOVERY_REQUIRED and self.discovery_level != DiscoveryLevel.DISCOVERY:
+            raise ValueError("discovery-required status has an invalid level")
+        if self.discovery_level == DiscoveryLevel.GLOBAL_INSTALL and self.discovery_status != DiscoveryStatus.ESCALATION_REQUIRED:
+            raise ValueError("global install must require escalation")
+        if self.discovery_level in {DiscoveryLevel.PROJECT_INSTALL, DiscoveryLevel.GLOBAL_INSTALL} and not self.approval_required:
+            raise ValueError("install decision requires approval")
+        if any(not isinstance(candidate, CapabilityCandidate) for candidate in self.candidate_list):
+            raise ValueError("candidate list contains an invalid item")
+        if self.selected_candidate:
+            selected = next((candidate for candidate in self.candidate_list if candidate.candidate_id == self.selected_candidate), None)
+            if selected is None or not selected.matches(self.requirement) or selected.risk.dangerous:
+                raise ValueError("selected candidate does not satisfy the capability contract")
+
+    @property
+    def discovery_required(self) -> bool:
+        return self.discovery_level == DiscoveryLevel.DISCOVERY and self.discovery_status == DiscoveryStatus.DISCOVERY_REQUIRED
+
+    @property
+    def execution_allowed(self) -> bool:
+        return self.discovery_status == DiscoveryStatus.EXISTING and self.discovery_level == DiscoveryLevel.EXISTING_CAPABILITY
 
 
 @dataclass(slots=True)
