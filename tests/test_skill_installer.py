@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -19,7 +22,7 @@ from runtime.orchestrator.skill_adoption import (CandidateAdoptionDecision, seal
     seal_project_install_approval, seal_supply_chain_review)
 from runtime.orchestrator.skill_candidate_evaluator import CandidateEvaluationResult
 from runtime.orchestrator.skill_installer import (MANIFEST_NAME, SkillInstallRequest,
-    install_project_skill, verify_installed_manifest)
+    install_project_skill, verify_concurrency_evidence, verify_installed_manifest)
 
 
 SKILL = "---\nname: safe\ndescription: fixture\n---\nRead tests.\n"
@@ -88,6 +91,52 @@ class SkillInstallerTests(unittest.TestCase):
             gate_id="GATE-1", lv_id="LV-1", canonical_plan_sha256=PLAN_SHA,
             project_root=self.project, target_skill_root=self.root, timestamp="2026-09-01T01:00:00Z")
         values.update(changes); return SkillInstallRequest(**values)
+
+    def variant_request(self, content: str, revision: str = "e" * 40):
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        resolution_evidence = dict(self.resolution.evidence)
+        resolution_evidence.update(immutable_revision=revision, skill_md_digest=digest)
+        resolution_evidence.pop("evidence_digest")
+        resolution_evidence["evidence_digest"] = hashlib.sha256(
+            canonical_json_bytes(resolution_evidence)).hexdigest()
+        resolution = replace(self.resolution, immutable_revision=revision,
+            skill_md_content=content, skill_md_digest=digest, evidence=resolution_evidence,
+            evidence_reference="sha256:" + resolution_evidence["evidence_digest"])
+        evaluation_evidence = dict(self.evaluation.evidence)
+        evaluation_evidence.update(skill_md_digest=digest,
+            resolver_evidence_digest=resolution_evidence["evidence_digest"])
+        evaluation_evidence.pop("evidence_digest")
+        evaluation_evidence["evidence_digest"] = hashlib.sha256(
+            canonical_json_bytes(evaluation_evidence)).hexdigest()
+        evaluation = replace(self.evaluation, evidence=evaluation_evidence,
+            evidence_reference="sha256:" + evaluation_evidence["evidence_digest"])
+        review = seal_supply_chain_review(candidate_id="owner/repo@safe", source="fixture",
+            repository="owner/repo", maintainer="owner", provider="fixture", immutable_revision=revision,
+            candidate_path="skills/safe", skill_md_digest=digest,
+            resolver_evidence_digest=resolution_evidence["evidence_digest"], license="MIT",
+            package_install_required=False, shell_execution=False, network_required=False,
+            secret_required=False, file_write_scope=("tests/",), install_scope="project",
+            external_service=False, paid_service=False, deployment=False, destructive_action=False,
+            requested_permissions=("read",), owned_file_scope=("tests/",), provenance_state="VERIFIED",
+            evaluator_evidence_digest=evaluation_evidence["evidence_digest"], review_state="COMPLETE")
+        plan = seal_install_plan(candidate_id="owner/repo@safe", target_project="project",
+            target_scope="project", proposed_install_location=".agents/skills/safe", expected_source="fixture",
+            expected_revision=revision, expected_files=("SKILL.md",), required_permissions=("read",),
+            required_package_runtime=(), network_required=False, operation_type="PROJECT_FILE_MATERIALIZATION",
+            rollback_expectation="remove owned files", evaluation_evidence_reference=evaluation.evidence_reference,
+            supply_chain_evidence_reference="sha256:" + review.review_digest,
+            approval_requirement="SEPARATE_PROJECT_INSTALL_APPROVAL", install_method_state="VERIFIED_FIXTURE_METHOD")
+        approval = seal_project_install_approval(project_id="project", gate_id="GATE-1", lv_id="LV-1",
+            intent="project_skill_install", candidate_id="owner/repo@safe",
+            evaluation_digest=evaluation_evidence["evidence_digest"], supply_chain_review_digest=review.review_digest,
+            install_scope="project", canonical_plan_sha256=PLAN_SHA, status="ACTIVE",
+            evidence_reference="approval/install-variant.json")
+        decision = replace(self.decision, evaluation_evidence_reference=evaluation.evidence_reference,
+            approval_evidence_reference=approval.evidence_reference,
+            supply_chain_review_reference="sha256:" + review.review_digest,
+            install_plan_evidence_reference="sha256:" + plan.plan_digest)
+        return self.request(decision=decision, evaluation=evaluation, resolution=resolution,
+            review=review, approval=approval, install_plan=plan)
 
     def test_01_not_authorized_executor_fails_before_attempt(self):
         d = replace(self.decision, adoption_state=CandidateAdoptionState.BLOCKED, install_authorized=False)
@@ -197,6 +246,133 @@ class SkillInstallerTests(unittest.TestCase):
     def test_25_no_network_or_subprocess(self):
         with patch("subprocess.run", side_effect=AssertionError), patch("subprocess.Popen", side_effect=AssertionError), patch("urllib.request.urlopen", side_effect=AssertionError):
             self.assertEqual(install_project_skill(self.request()).install_status, "INSTALL_COMPLETED")
+
+    def test_26_concurrent_identical_has_one_writer_and_one_noop(self):
+        barrier = threading.Barrier(2)
+        collision_seen = threading.Event()
+        real_flock = __import__("fcntl").flock
+        lock_ex_nb = __import__("fcntl").LOCK_EX | __import__("fcntl").LOCK_NB
+        def synchronized_flock(fd, operation):
+            if operation == lock_ex_nb:
+                barrier.wait(timeout=5)
+                try:
+                    value = real_flock(fd, operation)
+                except BlockingIOError:
+                    collision_seen.set()
+                    raise
+                self.assertTrue(collision_seen.wait(timeout=5))
+                return value
+            return real_flock(fd, operation)
+        def hook(event, _path):
+            pass
+        with patch("runtime.orchestrator.skill_installer.fcntl.flock", side_effect=synchronized_flock):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: install_project_skill(self.request(), hook=hook), range(2)))
+        self.assertEqual(sorted(r.install_status for r in results), ["IDENTICAL", "INSTALL_COMPLETED"])
+        self.assertEqual(sum(r.install_status == "INSTALL_COMPLETED" for r in results), 1)
+        self.assertTrue(any(r.concurrency_evidence["concurrent_collision"] for r in results))
+
+    def test_27_concurrent_different_has_one_writer_and_one_blocked(self):
+        barrier = threading.Barrier(2)
+        requests = [self.request(), self.variant_request(SKILL + "Different.\n")]
+        def run(request):
+            def hook(event, _path):
+                if event == "before_lock_acquire": barrier.wait(timeout=5)
+            return install_project_skill(request, hook=hook)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, requests))
+        self.assertEqual(sorted(r.install_status for r in results), ["BLOCKED", "INSTALL_COMPLETED"])
+        blocked = next(r for r in results if r.install_status == "BLOCKED")
+        self.assertTrue(verify_concurrency_evidence(blocked.concurrency_evidence))
+        installed = (self.root / "safe" / "SKILL.md").read_text()
+        self.assertIn(installed, (SKILL, SKILL + "Different.\n"))
+
+    def test_28_lock_acquisition_failure_never_promotes(self):
+        with patch("runtime.orchestrator.skill_installer.fcntl.flock", side_effect=OSError("denied")):
+            result = install_project_skill(self.request())
+        self.assertEqual(result.install_status, "BLOCKED")
+        self.assertFalse((self.root / "safe").exists())
+
+    def test_29_lock_symlink_blocks(self):
+        outside = Path(self.temp.name) / "outside-locks"; outside.mkdir()
+        (self.root / ".skill-install-locks").symlink_to(outside, target_is_directory=True)
+        result = install_project_skill(self.request())
+        self.assertEqual(result.install_status, "BLOCKED")
+        self.assertFalse((self.root / "safe").exists())
+
+    def test_30_lock_path_traversal_blocks(self):
+        with patch("runtime.orchestrator.skill_installer._lock_identifier", return_value="../escape"):
+            result = install_project_skill(self.request())
+        self.assertEqual(result.install_status, "BLOCKED")
+        self.assertFalse((self.root / "safe").exists())
+
+    def test_31_persistent_lock_file_is_not_deleted_as_stale(self):
+        first = install_project_skill(self.request())
+        lock_files = list((self.root / ".skill-install-locks").glob("*.lock"))
+        self.assertEqual(first.install_status, "INSTALL_COMPLETED")
+        self.assertEqual(len(lock_files), 1)
+        self.assertEqual(install_project_skill(self.request()).install_status, "IDENTICAL")
+        self.assertTrue(lock_files[0].is_file())
+
+    def test_32_destination_created_before_promote_blocks_without_overwrite(self):
+        def hook(event, _path):
+            if event == "before_promote":
+                destination = self.root / "safe"; destination.mkdir()
+                (destination / "sentinel").write_text("preserve")
+        result = install_project_skill(self.request(), hook=hook)
+        self.assertEqual(result.install_status, "BLOCKED")
+        self.assertEqual((self.root / "safe" / "sentinel").read_text(), "preserve")
+
+    def test_33_race_installed_identical_is_idempotent(self):
+        def hook(event, stage):
+            if event == "before_promote": shutil.copytree(stage, self.root / "safe")
+        result = install_project_skill(self.request(), hook=hook)
+        self.assertEqual(result.install_status, "IDENTICAL")
+        self.assertTrue(result.concurrency_evidence["idempotent"])
+
+    def test_34_race_installed_different_blocks(self):
+        def hook(event, _stage):
+            if event == "before_promote":
+                destination = self.root / "safe"; destination.mkdir()
+                (destination / "SKILL.md").write_text("different")
+                (destination / MANIFEST_NAME).write_text("{}")
+        result = install_project_skill(self.request(), hook=hook)
+        self.assertEqual(result.install_status, "BLOCKED")
+        self.assertEqual((self.root / "safe" / "SKILL.md").read_text(), "different")
+
+    def test_35_promotion_failure_rolls_back_stage_and_owned_claim(self):
+        real_link = os.link
+        def fail_manifest(source, destination, **kwargs):
+            if str(source).endswith(MANIFEST_NAME): raise OSError("promotion failure")
+            return real_link(source, destination, **kwargs)
+        with patch("runtime.orchestrator.skill_installer.os.link", side_effect=fail_manifest):
+            result = install_project_skill(self.request())
+        self.assertEqual(result.rollback_evidence["status"], "COMPLETE")
+        self.assertFalse((self.root / "safe").exists())
+        self.assertFalse([p for p in self.root.glob(".skill-install-*")
+                          if p.name != ".skill-install-locks"])
+
+    def test_36_lock_cleanup_failure_is_fail_closed(self):
+        real_flock = __import__("fcntl").flock
+        def fail_unlock(fd, operation):
+            if operation == __import__("fcntl").LOCK_UN: raise OSError("unlock failure")
+            return real_flock(fd, operation)
+        with patch("runtime.orchestrator.skill_installer.fcntl.flock", side_effect=fail_unlock):
+            result = install_project_skill(self.request())
+        self.assertEqual(result.install_status, "ESCALATION_REQUIRED")
+        self.assertIn("lock cleanup", result.escalation_reason)
+
+    def test_37_concurrency_evidence_is_sealed_and_tamper_fails(self):
+        result = install_project_skill(self.request())
+        self.assertTrue(verify_concurrency_evidence(result.concurrency_evidence))
+        evidence = dict(result.concurrency_evidence); evidence["promotion_outcome"] = "REPLACED"
+        self.assertFalse(verify_concurrency_evidence(evidence))
+        self.assertRegex(result.concurrency_evidence_digest, r"^[0-9a-f]{64}$")
+
+    def test_38_guard_is_project_local_and_no_shared_lock_exists(self):
+        install_project_skill(self.request())
+        self.assertTrue((self.root / ".skill-install-locks").is_dir())
+        self.assertFalse((self.project / ".skill-install.lock").exists())
 
 
 if __name__ == "__main__": unittest.main()
