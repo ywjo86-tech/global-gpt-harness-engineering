@@ -44,6 +44,15 @@ class CandidateAdoptionState(str, Enum):
     ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
 
 
+class CandidateUseState(str, Enum):
+    INSTALL_COMPLETED = "INSTALL_COMPLETED"
+    ATTESTED = "ATTESTED"
+    USE_AUTHORIZED = "USE_AUTHORIZED"
+    USED_ASSET = "USED_ASSET"
+    BLOCKED = "BLOCKED"
+    ESCALATION_REQUIRED = "ESCALATION_REQUIRED"
+
+
 @dataclass(frozen=True, slots=True)
 class CandidateRisk:
     network: bool = False
