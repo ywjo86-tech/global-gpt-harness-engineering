@@ -193,15 +193,28 @@ class ApprovalContext:
 
     @property
     def is_compatible(self) -> bool:
-        if self.approved_semantic_digest and self.reviewed_semantic_digest:
-            return self.approved_semantic_digest == self.reviewed_semantic_digest
-        return True
+        if not self.approved_semantic_digest.strip() or not self.reviewed_semantic_digest.strip():
+            return False
+        return self.approved_semantic_digest.strip() == self.reviewed_semantic_digest.strip()
 
     def require_contract_build_eligible(self) -> None:
-        if self.full_plan_approval_required and not self.full_plan_approval_ref.strip():
+        if not self.full_plan_approval_ref.strip():
             raise ContractBuildError(
-                "Full Plan Approval is required before Contract Build",
-                reason_taxonomy="FULL_PLAN_APPROVAL_MISSING",
+                (
+                    "Full Plan Approval is required before Contract Build"
+                    if self.full_plan_approval_required
+                    else "approved Plan/Design approval lineage is required before Contract Build"
+                ),
+                reason_taxonomy=(
+                    "FULL_PLAN_APPROVAL_MISSING"
+                    if self.full_plan_approval_required
+                    else "APPROVAL_LINEAGE_MISSING"
+                ),
+            )
+        if not self.approved_semantic_digest.strip() or not self.reviewed_semantic_digest.strip():
+            raise ContractBuildError(
+                "approval semantic digests are required for exact compatibility validation",
+                reason_taxonomy="APPROVAL_SEMANTIC_DIGEST_MISSING",
             )
         if not self.is_compatible:
             raise ContractBuildError(
@@ -880,6 +893,12 @@ def build_execution_package(
             "tool authorization projection exceeds ACTIVE Contract capability set",
             reason_taxonomy="TOOL_AUTHORIZATION_SCOPE_EXCEEDED",
         )
+    security_refs = _sorted_unique_strings(security_policy_refs, field_name="security_policy_refs")
+    if active_contract.security_requirements and not security_refs:
+        raise PackageBuildError(
+            "Package security refs are required by ACTIVE Contract security requirements",
+            reason_taxonomy="SECURITY_BINDING_MISSING",
+        )
     quality_refs = _sorted_unique_strings(quality_policy_refs, field_name="quality_policy_refs")
     if active_contract.quality_criteria_contract_ref not in quality_refs:
         raise PackageBuildError(
@@ -933,7 +952,7 @@ def build_execution_package(
         "owned_scope_projection": list(active_contract.owned_scope),
         "runtime_selection": _thaw_json_value(_freeze_json_value(dict(runtime_selection))),
         "exact_tool_authorization_projection": list(tools),
-        "security_policy_refs": list(_sorted_unique_strings(security_policy_refs, field_name="security_policy_refs")),
+        "security_policy_refs": list(security_refs),
         "quality_policy_refs": list(quality_refs),
         "codex_auth_readiness_ref": auth_ref,
         "resume_cursor": resume_cursor.strip(),
@@ -979,6 +998,11 @@ class PreflightContext:
     current_pre_execution_assessment_ref: str
     current_pre_execution_assessment: CompletionAssessment
     current_codex_auth_readiness: CodexAuthReadinessEvidence | None
+    current_approval_context: ApprovalContext | None = None
+    current_security_policy_refs: tuple[str, ...] = ()
+    current_resume_cursor: str = ""
+    current_checkpoint_refs: tuple[str, ...] = ()
+    current_effect_refs: tuple[str, ...] = ()
     expected_cli_version: str = ""
     expected_environment_fingerprint: str = ""
     expected_transport_schema_digest: str = ""
@@ -1003,6 +1027,15 @@ def preflight_execution_package(package: ExecutionPackage, context: PreflightCon
         require_valid_active_contract(context.active_contract)
     except PackageBuildError as exc:
         block(str(exc), exc.reason_taxonomy)
+    if context.current_approval_context is None:
+        block("current approval context is required", "APPROVAL_CONTEXT_MISSING")
+    try:
+        context.current_approval_context.require_contract_build_eligible()
+    except ContractBuildError as exc:
+        block(str(exc), exc.reason_taxonomy)
+    current_approval_ref = context.current_approval_context.full_plan_approval_ref.strip()
+    if current_approval_ref not in context.active_contract.approval_refs:
+        block("current approval lineage does not match ACTIVE Contract", "APPROVAL_BINDING_DRIFT")
     expected_contract_ref = (
         f"contract://{context.active_contract.contract_id}@{context.active_contract.contract_version}"
         f"#{context.active_contract.contract_digest}"
@@ -1026,6 +1059,25 @@ def preflight_execution_package(package: ExecutionPackage, context: PreflightCon
             block(f"{key} source digest drift", "SOURCE_DIGEST_BINDING_DRIFT")
     if context.active_contract.quality_criteria_contract_ref not in package.quality_policy_refs:
         block("quality criteria Contract ref missing from Package", "QUALITY_BINDING_MISSING")
+    current_security_refs = _sorted_unique_strings(
+        context.current_security_policy_refs, field_name="current_security_policy_refs"
+    )
+    if context.active_contract.security_requirements and not current_security_refs:
+        block("current security policy refs are required", "SECURITY_BINDING_MISSING")
+    if package.security_policy_refs != current_security_refs:
+        block("security policy binding drift", "SECURITY_BINDING_DRIFT")
+    if package.resume_cursor != context.current_resume_cursor.strip():
+        block("resume cursor drift", "RESUME_BINDING_DRIFT")
+    current_checkpoint_refs = _sorted_unique_strings(
+        context.current_checkpoint_refs, field_name="current_checkpoint_refs"
+    )
+    if package.checkpoint_refs != current_checkpoint_refs:
+        block("checkpoint binding drift", "CHECKPOINT_BINDING_DRIFT")
+    current_effect_refs = _sorted_unique_strings(
+        context.current_effect_refs, field_name="current_effect_refs"
+    )
+    if package.effect_refs != current_effect_refs:
+        block("effect binding drift", "EFFECT_BINDING_DRIFT")
     if package.activation_profile is not context.activation_profile:
         block("activation profile mismatch", "ACTIVATION_PROFILE_DRIFT")
     if package.run_binding != context.run_binding:
@@ -1084,6 +1136,11 @@ def preflight_execution_package(package: ExecutionPackage, context: PreflightCon
             "completion_assessment_ref": context.current_pre_execution_assessment_ref,
             "completion_criterion_digest": context.current_pre_execution_assessment.criterion_set_digest,
             "execution_obligation": expected_obligation.value,
+            "approval_ref": current_approval_ref,
+            "security_policy_refs": list(current_security_refs),
+            "resume_cursor": package.resume_cursor,
+            "checkpoint_refs": list(package.checkpoint_refs),
+            "effect_refs": list(package.effect_refs),
             "auth_ref": package.codex_auth_readiness_ref,
         }
     )

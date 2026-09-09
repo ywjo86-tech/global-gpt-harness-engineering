@@ -196,6 +196,36 @@ class ContractApprovalTests(unittest.TestCase):
             candidate(approval_context=a)
 
 
+    def test_approval_lineage_cannot_be_disabled_by_required_flag(self) -> None:
+        a = ApprovalContext(
+            full_plan_approval_required=False,
+            full_plan_approval_ref="",
+            approved_semantic_digest="semantic-A",
+            reviewed_semantic_digest="semantic-A",
+            other_approval_refs=(),
+        )
+        with self.assertRaises(ContractBuildError) as caught:
+            candidate(approval_context=a)
+        self.assertEqual(caught.exception.reason_taxonomy, "APPROVAL_LINEAGE_MISSING")
+
+    def test_approval_semantic_digest_missing_fails_closed(self) -> None:
+        for approved_digest, reviewed_digest in (("", ""), ("semantic-A", ""), ("", "semantic-A")):
+            with self.subTest(approved_digest=approved_digest, reviewed_digest=reviewed_digest):
+                a = ApprovalContext(
+                    full_plan_approval_required=True,
+                    full_plan_approval_ref="approval://full-plan",
+                    approved_semantic_digest=approved_digest,
+                    reviewed_semantic_digest=reviewed_digest,
+                    other_approval_refs=(),
+                )
+                with self.assertRaises(ContractBuildError) as caught:
+                    candidate(approval_context=a)
+                self.assertEqual(
+                    caught.exception.reason_taxonomy,
+                    "APPROVAL_SEMANTIC_DIGEST_MISSING",
+                )
+
+
 class MigrationBootstrapTests(unittest.TestCase):
     def _criterion(self, criterion_id: str, *, req: str = "REQ-031", scope: str = "runtime/orchestrator/execution_contract.py", perm: str = "PERM-WRITE") -> QualityCriterion:
         return QualityCriterion(
@@ -365,7 +395,21 @@ class ContractCrossCheckTests(unittest.TestCase):
 
 
 class PackageTests(unittest.TestCase):
-    def context(self, pkg, *, contract=None, rb=None, current_assessment=None, auth=None, profile=ActivationProfile.MIGRATION_APPROVED_PLAN):
+    def context(
+        self,
+        pkg,
+        *,
+        contract=None,
+        rb=None,
+        current_assessment=None,
+        auth=None,
+        profile=ActivationProfile.MIGRATION_APPROVED_PLAN,
+        approval_context=None,
+        security_policy_refs=None,
+        resume_cursor=None,
+        checkpoint_refs=None,
+        effect_refs=None,
+    ):
         return PreflightContext(
             activation_profile=profile,
             run_binding=rb or pkg.run_binding,
@@ -373,6 +417,17 @@ class PackageTests(unittest.TestCase):
             current_pre_execution_assessment_ref="assessment://pre/1",
             current_pre_execution_assessment=current_assessment or assessment(),
             current_codex_auth_readiness=auth,
+            current_approval_context=approval_context or approval(),
+            current_security_policy_refs=(
+                tuple(security_policy_refs)
+                if security_policy_refs is not None
+                else pkg.security_policy_refs
+            ),
+            current_resume_cursor=pkg.resume_cursor if resume_cursor is None else resume_cursor,
+            current_checkpoint_refs=(
+                tuple(checkpoint_refs) if checkpoint_refs is not None else pkg.checkpoint_refs
+            ),
+            current_effect_refs=tuple(effect_refs) if effect_refs is not None else pkg.effect_refs,
             expected_cli_version="0.150.1" if auth else "",
             expected_environment_fingerprint="env-A" if auth else "",
             expected_transport_schema_digest="schema-A" if auth else "",
@@ -480,10 +535,91 @@ class PackageTests(unittest.TestCase):
             current_pre_execution_assessment_ref="assessment://pre/blocked",
             current_pre_execution_assessment=unknown,
             current_codex_auth_readiness=None,
+            current_approval_context=approval(),
+            current_security_policy_refs=pkg.security_policy_refs,
+            current_resume_cursor=pkg.resume_cursor,
+            current_checkpoint_refs=pkg.checkpoint_refs,
+            current_effect_refs=pkg.effect_refs,
         )
         with self.assertRaises(PreflightBlocked) as caught:
             preflight_execution_package(pkg, ctx)
         self.assertEqual(caught.exception.reason_taxonomy, "BLOCKED_COMPLETION_CONTRACT")
+
+    def test_preflight_current_approval_context_missing_blocks(self) -> None:
+        active = active_contract()
+        pkg = package(contract=active)
+        ctx = self.context(pkg, contract=active)
+        ctx = replace(ctx, current_approval_context=None)
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(pkg, ctx)
+        self.assertEqual(caught.exception.reason_taxonomy, "APPROVAL_CONTEXT_MISSING")
+
+    def test_preflight_security_policy_binding_drift_blocks(self) -> None:
+        active = active_contract()
+        pkg = package(contract=active)
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(
+                pkg,
+                self.context(pkg, contract=active, security_policy_refs=("security://v2",)),
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "SECURITY_BINDING_DRIFT")
+
+    def test_preflight_resume_checkpoint_effect_binding_drift_blocks(self) -> None:
+        active = active_contract()
+        pkg = build_execution_package(
+            package_id="pkg-resume",
+            package_revision=1,
+            previous_package_digest="",
+            activation_profile=ActivationProfile.MIGRATION_APPROVED_PLAN,
+            run_binding=run_binding(),
+            active_contract=active,
+            pre_execution_assessment_ref="assessment://pre/1",
+            pre_execution_assessment=assessment(),
+            runtime_selection={"mode": "mock"},
+            exact_tool_authorization_projection=("READ",),
+            security_policy_refs=("security://v1",),
+            quality_policy_refs=("quality://migration/1",),
+            codex_backed_worker=False,
+            codex_auth_readiness=None,
+            resume_cursor="resume://1",
+            checkpoint_refs=("checkpoint://1",),
+            effect_refs=("effect://1",),
+        )
+        cases = (
+            {"resume_cursor": "resume://2", "reason": "RESUME_BINDING_DRIFT"},
+            {"checkpoint_refs": ("checkpoint://2",), "reason": "CHECKPOINT_BINDING_DRIFT"},
+            {"effect_refs": ("effect://2",), "reason": "EFFECT_BINDING_DRIFT"},
+        )
+        for case in cases:
+            reason = case.pop("reason")
+            with self.subTest(reason=reason):
+                with self.assertRaises(PreflightBlocked) as caught:
+                    preflight_execution_package(
+                        pkg,
+                        self.context(pkg, contract=active, **case),
+                    )
+                self.assertEqual(caught.exception.reason_taxonomy, reason)
+
+    def test_package_security_binding_required_when_contract_requires_security(self) -> None:
+        active = active_contract()
+        with self.assertRaises(PackageBuildError) as caught:
+            build_execution_package(
+                package_id="pkg-no-security",
+                package_revision=1,
+                previous_package_digest="",
+                activation_profile=ActivationProfile.MIGRATION_APPROVED_PLAN,
+                run_binding=run_binding(),
+                active_contract=active,
+                pre_execution_assessment_ref="assessment://pre/1",
+                pre_execution_assessment=assessment(),
+                runtime_selection={"mode": "mock"},
+                exact_tool_authorization_projection=("READ",),
+                security_policy_refs=(),
+                quality_policy_refs=("quality://migration/1",),
+                codex_backed_worker=False,
+                codex_auth_readiness=None,
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "SECURITY_BINDING_MISSING")
 
     def test_package_source_digest_binding_is_exact(self) -> None:
         p = projection()
@@ -554,6 +690,11 @@ class CodexAuthReadinessTests(unittest.TestCase):
                 current_pre_execution_assessment_ref="assessment://pre/1",
                 current_pre_execution_assessment=assessment(),
                 current_codex_auth_readiness=auth,
+                current_approval_context=approval(),
+                current_security_policy_refs=pkg.security_policy_refs,
+                current_resume_cursor=pkg.resume_cursor,
+                current_checkpoint_refs=pkg.checkpoint_refs,
+                current_effect_refs=pkg.effect_refs,
                 expected_cli_version="0.150.1",
                 expected_environment_fingerprint="env-A",
                 expected_transport_schema_digest="schema-A",
