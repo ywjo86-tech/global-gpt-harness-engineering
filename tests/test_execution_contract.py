@@ -64,8 +64,8 @@ def approval(*, required: bool = True, approved: bool = True, stale: bool = Fals
     return ApprovalContext(
         full_plan_approval_required=required,
         full_plan_approval_ref="approval://full-plan" if approved else "",
-        approved_semantic_digest="semantic-A",
-        reviewed_semantic_digest="semantic-B" if stale else "semantic-A",
+        approved_semantic_digest="sem-digest",
+        reviewed_semantic_digest="stale-sem-digest" if stale else "sem-digest",
         other_approval_refs=("approval://tool-use",),
     )
 
@@ -79,6 +79,7 @@ def projection() -> ApprovedExecutionProjection:
         completion_criteria_ids=("C-1",),
         validation_criteria=("V-1",),
         quality_criteria_contract_ref="quality://migration/1",
+        change_targets=("runtime/orchestrator/execution_contract.py",),
         owned_scope=("runtime/orchestrator/execution_contract.py",),
         allowed_worker_terminal_states=("CHANGED", "BLOCKED", "INVALID_COMPLETION"),
         allowed_capabilities=("LIST", "READ", "WRITE"),
@@ -123,7 +124,16 @@ def run_binding() -> RunBinding:
     )
 
 
-def auth_evidence(rb: RunBinding | None = None, *, status: str = READY, cli: str = "0.150.1", env: str = "env-A", schema: str = "schema-A") -> CodexAuthReadinessEvidence:
+def auth_evidence(
+    rb: RunBinding | None = None,
+    *,
+    status: str = READY,
+    cli: str = "0.150.1",
+    env: str = "env-A",
+    schema: str = "schema-A",
+    package_id: str = "pkg-1",
+    package_revision: int = 1,
+) -> CodexAuthReadinessEvidence:
     rb = rb or run_binding()
     return CodexAuthReadinessEvidence(
         evidence_id="auth-ready-1",
@@ -140,6 +150,8 @@ def auth_evidence(rb: RunBinding | None = None, *, status: str = READY, cli: str
             transport_schema_digest=schema,
             run_id=rb.run_id,
             worker_task_id=rb.worker_task_id,
+            package_id=package_id,
+            package_revision=package_revision,
         ),
     )
 
@@ -188,8 +200,8 @@ class ContractApprovalTests(unittest.TestCase):
         a = ApprovalContext(
             full_plan_approval_required=True,
             full_plan_approval_ref="",
-            approved_semantic_digest="semantic-A",
-            reviewed_semantic_digest="semantic-A",
+            approved_semantic_digest="sem-digest",
+            reviewed_semantic_digest="sem-digest",
             other_approval_refs=("approval://discovery", "approval://install", "approval://use"),
         )
         with self.assertRaises(ContractBuildError):
@@ -200,8 +212,8 @@ class ContractApprovalTests(unittest.TestCase):
         a = ApprovalContext(
             full_plan_approval_required=False,
             full_plan_approval_ref="",
-            approved_semantic_digest="semantic-A",
-            reviewed_semantic_digest="semantic-A",
+            approved_semantic_digest="sem-digest",
+            reviewed_semantic_digest="sem-digest",
             other_approval_refs=(),
         )
         with self.assertRaises(ContractBuildError) as caught:
@@ -209,7 +221,7 @@ class ContractApprovalTests(unittest.TestCase):
         self.assertEqual(caught.exception.reason_taxonomy, "APPROVAL_LINEAGE_MISSING")
 
     def test_approval_semantic_digest_missing_fails_closed(self) -> None:
-        for approved_digest, reviewed_digest in (("", ""), ("semantic-A", ""), ("", "semantic-A")):
+        for approved_digest, reviewed_digest in (("", ""), ("sem-digest", ""), ("", "sem-digest")):
             with self.subTest(approved_digest=approved_digest, reviewed_digest=reviewed_digest):
                 a = ApprovalContext(
                     full_plan_approval_required=True,
@@ -224,6 +236,19 @@ class ContractApprovalTests(unittest.TestCase):
                     caught.exception.reason_taxonomy,
                     "APPROVAL_SEMANTIC_DIGEST_MISSING",
                 )
+
+
+    def test_approval_semantic_digest_must_match_authoritative_projection(self) -> None:
+        stale_but_self_consistent = ApprovalContext(
+            full_plan_approval_required=True,
+            full_plan_approval_ref="approval://full-plan",
+            approved_semantic_digest="old-semantic-digest",
+            reviewed_semantic_digest="old-semantic-digest",
+            other_approval_refs=("approval://tool-use",),
+        )
+        with self.assertRaises(ContractBuildError) as caught:
+            candidate(approval_context=stale_but_self_consistent)
+        self.assertEqual(caught.exception.reason_taxonomy, "PLAN_REAPPROVAL_REQUIRED")
 
 
 class MigrationBootstrapTests(unittest.TestCase):
@@ -393,6 +418,45 @@ class ContractCrossCheckTests(unittest.TestCase):
         self.assertTrue(active.activation_digest)
 
 
+    def test_stale_pass_crosscheck_cannot_activate_tampered_candidate(self) -> None:
+        p = projection()
+        a = approval()
+        c = candidate(approval_context=a)
+        stale_pass = cross_check_contract(c, p, a)
+        tampered = replace(
+            c,
+            allowed_capabilities=tuple(sorted((*c.allowed_capabilities, "ADMIN"))),
+        )
+        with self.assertRaises(ContractActivationError) as caught:
+            activate_contract(
+                tampered,
+                cross_check=stale_pass,
+                approved_projection=p,
+                approval_context=a,
+            )
+        self.assertIn(
+            caught.exception.reason_taxonomy,
+            {"CONTRACT_CROSS_CHECK_NOT_PASS", "CONTRACT_CROSS_CHECK_EVIDENCE_DRIFT"},
+        )
+
+    def test_active_contract_semantic_tamper_blocks_package_build(self) -> None:
+        active = active_contract()
+        tampered = replace(
+            active,
+            allowed_capabilities=tuple(sorted((*active.allowed_capabilities, "ADMIN"))),
+        )
+        with self.assertRaises(PackageBuildError) as caught:
+            package(contract=tampered)
+        self.assertEqual(caught.exception.reason_taxonomy, "CONTRACT_DIGEST_DRIFT")
+
+    def test_obligation_derivation_version_drift_cannot_crosscheck(self) -> None:
+        p = projection()
+        a = approval()
+        c = replace(candidate(approval_context=a), obligation_derivation_version="forged-v99")
+        result = cross_check_contract(c, p, a)
+        self.assertFalse(result.passed)
+        self.assertEqual(result.failure_owner, CrossCheckFailureOwner.ENGINEERING_BLOCK)
+
 
 class PackageTests(unittest.TestCase):
     def context(
@@ -405,6 +469,10 @@ class PackageTests(unittest.TestCase):
         auth=None,
         profile=ActivationProfile.MIGRATION_APPROVED_PLAN,
         approval_context=None,
+        tool_authorization=None,
+        codex_backed_worker=None,
+        expected_package_revision=None,
+        expected_previous_package_digest=None,
         security_policy_refs=None,
         resume_cursor=None,
         checkpoint_refs=None,
@@ -417,6 +485,26 @@ class PackageTests(unittest.TestCase):
             current_pre_execution_assessment_ref="assessment://pre/1",
             current_pre_execution_assessment=current_assessment or assessment(),
             current_codex_auth_readiness=auth,
+            current_exact_tool_authorization_projection=(
+                tuple(tool_authorization)
+                if tool_authorization is not None
+                else pkg.exact_tool_authorization_projection
+            ),
+            current_codex_backed_worker=(
+                pkg.codex_backed_worker
+                if codex_backed_worker is None
+                else codex_backed_worker
+            ),
+            expected_package_revision=(
+                pkg.package_revision
+                if expected_package_revision is None
+                else expected_package_revision
+            ),
+            expected_previous_package_digest=(
+                pkg.previous_package_digest
+                if expected_previous_package_digest is None
+                else expected_previous_package_digest
+            ),
             current_approval_context=approval_context or approval(),
             current_security_policy_refs=(
                 tuple(security_policy_refs)
@@ -509,6 +597,33 @@ class PackageTests(unittest.TestCase):
                 with self.assertRaises(PreflightBlocked):
                     preflight_execution_package(bad, self.context(bad, contract=active))
 
+    def test_preflight_current_tool_authorization_drift_blocks(self) -> None:
+        active = active_contract()
+        pkg = package(contract=active)
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(
+                pkg,
+                self.context(pkg, contract=active, tool_authorization=("READ",)),
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "TOOL_AUTHORIZATION_BINDING_DRIFT")
+
+    def test_preflight_approval_ref_set_drift_blocks(self) -> None:
+        active = active_contract()
+        pkg = package(contract=active)
+        current = ApprovalContext(
+            full_plan_approval_required=True,
+            full_plan_approval_ref="approval://full-plan",
+            approved_semantic_digest="sem-digest",
+            reviewed_semantic_digest="sem-digest",
+            other_approval_refs=(),
+        )
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(
+                pkg,
+                self.context(pkg, contract=active, approval_context=current),
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "APPROVAL_BINDING_DRIFT")
+
     def test_blocked_execution_obligation_never_reaches_preflight_ready(self) -> None:
         active = active_contract()
         unknown = assessment(CompletionState.UNKNOWN)
@@ -535,6 +650,10 @@ class PackageTests(unittest.TestCase):
             current_pre_execution_assessment_ref="assessment://pre/blocked",
             current_pre_execution_assessment=unknown,
             current_codex_auth_readiness=None,
+            current_exact_tool_authorization_projection=pkg.exact_tool_authorization_projection,
+            current_codex_backed_worker=False,
+            expected_package_revision=pkg.package_revision,
+            expected_previous_package_digest=pkg.previous_package_digest,
             current_approval_context=approval(),
             current_security_policy_refs=pkg.security_policy_refs,
             current_resume_cursor=pkg.resume_cursor,
@@ -653,6 +772,70 @@ class PackageTests(unittest.TestCase):
             build_execution_package(**kwargs)
         self.assertEqual(caught.exception.reason_taxonomy, "PACKAGE_REVISION_LINEAGE_INVALID")
 
+    def test_preflight_rejects_non_authoritative_previous_package_digest(self) -> None:
+        active = active_contract()
+        pkg = build_execution_package(
+            package_id="pkg-lineage",
+            package_revision=2,
+            previous_package_digest="forged-previous-digest",
+            activation_profile=ActivationProfile.MIGRATION_APPROVED_PLAN,
+            run_binding=run_binding(),
+            active_contract=active,
+            pre_execution_assessment_ref="assessment://pre/1",
+            pre_execution_assessment=assessment(),
+            runtime_selection={"mode": "mock"},
+            exact_tool_authorization_projection=("READ",),
+            security_policy_refs=("security://v1",),
+            quality_policy_refs=("quality://migration/1",),
+            codex_backed_worker=False,
+            codex_auth_readiness=None,
+        )
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(
+                pkg,
+                self.context(
+                    pkg,
+                    contract=active,
+                    expected_package_revision=2,
+                    expected_previous_package_digest="authoritative-previous-digest",
+                ),
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "PACKAGE_REVISION_LINEAGE_DRIFT")
+
+
+
+    def test_package_seals_required_contract_projection_for_package_only_worker(self) -> None:
+        active = active_contract()
+        pkg = package(contract=active)
+        self.assertEqual(pkg.purpose, active.purpose)
+        self.assertIs(pkg.task_effect_policy, active.task_effect_policy)
+        self.assertEqual(pkg.change_targets, active.change_targets)
+        self.assertEqual(pkg.completion_criteria_ids, active.completion_criteria_ids)
+        self.assertEqual(pkg.validation_criteria, active.validation_criteria)
+        self.assertEqual(pkg.quality_criteria_contract_ref, active.quality_criteria_contract_ref)
+        self.assertEqual(pkg.allowed_worker_terminal_states, active.allowed_worker_terminal_states)
+        self.assertEqual(pkg.allowed_capabilities, active.allowed_capabilities)
+        self.assertEqual(pkg.permission_requirements, active.permission_requirements)
+        self.assertEqual(pkg.security_requirements, active.security_requirements)
+        self.assertEqual(pkg.evidence_requirements, active.evidence_requirements)
+        self.assertEqual(pkg.remediation_policy_ref, active.remediation_policy_ref)
+        self.assertEqual(dict(pkg.source_digests), dict(active.source_digests))
+        self.assertEqual(pkg.approval_refs, active.approval_refs)
+
+    def test_package_contract_projection_tamper_fails_preflight(self) -> None:
+        active = active_contract()
+        pkg = package(contract=active)
+        tampered = replace(pkg, remediation_policy_ref="remediation://forged")
+        # Re-seal the forged package to prove Preflight checks semantic projection
+        # against ACTIVE Contract, not only the package's self-digest.
+        from runtime.orchestrator.execution_contract import _digest
+        tampered = replace(tampered, package_digest=_digest(tampered.canonical_projection()))
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(
+                tampered,
+                self.context(tampered, contract=active),
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "PACKAGE_CONTRACT_PROJECTION_DRIFT")
 
 
 class CodexAuthReadinessTests(unittest.TestCase):
@@ -690,6 +873,10 @@ class CodexAuthReadinessTests(unittest.TestCase):
                 current_pre_execution_assessment_ref="assessment://pre/1",
                 current_pre_execution_assessment=assessment(),
                 current_codex_auth_readiness=auth,
+                current_exact_tool_authorization_projection=pkg.exact_tool_authorization_projection,
+                current_codex_backed_worker=True,
+                expected_package_revision=pkg.package_revision,
+                expected_previous_package_digest=pkg.previous_package_digest,
                 current_approval_context=approval(),
                 current_security_policy_refs=pkg.security_policy_refs,
                 current_resume_cursor=pkg.resume_cursor,
@@ -722,9 +909,52 @@ class CodexAuthReadinessTests(unittest.TestCase):
                     transport_schema_digest="schema-A",
                     run_id=rb.run_id,
                     worker_task_id=rb.worker_task_id,
+                    package_id="pkg-1",
+                    package_revision=1,
                 ),
             )
         self.assertEqual(caught.exception.reason_taxonomy, "AUTH_EVIDENCE_SECRET_MATERIAL")
+
+    def test_codex_backed_identity_is_sealed_and_preflight_revalidated(self) -> None:
+        active = active_contract()
+        rb = run_binding()
+        non_codex = package(contract=active, rb=rb, codex=False)
+        self.assertFalse(non_codex.codex_backed_worker)
+        with self.assertRaises(PreflightBlocked) as caught:
+            preflight_execution_package(
+                non_codex,
+                PackageTests().context(
+                    non_codex,
+                    contract=active,
+                    rb=rb,
+                    codex_backed_worker=True,
+                ),
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "CODEX_BACKEND_BINDING_DRIFT")
+
+    def test_codex_readiness_cannot_be_reused_for_new_package_revision(self) -> None:
+        active = active_contract()
+        rb = run_binding()
+        first_auth = auth_evidence(rb, package_id="pkg-1", package_revision=1)
+        first = package(contract=active, rb=rb, auth=first_auth, codex=True)
+        with self.assertRaises(PackageBuildError) as caught:
+            build_execution_package(
+                package_id="pkg-1",
+                package_revision=2,
+                previous_package_digest=first.package_digest,
+                activation_profile=ActivationProfile.MIGRATION_APPROVED_PLAN,
+                run_binding=rb,
+                active_contract=active,
+                pre_execution_assessment_ref="assessment://pre/1",
+                pre_execution_assessment=assessment(),
+                runtime_selection={"mode": "codex-cli", "worker": "worker-001"},
+                exact_tool_authorization_projection=("LIST", "READ", "WRITE"),
+                security_policy_refs=("security://v1",),
+                quality_policy_refs=("quality://migration/1",),
+                codex_backed_worker=True,
+                codex_auth_readiness=first_auth,
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "CODEX_AUTH_READINESS_STALE_OR_DRIFTED")
 
     def test_stale_launch_binding_cannot_be_reused_for_new_run(self) -> None:
         active = active_contract()
