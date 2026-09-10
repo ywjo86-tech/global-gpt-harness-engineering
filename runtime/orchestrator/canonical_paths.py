@@ -4,6 +4,12 @@ import re
 
 _IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 
+def canonical_run_root(harness_root: str | Path, *, run_id: str, lv_id: str) -> Path:
+    """Canonical hctl/production run root for one RUN_ID/LV binding."""
+    if not all(isinstance(v, str) and _IDENTITY.fullmatch(v) for v in (run_id, lv_id)):
+        raise ValueError("invalid canonical run identity")
+    return Path(harness_root).resolve() / "_workspace" / "orchestration-runs" / run_id / lv_id
+
 def canonical_lv_path(harness_root: str | Path, *, project_id: str, run_id: str,
                       gate_id: str, lv_id: str, attempt: int | None = None,
                       recovery_id: str | None = None) -> Path:

@@ -4,6 +4,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ from runtime.orchestrator.gate_orchestrator import (
     advance_lifecycle, compatibility_dry_run, create_gate_authorization, derive_transition,
     gate_exit_action, initial_ledger, load_gate_plan, namespace_root, onboarding_dry_run, recovery_checkpoint,
     resume_from_checkpoint, select_assets, structured_handoff, validate_authorization,
-    validate_concurrent_ownership, validate_handoff, validate_ledger, validate_owned_access,
+    validate_capability_handoff_projection, validate_concurrent_ownership, validate_handoff, validate_ledger, validate_owned_access,
 )
 from runtime.orchestrator.gate_controller import GateControllerAdapters
 from runtime.orchestrator.gate_approval import seal_approval_evidence
@@ -39,6 +40,24 @@ PLAN = '''# Plan
 
 
 class GateOrchestratorTests(unittest.TestCase):
+    def test_capability_crash_failpoint_is_disabled_by_default_and_explicit_only(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _test_only_crash_after_capability_stage
+        from runtime.orchestrator.operational_capability import InjectedCrash
+        with patch.dict("os.environ", {}, clear=True):
+            _test_only_crash_after_capability_stage("DISCOVERY_COMPLETED")
+        with patch.dict("os.environ", {"HARNESS_TEST_CRASH_AFTER_CAPABILITY_STAGE": "DISCOVERY_COMPLETED"}):
+            with self.assertRaises(InjectedCrash):
+                _test_only_crash_after_capability_stage("DISCOVERY_COMPLETED")
+
+    def test_production_crash_failpoint_is_disabled_by_default_and_explicit_only(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _test_only_crash_after_production_stage
+        from runtime.orchestrator.operational_capability import InjectedCrash
+        with patch.dict("os.environ", {}, clear=True):
+            _test_only_crash_after_production_stage("WORKER")
+        with patch.dict("os.environ", {"HARNESS_TEST_CRASH_AFTER_PRODUCTION_STAGE": "WORKER"}):
+            with self.assertRaises(InjectedCrash):
+                _test_only_crash_after_production_stage("WORKER")
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name) / "project-one"; self.root.mkdir()
         self.plan_path = self.root / "PLAN.md"; self.plan_path.write_text(PLAN)
@@ -47,6 +66,25 @@ class GateOrchestratorTests(unittest.TestCase):
         with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping):
             self.plan = load_gate_plan(self.root, "GATE-1")
         self.auth = create_gate_authorization(self.plan, "AUTH-G1")
+
+    def test_capability_handoff_projection_mismatch_is_blocked(self) -> None:
+        projection = {"used_assets": ["candidate-a"], "candidate_use_authorized": True}
+        handoff = {"review": {"capability": {"used_assets": [], "candidate_use_authorized": True}}}
+        with self.assertRaisesRegex(GateOrchestrationError, "projection mismatch"):
+            validate_capability_handoff_projection(projection, handoff)
+
+    def test_resumed_capability_filesystem_mutation_is_blocked(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _validate_resume_capability_filesystem
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "installed"; target.mkdir()
+            skill = target / "SKILL.md"; skill.write_text("safe", encoding="utf-8")
+            digest = hashlib.sha256(skill.read_bytes()).hexdigest()
+            (target / ".codex-install-manifest.json").write_text(json.dumps({"skill_md_digest": digest, "aggregate_digest": digest}), encoding="utf-8")
+            handoff = {"review": {"capability_runtime_selection": {"installed_target": str(target), "artifact_digest": digest}}}
+            _validate_resume_capability_filesystem(handoff)
+            skill.write_text("mutated", encoding="utf-8")
+            with self.assertRaisesRegex(GateOrchestrationError, "digest drift"):
+                _validate_resume_capability_filesystem(handoff)
 
     def tearDown(self) -> None: self.temp.cleanup()
 
@@ -66,6 +104,22 @@ class GateOrchestratorTests(unittest.TestCase):
         path = self.root.parent / name
         path.write_text(json.dumps(seal_approval_evidence(payload)), encoding="utf-8")
         return path
+
+    def canonical_capability_plan(self, first_contract, *, others_none=True):
+        none={"version":"v1","mode":"DECLARED_NONE","requirements":[]}
+        lvs=[replace(item,capability_contract=(first_contract if index == 0 else (none if others_none else None)))
+             for index,item in enumerate(self.plan.lvs)]
+        return replace(self.plan,lvs=lvs)
+
+    def lifecycle_adapters(self, calls, *, worker_status="COMPLETED"):
+        def result(stage,status):
+            def invoke(context):
+                calls.append((stage,context["lv_id"]))
+                return {"status":status,"exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True}
+            return invoke
+        return GateControllerAdapters(result("PACKAGE","SEALED"),result("PREFLIGHT","READY"),
+            result("WORKER",worker_status),result("REVIEW","PASS"),result("REMEDIATION","PASS"),
+            result("CHECKPOINT","CHECKPOINTED"),result("EXIT","EXITED"),result("HANDOFF","SEALED"))
 
     def requirement_evidence(self, lv_evidence_sha256: str = "a" * 64) -> dict[str, dict[str, object]]:
         evidence: dict[str, dict[str, object]] = {}
@@ -259,6 +313,286 @@ class GateOrchestratorTests(unittest.TestCase):
         self.assertEqual(outcome["status"],"GATE_EXIT")
         self.assertNotIn(("PACKAGE","G1-LV3-1"),calls)
         self.assertEqual({lv for _,lv in calls},{"G1-LV3-2","G1-LV3-3"})
+
+    def test_full_plan_capability_dry_run_is_a_pre_worker_prerequisite(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        from runtime.orchestrator.operational_capability import DryRunExecutionContext, run_operational_capability_dry_run
+        from runtime.orchestrator.schemas import CapabilityRequirement
+        calls=[]
+        def result(stage, status):
+            def invoke(context): calls.append((stage, context["lv_id"])); return {"status":status,"exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True}
+            return invoke
+        adapters=GateControllerAdapters(result("PACKAGE","SEALED"),result("PREFLIGHT","READY"),result("WORKER","COMPLETED"),
+            result("REVIEW","PASS"),result("REMEDIATION","PASS"),result("CHECKPOINT","CHECKPOINTED"),result("EXIT","EXITED"),result("HANDOFF","SEALED"))
+        full_auth=create_gate_authorization(self.plan,"AUTH-FULL",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+        requirements={item.lv_id: CapabilityRequirement("existing-agent",item.gate_id,item.lv_id,("read",),tuple(item.owned_files) or ("fixture/noop",)) for item in self.plan.lvs}
+        def prerequisite(context, requirement, checkpoint):
+            calls.append(("CAPABILITY", context["lv_id"]))
+            dry=DryRunExecutionContext(context["project_id"],context["gate_id"],context["lv_id"],context["plan_sha256"],str(self.root))
+            return run_operational_capability_dry_run(context=dry,requirement=requirement,agent_registry={"existing-agent":object()},checkpoint=checkpoint)
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=self.plan), \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=full_auth):
+            with self.assertRaisesRegex(Exception, "TEST_ONLY"):
+                execute_gate(self.root,"GATE-1","run-cap-production",harness_root=self.root.parent,adapters=adapters,
+                    approval_evidence=self.approval_evidence("cap-approval.json"),requirements_sha256="b"*64,
+                    branch="main",head="c"*40,mode=FULL_PLAN,requirement_evidence=self.requirement_evidence(),
+                    capability_requirements=requirements,capability_prerequisite=prerequisite,
+                    capability_checkpoints={},dry_run_capability_resolution=True)
+            outcome=execute_gate(self.root,"GATE-1","run-cap",harness_root=self.root.parent,adapters=adapters,
+                approval_evidence=self.approval_evidence("cap-approval.json"),requirements_sha256="b"*64,
+                branch="main",head="c"*40,mode=FULL_PLAN,requirement_evidence=self.requirement_evidence(),
+                capability_requirements=requirements,capability_prerequisite=prerequisite,
+                capability_checkpoints={},dry_run_capability_resolution=True,
+                legacy_test_only_capability=True)
+        self.assertEqual(outcome["status"],"GATE_EXIT")
+        for item in self.plan.lvs:
+            lv=item.lv_id
+            self.assertLess(calls.index(("PREFLIGHT",lv)),calls.index(("CAPABILITY",lv)))
+            self.assertLess(calls.index(("CAPABILITY",lv)),calls.index(("WORKER",lv)))
+        self.assertTrue(all(lifecycle["capability"]["gate_passed"] is False for lifecycle in outcome["lifecycles"]))
+        self.assertTrue(all(lifecycle["trace"][:3] == ["PACKAGE","PREFLIGHT","WORKER"] for lifecycle in outcome["lifecycles"]))
+
+    def test_full_plan_approval_does_not_bypass_capability_approval(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        from runtime.orchestrator.operational_capability import OperationalCapabilityResult
+        from runtime.orchestrator.schemas import CapabilityRequirement
+        calls=[]
+        def result(stage, status):
+            def invoke(context): calls.append(stage); return {"status":status,"exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True}
+            return invoke
+        adapters=GateControllerAdapters(result("PACKAGE","SEALED"),result("PREFLIGHT","READY"),result("WORKER","COMPLETED"),
+            result("REVIEW","PASS"),result("REMEDIATION","PASS"),result("CHECKPOINT","CHECKPOINTED"),result("EXIT","EXITED"),result("HANDOFF","SEALED"))
+        full_auth=create_gate_authorization(self.plan,"AUTH-FULL",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+        requirements={item.lv_id: CapabilityRequirement("gap",item.gate_id,item.lv_id,("read",),tuple(item.owned_files) or ("fixture/noop",)) for item in self.plan.lvs}
+        blocked=lambda context,requirement,checkpoint: OperationalCapabilityResult("BLOCKED","GAP",False,None,{},"DISCOVERY_APPROVAL","separate approval required")
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=self.plan), \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=full_auth), \
+             self.assertRaisesRegex(Exception,"capability resolution"):
+            execute_gate(self.root,"GATE-1","run-blocked",harness_root=self.root.parent,adapters=adapters,
+                approval_evidence=self.approval_evidence("blocked-approval.json"),requirements_sha256="b"*64,
+                branch="main",head="c"*40,mode=FULL_PLAN,requirement_evidence=self.requirement_evidence(),
+                capability_requirements=requirements,capability_prerequisite=blocked,
+                capability_checkpoints={},dry_run_capability_resolution=True,
+                legacy_test_only_capability=True)
+        self.assertEqual(calls,["PACKAGE","PREFLIGHT"])
+
+    def test_execute_gate_canonical_declared_none_calls_worker_without_capability_modules(self):
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        calls=[]; plan=self.canonical_capability_plan({"version":"v1","mode":"DECLARED_NONE","requirements":[]})
+        auth=create_gate_authorization(plan,"AUTH-CANONICAL",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=plan), \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=auth), \
+             patch("runtime.orchestrator.operational_capability.run_concrete_module_fixture_dry_run") as concrete:
+            outcome=execute_gate(self.root,"GATE-1","canonical-none",harness_root=self.root.parent,
+                adapters=self.lifecycle_adapters(calls),approval_evidence=self.approval_evidence("canonical-none.json"),
+                requirements_sha256="b"*64,branch="main",head="c"*40,mode=FULL_PLAN,
+                requirement_evidence=self.requirement_evidence())
+        self.assertEqual(outcome["status"],"GATE_EXIT"); concrete.assert_not_called()
+        self.assertEqual([stage for stage,_ in calls].count("WORKER"),3)
+        self.assertTrue(all(item["capability"]["status"] == "NO_CAPABILITY_REQUIREMENT" for item in outcome["lifecycles"]))
+
+    def test_execute_gate_canonical_project_and_agent_existing_fast_paths(self):
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        from runtime.orchestrator.operational_capability import CanonicalCapabilityRuntimeSources
+        from runtime.orchestrator.project_isolation import ProjectIsolation
+        source_ref="gate/GATE-1/lv/G1-LV3-1/capability_contract/requirements/0"
+        for capability,manifest in (("cap",{"asset_id":"project-cap","scope":"project","capabilities":["cap"],
+                                             "permissions":["read"],"owned_files":["app/","tests/"]}),
+                                    ("implementation_agent",None)):
+            with self.subTest(capability=capability):
+                contract={"version":"v1","mode":"REQUIRED","requirements":[{"capability_id":capability,
+                          "required_permissions":["read"],"source_ref":source_ref}]}
+                plan=self.canonical_capability_plan(contract); calls=[]
+                auth=create_gate_authorization(plan,"AUTH-EXISTING",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+                isolation=ProjectIsolation(self.root.parent,self.root,self.plan.project_id,"project-one",{"project-one":self.plan.project_id})
+                evidence={}
+                if manifest is not None:
+                    raw=json.dumps(manifest,sort_keys=True).encode(); reference=f"inventory/{capability}.json"
+                    isolation.write_exclusive("artifact",reference,raw); evidence[reference]=hashlib.sha256(raw).hexdigest()
+                sources=CanonicalCapabilityRuntimeSources(isolation,evidence,{})
+                with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=plan), \
+                     patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=auth), \
+                     patch("runtime.orchestrator.operational_capability.run_concrete_module_fixture_dry_run") as concrete:
+                    outcome=execute_gate(self.root,"GATE-1",f"existing-{capability}",harness_root=self.root.parent,
+                        adapters=self.lifecycle_adapters(calls),approval_evidence=self.approval_evidence(f"existing-{capability}.json"),
+                        requirements_sha256="b"*64,branch="main",head="c"*40,mode=FULL_PLAN,
+                        requirement_evidence=self.requirement_evidence(),canonical_capability_sources={"G1-LV3-1":sources})
+                concrete.assert_not_called(); self.assertEqual(outcome["status"],"GATE_EXIT")
+                first=outcome["lifecycles"][0]["capability"]
+                self.assertEqual(first["status"],"EXISTING_CAPABILITY_READY")
+                self.assertTrue(first["existing_decision"]["decision_digest"])
+                self.assertEqual([stage for stage,_ in calls].count("WORKER"),3)
+
+    def test_execute_gate_canonical_undeclared_and_global_unavailable_never_call_worker(self):
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        from runtime.orchestrator.operational_capability import CanonicalCapabilityRuntimeSources
+        from runtime.orchestrator.project_isolation import ProjectIsolation
+        for mode in ("UNDECLARED","GLOBAL"):
+            with self.subTest(mode=mode):
+                calls=[]
+                if mode == "UNDECLARED": plan=self.plan; source_map=None
+                else:
+                    ref="gate/GATE-1/lv/G1-LV3-1/capability_contract/requirements/0"
+                    plan=self.canonical_capability_plan({"version":"v1","mode":"REQUIRED","requirements":[
+                        {"capability_id":"global-cap","required_permissions":["read"],"source_ref":ref}]})
+                    isolation=ProjectIsolation(self.root.parent,self.root,self.plan.project_id,"project-one",{"project-one":self.plan.project_id})
+                    value={"asset_id":"global-cap","scope":"global","capabilities":["global-cap"],"permissions":["read"],"owned_files":["app/"]}
+                    raw=json.dumps(value,sort_keys=True).encode(); reference="inventory/global.json"
+                    isolation.write_exclusive("artifact",reference,raw)
+                    source_map={"G1-LV3-1":CanonicalCapabilityRuntimeSources(isolation,{},
+                        {reference:hashlib.sha256(raw).hexdigest()})}
+                auth=create_gate_authorization(plan,"AUTH-BLOCK",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+                with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=plan), \
+                     patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=auth), \
+                     self.assertRaisesRegex(Exception,"canonical capability prerequisite blocked"):
+                    execute_gate(self.root,"GATE-1",f"blocked-{mode}",harness_root=self.root.parent,
+                        adapters=self.lifecycle_adapters(calls),approval_evidence=self.approval_evidence(f"blocked-{mode}.json"),
+                        requirements_sha256="b"*64,branch="main",head="c"*40,mode=FULL_PLAN,
+                        requirement_evidence=self.requirement_evidence(),canonical_capability_sources=source_map)
+                self.assertEqual(calls,[("PACKAGE","G1-LV3-1"),("PREFLIGHT","G1-LV3-1")])
+
+    def test_execute_gate_canonical_gap_uses_actual_approval_loader_and_concrete_modules(self):
+        from tests.test_operational_capability import OperationalCapabilityTests
+        from runtime.orchestrator.gate_orchestrator import GateLV, GatePlan, execute_gate
+        from runtime.orchestrator.operational_capability import (
+            CapabilityApprovalEvidenceRef, CanonicalCapabilityRuntimeSources,
+            run_concrete_module_fixture_dry_run,
+        )
+        from runtime.orchestrator.project_isolation import ProjectIsolation
+        import runtime.orchestrator.operational_capability as capability_module
+        helper=OperationalCapabilityTests(); helper.setUp()
+        with tempfile.TemporaryDirectory() as temp:
+            root,kwargs,install_factory,use_factory=helper.concrete_fixture(temp)
+            seeded=run_concrete_module_fixture_dry_run(**kwargs,install_approval_factory=install_factory,
+                                                       use_approval_factory=use_factory)
+            self.assertEqual(seeded.status,"READY_FOR_WORKER",seeded.blocked_reason)
+            source_ref="gate/G1/lv/LV1/capability_contract/requirements/0"
+            contract={"version":"v1","mode":"REQUIRED","requirements":[{"capability_id":"cap",
+                      "required_permissions":["read"],"source_ref":source_ref}]}
+            lv=GateLV("G1","LV1",1,"capability",[],["tests/"],["pass"],"sequential",["tests/test_x.py"],contract)
+            plan=GatePlan("project",str(root),"G1","PLAN.md",kwargs["context"].canonical_plan_sha256,[lv])
+            auth=create_gate_authorization(plan,"AUTH-GAP",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+            namespace=Path(temp)/"namespace"; namespace.mkdir()
+            isolation=ProjectIsolation(namespace,root,"project","project",{"project":"project"})
+            approvals={"discovery":kwargs["discovery_approval"],"install":helper.concrete_created["install"],
+                       "use":helper.concrete_created["use"]}
+            refs={}
+            for name,value in approvals.items():
+                raw=json.dumps(asdict(value)).encode(); relative=f"capability/{name}.json"
+                isolation.write_exclusive("approval",relative,raw)
+                refs[name]=CapabilityApprovalEvidenceRef(relative,hashlib.sha256(raw).hexdigest())
+            def sources(names,ledger):
+                return CanonicalCapabilityRuntimeSources(
+                    isolation,{}, {},refs["discovery"] if "discovery" in names else None,
+                    refs["install"] if "install" in names else None,refs["use"] if "use" in names else None,
+                    kwargs["discovery_transport"],kwargs["resolution_transport"],kwargs["http_executor"],
+                    kwargs["fixture_repository_root"],kwargs["candidate_metadata"],ledger=ledger)
+            actual_discovery=capability_module.run_http_read_only_discovery
+            actual_installer=capability_module.install_project_skill
+            actual_authorize=capability_module.authorize_candidate_use
+            actual_transition=capability_module.transition_used_asset
+            with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=plan), \
+                 patch("runtime.orchestrator.gate_orchestrator.validate_global_gate_bindings"), \
+                 patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=auth), \
+                 patch("runtime.orchestrator.operational_capability.run_http_read_only_discovery",wraps=actual_discovery) as discovery, \
+                 patch("runtime.orchestrator.operational_capability.install_project_skill",wraps=actual_installer) as installer, \
+                 patch("runtime.orchestrator.operational_capability.authorize_candidate_use",wraps=actual_authorize) as authorize, \
+                 patch("runtime.orchestrator.operational_capability.transition_used_asset",wraps=actual_transition) as transition:
+                cases=(((),"DISCOVERY",False),(('discovery',),"ADOPTION",False),
+                       (("discovery","install"),"USE_AUTHORIZATION",False),
+                       (("discovery","install","use"),"READY",True))
+                for index,(names,blocked_stage,ready) in enumerate(cases):
+                    calls=[]; ledger={"used_assets":[],"use_authorized_candidates":[],
+                                     "use_authorization_evidence_references":[],"gate_passed":False}
+                    if ready:
+                        outcome=execute_gate(root,"G1",f"gap-{index}",harness_root=namespace,
+                            adapters=self.lifecycle_adapters(calls),approval_evidence="unused",requirements_sha256="b"*64,
+                            branch="main",head="c"*40,mode=FULL_PLAN,requirement_evidence={"REQ":{"status":"PENDING"}},
+                            canonical_capability_sources={"LV1":sources(names,ledger)})
+                        self.assertEqual(outcome["status"],"GATE_EXIT")
+                        self.assertEqual(outcome["lifecycles"][0]["capability"]["status"],"DISCOVERED_CAPABILITY_READY")
+                        self.assertEqual(len(ledger["used_assets"]),1); self.assertTrue(outcome["lifecycles"][0]["capability"]["runtime_selection"])
+                        self.assertIn(("WORKER","LV1"),calls)
+                    else:
+                        with self.assertRaisesRegex(Exception,"canonical capability prerequisite blocked"):
+                            execute_gate(root,"G1",f"gap-{index}",harness_root=namespace,
+                                adapters=self.lifecycle_adapters(calls),approval_evidence="unused",requirements_sha256="b"*64,
+                                branch="main",head="c"*40,mode=FULL_PLAN,requirement_evidence={"REQ":{"status":"PENDING"}},
+                                canonical_capability_sources={"LV1":sources(names,ledger)})
+                        self.assertNotIn(("WORKER","LV1"),calls); self.assertEqual(ledger["used_assets"],[])
+                    if blocked_stage == "DISCOVERY": self.assertEqual(discovery.call_count,0)
+                    if blocked_stage == "ADOPTION": self.assertEqual(installer.call_count,0)
+                    if blocked_stage == "USE_AUTHORIZATION": self.assertGreaterEqual(authorize.call_count,1)
+                    discovery.reset_mock(); installer.reset_mock(); authorize.reset_mock(); transition.reset_mock()
+
+    def test_execute_gate_canonical_ready_does_not_turn_worker_failure_into_gate_pass(self):
+        from runtime.orchestrator.gate_controller import GateControllerError
+        from runtime.orchestrator.gate_orchestrator import GateLV, GatePlan, execute_gate
+        from runtime.orchestrator.operational_capability import CanonicalCapabilityRuntimeSources
+        from runtime.orchestrator.project_isolation import ProjectIsolation
+        source_ref="gate/G1/lv/LV1/capability_contract/requirements/0"
+        contract={"version":"v1","mode":"REQUIRED","requirements":[{"capability_id":"cap",
+                  "required_permissions":["read"],"source_ref":source_ref}]}
+        plan=GatePlan("project",str(self.root),"G1","PLAN.md", "a"*64,
+                      [GateLV("G1","LV1",1,"capability",[],["app/"],["pass"],"sequential",[],contract)])
+        auth=create_gate_authorization(plan,"AUTH-WORKER-FAIL",mode=FULL_PLAN,full_plan_opt_in=True,project_final_validation=True)
+        isolation=ProjectIsolation(self.root.parent,self.root,"project-one","project-one",{"project-one":"project-one"})
+        value={"asset_id":"project-cap","scope":"project","capabilities":["cap"],"permissions":["read"],"owned_files":["app/"]}
+        raw=json.dumps(value,sort_keys=True).encode(); reference="inventory/worker-fail.json"
+        isolation.write_exclusive("artifact",reference,raw)
+        sources=CanonicalCapabilityRuntimeSources(isolation,{reference:hashlib.sha256(raw).hexdigest()}, {})
+        captured=[]
+        import runtime.orchestrator.operational_capability as capability_module
+        actual_prerequisite=capability_module.run_canonical_capability_prerequisite
+        def capture_prerequisite(**kwargs):
+            result=actual_prerequisite(**kwargs); captured.append(result); return result
+        def worker(context):
+            raise GateControllerError("worker fixture failed")
+        adapters=GateControllerAdapters(
+            lambda context:{"status":"SEALED","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True},
+            lambda context:{"status":"READY","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True},
+            worker,lambda context:{"status":"PASS","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True},
+            lambda context:{"status":"PASS","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True},
+            lambda context:{"status":"CHECKPOINTED","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True},
+            lambda context:{"status":"EXITED","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True},
+            lambda context:{"status":"SEALED","exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True})
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan",return_value=plan), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_global_gate_bindings"), \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=auth), \
+             patch("runtime.orchestrator.operational_capability.run_canonical_capability_prerequisite",side_effect=capture_prerequisite), \
+             self.assertRaisesRegex(GateControllerError,"worker fixture failed"):
+            execute_gate(self.root,"G1","worker-failure",harness_root=self.root.parent,adapters=adapters,
+                approval_evidence="unused",requirements_sha256="b"*64,branch="main",head="c"*40,mode=FULL_PLAN,
+                requirement_evidence={"REQ":{"status":"PENDING"}},canonical_capability_sources={"LV1":sources})
+        self.assertTrue(captured and captured[0].status == "EXISTING_CAPABILITY_READY")
+        self.assertFalse(captured[0].gate_passed)
+
+    def test_operational_capability_checkpoint_is_bound_and_tamper_evident(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _load_capability_checkpoint, _save_capability_checkpoint
+        path=self.root/"capability-checkpoint.json"
+        records={"DISCOVERY":{"sealed":True}}
+        _save_capability_checkpoint(path,project_id=self.plan.project_id,gate_id="GATE-1",lv_id="G1-LV3-1",
+                                    canonical_plan_sha256=self.plan.canonical_plan_sha256,stage_records=records)
+        self.assertEqual(_load_capability_checkpoint(path,project_id=self.plan.project_id,gate_id="GATE-1",lv_id="G1-LV3-1",
+                         canonical_plan_sha256=self.plan.canonical_plan_sha256),records)
+        value=json.loads(path.read_text()); value["payload"]["lv_id"]="OTHER"; path.write_text(json.dumps(value))
+        with self.assertRaises(GateOrchestrationError):
+            _load_capability_checkpoint(path,project_id=self.plan.project_id,gate_id="GATE-1",lv_id="G1-LV3-1",
+                                        canonical_plan_sha256=self.plan.canonical_plan_sha256)
+
+    def test_worker_capability_evidence_reaches_handoff_before_seal(self) -> None:
+        from runtime.orchestrator.gate_controller import run_gate_lifecycle
+        captured=[]
+        def stage(status, payload=None):
+            def invoke(context):
+                if payload is not None: captured.append(context)
+                return {"status":status,"exit_code":0,"evidence_sha256":"a"*64,"hard_stop":True, **(payload or {})}
+            return invoke
+        capability={"capability_projection":{"used_assets":["installed-skill:sha256:"+"b"*64]},"runtime_selection":{"simulated":True}}
+        adapters=GateControllerAdapters(stage("SEALED"),stage("READY"),stage("COMPLETED",capability),stage("PASS"),stage("PASS"),stage("CHECKPOINTED"),stage("EXITED"),stage("SEALED",{"seen":True}))
+        result=run_gate_lifecycle({"project_id":"project","gate_id":"GATE-1","lv_id":"LV1","run_id":"run","plan_sha256":"a"*64},adapters)
+        self.assertEqual(result["status"],"SYSTEM_TRANSITION")
+        self.assertTrue(captured and captured[-1].get("worker_result",{}).get("capability_projection"))
 
 
 if __name__ == "__main__": unittest.main()

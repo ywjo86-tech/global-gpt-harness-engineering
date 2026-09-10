@@ -30,6 +30,8 @@ from runtime.orchestrator.lv_review import (
     _preflight_projection_digest,
     _package_root,
     _owned_content_snapshot,
+    _production_committed_changes,
+    _validate_execution_root,
     publish_gate_preflight_attestation,
     preflight_run,
     review_run,
@@ -41,6 +43,43 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_production_root_is_explicit_repository_instance(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "wallet-affiliate-collector"
+            root.mkdir()
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            self.assertEqual(_validate_execution_root(root, root.name), root)
+            with self.assertRaises(LVReviewError):
+                _validate_execution_root(root / ".git", root.name)
+            with self.assertRaises(LVReviewError):
+                _validate_execution_root(root / "nested", root.name)
+
+    def test_production_committed_delta_classifies_without_legacy_fields(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.invalid"], check=True)
+            (root / "existing.py").write_text("before\n")
+            subprocess.run(["git", "-C", str(root), "add", "--", "existing.py"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "baseline"], check=True)
+            baseline = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            (root / "new.py").write_text("new\n")
+            (root / "existing.py").write_text("after\n")
+            subprocess.run(["git", "-C", str(root), "add", "--", "existing.py", "new.py"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "checkpoint"], check=True)
+            checkpoint = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            self.assertEqual(
+                _production_committed_changes(root, baseline, checkpoint),
+                {
+                    "changed_files": ["existing.py", "new.py"],
+                    "created_files": ["new.py"],
+                    "modified_files": ["existing.py"],
+                    "deleted_files": [],
+                    "forbidden_status": False,
+                },
+            )
+
     def test_published_preflight_reuses_private_result_successor_but_rejects_binding_conflict(self) -> None:
         with TemporaryDirectory() as directory:
             base = Path(directory)

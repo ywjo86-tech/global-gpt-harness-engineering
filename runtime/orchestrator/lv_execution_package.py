@@ -10,10 +10,14 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
+from .tool_authorization import (
+    DEC007_CONTRACT_IDS, DEC007_DECISION_REF, ToolAuthorizationContract,
+    activate_contract, build_dec007_approved_contracts, owned_scope_digest,
+)
 
 
 MANIFEST_SCHEMA_VERSION = "orchestration.lv_execution_package.v1"
@@ -382,11 +386,16 @@ def create_lv_execution_package(
     output_root: str | Path | None = None,
     output_dir: str | Path | None = None,
     canonical_state_override: Mapping[str, Any] | None = None,
+    canonical_owned_files: Sequence[str] | None = None,
+    approved_tool_authorization_contracts: Sequence[ToolAuthorizationContract] = (),
+    tool_authorization_decisions: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     root = _canonical_root(project_root)
     run_id = _safe_run_id(run_id)
     _assert_clean_source(root)
     preview = preview_lv_read_only(root, gate_id, lv_id, canonical_state_override=canonical_state_override)
+    if canonical_owned_files is not None:
+        preview["approved_owned_files"] = list(canonical_owned_files)
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVExecutionPackageError("a project contract mapping is required")
@@ -423,6 +432,23 @@ def create_lv_execution_package(
         "execution": selected["execution"],
     }
     package_input_hash = _sha256_bytes(canonical_json_bytes(package_input))
+    contracts = tuple(approved_tool_authorization_contracts) or build_dec007_approved_contracts(
+        project_id=root.name, gate_id=gate_id, lv_id=lv_id, run_id=run_id,
+        canonical_plan_sha256=preview["selected_canonical_plan"]["sha256"],
+        owned_files=preview["approved_owned_files"],
+    )
+    if ({contract.operation_class_id for contract in contracts} != set(DEC007_CONTRACT_IDS)
+            or len(contracts) != len(DEC007_CONTRACT_IDS)):
+        raise LVExecutionPackageError("sealed production Tool authorization set is not DEC-007 exact")
+    active_tool_contracts = [
+        activate_contract(
+            contract, package_binding_sha256=package_input_hash,
+            authorized_decisions=tool_authorization_decisions or {
+                DEC007_DECISION_REF: "USER_DECISION",
+            },
+        ).to_dict()
+        for contract in contracts
+    ]
     source_snapshot_hash = _sha256_bytes(canonical_json_bytes(source_snapshot))
     manifest_seed = {
         "run_id": run_id,
@@ -444,6 +470,24 @@ def create_lv_execution_package(
         prompt_hash,
         source_snapshot,
     )
+    manifest["working_semantic_contract_version"] = "SC-4.0-CANDIDATE"
+    manifest["working_development_plan_version"] = "DP-5.0-CANDIDATE"
+    manifest["active_tool_authorization_contracts"] = active_tool_contracts
+    manifest["tool_authorization_projection"] = {
+        "decision_ref": DEC007_DECISION_REF,
+        "worker_task_id": "TASK-4A-08",
+        "active_contract_count": len(active_tool_contracts),
+        "contract_ids": sorted(item["contract_id"] for item in active_tool_contracts),
+        "operation_class_ids": sorted(item["operation_class_id"] for item in active_tool_contracts),
+        "owned_scope_sha256": owned_scope_digest(preview["approved_owned_files"]),
+        "package_binding_sha256": package_input_hash,
+        "requirement_digests": {
+            item["operation_class_id"]: item["requirement_digest"] for item in active_tool_contracts
+        },
+    }
+    manifest["tool_authorization_projection_sha256"] = _sha256_bytes(
+        canonical_json_bytes(manifest["tool_authorization_projection"])
+    )
     if canonical_state_override is not None and isinstance(canonical_state_override.get("transition"), dict):
         manifest["production_transition"] = canonical_state_override["transition"]
 
@@ -453,7 +497,8 @@ def create_lv_execution_package(
     base = Path(output_root).resolve() if output_root is not None else harness_root / "_workspace" / "orchestration-runs"
     base.mkdir(parents=True, exist_ok=True)
     final_dir = Path(output_dir).resolve() if output_dir is not None else base / run_id
-    if final_dir.exists() or final_dir.is_symlink():
+    if final_dir.is_symlink() or (final_dir.exists() and
+            any(path.name not in {"RUN_STARTED.json", "diagnostics.json"} for path in final_dir.iterdir())):
         raise LVExecutionPackageError("run_id already exists")
     temp_dir = Path(tempfile.mkdtemp(prefix=f".{run_id}.tmp-", dir=str(base)))
     try:
@@ -483,11 +528,21 @@ def create_lv_execution_package(
         }
         if {path.name for path in temp_dir.iterdir()} != expected:
             raise LVExecutionPackageError("sealed package contains an unexpected file")
-        os.replace(temp_dir, final_dir)
+        if final_dir.exists():
+            if final_dir.is_symlink() or not final_dir.is_dir():
+                raise LVExecutionPackageError("package target is unsafe")
+            allowed_bootstrap = {"RUN_STARTED.json", "diagnostics.json"}
+            if any(path.name not in allowed_bootstrap for path in final_dir.iterdir()):
+                raise LVExecutionPackageError("package target contains unexpected files")
+            for path in temp_dir.iterdir():
+                os.replace(path, final_dir / path.name)
+            temp_dir.rmdir()
+        else:
+            os.replace(temp_dir, final_dir)
     except Exception:
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
-        if final_dir.exists():
+        if final_dir.exists() and any(path.name not in {"RUN_STARTED.json", "diagnostics.json"} for path in final_dir.iterdir()):
             raise LVExecutionPackageError("package sealing failed after final directory creation")
         raise
     return {

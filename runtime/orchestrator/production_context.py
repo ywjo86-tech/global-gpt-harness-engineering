@@ -26,8 +26,14 @@ class ProductionContextBuilder:
    cached=self.cache.get(cache_key)
    if cached and cached[0]==fingerprint:self.hits+=1;item=cached[1]
    else:
-    self.misses+=1;item={"lv_id":row.get("lv_id"),"kind":artifact.kind,"sha256":fingerprint,"checkpoint_summary":row.get("checkpoint_summary") or artifact.payload.get("summary","")}
-    if audience=="reviewer":item["review_evidence"]=artifact.payload.get("review_evidence",[])
+    self.misses+=1;item={"lv_id":row.get("lv_id"),"kind":artifact.kind,"sha256":fingerprint}
+    # Workers only need identity/integrity metadata.  Free-form summaries can
+    # contain examples or source echoes and must not propagate into a
+    # production implementation prompt.  Reviewers retain the descriptive
+    # fields because their job explicitly requires evidence interpretation.
+    if audience=="reviewer":
+     item["checkpoint_summary"]=row.get("checkpoint_summary") or artifact.payload.get("summary","")
+     item["review_evidence"]=artifact.payload.get("review_evidence",[])
     self.cache[cache_key]=(fingerprint,item);self.calls+=1
    items.append(item)
   context={"schema_version":"orchestration.production-context.v1","audience":audience,"artifacts":items,"binding_sha256":binding_key,"validation":"PERSISTED_BYTES_VALIDATED"}

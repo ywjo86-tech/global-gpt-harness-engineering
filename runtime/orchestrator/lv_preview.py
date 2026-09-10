@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -184,7 +185,12 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
             f"requested LV must exactly match the single active scope: requested={lv_id}, active_scope={active_scope}"
         )
     selected_source = canonical_state.get("selected_source")
-    if selected_source != mapping.canonical_source:
+    if not isinstance(selected_source, (str, os.PathLike)):
+        raise LVPreviewValidationError("selected lifecycle source is malformed")
+    selected_path = Path(selected_source)
+    if not selected_path.is_absolute():
+        raise LVPreviewValidationError("selected lifecycle source is not absolute")
+    if selected_path.is_symlink() or selected_path != mapping.canonical_source:
         raise LVPreviewValidationError("selected lifecycle source is not the canonical implementation plan")
     canonical_relative = mapping.canonical_source.relative_to(root).as_posix()
     if canonical_state.get("canonical_plan") != canonical_relative:

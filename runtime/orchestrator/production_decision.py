@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
+from .canonical_paths import canonical_lv_path
+
 
 class ProductionDecisionError(ValueError):
     pass
@@ -75,15 +77,46 @@ def _process_state(process: Mapping[str, Any] | None) -> tuple[str, bool]:
 
 
 def build_production_decision(*, project_root: str | Path, harness_root: str | Path,
-                              project_id: str, gate_id: str, run_id: str, mode: str,
+                              project_id: str, gate_id: str, run_id: str | None, mode: str,
                               current_lv: str, inherited_completed_lvs: Sequence[str],
                               remaining_lvs: Sequence[str]) -> dict[str, Any]:
     """Resolve one production action without modifying files, Git, or processes."""
     root = Path(project_root).resolve()
-    artifact = Path(harness_root).resolve() / "_workspace" / "orchestration-runs" / run_id / current_lv
+    if not run_id:
+        return {
+            "project_id": project_id, "gate_id": gate_id, "run_id": None, "mode": mode,
+            "current_lv": current_lv, "first_incomplete_lv": current_lv,
+            "inherited_completed_lvs": list(inherited_completed_lvs), "remaining_lvs": list(remaining_lvs),
+            "recovery_state": "FRESH_START", "selected_action": "FRESH_START",
+            "worker_process_state": "NOT_STARTED", "duplicate_worker_detected": False,
+            "duplicate_worker_blocked": True, "owned_scope": [],
+            "owned_scope_digest": hashlib.sha256(b"[]").hexdigest(),
+            "package_sha256": None, "preflight_sha256": None, "worker_request_sha256": None,
+            "mutation_performed": False, "next_gate_state": "USER_APPROVAL_REQUIRED",
+            "hard_stop_at_gate_boundary": True,
+        }
+    artifact = canonical_lv_path(harness_root, project_id=project_id, gate_id=gate_id,
+                                 lv_id=current_lv, run_id=run_id)
     package_path = artifact / "package.manifest.json"
     preflight_path = artifact / "preflight" / "preflight.evidence.json"
     request_path = artifact / "worker.request.json"
+    artifact_paths = (package_path, preflight_path, request_path)
+    present = [path.exists() or path.is_symlink() for path in artifact_paths]
+    if not any(present):
+        return {
+            "project_id": project_id, "gate_id": gate_id, "run_id": run_id, "mode": mode,
+            "current_lv": current_lv, "first_incomplete_lv": current_lv,
+            "inherited_completed_lvs": list(inherited_completed_lvs), "remaining_lvs": list(remaining_lvs),
+            "recovery_state": "FRESH_START", "selected_action": "FRESH_START",
+            "worker_process_state": "NOT_STARTED", "duplicate_worker_detected": False,
+            "duplicate_worker_blocked": True, "owned_scope": [],
+            "owned_scope_digest": hashlib.sha256(b"[]").hexdigest(),
+            "package_sha256": None, "preflight_sha256": None, "worker_request_sha256": None,
+            "mutation_performed": False, "next_gate_state": "USER_APPROVAL_REQUIRED",
+            "hard_stop_at_gate_boundary": True,
+        }
+    if not all(present):
+        raise ProductionDecisionError("partial persisted artifact set")
     package_sha = _sealed(package_path, artifact / "package.manifest.sha256")
     preflight_sha = _sealed(preflight_path, artifact / "preflight" / "preflight.evidence.sha256")
     request_sha = _sealed(request_path)

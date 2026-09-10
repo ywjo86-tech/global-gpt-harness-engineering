@@ -31,6 +31,9 @@ _ROW_FIELDS = {
     "capability_inventory_evidence_references",
     "adoption_decisions", "install_required", "install_authorized", "install_scope",
     "install_plan_evidence_reference", "supply_chain_evidence_reference",
+    "existing_capability_decision", "discovery_status", "resolution_evidence_references",
+    "installation_evidence_references", "installed_candidates", "attestation_evidence_references",
+    "use_authorization_evidence_references", "runtime_selections",
 }
 _HANDOFF_FIELDS = {
     "schema_version", "project_id", "gate_id", "lv_id", "run_id", "requirements_sha256",
@@ -44,6 +47,9 @@ _HANDOFF_FIELDS = {
     "capability_inventory_evidence_references",
     "adoption_decisions", "install_required", "install_authorized", "install_scope",
     "install_plan_evidence_reference", "supply_chain_evidence_reference",
+    "existing_capability_decision", "discovery_status", "resolution_evidence_references",
+    "installation_evidence_references", "installed_candidates", "attestation_evidence_references",
+    "use_authorization_evidence_references", "runtime_selections",
 }
 
 PROJECT_REQUIREMENT_EVIDENCE_SCHEMA = "orchestration.project-requirement-evidence.v1"
@@ -94,6 +100,10 @@ def _row(source: Mapping[str, object], kind: str, order: int) -> dict[str, objec
         "adoption_decisions": [], "install_required": False, "install_authorized": False,
         "install_scope": "", "install_plan_evidence_reference": "",
         "supply_chain_evidence_reference": "",
+        "existing_capability_decision": "", "discovery_status": "NOT_REQUIRED",
+        "resolution_evidence_references": [], "installation_evidence_references": [],
+        "installed_candidates": [], "attestation_evidence_references": [],
+        "use_authorization_evidence_references": [], "runtime_selections": [],
     }
     defaults.update(source)
     defaults["item_kind"] = kind; defaults["order"] = order
@@ -136,7 +146,10 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
         candidate_fields = ("used_assets", "discovered_candidates", "evaluated_candidates",
                             "discovery_evidence_references", "evaluation_evidence_references",
                             "capability_requirements", "capability_gaps",
-                            "capability_inventory_evidence_references")
+                            "capability_inventory_evidence_references", "resolution_evidence_references",
+                            "installation_evidence_references", "installed_candidates",
+                            "attestation_evidence_references", "use_authorization_evidence_references",
+                            "runtime_selections")
         if any(not _unique_strings(row[field]) for field in candidate_fields) or not isinstance(row["selected_candidate"], str) or not isinstance(row["candidate_use_authorized"], bool):
             raise CompletenessError("Skill Discovery ledger evidence is malformed")
         if set(row["discovered_candidates"]) & set(row["used_assets"]):
@@ -145,8 +158,12 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
             raise CompletenessError("evaluated candidate is not a discovered candidate")
         if row["selected_candidate"] and row["selected_candidate"] not in row["evaluated_candidates"]:
             raise CompletenessError("selected candidate is not an evaluated candidate")
-        if row["candidate_use_authorized"] is not False:
-            raise CompletenessError("candidate use authorization is outside this phase")
+        if not isinstance(row["existing_capability_decision"], str) or row["discovery_status"] not in {"NOT_REQUIRED", "SKIPPED_EXISTING", "COMPLETED", "BLOCKED"}:
+            raise CompletenessError("operational capability decision is malformed")
+        if row["candidate_use_authorized"] and (not row["attestation_evidence_references"]
+                or not row["use_authorization_evidence_references"] or not row["runtime_selections"]
+                or not row["installed_candidates"] or row["used_assets"] != row["installed_candidates"]):
+            raise CompletenessError("candidate use authorization evidence is incomplete")
         if (not _unique_strings(row["adoption_decisions"]) or not isinstance(row["install_required"], bool)
                 or not isinstance(row["install_authorized"], bool) or row["install_scope"] not in {"", "project", "global"}
                 or not isinstance(row["install_plan_evidence_reference"], str)
@@ -179,6 +196,10 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
                 "adoption_decisions": [], "install_required": False, "install_authorized": False,
                 "install_scope": "", "install_plan_evidence_reference": "",
                 "supply_chain_evidence_reference": "",
+                "existing_capability_decision": "", "discovery_status": "NOT_REQUIRED",
+                "resolution_evidence_references": [], "installation_evidence_references": [],
+                "installed_candidates": [], "attestation_evidence_references": [],
+                "use_authorization_evidence_references": [], "runtime_selections": [],
             }
             for field in ("gate_id", "lv_id", "owned_files", "selected_assets", "excluded_assets", "selection_rationale", "tests",
                           "used_assets", "discovered_candidates", "evaluated_candidates", "selected_candidate",
@@ -186,7 +207,10 @@ def validate_ledger(payload: Mapping[str, object], *, plan_items: Sequence[Mappi
                           "capability_requirements", "capability_gaps", "discovery_required",
                           "capability_inventory_evidence_references", "adoption_decisions", "install_required",
                           "install_authorized", "install_scope", "install_plan_evidence_reference",
-                          "supply_chain_evidence_reference"):
+                          "supply_chain_evidence_reference", "existing_capability_decision", "discovery_status",
+                          "resolution_evidence_references", "installation_evidence_references",
+                          "installed_candidates", "attestation_evidence_references",
+                          "use_authorization_evidence_references", "runtime_selections"):
                 if row[field] != source.get(field, defaults_by_field.get(field)):
                     raise CompletenessError(f"ledger canonical {field} linkage mismatch")
     if require_exit and any(row["status"] != "EXITED" for row in items):
@@ -300,6 +324,12 @@ def seal_handoff(payload: Mapping[str, object]) -> dict[str, object]:
     value.setdefault("install_scope", "")
     value.setdefault("install_plan_evidence_reference", "")
     value.setdefault("supply_chain_evidence_reference", "")
+    value.setdefault("existing_capability_decision", "")
+    value.setdefault("discovery_status", "NOT_REQUIRED")
+    for field in ("resolution_evidence_references", "installation_evidence_references",
+                  "installed_candidates", "attestation_evidence_references",
+                  "use_authorization_evidence_references", "runtime_selections"):
+        value.setdefault(field, [])
     if set(value) != _HANDOFF_FIELDS or value.get("schema_version") != STRUCTURED_HANDOFF_SCHEMA:
         raise CompletenessError("handoff required fields mismatch")
     return {"payload": value, "handoff_sha256": _hash(value)}
@@ -345,7 +375,11 @@ def validate_handoff(envelope: Mapping[str, object], *, ledger_envelope: Mapping
                         "capability_requirements", "capability_gaps", "discovery_required",
                         "capability_inventory_evidence_references")
     discovery_fields += ("adoption_decisions", "install_required", "install_authorized", "install_scope",
-                         "install_plan_evidence_reference", "supply_chain_evidence_reference")
+                         "install_plan_evidence_reference", "supply_chain_evidence_reference",
+                         "existing_capability_decision", "discovery_status", "resolution_evidence_references",
+                         "installation_evidence_references", "installed_candidates",
+                         "attestation_evidence_references", "use_authorization_evidence_references",
+                         "runtime_selections")
     if any(handoff.get(field) != matches[0].get(field) for field in discovery_fields):
         raise CompletenessError("handoff Skill Discovery evidence differs from ledger")
     if set(handoff.get("discovered_candidates", [])) & set(handoff.get("used_assets", [])):
@@ -357,7 +391,10 @@ def validate_handoff(envelope: Mapping[str, object], *, ledger_envelope: Mapping
         raise CompletenessError("evaluated candidate is not a discovered candidate")
     if handoff.get("selected_candidate") and handoff.get("selected_candidate") not in handoff.get("evaluated_candidates", []):
         raise CompletenessError("selected candidate is not an evaluated candidate")
-    if handoff.get("candidate_use_authorized") is not False:
-        raise CompletenessError("candidate use authorization is outside this phase")
+    if handoff.get("candidate_use_authorized") and (not handoff.get("attestation_evidence_references")
+            or not handoff.get("use_authorization_evidence_references")
+            or not handoff.get("runtime_selections")
+            or handoff.get("used_assets") != handoff.get("installed_candidates")):
+        raise CompletenessError("handoff use authorization evidence is incomplete")
     if handoff.get("discovery_required") != bool(handoff.get("capability_gaps")):
         raise CompletenessError("handoff capability gap/discovery decision is inconsistent")

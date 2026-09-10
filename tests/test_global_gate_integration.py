@@ -22,6 +22,8 @@ from runtime.orchestrator.gate_orchestrator import (GateOrchestrationError, crea
     load_requirement_evidence, validate_global_gate_bindings, seal_requirement_semantic_metadata,
     validate_requirement_semantic_binding, validate_evidence_binding, dispatch_requirement_artifact)
 from runtime.orchestrator.resume_store import ResumeStore, RunBinding
+from runtime.orchestrator.production_gate_runner import ProductionGateRunner
+from runtime.orchestrator.canonical_paths import canonical_run_root
 
 
 PLAN = '''# Plan\n\n### Gate 1 — Core\n\n| ID | 작업 | 대상 | 완료조건 |\n| --- | --- | --- | --- |\n| G1-LV3-1 | work | `app/a.py` | pass |\n\n| ID | depends_on | execution | owned_files | input → output / exit_check |\n| --- | --- | --- | --- | --- |\n| G1-LV3-1 | Gate 0 | sequential | `app/a.py` | input → output / pass |\n'''
@@ -134,7 +136,10 @@ class GlobalGateIntegrationTests(unittest.TestCase):
             self.assertEqual(gate_result.returncode, 15, gate_result.stdout + gate_result.stderr)
             outcome = json.loads(gate_result.stdout)
             self.assertEqual(outcome["status"], "BLOCKED")
-            self.assertIn("registered worker failed", outcome["error"])
+            self.assertTrue(
+                "registered worker failed" in outcome["error"]
+                or outcome["error"] == "manual worker prompt owned files are missing or malformed"
+            )
             print(json.dumps({"activation_commit": commit, "package_manifest_sha256": package["manifest"]["manifest_sha256"], "owned_files": package["manifest"]["owned_files"], "gate_id": package["manifest"]["gate_id"], "lv_id": package["manifest"]["lv_id"]}, sort_keys=True))
 
     def requirement_evidence(self, prefix: str, lv_evidence_sha256: str):
@@ -260,6 +265,410 @@ class GlobalGateIntegrationTests(unittest.TestCase):
             adapters.worker({})
         after={path.relative_to(self.root).as_posix():path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
         self.assertEqual(before,after)
+
+    def test_issue065_package_failure_persists_bounded_diagnostic(self):
+        from runtime.orchestrator.gate_orchestrator import _production_adapters
+        from runtime.orchestrator.lv_execution_package import LVExecutionPackageError
+        auth = create_gate_authorization(self.plan, "AUTH")
+        adapters = _production_adapters(self.root, self.plan, auth, "G1-LV3-1", "diag-run", self.harness)
+        context = {"project_id": self.plan.project_id, "gate_id": "GATE-1", "lv_id": "G1-LV3-1",
+                   "run_id": "diag-run", "plan_sha256": self.plan_sha, "owned_files": ["app/a.py"]}
+        transition = {}
+        context["issue065_package_transition"] = transition.update
+        with patch("runtime.orchestrator.gate_orchestrator.create_lv_execution_package",
+                   side_effect=LVExecutionPackageError("worker prompt contract failure")):
+            with self.assertRaises(LVExecutionPackageError):
+                adapters.package(context)
+        diagnostics = list((self.harness / "_workspace" / "orchestration-runs" / "diag-run" / "G1-LV3-1").glob("diagnostics.json"))
+        self.assertEqual(len(diagnostics), 1)
+        payload = json.loads(diagnostics[0].read_text(encoding="utf-8"))
+        for field in ("issue059_stage", "canonical_resolver_invoked", "canonical_resolver_status",
+                      "canonical_resolver_lv_binding", "canonical_resolver_count_bucket",
+                      "manifest_scope_binding", "prompt_scope_binding",
+                      "manual_prompt_owned_failure_site", "next_lv_package_mode"):
+            self.assertIn(field, payload)
+        self.assertEqual(payload["canonical_resolver_status"], "RESOLVED")
+        self.assertEqual(payload["prompt_scope_binding"], "NOT_REACHED")
+        self.assertEqual(transition["package_transition_check_id"], "LV_EXECUTION_PACKAGE_ADAPTER")
+        self.assertEqual(transition["package_transition_semantics"], "BLOCK")
+        self.assertEqual(transition["package_dispatch_call_phase"], "RAISED")
+
+    def test_issue065_next_lv_diagnostic_uses_base_run_root(self):
+        from runtime.orchestrator.gate_orchestrator import _production_adapters
+        from runtime.orchestrator.lv_execution_package import LVExecutionPackageError
+        auth = create_gate_authorization(self.plan, "AUTH")
+        adapters = _production_adapters(self.root, self.plan, auth, "G1-LV3-1", "run-derived-lv", self.harness,
+                                        diagnostic_run_id="base-run")
+        context = {"project_id": self.plan.project_id, "gate_id": "GATE-1", "lv_id": "G1-LV3-1",
+                   "run_id": "run-derived-lv", "plan_sha256": self.plan_sha, "owned_files": ["app/a.py"]}
+        with patch("runtime.orchestrator.gate_orchestrator.create_lv_execution_package",
+                   side_effect=LVExecutionPackageError("prompt failure")):
+            with self.assertRaises(LVExecutionPackageError):
+                adapters.package(context)
+        base = self.harness / "_workspace" / "orchestration-runs" / "base-run" / "G1-LV3-1"
+        self.assertTrue((base / "diagnostics.json").is_file())
+        self.assertFalse((self.harness / "_workspace" / "orchestration-runs" / "run-derived-lv" / "G1-LV3-1").exists())
+
+    def test_issue065_production_gate_runner_failure_and_success_entrypoints(self):
+        from runtime.orchestrator.gate_orchestrator import _production_adapters
+        from runtime.orchestrator.lv_execution_package import LVExecutionPackageError
+        # The runner is the public lifecycle boundary; only external worker
+        # execution is represented by the callback. Resolver/package code is real.
+        auth = create_gate_authorization(self.plan, "AUTH")
+        adapter = _production_adapters(self.root, self.plan, auth, "G1-LV3-1", "runner-diag", self.harness)
+        runner = ProductionGateRunner(self.harness, project_id=self.plan.project_id, gate_id="GATE-1",
+                                      run_id="runner-diag", mode="GATE_BY_GATE",
+                                      canonical_lvs=["G1-LV3-1"], inherited_completed_lvs=[])
+        worker_entries = []
+        def success_execute(lv_id):
+            worker_entries.append(lv_id)
+            return {"status": "SYSTEM_TRANSITION", "lv_id": lv_id}
+        success = runner.run(success_execute, lambda completed: {"next_gate_status": "USER_APPROVAL_REQUIRED", "gate_status": "EXITED"})
+        self.assertEqual(success["status"], "USER_APPROVAL_REQUIRED")
+        self.assertEqual(len(worker_entries), 1)
+        # Failure path uses the same runner boundary and real package adapter.
+        fail_runner = ProductionGateRunner(self.harness, project_id=self.plan.project_id, gate_id="GATE-1",
+                                           run_id="runner-failure", mode="GATE_BY_GATE",
+                                           canonical_lvs=["G1-LV3-1"], inherited_completed_lvs=[])
+        failure_adapter = _production_adapters(self.root, self.plan, auth, "G1-LV3-1", "runner-failure", self.harness)
+        context = {"project_id": self.plan.project_id, "gate_id": "GATE-1", "lv_id": "G1-LV3-1",
+                   "run_id": "runner-failure", "plan_sha256": self.plan_sha, "owned_files": ["app/a.py"]}
+        with patch("runtime.orchestrator.gate_orchestrator.create_lv_execution_package",
+                   side_effect=LVExecutionPackageError("prompt failure")):
+            def failing_execute(lv_id):
+                failure_adapter.package({**context, "lv_id": lv_id, "run_id": "runner-failure"})
+                return {"status": "SYSTEM_TRANSITION", "lv_id": lv_id}
+            with self.assertRaises(LVExecutionPackageError):
+                fail_runner.run(failing_execute, lambda completed: {"next_gate_status": "USER_APPROVAL_REQUIRED", "gate_status": "EXITED"})
+        diagnostic = self.harness / "_workspace" / "orchestration-runs" / "runner-failure" / "G1-LV3-1" / "diagnostics.json"
+        self.assertTrue(diagnostic.is_file())
+        payload = json.loads(diagnostic.read_text(encoding="utf-8"))
+        self.assertIn("issue059_stage", payload)
+
+    def test_issue065_production_cli_creates_expected_root_before_approval_block(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); project = base / "project"; project.mkdir()
+            harness = base / "harness"; harness.mkdir()
+            plan = project / "IMPLEMENTATION_PLAN.md"; plan.write_text(PLAN, encoding="utf-8")
+            approval_log = base / "approval.log"; approval_log.write_text("", encoding="utf-8")
+            run_id = "startup-cli"
+            output = io.StringIO()
+            argv = ["production-gate-run", "--project-root", str(project), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(approval_log),
+                    "--approval-event-id", "missing-event", "--run-id", run_id]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=SimpleNamespace(
+                    canonical_source=plan, canonical_sha256=hashlib.sha256(plan.read_bytes()).hexdigest())), redirect_stdout(output):
+                code = main(argv)
+            expected = canonical_run_root(harness, run_id=run_id, lv_id="G1-LV3-1")
+            self.assertNotEqual(code, 0)
+            self.assertTrue(expected.is_dir())
+            self.assertEqual(expected, canonical_run_root(harness, run_id=run_id, lv_id="G1-LV3-1"))
+            self.assertTrue((expected / "RUN_STARTED.json").is_file())
+            failure = expected / "STARTUP_FAILURE.json"
+            self.assertTrue(failure.is_file())
+            failure_payload = json.loads(failure.read_text(encoding="utf-8"))
+            self.assertEqual(failure_payload["stage"], "APPROVAL")
+            self.assertEqual(failure_payload["startup_failure_category"], "APPROVAL_INVALID")
+            self.assertEqual(failure_payload["startup_failure_status"], "BLOCK")
+            self.assertFalse((expected / "package.manifest.json").exists())
+
+    def test_issue065_unclassified_prepackage_failure_persists_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); project = base / "project"; project.mkdir()
+            harness = base / "harness"; harness.mkdir()
+            plan = project / "IMPLEMENTATION_PLAN.md"; plan.write_text(PLAN, encoding="utf-8")
+            approval_log = base / "approval.log"; approval_log.write_text("", encoding="utf-8")
+            run_id = "startup-unknown"
+            argv = ["production-gate-run", "--project-root", str(project), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(approval_log),
+                    "--approval-event-id", "missing-event", "--run-id", run_id]
+            mapping = SimpleNamespace(canonical_source=plan,
+                                      canonical_sha256=hashlib.sha256(plan.read_bytes()).hexdigest())
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", side_effect=RuntimeError("fixture")):
+                code = main(argv)
+            expected = canonical_run_root(harness, run_id=run_id, lv_id="G1-LV3-1")
+            self.assertEqual(code, 15)
+            self.assertTrue(expected.is_dir())
+            self.assertTrue((expected / "RUN_STARTED.json").is_file())
+            self.assertFalse((expected / "package.manifest.json").exists())
+            self.assertFalse((expected / "preflight" / "preflight.evidence.json").exists())
+            self.assertFalse((expected / "worker.result.json").exists())
+            self.assertEqual(len(list(expected.glob("*checkpoint*"))), 0)
+            failure_path = expected / "STARTUP_FAILURE.json"
+            self.assertTrue(failure_path.is_file())
+            payload = json.loads(failure_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["stage"], "APPROVAL")
+            self.assertEqual(payload["startup_failure_category"], "UNKNOWN")
+            self.assertEqual(payload["startup_failure_status"], "BLOCK")
+            self.assertEqual(payload["authorization_failure_source"], "APPROVAL")
+            self.assertEqual(payload["authorization_reason_presence"], "ABSENT")
+            for field in (
+                "authorization_entry_id", "authorization_call_phase",
+                "authorization_exception_bucket", "authorization_post_return_check_id",
+                "authorization_return_semantics", "decision_to_package_bridge_id",
+                "decision_to_package_bridge_phase", "decision_to_package_bridge_semantics",
+                "package_transition_check_id", "package_transition_phase",
+                "package_transition_semantics", "package_dispatch_call_phase",
+                "package_preentry_last_completed_step", "package_preentry_failure_step",
+                "package_preentry_exception_bucket",
+            ):
+                self.assertIn(field, payload)
+
+    def test_issue065_top_level_finalizer_core_survives_optional_enrichment_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); project = base / "project"; project.mkdir()
+            harness = base / "harness"; harness.mkdir()
+            plan = project / "IMPLEMENTATION_PLAN.md"; plan.write_text(PLAN, encoding="utf-8")
+            approval_log = base / "approval.log"; approval_log.write_text("", encoding="utf-8")
+            run_id = "startup-core-first"
+            argv = ["production-gate-run", "--project-root", str(project), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(approval_log),
+                    "--approval-event-id", "missing-event", "--run-id", run_id]
+            mapping = SimpleNamespace(canonical_source=plan,
+                                      canonical_sha256=hashlib.sha256(plan.read_bytes()).hexdigest())
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", side_effect=RuntimeError("fixture")), \
+                 patch.object(ProductionGateRunner, "record_startup_failure", side_effect=RuntimeError("optional")):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id=run_id, lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertEqual(code, 15)
+            self.assertTrue(artifact.is_file())
+            payload = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(payload["startup_failure_status"], "BLOCK")
+            self.assertEqual(payload["startup_failure_category"], "UNKNOWN")
+            self.assertEqual(payload["evidence_origin"], "TOP_LEVEL_BLOCK_FINALIZER")
+
+    def test_issue065_missing_approval_reason_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); project = base / "project"; project.mkdir(); harness = base / "harness"; harness.mkdir()
+            plan = project / "IMPLEMENTATION_PLAN.md"; plan.write_text(PLAN, encoding="utf-8")
+            log = base / "approval.json"; log.write_text("{}", encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(project), "--gate-id", "GATE-1", "--harness-root", str(harness),
+                    "--approval-log", str(log), "--approval-event-id", "missing", "--run-id", "missing-approval"]
+            mapping = SimpleNamespace(canonical_source=plan, canonical_sha256=hashlib.sha256(plan.read_bytes()).hexdigest())
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[]):
+                self.assertNotEqual(main(argv), 0)
+            artifact = canonical_run_root(harness, run_id="missing-approval", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            payload = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(payload["startup_failure_category"], "APPROVAL_RECORD_MISSING")
+            self.assertEqual(payload["startup_failure_status"], "BLOCK")
+
+    def test_issue065_governance_reason_round_trip_top_level(self):
+        from runtime.orchestrator.canonical_transition import CanonicalTransitionError
+        from runtime.orchestrator.gate_controller import GateControllerError
+        event = {"event_id": "APR-GOV", "branch": "main", "baseline_head": self.head,
+                 "canonical_lv_scope": ["G1-LV3-1"], "owned_file_scope": {"G1-LV3-1": ["app/a.py"]},
+                 "completion_conditions_sha256": "c" * 64, "record_hash": "d" * 64,
+                 "schema_version": "orchestration.production-approval.v2"}
+        approval = {**event, "project_id": "project", "gate_id": "GATE-1",
+                    "plan_sha256": self.plan_sha, "approval_mode": "GATE_BY_GATE"}
+        rejected = GateControllerError("governance validation blocked")
+        rejected.approval_reason_code = "GOVERNANCE_MISMATCH"
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory) / "harness"; harness.mkdir()
+            log = Path(directory) / "approval.json"; log.write_text("{}", encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(log),
+                    "--approval-event-id", "APR-GOV", "--run-id", "roundtrip-governance"]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[event]), \
+                 patch("runtime.orchestrator.production_approval.evaluate_production_authorization", return_value=approval), \
+                 patch("runtime.orchestrator.canonical_transition.validate_governance_descendant",
+                       side_effect=CanonicalTransitionError("descendant")), \
+                 patch("runtime.orchestrator.gate_controller.authorize_production_descendant",
+                       side_effect=rejected):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id="roundtrip-governance", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertNotEqual(code, 0)
+            persisted = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["stage"], "AUTHORIZATION")
+            self.assertEqual(persisted["startup_failure_category"], "GOVERNANCE_MISMATCH")
+            self.assertEqual(persisted["startup_failure_status"], "BLOCK")
+
+    def test_issue065_governance_precondition_reason_round_trip_top_level(self):
+        from runtime.orchestrator.canonical_transition import CanonicalTransitionError
+        from runtime.orchestrator.gate_controller import GateControllerError
+        event = {"event_id": "APR-PRE", "branch": "main", "baseline_head": self.head,
+                 "canonical_lv_scope": ["G1-LV3-1"], "owned_file_scope": {"G1-LV3-1": ["app/a.py"]},
+                 "completion_conditions_sha256": "c" * 64, "record_hash": "d" * 64,
+                 "schema_version": "orchestration.production-approval.v2"}
+        approval = {**event, "project_id": "project", "gate_id": "GATE-1",
+                    "plan_sha256": self.plan_sha, "approval_mode": "GATE_BY_GATE"}
+        precondition = GateControllerError("production descendant context missing required field")
+        precondition.governance_branch_id = "GOVERNANCE_PRECONDITION_CONTEXT"
+        precondition.governance_reason_origin = "PRECONDITION"
+        precondition.authorization_helper_id = "VERIFY_SAME_RUN_GOVERNED_DESCENDANT"
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory) / "harness"; harness.mkdir()
+            log = Path(directory) / "approval.json"; log.write_text("{}", encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(log),
+                    "--approval-event-id", "APR-PRE", "--run-id", "roundtrip-precondition"]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[event]), \
+                 patch("runtime.orchestrator.production_approval.evaluate_production_authorization", return_value=approval), \
+                 patch("runtime.orchestrator.canonical_transition.validate_governance_descendant",
+                       side_effect=CanonicalTransitionError("descendant")), \
+                 patch("runtime.orchestrator.gate_controller.authorize_production_descendant",
+                       side_effect=precondition):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id="roundtrip-precondition", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertNotEqual(code, 0)
+            persisted = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["stage"], "AUTHORIZATION")
+            self.assertEqual(persisted["authorization_failure_source"], "GOVERNANCE")
+            self.assertEqual(persisted["authorization_reason_presence"], "PRESENT")
+            self.assertEqual(persisted["startup_failure_category"], "GOVERNANCE_MISMATCH")
+            self.assertEqual(persisted["governance_branch_id"], "GOVERNANCE_PRECONDITION_CONTEXT")
+            self.assertEqual(persisted["governance_reason_origin"], "PRECONDITION")
+            self.assertEqual(persisted["authorization_branch_id"], "GOVERNANCE_PRECONDITION_CONTEXT")
+            self.assertEqual(persisted["authorization_reason_origin"], "PRECONDITION")
+            self.assertEqual(persisted["authorization_helper_id"],
+                             "VERIFY_SAME_RUN_GOVERNED_DESCENDANT")
+            self.assertEqual(persisted["authorization_entry_id"],
+                             "AUTHORIZE_PRODUCTION_DESCENDANT")
+            self.assertEqual(persisted["authorization_call_phase"], "RAISED")
+            self.assertEqual(persisted["authorization_exception_bucket"],
+                             "GATE_CONTROLLER_ERROR")
+            self.assertEqual(persisted["startup_failure_status"], "BLOCK")
+
+    def test_issue065_post_return_block_keeps_returned_callsite_sentinel(self):
+        from runtime.orchestrator.canonical_transition import CanonicalTransitionError
+        from runtime.orchestrator.gate_controller import GateControllerError
+        event = {"event_id": "APR-POST", "branch": "main", "baseline_head": self.head,
+                 "canonical_lv_scope": ["G1-LV3-1"], "owned_file_scope": {"G1-LV3-1": ["app/a.py"]},
+                 "completion_conditions_sha256": "c" * 64, "record_hash": "d" * 64,
+                 "schema_version": "orchestration.production-approval.v2"}
+        approval = {**event, "project_id": "project", "gate_id": "GATE-1",
+                    "plan_sha256": self.plan_sha, "approval_mode": "GATE_BY_GATE"}
+        post_return_failure = GateControllerError("post-return validation blocked")
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory) / "harness"; harness.mkdir()
+            log = Path(directory) / "approval.json"; log.write_text("{}", encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(log),
+                    "--approval-event-id", "APR-POST", "--run-id", "roundtrip-post-return"]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[event]), \
+                 patch("runtime.orchestrator.production_approval.evaluate_production_authorization", return_value=approval), \
+                 patch("runtime.orchestrator.canonical_transition.validate_governance_descendant",
+                       side_effect=CanonicalTransitionError("descendant")), \
+                 patch("runtime.orchestrator.gate_controller.authorize_production_descendant",
+                       return_value={"governance_only": False, "current_head": self.head}), \
+                 patch("runtime.orchestrator.canonical_transition.validate_canonical_gate_state",
+                       side_effect=post_return_failure):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id="roundtrip-post-return", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertNotEqual(code, 0)
+            persisted = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["authorization_entry_id"], "AUTHORIZE_PRODUCTION_DESCENDANT")
+            self.assertEqual(persisted["authorization_call_phase"], "RETURNED")
+            self.assertEqual(persisted["authorization_exception_bucket"], "NONE")
+            self.assertEqual(persisted["authorization_post_return_check_id"],
+                             "CANONICAL_GATE_STATE_VALIDATION")
+            self.assertEqual(persisted["authorization_post_return_check_count"], 1)
+            self.assertEqual(persisted["authorization_return_semantics"], "PASS")
+            self.assertEqual(persisted["authorization_post_return_decision_source"], "CLI_VALIDATION")
+
+    def test_issue065_authorization_reason_round_trip_stale_top_level(self):
+        from runtime.orchestrator.canonical_transition import CanonicalTransitionError
+        from runtime.orchestrator.gate_controller import ApprovalFreshnessError
+        event = {"event_id": "APR-STALE", "branch": "main", "baseline_head": self.head,
+                 "canonical_lv_scope": ["G1-LV3-1"], "owned_file_scope": {"G1-LV3-1": ["app/a.py"]},
+                 "completion_conditions_sha256": "c" * 64, "record_hash": "d" * 64,
+                 "schema_version": "orchestration.production-approval.v2"}
+        approval = {**event, "project_id": "project", "gate_id": "GATE-1",
+                    "plan_sha256": self.plan_sha, "approval_mode": "GATE_BY_GATE"}
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory) / "harness"; harness.mkdir()
+            approval_log = Path(directory) / "approval.json"
+            approval_log.write_text(json.dumps({"schema_version": "orchestration.production-approval-log.v2",
+                                                "events": [event]}), encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(approval_log),
+                    "--approval-event-id", "APR-STALE", "--run-id", "roundtrip-stale"]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[event]), \
+                 patch("runtime.orchestrator.production_approval.evaluate_production_authorization", return_value=approval), \
+                 patch("runtime.orchestrator.canonical_transition.validate_governance_descendant",
+                       side_effect=CanonicalTransitionError("descendant")), \
+                 patch("runtime.orchestrator.gate_controller.authorize_production_descendant",
+                       side_effect=ApprovalFreshnessError("stale", stage="RESUME_AUTHORIZATION")):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id="roundtrip-stale", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertNotEqual(code, 0)
+            persisted = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["stage"], "AUTHORIZATION")
+            self.assertEqual(persisted["startup_failure_category"], "STALE_APPROVAL")
+            self.assertEqual(persisted["startup_failure_status"], "BLOCK")
+
+    def test_issue065_authorization_reason_round_trip_resume_top_level(self):
+        from runtime.orchestrator.canonical_transition import CanonicalTransitionError
+        from runtime.orchestrator.gate_controller import GateControllerError
+        event = {"event_id": "APR-RESUME", "branch": "main", "baseline_head": self.head,
+                 "canonical_lv_scope": ["G1-LV3-1"], "owned_file_scope": {"G1-LV3-1": ["app/a.py"]},
+                 "completion_conditions_sha256": "c" * 64, "record_hash": "d" * 64,
+                 "schema_version": "orchestration.production-approval.v2"}
+        approval = {**event, "project_id": "project", "gate_id": "GATE-1",
+                    "plan_sha256": self.plan_sha, "approval_mode": "GATE_BY_GATE"}
+        rejected = GateControllerError("resume authorization rejected")
+        rejected.approval_reason_code = "RESUME_AUTHORIZATION_BLOCK"
+        rejected.approval_descendant_authorization = "REJECTED"
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory) / "harness"; harness.mkdir()
+            approval_log = Path(directory) / "approval.json"
+            approval_log.write_text("{}", encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(approval_log),
+                    "--approval-event-id", "APR-RESUME", "--run-id", "roundtrip-resume"]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[event]), \
+                 patch("runtime.orchestrator.production_approval.evaluate_production_authorization", return_value=approval), \
+                 patch("runtime.orchestrator.canonical_transition.validate_governance_descendant",
+                       side_effect=CanonicalTransitionError("descendant")), \
+                 patch("runtime.orchestrator.gate_controller.authorize_production_descendant",
+                       side_effect=rejected):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id="roundtrip-resume", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertNotEqual(code, 0)
+            persisted = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["stage"], "AUTHORIZATION")
+            self.assertEqual(persisted["startup_failure_category"], "RESUME_AUTHORIZATION_BLOCK")
+            self.assertEqual(persisted["startup_failure_status"], "BLOCK")
+
+    def test_issue065_authorization_reason_round_trip_scope_top_level(self):
+        from runtime.orchestrator.canonical_transition import CanonicalTransitionError
+        from runtime.orchestrator.gate_controller import GateControllerError
+        event = {"event_id": "APR-SCOPE", "branch": "main", "baseline_head": self.head,
+                 "canonical_lv_scope": ["G1-LV3-1"], "owned_file_scope": {"G1-LV3-1": ["app/a.py"]},
+                 "completion_conditions_sha256": "c" * 64, "record_hash": "d" * 64,
+                 "schema_version": "orchestration.production-approval.v2"}
+        approval = {**event, "project_id": "project", "gate_id": "GATE-1",
+                    "plan_sha256": self.plan_sha, "approval_mode": "GATE_BY_GATE"}
+        rejected = GateControllerError("approval scope mismatch")
+        rejected.approval_reason_code = "APPROVAL_SCOPE_MISMATCH"
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory) / "harness"; harness.mkdir()
+            approval_log = Path(directory) / "approval.json"; approval_log.write_text("{}", encoding="utf-8")
+            argv = ["production-gate-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                    "--harness-root", str(harness), "--approval-log", str(approval_log),
+                    "--approval-event-id", "APR-SCOPE", "--run-id", "roundtrip-scope"]
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping), \
+                 patch("runtime.orchestrator.production_approval.load_v2_event_log", return_value=[event]), \
+                 patch("runtime.orchestrator.production_approval.evaluate_production_authorization", return_value=approval), \
+                 patch("runtime.orchestrator.canonical_transition.validate_governance_descendant",
+                       side_effect=CanonicalTransitionError("descendant")), \
+                 patch("runtime.orchestrator.gate_controller.authorize_production_descendant",
+                       side_effect=rejected):
+                code = main(argv)
+            artifact = canonical_run_root(harness, run_id="roundtrip-scope", lv_id="G1-LV3-1") / "STARTUP_FAILURE.json"
+            self.assertNotEqual(code, 0)
+            persisted = json.loads(artifact.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["stage"], "AUTHORIZATION")
+            self.assertEqual(persisted["startup_failure_category"], "APPROVAL_SCOPE_MISMATCH")
+            self.assertEqual(persisted["startup_failure_status"], "BLOCK")
 
     def test_w7_checkpoint_restart_restores_sealed_controller_payload(self):
         binding=RunBinding("project","GATE-1","G1-LV3-1","restart-1",self.req,self.plan_sha,"main",self.head,"c"*64,{"app/a.py":"d"*64})

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from runtime.orchestrator.cli import main
 from runtime.orchestrator.approval_hash import calculate_record_hash
-from runtime.orchestrator.contract_adapter import sha256_file
+from runtime.orchestrator.contract_adapter import sha256_file, load_project_mapping, evaluate_canonical_state
 from runtime.orchestrator.lv_preview import LVPreviewValidationError, parse_lv_definition, preview_lv_read_only
 from runtime.orchestrator.read_only_inspector import ReadOnlyValidationError
 from tests import test_read_only_inspect as read_only_fixtures
@@ -85,6 +85,31 @@ class LVPreviewTest(unittest.TestCase):
             self.assertFalse(preview["mutation_permitted"])
             self.assertFalse(preview["codex_runtime_sandbox_approval_state"]["business_approval_reused"])
             self.assertEqual(before, read_only_fixtures.ReadOnlyInspectTest._tree_signature(root))
+
+    def test_selected_source_string_matches_canonical_path(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir = self._fixture(Path(directory))
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                mapping = load_project_mapping(root)
+            state = evaluate_canonical_state(mapping)
+            state["selected_source"] = str(mapping.canonical_source)
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), \
+                 patch("runtime.orchestrator.lv_preview.evaluate_canonical_state", return_value=state):
+                self.assertEqual(self._preview(root, mapping_dir)["selected_canonical_plan"]["path"], "IMPLEMENTATION_PLAN.md")
+
+    def test_selected_source_noncanonical_or_malformed_fails_closed(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir = self._fixture(Path(directory))
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                mapping = load_project_mapping(root)
+            base = evaluate_canonical_state(mapping)
+            for value, message in ((None, "malformed"), ({}, "malformed"), ("IMPLEMENTATION_PLAN.md", "not absolute"),
+                                   (str(root / "other.md"), "not the canonical")):
+                state = dict(base); state["selected_source"] = value
+                with self.subTest(value=value), patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), \
+                     patch("runtime.orchestrator.lv_preview.evaluate_canonical_state", return_value=state), \
+                     self.assertRaisesRegex(LVPreviewValidationError, message):
+                    preview_lv_read_only(root, "GATE-1", "G1-LV3-1")
 
     def test_other_lv_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:

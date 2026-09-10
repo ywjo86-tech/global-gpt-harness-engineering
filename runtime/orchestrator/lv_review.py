@@ -234,7 +234,11 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
     # immutable six-file package.  They are separately schema-bound below and
     # are not part of the package manifest itself.
     allowed = expected | {"worker.request.json", "worker.result.json", "worker.result.private-01.json",
-                          "executor.process.json", "worker_handoff.md", "handoff_report.md", "preflight"}
+                          "executor.process.json", "executor.last-message.txt", "executor.prompt.txt", "executor.prompt.sha256",
+                          "worker_handoff.md", "handoff_report.md", "preflight",
+                          "RUN_STARTED.json", "diagnostics.json"}
+    allowed |= {entry.name for entry in entries if entry.name.startswith("production.review-request-")
+                and entry.name.endswith(".json")}
     review_dirs = {entry.name for entry in entries if entry.is_dir() and entry.name.startswith("review-attempt-")}
     allowed |= review_dirs
     if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and (entry.name == "preflight" or entry.name.startswith("review-attempt-"))) or (entry.is_file() and not entry.is_symlink()) for entry in entries):
@@ -583,6 +587,28 @@ def _assert_source_snapshot(
             raise LVReviewError("source snapshot mismatch: source_worktree_fingerprint")
 
 
+def _validate_execution_root(root: Path, project_id: str) -> Path:
+    """Validate the repository instance supplied by production orchestration."""
+    candidate = Path(root)
+    if not candidate.is_absolute() or not candidate.is_dir() or candidate.is_symlink():
+        raise LVReviewError("production project root is missing or unsafe")
+    resolved = candidate.resolve(strict=True)
+    if resolved != candidate or resolved.name != project_id:
+        raise LVReviewError("production project root identity is invalid")
+    current = Path(candidate.anchor)
+    for part in candidate.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise LVReviewError("production project root contains a symlink component")
+    try:
+        top = _git(candidate, "rev-parse", "--show-toplevel").decode("utf-8").strip()
+    except LVReviewError:
+        raise LVReviewError("production project root is not a Git repository")
+    if Path(top).resolve() != candidate:
+        raise LVReviewError("production project root must be the Git repository root")
+    return candidate
+
+
 def _preflight(
     run_id: str,
     *,
@@ -593,11 +619,14 @@ def _preflight(
     allow_worker_changes: bool = False,
     check_result_absent: bool = True,
     review_attempt: int = 1,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
     _safe_run_id(run_id)
     package_root = package_root or _package_root(run_id)
     manifest, manifest_path, source = _assert_package(package_root, run_id)
-    root = _project_root_for(str(manifest.get("project_id", "")))
+    project_id = str(manifest.get("project_id", ""))
+    root = (_validate_execution_root(project_root, project_id)
+            if project_root is not None else _project_root_for(project_id))
     _assert_canonical_binding(root, manifest)
     _assert_source_snapshot(root, manifest, source, require_clean=not allow_worker_changes)
     result_path = result_path or _result_path(run_id)
@@ -698,7 +727,14 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
     return {"preflight_root": str(final_root), "preflight_evidence_sha256": evidence_hash, "status": status}
 
 
-def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None) -> dict[str, Any]:
+def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None,
+                  project_root: Path | None = None) -> dict[str, Any]:
+    if project_root is not None and package_root is not None:
+        try:
+            package_manifest = _canonical_json(Path(package_root) / "package.manifest.json")
+            _validate_execution_root(project_root, str(package_manifest.get("project_id", "")))
+        except (OSError, LVReviewError, UnicodeError, json.JSONDecodeError) as exc:
+            return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc)}
     if package_root is not None:
         existing_root = Path(package_root) / "preflight"
         existing = existing_root / "preflight.evidence.json"
@@ -707,10 +743,20 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
             digest = _sha256(existing.read_bytes())
             if sidecar.read_text(encoding="ascii").strip() != digest:
                 return {"status": "BLOCKED", "run_id": run_id, "reason": "preflight evidence sidecar hash mismatch"}
+            if project_root is not None:
+                try:
+                    existing_evidence = _canonical_json(existing)
+                except (OSError, UnicodeError, json.JSONDecodeError, LVReviewError) as exc:
+                    return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc)}
+                if (existing_evidence.get("schema_version") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION
+                        or not isinstance(existing_evidence.get("python_prefix_fingerprint"), str)):
+                    return {"status": "BLOCKED", "run_id": run_id,
+                            "reason": "current production preflight runtime fingerprint is missing"}
             return {"status": "READY", "run_id": run_id, "preflight_root": str(existing_root),
                     "preflight_evidence_sha256": digest, "idempotent": True}
     try:
-        context = _preflight(run_id, package_root=package_root, result_path=result_path, review_attempt=1)
+        context = _preflight(run_id, package_root=package_root, result_path=result_path,
+                             review_attempt=1, project_root=project_root)
         # A package-scoped invocation must seal into that package's namespace;
         # falling back to the run-root preflight would collide with a prior LV.
         if package_root is not None:
@@ -731,7 +777,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
 
 def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, source_root: Path,
                                        result_path: Path, successor_lineage: dict[str, str] | None = None,
-                                       review_attempt: int = 1) -> dict[str, Any]:
+                                       review_attempt: int = 1,
+                                       project_root: Path | None = None) -> dict[str, Any]:
     """Publish a derived LV-review attestation for an immutable Gate preflight."""
     source_file = source_root / "preflight.evidence.json"
     sidecar = source_root / "preflight.evidence.sha256"
@@ -745,7 +792,8 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
         manifest = _canonical_json(package_root / "package.manifest.json")
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
                              results_root=package_root / ".publication-validation",
-                             allow_worker_changes=True, check_result_absent=False, review_attempt=1)
+                             allow_worker_changes=True, check_result_absent=False, review_attempt=1,
+                             project_root=project_root)
     except (LVReviewError, LVExecutionPackageError) as exc:
         # Preserve the strict failure, but expose only the safe field-level
         # contract detail needed for remediation.  Never include payloads,
@@ -862,6 +910,42 @@ def _derived_preflight_status(evidence: dict[str, Any], manifest: dict[str, Any]
         "predecessor_completion_digest": predecessor,
         "runtime_authorization": "not_granted_by_preflight",
     }
+
+
+def _validate_gate_preflight_status(
+    status: object,
+    *,
+    evidence_sha: str,
+    package_manifest_sha: str,
+    allow_legacy: bool = False,
+) -> str:
+    """Validate the status envelope emitted by the Gate preflight producer.
+
+    Gate-source status and derived successor-publication status are distinct
+    contracts.  The former is intentionally a small, sealed envelope; it must
+    not be compared with the legacy three-field projection nor with the
+    larger derived status payload.  A precisely recognised legacy envelope is
+    retained only for historical compatibility and is never treated as a
+    current producer result.
+    """
+    if not isinstance(status, dict):
+        raise LVReviewError("preflight status is invalid")
+    current = {
+        "schema_version": PREFLIGHT_STATUS_SCHEMA_VERSION,
+        "status": "READY",
+        "hard_stop": True,
+        "package_manifest_sha256": package_manifest_sha,
+        "preflight_evidence_sha256": evidence_sha,
+        "runtime_authorization": "not_granted_by_preflight",
+    }
+    if status == current:
+        return "CURRENT"
+    # Only the exact historical shape is accepted as an explicit compatibility
+    # path.  It is not upgraded implicitly to the current producer contract.
+    legacy = {"status": "READY", "hard_stop": True, "evidence_sha256": evidence_sha}
+    if allow_legacy and status == legacy:
+        return "LEGACY"
+    raise LVReviewError("preflight status binding is invalid")
 
 
 def _read_validated_preflight_publication(root: Path, manifest: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
@@ -987,7 +1071,8 @@ def classify_derived_preflight_status(root: Path, manifest: dict[str, Any]) -> d
 
 
 def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, source_root: Path,
-                                          result_path: Path, review_request_path: Path) -> dict[str, Any]:
+                                          result_path: Path, review_request_path: Path,
+                                          project_root: Path | None = None) -> dict[str, Any]:
     """Resolve a derived publication without ever treating legacy as READY."""
     try:
         request_raw = review_request_path.read_bytes()
@@ -1039,15 +1124,25 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
         if (not isinstance(request, dict) or set(request) != required or request != expected
                 or canonical_json_bytes(request) != request_raw):
             raise LVReviewError("production review request binding is invalid")
-        _assert_canonical_binding(_project_root_for(str(manifest["project_id"])), manifest)
+        execution_root = (_validate_execution_root(project_root, str(manifest["project_id"]))
+                          if project_root is not None else _project_root_for(str(manifest["project_id"])))
+        _assert_canonical_binding(execution_root, manifest)
         source_raw = _read_publication_bytes(source_root)
         source_evidence = json.loads(source_raw["preflight.evidence.json"])
         source_status = json.loads(source_raw["preflight.status"])
         source_digest = _sha256(source_raw["preflight.evidence.json"])
         if source_raw["preflight.evidence.sha256"].decode("ascii").strip() != source_digest:
             raise LVReviewError("source Gate preflight sidecar is invalid")
-        if source_status != {"status": "READY", "hard_stop": True, "evidence_sha256": source_digest}:
-            raise LVReviewError("source Gate preflight status is invalid")
+        source_status_kind = _validate_gate_preflight_status(
+            source_status,
+            evidence_sha=source_digest,
+            package_manifest_sha=manifest_sha,
+            allow_legacy=True,
+        )
+        if (source_status_kind == "CURRENT"
+                and (source_evidence.get("schema_version") != PREFLIGHT_EVIDENCE_SCHEMA_VERSION
+                     or source_evidence.get("runtime_authorization") != "not_granted_by_preflight")):
+            raise LVReviewError("source Gate preflight evidence schema is invalid")
         identity = {"run_id": run_id, "project_id": manifest["project_id"], "gate_id": manifest["gate_id"],
                     "lv_id": manifest["lv_id"], "package_manifest_sha256": expected["package_manifest_sha256"]}
         if any(source_evidence.get(key) != value for key, value in identity.items()):
@@ -1083,7 +1178,8 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
                    "review_request_sha256": _sha256(request_raw)}
     published = publish_gate_preflight_attestation(run_id, package_root=package_root, source_root=source_root,
                                                    result_path=result_path, successor_lineage=lineage,
-                                                   review_attempt=request["review_attempt"])
+                                                   review_attempt=request["review_attempt"],
+                                                   project_root=project_root)
     if published.get("status") == "READY" and legacy:
         published = {**published, "classification": "LEGACY_STATUS_UPGRADABLE",
                      "legacy_completion_eligible": False, "review_request_sha256": _sha256(request_raw),
@@ -1125,16 +1221,11 @@ def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any],
             raise LVReviewError("preflight evidence sidecar hash mismatch")
         evidence = _canonical_json(evidence_path)
         status = _canonical_json(root / "preflight.status")
-        expected_status = {
-            "schema_version": PREFLIGHT_STATUS_SCHEMA_VERSION,
-            "status": "READY",
-            "hard_stop": True,
-            "package_manifest_sha256": evidence["package_manifest_sha256"],
-            "preflight_evidence_sha256": evidence_hash,
-            "runtime_authorization": "not_granted_by_preflight",
-        }
-        if status != expected_status:
-            raise LVReviewError("preflight status is invalid")
+        _validate_gate_preflight_status(
+            status,
+            evidence_sha=evidence_hash,
+            package_manifest_sha=evidence["package_manifest_sha256"],
+        )
     checks = {
         "schema_version": PREFLIGHT_EVIDENCE_SCHEMA_VERSION,
         "run_id": context["run_id"],
@@ -1168,7 +1259,41 @@ def _verify_preflight_evidence(context: dict[str, Any]) -> tuple[dict[str, Any],
     for field, expected_value in context["interpreter_fingerprint"].items():
         if evidence.get(field) != expected_value:
             raise LVReviewError(f"preflight Python evidence mismatch: {field}")
+    # Preserve the validated publication namespace for the later immutable
+    # directory snapshot; otherwise a derived recovery publication is
+    # validated here but review reopens the absent legacy run-root.
+    context["preflight_root"] = root
     return evidence, evidence_hash
+
+
+def _validate_production_worker_result(payload: object, manifest: dict[str, Any]) -> dict[str, Any]:
+    """Validate durable production executor evidence used after restart."""
+    if not isinstance(payload, dict) or payload.get("schema_version") != "orchestration.product-completion-evidence.v1":
+        raise LVExecutionPackageError("unsupported production worker result schema")
+    required = {"run_id", "project_id", "gate_id", "lv_id", "status", "tests", "commands",
+                "changed_files", "owned_files", "package_sha256", "plan_sha256", "validation_events",
+                "baseline_head", "baseline_tree", "current_head", "current_tree",
+                "checkpoint_commit", "hard_stop"}
+    missing = sorted(required - payload.keys())
+    if missing:
+        raise LVExecutionPackageError(f"production worker result missing fields: {', '.join(missing)}")
+    if (payload.get("run_id") != manifest.get("run_id") or payload.get("project_id") != manifest.get("project_id")
+            or payload.get("gate_id") != manifest.get("gate_id") or payload.get("lv_id") != manifest.get("lv_id")
+            or payload.get("status") != "completed" or payload.get("package_sha256") != manifest.get("manifest_sha256")
+            or payload.get("plan_sha256") != manifest.get("canonical_plan_sha256")
+            or payload.get("owned_files") != manifest.get("owned_files") or payload.get("hard_stop") is not True):
+        raise LVExecutionPackageError("production worker result binding is invalid")
+    if not isinstance(payload["tests"], list) or not payload["tests"] or not isinstance(payload["changed_files"], list):
+        raise LVExecutionPackageError("production worker result evidence is incomplete")
+    if not isinstance(payload["validation_events"], list) or "WORKER_RESULT_SEALED" not in payload["validation_events"]:
+        raise LVExecutionPackageError("production worker validation evidence is incomplete")
+    commands = payload["commands"]
+    if not isinstance(commands, dict) or not commands:
+        raise LVExecutionPackageError("production worker commands evidence is incomplete")
+    for command in commands.values():
+        if not isinstance(command, dict) or command.get("exit_code") != 0 or command.get("timeout") is not False:
+            raise LVExecutionPackageError("production worker command evidence is invalid")
+    return dict(payload)
 
 
 def _safe_read_result(path: Path) -> tuple[dict[str, Any], str, bytes]:
@@ -1268,6 +1393,81 @@ def _actual_changes(root: Path) -> dict[str, Any]:
     }
 
 
+def _production_committed_changes(root: Path, baseline: str, checkpoint: str) -> dict[str, Any]:
+    """Derive product changes from the sealed commit range.
+
+    Production workers commit their result before review, so the working tree
+    (which is expected to be clean) is not the product delta.  Keep this
+    calculation deliberately strict and independent of the worker claim.
+    """
+    if not isinstance(baseline, str) or not isinstance(checkpoint, str) or not baseline or not checkpoint:
+        raise LVReviewError("production commit identity is malformed")
+    ancestry = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", baseline, checkpoint],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False, shell=False,
+    )
+    if ancestry.returncode != 0:
+        raise LVReviewError("production checkpoint is not descended from baseline")
+    raw = _git(root, "diff", "--name-status", "-z", baseline, checkpoint)
+    fields = raw.split(b"\0")
+    created: set[str] = set()
+    modified: set[str] = set()
+    deleted: set[str] = set()
+    index = 0
+
+    def add_path(value: bytes, target: set[str]) -> None:
+        try:
+            path = value.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise LVReviewError("production commit path is not valid UTF-8") from exc
+        candidate = Path(path)
+        if (not path or candidate.is_absolute() or "\\" in path or
+                ".." in candidate.parts or path in {".", ".."} or
+                candidate.as_posix() != path):
+            raise LVReviewError("production commit path is unsafe")
+        if path in created or path in modified or path in deleted:
+            raise LVReviewError("production commit path is duplicated")
+        target.add(path)
+
+    while index < len(fields):
+        record = fields[index]
+        index += 1
+        if not record:
+            continue
+        if b"\t" in record:
+            status, path_bytes = record.split(b"\t", 1)
+        else:
+            status = record
+            if index >= len(fields) or not fields[index]:
+                raise LVReviewError("production commit status is malformed")
+            path_bytes = fields[index]
+            index += 1
+        code = status[:1].decode("ascii", errors="ignore")
+        if code in {"R", "C"}:
+            # --name-status -z emits old and new paths as separate records.
+            if b"\t" not in record:
+                if index + 1 >= len(fields) or not fields[index] or not fields[index + 1]:
+                    raise LVReviewError("production commit rename/copy is malformed")
+                index += 2
+            raise LVReviewError("production commit rename/copy is unsupported")
+        if code == "A":
+            add_path(path_bytes, created)
+        elif code == "M":
+            add_path(path_bytes, modified)
+        elif code == "D":
+            add_path(path_bytes, deleted)
+        else:
+            raise LVReviewError("production commit status is unsupported")
+    changed = created | modified | deleted
+    return {
+        "changed_files": sorted(changed),
+        "created_files": sorted(created),
+        "modified_files": sorted(modified),
+        "deleted_files": sorted(deleted),
+        "forbidden_status": False,
+    }
+
+
 def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
     env = {"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"}
     with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
@@ -1349,12 +1549,15 @@ def _check(
     *,
     exit_code: int | None = None,
     findings: list[dict[str, Any]] | None = None,
+    provenance: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {"check": identifier, "status": "PASS" if passed else "FAIL", "summary": summary[:240]}
     if exit_code is not None:
         item["exit_code"] = exit_code
     if findings:
         item["findings"] = findings
+    if provenance:
+        item["provenance"] = provenance
     return item
 
 
@@ -1495,6 +1698,17 @@ def _redacted_finding(relative: str, line: int, kind: str, value: str) -> dict[s
     }
 
 
+def _review_secret_provenance(relative: str, *, kind: str, count: int) -> dict[str, Any]:
+    scope = "TEST_FIXTURE" if relative.startswith("tests/") else "CONFIG" if relative.endswith((".json", ".yaml", ".yml", ".toml")) else "DOCUMENTATION" if relative.endswith((".md", ".txt")) else "WORKSPACE_OWNED"
+    category = "TEST_SOURCE" if scope == "TEST_FIXTURE" else "CONFIG_VALUE" if scope == "CONFIG" else "COMMENT_OR_DOC" if scope == "DOCUMENTATION" else "PYTHON_SOURCE" if relative.endswith(".py") else "OTHER"
+    return {"review_secret_source_scope": scope, "review_secret_source_category": category,
+            "review_secret_count_bucket": "1" if count == 1 else "2" if count == 2 else "3+" if count >= 3 else "UNKNOWN",
+            "credential_url_category": "URL_USERINFO" if kind == "credential_bearing_url" else "UNKNOWN",
+            "review_secret_baseline_presence": "UNKNOWN", "review_secret_worker_presence": "PRESENT",
+            "review_secret_change_relation": "UNKNOWN", "review_secret_diff_relation": "UNKNOWN",
+            "credential_exposure_assessment": "UNRESOLVED"}
+
+
 def _explicit_test_sentinel(relative: str, value: str) -> bool:
     normalized = value.casefold()
     return (
@@ -1617,7 +1831,8 @@ def _scan_owned_files(root: Path, owned_files: list[str]) -> list[dict[str, Any]
             structured.extend(_redacted_finding(item, 1, "non_python_secret_pattern", item) for item in plain)
             structured.sort(key=lambda item: (item["path"], item["line"], item["kind"]))
             locations = sorted({item["path"] for item in structured})
-            checks.append(_check(identifier, not structured, "no findings" if not structured else "redacted findings in: " + ", ".join(locations), findings=structured))
+            provenance = [_review_secret_provenance(item["path"], kind=item["kind"], count=len(structured)) for item in structured]
+            checks.append(_check(identifier, not structured, "no findings" if not structured else "redacted findings in: " + ", ".join(locations), findings=structured, provenance=provenance))
         else:
             locations = sorted(set(locations_value))
             checks.append(_check(identifier, not locations, "no findings" if not locations else "finding locations: " + ", ".join(locations)))
@@ -1930,6 +2145,7 @@ def review_run(
     interpreter: Path | None = None,
     prior_review_contract: dict[str, str] | None = None,
     prior_attempt_contract: dict[str, str] | None = None,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
     try:
         review_attempt = parse_review_attempt(attempt)
@@ -1945,6 +2161,7 @@ def review_run(
             allow_worker_changes=True,
             check_result_absent=False,
             review_attempt=review_attempt,
+            project_root=project_root,
         )
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
@@ -1973,24 +2190,47 @@ def review_run(
             raise LVReviewError("worker result attempt must be a positive integer")
         if worker_attempt != 1 or worker_attempt > review_attempt:
             raise LVReviewError("worker result attempt does not match review recovery contract")
-        if payload.get("preflight_evidence_sha256") != evidence_hash:
+        accepted_preflight_hashes = {evidence_hash}
+        publication = evidence.get("publication")
+        if isinstance(publication, dict) and isinstance(publication.get("source_sha256"), str):
+            accepted_preflight_hashes.add(publication["source_sha256"])
+        if payload.get("preflight_evidence_sha256") not in accepted_preflight_hashes:
             raise LVReviewError("worker result preflight evidence binding mismatch")
         if payload.get("owned_files") != context["manifest"].get("owned_files"):
             raise LVReviewError("worker result owned-files contract mismatch")
         context["worker_attempt"] = worker_attempt
-        validate_worker_result(payload, context["manifest"])
-        if payload.get("worker_type") != "manual":
+        if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":
+            _validate_production_worker_result(payload, context["manifest"])
+        else:
+            validate_worker_result(payload, context["manifest"])
+        if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":
+            executor = payload.get("executor")
+            if not isinstance(executor, dict) or executor.get("identity") != "codex-cli-production":
+                raise LVReviewError("production worker executor identity is invalid")
+        elif payload.get("worker_type") != "manual":
             raise LVReviewError("worker_type must be manual")
-        for result_field, manifest_field in (
-            ("source_head_before", "source_head"),
-            ("source_tree_before", "source_tree"),
-            ("source_index_before", "source_index_fingerprint"),
-            ("source_worktree_before", "source_worktree_fingerprint"),
-        ):
-            if payload.get(result_field) != context["manifest"].get(manifest_field):
-                raise LVReviewError(f"worker {result_field} does not match package")
+        if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":
+            if (payload.get("baseline_head") != context["manifest"].get("source_head")
+                    or payload.get("baseline_tree") != context["manifest"].get("source_tree")):
+                raise LVReviewError("production worker baseline does not match package")
+        else:
+            for result_field, manifest_field in (
+                ("source_head_before", "source_head"),
+                ("source_tree_before", "source_tree"),
+                ("source_index_before", "source_index_fingerprint"),
+                ("source_worktree_before", "source_worktree_fingerprint"),
+            ):
+                if payload.get(result_field) != context["manifest"].get(manifest_field):
+                    raise LVReviewError(f"worker {result_field} does not match package")
         current_identity = _capture_git_evidence(context["project_root"])
-        actual = _actual_changes(context["project_root"])
+        working_actual = _actual_changes(context["project_root"])
+        is_production = payload.get("schema_version") == "orchestration.product-completion-evidence.v1"
+        if is_production:
+            actual = _production_committed_changes(
+                context["project_root"], payload["baseline_head"], payload["checkpoint_commit"]
+            )
+        else:
+            actual = working_actual
         prior_review_lineage = _verify_legacy_lineage(
             context,
             worker_hash,
@@ -2000,28 +2240,56 @@ def review_run(
         owned_content_before = _owned_content_snapshot(
             context["project_root"], list(context["manifest"]["owned_files"])
         )
-        worker_sets = {field: _set_from_result(payload, field) for field in ("changed_files", "created_files", "modified_files", "deleted_files")}
+        if is_production:
+            worker_changed = _set_from_result(payload, "changed_files")
+            if worker_changed != set(actual["changed_files"]):
+                raise LVReviewError("production worker changed_files do not match committed delta")
+            worker_sets = {field: set(actual[field]) for field in ("changed_files", "created_files", "modified_files", "deleted_files")}
+        else:
+            worker_sets = {field: _set_from_result(payload, field) for field in ("changed_files", "created_files", "modified_files", "deleted_files")}
         actual_sets = {field: set(actual[field]) for field in worker_sets}
         violations: list[str] = []
-        for evidence_field, manifest_field in (
-            ("head", "source_head"),
-            ("tree", "source_tree"),
-            ("index_fingerprint", "source_index_fingerprint"),
-        ):
-            if context["git_before"][evidence_field] != context["manifest"].get(manifest_field):
-                violations.append(f"Git {evidence_field} differs from package baseline")
-        for evidence_field, git_field in (
+        # Manual/recovery reviews run against the package baseline, so their
+        # review-start identity must still equal the sealed source snapshot.
+        # A production worker intentionally advances HEAD/tree/index to its
+        # machine checkpoint before review.  Keep baseline equality checks on
+        # the worker-result and manifest fields above, and validate that
+        # checkpoint through the lineage and exact current-state binding below.
+        if not is_production:
+            for evidence_field, manifest_field in (
+                ("head", "source_head"),
+                ("tree", "source_tree"),
+                ("index_fingerprint", "source_index_fingerprint"),
+            ):
+                if context["git_before"][evidence_field] != context["manifest"].get(manifest_field):
+                    violations.append(f"Git {evidence_field} differs from package baseline")
+
+        # These environment-level bindings are invariant across both flows.
+        # Source HEAD/tree/index are baseline fields for non-production review;
+        # production review has already moved to the bound checkpoint.
+        preflight_bindings = (
             ("branch_name", "branch"),
             ("local_git_config_sha256", "local_config_fingerprint"),
             ("remote_config_sha256", "remote_fingerprint"),
             ("submodule_status_sha256", "submodule_fingerprint"),
-            ("source_head", "head"),
-            ("source_tree", "tree"),
-            ("source_index_fingerprint", "index_fingerprint"),
-        ):
+        )
+        if not is_production:
+            preflight_bindings += (
+                ("source_head", "head"),
+                ("source_tree", "tree"),
+                ("source_index_fingerprint", "index_fingerprint"),
+            )
+        for evidence_field, git_field in preflight_bindings:
             if context["git_before"][git_field] != evidence[evidence_field]:
                 violations.append(f"Git {git_field} differs from preflight evidence")
-        if payload.get("source_head_after") != current_identity["head"] or payload.get("source_tree_after") != current_identity["tree"] or payload.get("source_index_after") != current_identity["index_fingerprint"] or payload.get("source_worktree_after") != current_identity["worktree_fingerprint"]:
+        if is_production:
+            checkpoint_tree = _git(context["project_root"], "rev-parse", f"{payload['checkpoint_commit']}^{{tree}}").decode().strip()
+            if (payload.get("current_head") != payload.get("checkpoint_commit")
+                    or payload.get("current_head") != current_identity["head"]
+                    or payload.get("current_tree") != current_identity["tree"]
+                    or payload.get("current_tree") != checkpoint_tree):
+                violations.append("worker checkpoint identity does not match current Git state")
+        elif (payload.get("source_head_after") != current_identity["head"] or payload.get("source_tree_after") != current_identity["tree"] or payload.get("source_index_after") != current_identity["index_fingerprint"] or payload.get("source_worktree_after") != current_identity["worktree_fingerprint"]):
             violations.append("worker source-after identity does not match current Git state")
         for field in worker_sets:
             if worker_sets[field] != actual_sets[field]:
@@ -2034,7 +2302,7 @@ def review_run(
         independent_checks.append(_check("staged_changes_absent", staged_absent, "no staged changes" if staged_absent else "staged changes detected"))
         if not staged_absent:
             violations.append("staged changes detected")
-        if actual["forbidden_status"]:
+        if working_actual["forbidden_status"]:
             violations.append("forbidden Git status detected")
         for path_text in actual["changed_files"]:
             path = context["project_root"] / path_text
@@ -2086,9 +2354,8 @@ def review_run(
         else:
             interpreter_after = dict(context["interpreter_fingerprint"])
         actual_after = _actual_changes(context["project_root"])
-        if any(actual_after[field] != actual[field] for field in ("changed_files", "created_files", "modified_files", "deleted_files")):
+        if any(actual_after[field] != working_actual[field] for field in ("changed_files", "created_files", "modified_files", "deleted_files")):
             violations.append("Git change set changed during independent tests")
-        actual = actual_after
         after = _capture_git_evidence(context["project_root"])
         fingerprint_passed = all(after[field] == context["git_before"][field] for field in ("head", "tree", "index_fingerprint", "worktree_fingerprint"))
         independent_checks.append(_check("wallet_git_fingerprints", fingerprint_passed, "Wallet HEAD/index/worktree fingerprints are unchanged" if fingerprint_passed else "Wallet fingerprint drift detected"))
@@ -2138,7 +2405,8 @@ def review_run(
                 violations.append(marker)
         verdict = "PASS" if not violations else "FAIL"
         report = _build_report(
-            context, worker_hash, verdict, actual=actual, violations=violations, after=after,
+            context, worker_hash, verdict, actual=actual, violations=violations,
+            reasons=["SECRET_LIKE_VALUE"] if any(item.get("check") == "secret_like_value" and item.get("status") == "FAIL" for item in independent_checks) else [], after=after,
             independent_checks=independent_checks, interpreter_after=interpreter_after,
             prior_review_lineage=prior_review_lineage,
             owned_content_evidence={

@@ -88,3 +88,32 @@ class ProductionDecisionTests(unittest.TestCase):
             out=build_production_decision(**args)
             self.assertEqual(out["selected_action"],"REPLAY_SEALED_WORKER_RESULT")
             self.assertEqual(out["recovery_state"],"ADOPTION_CHECKPOINTED")
+
+    def test_missing_run_id_is_explicit_fresh_without_artifacts(self):
+        with tempfile.TemporaryDirectory() as d:
+            args, art = self.fixture(Path(d)); args["run_id"] = None
+            before = {p.relative_to(Path(d)).as_posix(): p.read_bytes() for p in Path(d).rglob("*") if p.is_file()}
+            out = build_production_decision(**args)
+            self.assertEqual(out["selected_action"], "FRESH_START")
+            self.assertFalse(out["mutation_performed"])
+            after = {p.relative_to(Path(d)).as_posix(): p.read_bytes() for p in Path(d).rglob("*") if p.is_file()}
+            self.assertEqual(before, after)
+
+    def test_fresh_run_id_with_no_artifacts_does_not_read_or_create(self):
+        with tempfile.TemporaryDirectory() as d:
+            args, art = self.fixture(Path(d))
+            for path in sorted(art.rglob("*"), reverse=True):
+                if path.is_file(): path.unlink()
+            for path in sorted(art.glob("**/*"), reverse=True):
+                if path.is_dir(): path.rmdir()
+            out = build_production_decision(**args)
+            self.assertEqual(out["selected_action"], "FRESH_START")
+            self.assertFalse(out["mutation_performed"])
+            self.assertEqual(list(art.rglob("*")), [])
+
+    def test_partial_artifact_set_fails_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            args, art = self.fixture(Path(d))
+            (art / "preflight" / "preflight.evidence.json").unlink()
+            with self.assertRaisesRegex(ProductionDecisionError, "partial persisted artifact"):
+                build_production_decision(**args)

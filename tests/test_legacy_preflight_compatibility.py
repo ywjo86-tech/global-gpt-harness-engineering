@@ -98,6 +98,62 @@ class LegacyPreflightCompatibilityTests(unittest.TestCase):
         }
         return locals()
 
+    def test_current_gate_preflight_status_is_accepted_with_canonical_binding(self) -> None:
+        with TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory))
+            source_evidence = json.loads((fixture["source"] / "preflight.evidence.json").read_bytes())
+            source_evidence.update({
+                "schema_version": "orchestration.lv_preflight.evidence.v1",
+                "package_manifest_sha256": _sha256(fixture["package"].joinpath("package.manifest.json").read_bytes()),
+                "runtime_authorization": "not_granted_by_preflight",
+            })
+            source_bytes = canonical_json_bytes(source_evidence)
+            source_sha = _sha256(source_bytes)
+            (fixture["source"] / "preflight.evidence.json").write_bytes(source_bytes)
+            (fixture["source"] / "preflight.evidence.sha256").write_text(source_sha, encoding="ascii")
+            (fixture["source"] / "preflight.status").write_bytes(canonical_json_bytes({
+                "schema_version": "orchestration.lv_preflight.status.v1",
+                "status": "READY", "hard_stop": True,
+                "package_manifest_sha256": source_evidence["package_manifest_sha256"],
+                "preflight_evidence_sha256": source_sha,
+                "runtime_authorization": "not_granted_by_preflight",
+            }))
+            with patch("runtime.orchestrator.lv_review._preflight_root", return_value=fixture["publication_parent"] / fixture["run_id"]), \
+                 patch("runtime.orchestrator.lv_review._preflight", return_value=fixture["context"]), \
+                 patch("runtime.orchestrator.lv_review._project_root_for", return_value=Path(directory)), \
+                 patch("runtime.orchestrator.lv_review._assert_canonical_binding"):
+                result = resolve_derived_preflight_publication(
+                    fixture["run_id"], package_root=fixture["package"], source_root=fixture["source"],
+                    result_path=fixture["worker"], review_request_path=fixture["request_path"])
+            self.assertEqual(result["status"], "READY")
+
+    def test_current_gate_preflight_status_binding_mismatch_is_rejected(self) -> None:
+        with TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory))
+            source_evidence = json.loads((fixture["source"] / "preflight.evidence.json").read_bytes())
+            source_evidence.update({
+                "schema_version": "orchestration.lv_preflight.evidence.v1",
+                "package_manifest_sha256": _sha256(fixture["package"].joinpath("package.manifest.json").read_bytes()),
+                "runtime_authorization": "not_granted_by_preflight",
+            })
+            source_bytes = canonical_json_bytes(source_evidence)
+            source_sha = _sha256(source_bytes)
+            (fixture["source"] / "preflight.evidence.json").write_bytes(source_bytes)
+            (fixture["source"] / "preflight.evidence.sha256").write_text(source_sha, encoding="ascii")
+            (fixture["source"] / "preflight.status").write_bytes(canonical_json_bytes({
+                "schema_version": "orchestration.lv_preflight.status.v1", "status": "READY", "hard_stop": True,
+                "package_manifest_sha256": "0" * 64,
+                "preflight_evidence_sha256": source_sha,
+                "runtime_authorization": "not_granted_by_preflight",
+            }))
+            with patch("runtime.orchestrator.lv_review._preflight_root", return_value=fixture["publication_parent"] / fixture["run_id"]), \
+                 patch("runtime.orchestrator.lv_review._project_root_for", return_value=Path(directory)), \
+                 patch("runtime.orchestrator.lv_review._assert_canonical_binding"):
+                result = resolve_derived_preflight_publication(
+                    fixture["run_id"], package_root=fixture["package"], source_root=fixture["source"],
+                    result_path=fixture["worker"], review_request_path=fixture["request_path"])
+            self.assertEqual(result["status"], "REJECTED")
+
     def test_valid_legacy_is_upgraded_append_only_and_replayed(self) -> None:
         with TemporaryDirectory() as directory:
             fixture = self._fixture(Path(directory))

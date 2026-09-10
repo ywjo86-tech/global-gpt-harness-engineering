@@ -37,10 +37,10 @@ class ProductionIntegrationTests(unittest.TestCase):
  def test_worker_production_prompt_invokes_same_builder(self):
   with tempfile.TemporaryDirectory() as d:
    root,index=self.artifacts(d);builder=ProductionContextBuilder();task=TaskSlice("L","a","do","out",[],["x"],[],"m",str(Path(d)/"out"));request=WorkerRequest(d,task,{"project_id":"p","gate_id":"g","lv_id":"L","canonical_plan_sha256":"a"*64},{"head":"b"*40},{"run_id":"r","attempt":1,"production_context_request":{"builder":builder,"artifact_root":root,"index":index,"binding":binding(),"source_sha256":SRC,"predecessor":PRE,"completed_lvs":["done"],"audience":"worker"}})
-   text=_prompt(request,"b"*40,["x"]);self.assertIn("PERSISTED_BYTES_VALIDATED",text);self.assertEqual(builder.calls,1)
+   text=_prompt(request,"b"*40,["x"]);self.assertIn("PERSISTED_BYTES_VALIDATED",text);self.assertNotIn("checkpoint_summary",text);self.assertNotIn("cp",text);self.assertEqual(builder.calls,1)
  def test_reviewer_production_path_invokes_same_builder(self):
   with tempfile.TemporaryDirectory() as d:
-   root,index=self.artifacts(d);builder=ProductionContextBuilder();out=build_bounded_review_context({"builder":builder,"artifact_root":root,"index":index,"binding":binding(),"source_sha256":SRC,"predecessor":PRE,"completed_lvs":["done"],"audience":"reviewer"});self.assertEqual(out["audience"],"reviewer");self.assertEqual(builder.calls,1)
+   root,index=self.artifacts(d);builder=ProductionContextBuilder();out=build_bounded_review_context({"builder":builder,"artifact_root":root,"index":index,"binding":binding(),"source_sha256":SRC,"predecessor":PRE,"completed_lvs":["done"],"audience":"reviewer"});self.assertEqual(out["audience"],"reviewer");self.assertEqual(out["artifacts"][0]["checkpoint_summary"],"cp");self.assertEqual(builder.calls,1)
  def test_gate_by_gate_and_full_plan_context_metrics(self):
   with tempfile.TemporaryDirectory() as d:
    root,index=self.artifacts(d)

@@ -6,7 +6,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from runtime.orchestrator.resume_store import ResumeStore, ResumeStoreError, RunBinding
+from runtime.orchestrator.resume_store import ResumeStore, ResumeStoreError, RunBinding, allowed_capability_transition
 
 
 A = "a" * 64
@@ -94,6 +94,101 @@ class ResumeStoreTests(unittest.TestCase):
             event.write_text("{}", encoding="utf-8")
             with self.assertRaises(ResumeStoreError):
                 store.append("WORKER", A)
+
+    def test_capability_checkpoint_uses_canonical_event_chain_and_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding()
+            store = ResumeStore(directory, binding)
+            store.append("PACKAGE", A)
+            checkpoint = store.append_capability_checkpoint(
+                "RUNTIME_SELECTION_READY", requirement_digest=B,
+                evidence_sha256=C, evidence_references={"attestation": C},
+            )
+            restarted = ResumeStore(directory, binding)
+            outcome = restarted.resume_capability(
+                binding, {"app/a.py": A}, requirement_digest=B,
+                stage="RUNTIME_SELECTION_READY",
+            )
+            self.assertEqual(checkpoint["lifecycle"], "WORKER")
+            self.assertEqual(checkpoint["checkpoint_payload"]["run_id"], binding.run_id)
+            self.assertEqual(checkpoint["checkpoint_payload"]["reader_min_version"], "v1")
+            self.assertEqual(outcome["checkpoint_payload"]["stage"], "RUNTIME_SELECTION_READY")
+            self.assertEqual(outcome["checkpoint_payload"]["canonical_plan_sha256"], B)
+
+    def test_capability_checkpoint_requirement_drift_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding()
+            store = ResumeStore(directory, binding)
+            store.append_capability_checkpoint("REQUIREMENT_DERIVED", requirement_digest=B, evidence_sha256=C)
+            with self.assertRaisesRegex(ResumeStoreError, "requirement drift"):
+                ResumeStore(directory, binding).resume_capability(
+                    binding, {"app/a.py": A}, requirement_digest=C,
+                )
+
+    def test_identical_capability_checkpoint_is_read_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding(); store = ResumeStore(directory, binding)
+            first = store.append_capability_checkpoint("REQUIREMENT_DERIVED", requirement_digest=B, evidence_sha256=C)
+            second = store.append_capability_checkpoint("REQUIREMENT_DERIVED", requirement_digest=B, evidence_sha256=C)
+            self.assertEqual(first["event_sha256"], second["event_sha256"])
+            self.assertEqual(len(store.verify()), 1)
+
+    def test_capability_stage_chain_is_ordered_and_reloadable(self) -> None:
+        stages = ("REQUIREMENT_DERIVED", "INVENTORY_CHECKED", "DISCOVERY_COMPLETED")
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding(); store = ResumeStore(directory, binding)
+            for index, stage in enumerate(stages):
+                store.append_capability_checkpoint(stage, requirement_digest=B, evidence_sha256=chr(97 + index) * 64)
+            restarted = ResumeStore(directory, binding)
+            self.assertEqual([item["stage"] for item in restarted.capability_checkpoints()], list(stages))
+            cursor = restarted.capability_resume_cursor()
+            self.assertEqual(cursor["stage"], "DISCOVERY_COMPLETED")
+            self.assertEqual(cursor["next_stage"], "RAW_CANDIDATE")
+
+    def test_capability_stage_dependency_gap_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding(); store = ResumeStore(directory, binding)
+            store.append_capability_checkpoint("EVALUATED", requirement_digest=B, evidence_sha256=A)
+            with self.assertRaisesRegex(ResumeStoreError, "stage dependency"):
+                store.capability_checkpoints()
+
+    def test_route_aware_capability_transitions_allow_fast_paths(self) -> None:
+        self.assertTrue(allowed_capability_transition("EXISTING_PROJECT", None, "REQUIREMENT_DERIVED"))
+        self.assertTrue(allowed_capability_transition("EXISTING_PROJECT", "REQUIREMENT_DERIVED", "INVENTORY_CHECKED"))
+        self.assertTrue(allowed_capability_transition("EXISTING_PROJECT", "INVENTORY_CHECKED", "RUNTIME_SELECTION_READY"))
+        self.assertFalse(allowed_capability_transition("EXISTING_PROJECT", "INVENTORY_CHECKED", "DISCOVERY_COMPLETED"))
+
+    def test_route_switch_and_rewind_fail_closed(self) -> None:
+        self.assertFalse(allowed_capability_transition("EXISTING_AGENT", "INVENTORY_CHECKED", "INSTALL_COMPLETED"))
+        self.assertFalse(allowed_capability_transition("DISCOVERED_PROJECT_INSTALL", "EVALUATED", "DISCOVERY_COMPLETED"))
+
+    def test_effect_intent_and_receipt_are_append_only_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding(); store = ResumeStore(directory, binding)
+            intent = store.append_effect_intent(effect_id=A, stage="INSTALL", target=".agents/skills/demo",
+                                                requirement_digest=B, evidence_sha256=C)
+            same_intent = store.append_effect_intent(effect_id=A, stage="INSTALL", target=".agents/skills/demo",
+                                                     requirement_digest=B, evidence_sha256=C)
+            self.assertEqual(intent["event_sha256"], same_intent["event_sha256"])
+            receipt = store.append_effect_receipt(effect_id=A, stage="INSTALL", target=".agents/skills/demo",
+                                                  requirement_digest=B, evidence_sha256=C,
+                                                  receipt={"status": "INSTALL_COMPLETED"})
+            same_receipt = store.append_effect_receipt(effect_id=A, stage="INSTALL", target=".agents/skills/demo",
+                                                       requirement_digest=B, evidence_sha256=C,
+                                                       receipt={"status": "INSTALL_COMPLETED"})
+            self.assertEqual(receipt["event_sha256"], same_receipt["event_sha256"])
+            self.assertEqual([r["stage_payload"]["effect"]["state"] for r in store.effect_records(A)],
+                             ["EFFECT_INTENT", "EFFECT_RECEIPT"])
+
+    def test_run_lease_and_compare_append_reject_stale_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding = self.binding(); store = ResumeStore(directory, binding)
+            first = store.append("PACKAGE", A, expected_previous_event_digest=None)
+            with self.assertRaisesRegex(ResumeStoreError, "stale expected"):
+                store.append("PREFLIGHT", B, expected_previous_event_digest=C)
+            with store.run_lease():
+                second = store.append("PREFLIGHT", B, expected_previous_event_digest=first["event_sha256"])
+            self.assertEqual(second["previous_event_sha256"], first["event_sha256"])
 
 
 if __name__ == "__main__":

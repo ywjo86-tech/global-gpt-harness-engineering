@@ -56,6 +56,18 @@ class LVExecutionPackageTest(unittest.TestCase):
             })
             self.assertEqual(manifest["active_scope"], ["G1-LV3-1"])
             self.assertEqual(manifest["owned_files"], ["app/config.py", "tests/test_config.py"])
+            projection = manifest["tool_authorization_projection"]
+            self.assertEqual(projection["decision_ref"], "DEC-007")
+            self.assertEqual(projection["worker_task_id"], "TASK-4A-08")
+            self.assertEqual(projection["active_contract_count"], 3)
+            self.assertEqual(set(projection["operation_class_ids"]), {
+                "PROJECT_OWNED_FILE_LIST", "PROJECT_OWNED_FILE_READ", "PROJECT_OWNED_FILE_WRITE",
+            })
+            self.assertEqual(len(manifest["active_tool_authorization_contracts"]), 3)
+            self.assertTrue(all(item["contract_status"] == "ACTIVE"
+                                for item in manifest["active_tool_authorization_contracts"]))
+            self.assertTrue(all(item["authorization_decision_ref"] == "DEC-007"
+                                for item in manifest["active_tool_authorization_contracts"]))
             for field, filename in (("package_input_sha256", "package.input.json"), ("source_snapshot_sha256", "source_snapshot.json"), ("worker_prompt_sha256", "worker_prompt.md")):
                 data = (package_root / filename).read_bytes()
                 self.assertEqual(manifest[field], __import__("hashlib").sha256(data).hexdigest())
