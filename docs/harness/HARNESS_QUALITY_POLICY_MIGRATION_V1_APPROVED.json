@@ -1,0 +1,105 @@
+{
+  "schema": "orchestration.harness-quality-policy.migration.v1",
+  "policy_id": "HQP-MIGRATION-001",
+  "policy_version": "1.0",
+  "status": "APPROVED",
+  "decision_ref": "DEC-011",
+  "amendment_ref": "R4.2-MIGRATION-QUALITY-AUTHORITY-AMENDMENT-CANDIDATE",
+  "activation_profile": "MIGRATION_APPROVED_PLAN",
+  "applicability": "PHASE4A_MIGRATION_ONLY",
+  "prohibited_profiles": [
+    "FULL_ORCHESTRATION"
+  ],
+  "contract_source_mode_after_approval": "APPROVED_MIGRATION_BASELINE",
+  "source_authority": {
+    "r4_zip_sha256": "0f03698ffa1bcc438c8f0d97260d930b969da9983052eac50b69344a6c34d4f8",
+    "r4_1_zip_sha256": "9ae0e4bfe62caaf92afb7e81a1d66a373701c8082f56775d2225feed6ca4ca3b",
+    "r4_1_approval_commit": "21345c9034346c20cf24a4514de7869dd9cd84f6",
+    "r4_1_approval_blob": "d4eca431fa340a95f211fd0366a16d7cfa5d9332",
+    "frozen_design_refs": [
+      "CRB-2.0-CANDIDATE R4.1 / REQ-030",
+      "CRB-2.0-CANDIDATE R4.1 / REQ-037",
+      "CRB-2.0-CANDIDATE R4.1 / REQ-042",
+      "DP-6.0-CANDIDATE R4.1 / 6.1A",
+      "DP-6.0-CANDIDATE R4.1 / 8.1",
+      "SC-5.0-CANDIDATE R4.1 / SEM-063",
+      "SC-5.0-CANDIDATE R4.1 / SEM-065",
+      "SC-5.0-CANDIDATE R4.1 / SEM-067",
+      "Architecture Invariants R4.1 / INV-006",
+      "Architecture Invariants R4.1 / INV-019",
+      "Architecture Invariants R4.1 / INV-023",
+      "Architecture Invariants R4.1 / INV-031",
+      "Architecture Invariants R4.1 / INV-043",
+      "Gate/Test Matrix R4.1 / TEST-MIG-003",
+      "Gate/Test Matrix R4.1 / TEST-MIG-004"
+    ]
+  },
+  "criteria": [
+    {
+      "criterion_id": "MQC-001",
+      "name": "COMPLETENESS",
+      "rule": "Required migration planning, authority, contract-input, gate and test references for the governed task are present; missing mandatory authority or validation references fail the criterion."
+    },
+    {
+      "criterion_id": "MQC-002",
+      "name": "CONSISTENCY",
+      "rule": "Requirement, plan, semantic, decision, activation-profile and task bindings do not contain contradictory values or incompatible authority lineage."
+    },
+    {
+      "criterion_id": "MQC-003",
+      "name": "IMPLEMENTABILITY",
+      "rule": "The approved task boundary has explicit implementation targets, dependencies, validation obligations and a governed execution path without relying on an undefined capability or semantic assumption."
+    },
+    {
+      "criterion_id": "MQC-004",
+      "name": "DEPENDENCY_INTEGRITY",
+      "rule": "Required prerequisites are explicit and satisfiable for MIGRATION_APPROVED_PLAN; the migration quality bootstrap does not create a dependency on TASK-ORCH-06."
+    },
+    {
+      "criterion_id": "MQC-005",
+      "name": "TESTABILITY",
+      "rule": "Required behavior and gate obligations map to stable test or deterministic evidence identifiers, and missing, skipped, timeout or unresolved verifier evidence cannot be promoted to PASS."
+    },
+    {
+      "criterion_id": "MQC-006",
+      "name": "SECURITY_INTEGRITY",
+      "rule": "Existing broker-only, exact authorization, authorization-not-security, secret-scan and no-raw-sensitive-result-persistence obligations are preserved; no security relaxation is introduced."
+    },
+    {
+      "criterion_id": "MQC-007",
+      "name": "SEMANTIC_INTEGRITY",
+      "rule": "Requirement, plan, semantic contract and execution-authority meanings remain aligned; no new product requirement, product scope, permission or completion truth is invented by migration quality projection."
+    },
+    {
+      "criterion_id": "MQC-008",
+      "name": "TRACEABILITY",
+      "rule": "Each applicable requirement has an exact path through plan task, semantic authority and validation/test evidence, with unresolved blocking issues retained as blocking."
+    }
+  ],
+  "mandatory_cross_checks": [
+    "NO_NEW_REQUIREMENT",
+    "NO_PRODUCT_SCOPE_EXPANSION",
+    "NO_PERMISSION_EXPANSION",
+    "NO_COMPLETION_TRUTH_REDEFINITION",
+    "PRE_POST_QUALITY_CRITERIA_LINEAGE_EXACT",
+    "BROKER_SECURITY_INVARIANTS_PRESERVED",
+    "AUTOMATIC_REMEDIATION_DISABLED",
+    "FULL_ORCHESTRATION_USE_PROHIBITED",
+    "UNRESOLVED_CRITICAL_OR_MAJOR_NOT_PROMOTED_TO_PASS"
+  ],
+  "activation_conditions": [
+    "DEC-011 is DECIDED as A->B",
+    "bounded authority-recovery report records legacy policy/final quality source as not found in verified sources",
+    "this amendment and policy are explicitly approved by the user",
+    "policy digest and source refs are sealed into MigrationQualityCriteriaContract",
+    "activation profile is MIGRATION_APPROVED_PLAN"
+  ],
+  "approval": {
+    "decision_ref": "DEC-011",
+    "approval_ref": "R4.2-MIGRATION-QUALITY-AUTHORITY-APPROVAL-2026-09-10",
+    "approved_by": "USER",
+    "approved_date": "2026-09-10",
+    "scope": "PLANNING_AUTHORITY_ONLY"
+  },
+  "policy_digest": "f4418d48899917bfea40185d3d9e71f73ff50a729187e9f5dca3443cf34fccc7"
+}

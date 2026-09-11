@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reference Diagram Generator"
+  short_description: "참조 이미지를 분석해 구조화된 도식 이미지를 생성합니다"
+  default_prompt: "Use $generate-reference-diagram to turn my reference image and content into a clear, polished diagram image."

@@ -94,6 +94,18 @@ When new-project work contains independent requirements, design, research, imple
 
 Every project must include `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`; project code, plans, change history, and test logs must stay consistent.
 
+### Engine-host self-lifecycle exception
+
+`global-gpt-harness-engineering` is also the engine-host that consumes, validates, and orchestrates lifecycle contracts belonging to other projects. The following exception applies only when this exact repository is being operated in the explicit `engine-host` role for maintaining or validating its orchestration engine:
+
+- The exception target is the verified Git top-level repository identity for this checkout, together with this repository's purpose and required host anchors (`AGENTS.md`, `runtime/orchestrator/cli.py`, and `.agents/skills/harness/SKILL.md`). A directory basename or a similarly named clone alone is never sufficient.
+- The inspected root must be this host repository itself, not an external managed project, and the requested work must be engine maintenance, contract validation, or orchestration maintenance.
+- In that narrow self-host case only, the absence of `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log` is an explicit lifecycle exception. No placeholder or synthetic contract files are created, and missing files are not reported as present.
+- The exception is documentation policy only. The current runtime contract loader has no engine-host role switch and therefore does not auto-apply this exception; when role or scope is not explicitly established, normal strict managed-project rules apply.
+- Running this repository as an ordinary managed project, or passing it through an external project's contract loader, receives no exception. `wallet-affiliate-collector`, `jarvis-assistant`, `llmwiki-action-api`, similar projects, and look-alike repositories retain strict contract requirements.
+- This exception grants no business/LV/Gate approval, runtime/sandbox permission, checkpoint, phase transition, or Gate completion. It cannot be reused as an external project's authorization.
+- If this repository later becomes a product-development lifecycle target, it must receive its own complete management contract rather than relying on this host exception.
+
 When a user reports real-use test feedback or requested improvements after a project handoff, QA must review the relevant `docs/DEVELOPMENT_PLAN.txt`, `logs/app.log`, and user feedback, then decide which specialist should perform the fix. Each completed fix must include a dedicated `.txt` fix artifact in the project output.
 
 ## Safety Warning Protocol
