@@ -6,12 +6,13 @@
 
 ## Current Phase
 
-- Active Gate: `G-4A-ACTUAL NO-GO remediation`
+- Active Gate: `G-4A-ACTUAL proof97 closure`
 - Previous Gate: `G-ORCH-03 — GO`
 - Output marker: `HARNESS_COMPLETION_CRITERIA_CLEAR=YES`
-- Runtime worktree: integrated, dirty, uncommitted
+- Runtime worktree: clean after ORCH04 closure commits
 - `proof97`: CONDITIONAL GO after independent G-4A re-review; evidence, Post-Quality, and handoff seal complete
-- push: NOT AUTHORIZED
+- push: completed to `origin/migration/hamonikr-linux` at `c68ba9b2520df0dab22981f9a78a4d5ee7e087e4`
+- next Gate/phase: NOT DEFINED
 
 ## Authority
 
@@ -66,14 +67,19 @@
 - independent G-4A re-review: CONDITIONAL GO
 - root post-rereview full regression: 1,067 PASS / 5 skipped
 - post-product-root-opt-in-test full regression: 1,067 PASS / 5 skipped
+- Group B focused runtime/test suite: 353 PASS / 3 skipped
+- final full local regression before Group B commit: 1,067 PASS / 5 skipped
+- `generate-reference-diagram` skill validator: PASS
+- final pushed HEAD: `c68ba9b2520df0dab22981f9a78a4d5ee7e087e4`
 
 The latest 1,060-test regression was re-run after the G-ORCH-02/G-ORCH-03/G-4A
 documentation updates listed in this state file.
 
 ## Open Work
 
-1. decide whether to commit the ORCH04 proof97 remediation packet.
-2. do not push or deploy without separate authorization.
+1. Define the next Gate/phase only after explicit user selection.
+2. Do not start new phase work, deploy, or create another release handoff without a
+   fresh scope decision.
 
 ## Current Gate Boundary
 
@@ -97,5 +103,7 @@ independent single governed WRITE verifier now passes for the effect invariant. 
 frozen-node verifier structure also passes. After explicit dangerous-work authorization,
 the product-root opt-in frozen-node test was executed against the actual product checkout
 and passed. Post-Quality and handoff readiness are sealed as READY WITH FOLLOW-UP. The
-remaining project-management item is whether to commit the uncommitted remediation packet.
-Deployment, commit, and push are not authorized.
+ORCH04 authority/evidence packet, runtime/test implementation packet, proof97 closure
+packet, and cleanup packet have been committed and pushed. The worktree is clean. The
+next Gate/phase is not yet defined, so no new phase work is authorized until the project
+owner selects the next scope.
