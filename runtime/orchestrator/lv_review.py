@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 PROJECT_VENV_READ_ONLY = "PROJECT_VENV_READ_ONLY"
 IMMUTABLE_EXTERNAL_INTERPRETER = "IMMUTABLE_EXTERNAL_INTERPRETER"
@@ -1296,6 +1296,25 @@ def _validate_production_worker_result(payload: object, manifest: dict[str, Any]
     return dict(payload)
 
 
+def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
+    if payload.get("completion_mode") == "VERIFIED_CHECKPOINT_ADOPTION":
+        adoption = payload.get("adoption")
+        if (
+            not isinstance(adoption, Mapping)
+            or adoption.get("schema_version") != "orchestration.verified-checkpoint-adoption.v1"
+            or adoption.get("checkpoint_commit") != payload.get("checkpoint_commit")
+            or adoption.get("source_provenance") != "GIT_COMMIT_EXACT_SCOPE"
+            or adoption.get("worker_provenance") != "NOT_APPLICABLE_CHECKPOINT_ADOPTION"
+            or adoption.get("independent_validation") != "PASSED"
+            or adoption.get("review_required") is not True
+        ):
+            raise LVReviewError("checkpoint adoption provenance is invalid")
+        return
+    executor = payload.get("executor")
+    if not isinstance(executor, Mapping) or executor.get("identity") != "codex-cli-production":
+        raise LVReviewError("production worker executor identity is invalid")
+
+
 def _safe_read_result(path: Path) -> tuple[dict[str, Any], str, bytes]:
     if not path.is_file() or path.is_symlink():
         raise LVReviewError("worker result is missing or is not a regular file")
@@ -2204,9 +2223,7 @@ def review_run(
         else:
             validate_worker_result(payload, context["manifest"])
         if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":
-            executor = payload.get("executor")
-            if not isinstance(executor, dict) or executor.get("identity") != "codex-cli-production":
-                raise LVReviewError("production worker executor identity is invalid")
+            _validate_production_provenance(payload)
         elif payload.get("worker_type") != "manual":
             raise LVReviewError("worker_type must be manual")
         if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":

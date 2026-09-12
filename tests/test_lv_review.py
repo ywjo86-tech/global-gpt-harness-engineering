@@ -23,6 +23,7 @@ from runtime.orchestrator.lv_review import (
     _safe_read_result,
     _sha256,
     _safe_run_id,
+    _validate_production_provenance,
     _validate_interpreter,
     _verify_legacy_lineage,
     _preflight,
@@ -43,6 +44,21 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_checkpoint_adoption_uses_sealed_provenance_without_worker_executor(self) -> None:
+        payload = {
+            "completion_mode": "VERIFIED_CHECKPOINT_ADOPTION", "checkpoint_commit": "a" * 40,
+            "adoption": {
+                "schema_version": "orchestration.verified-checkpoint-adoption.v1",
+                "checkpoint_commit": "a" * 40, "source_provenance": "GIT_COMMIT_EXACT_SCOPE",
+                "worker_provenance": "NOT_APPLICABLE_CHECKPOINT_ADOPTION",
+                "independent_validation": "PASSED", "review_required": True,
+            },
+        }
+        _validate_production_provenance(payload)
+        payload["adoption"]["independent_validation"] = "FAILED"
+        with self.assertRaisesRegex(LVReviewError, "checkpoint adoption provenance"):
+            _validate_production_provenance(payload)
+
     def test_production_root_is_explicit_repository_instance(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory) / "wallet-affiliate-collector"
