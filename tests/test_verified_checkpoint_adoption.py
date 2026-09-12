@@ -37,8 +37,7 @@ class VerifiedCheckpointAdoptionTests(unittest.TestCase):
         (project / "docs").mkdir(); (project / "docs/gov.md").write_text("governance\n")
         subprocess.run(["git", "-C", project, "add", "docs/gov.md"], check=True)
         subprocess.run(["git", "-C", project, "commit", "-qm", "governance"], check=True)
-        for name in ("python", "pytest"):
-            path = project / ".venv/bin" / name; path.write_text(""); path.chmod(0o700)
+        path = project / ".venv/bin/python"; path.write_text(""); path.chmod(0o700)
         package = root / "package"; package.mkdir(); (package / "preflight").mkdir()
         event = {
             "schema_version": "orchestration.production-approval.v2", "event_id": "APR-G1-1",
@@ -74,6 +73,7 @@ class VerifiedCheckpointAdoptionTests(unittest.TestCase):
             self.assertEqual(result["checkpoint_commit"], checkpoint)
             self.assertEqual(result["changed_files"], ["app/a.py", "tests/test_a.py"])
             self.assertEqual(result["adoption"]["worker_provenance"], "NOT_APPLICABLE_CHECKPOINT_ADOPTION")
+            self.assertEqual(result["commands"]["focused_test"]["command"][1:3], ["-m", "pytest"])
 
     def test_rejects_owned_file_change_after_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:

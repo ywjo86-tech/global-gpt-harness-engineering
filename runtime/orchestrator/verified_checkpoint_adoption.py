@@ -121,14 +121,13 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
     if _git(root, "status", "--porcelain=v1", "-uall"):
         raise VerifiedCheckpointAdoptionError("project worktree is not clean")
     python = root / ".venv" / "bin" / "python"
-    pytest = root / ".venv" / "bin" / "pytest"
     tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
-    if not python.is_file() or not pytest.is_file() or not tests:
+    if not python.is_file() or not tests:
         raise VerifiedCheckpointAdoptionError("registered project test toolchain is unavailable")
     commands = {
         "checkpoint_provenance": _command(root, ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint]),
-        "focused_test": _command(root, [str(pytest), "-q", *tests]),
-        "full_regression": _command(root, [str(pytest), "-q"]),
+        "focused_test": _command(root, [str(python), "-m", "pytest", "-q", *tests]),
+        "full_regression": _command(root, [str(python), "-m", "pytest", "-q"]),
         "compile_import": _command(root, [str(python), "-m", "compileall", "-q", *owned]),
         "git_diff_check": _command(root, ["git", "diff", "--check"]),
     }
