@@ -96,6 +96,20 @@ def _discover_run_ids(harness_root: Path, gate_id: str, run_id_hint: str | None 
             discovered.setdefault(manifest["lv_id"], str(manifest.get("run_id") or run_id_hint or manifest_path.parent.name))
     return discovered
 
+
+def _package_and_review(harness_root: Path, run_id: str, lv_id: str) -> tuple[Path, Path]:
+    run_root = harness_root / "_workspace" / "orchestration-runs" / run_id
+    package = run_root / "package.manifest.json"
+    if not package.is_file():
+        candidates = [path for path in run_root.rglob("package.manifest.json")
+                      if _load(path).get("lv_id") == lv_id]
+        if not candidates:
+            raise ResumeBridgeError(f"immutable package evidence is missing for {run_id}")
+        package = max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.as_posix()))
+    review_candidates = sorted(package.parent.glob("review-attempt-*/reviewer.report.json"))
+    review = review_candidates[-1] if review_candidates else _attempt(harness_root, run_id, lv_id)
+    return package, review
+
 def _recovery_completion(project_root: Path, harness_root: Path, plan: GatePlan,
                          item: Any, run_id: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Read-only discovery of recovery attempts; never manufactures evidence."""
@@ -159,9 +173,8 @@ def build_resume_bridge(project_root: str | Path, harness_root: str | Path, gate
     for item in plan.lvs:
         run_id = completed_run_ids.get(item.lv_id, _run_id_for(item.lv_id))
         try:
-            package = Path(harness_root) / "_workspace" / "orchestration-runs" / run_id / "package.manifest.json"
+            package, review_path = _package_and_review(Path(harness_root), run_id, item.lv_id)
             manifest = _load(package)
-            review_path = _attempt(Path(harness_root), run_id, item.lv_id)
             review = _load(review_path)
             if manifest.get("gate_id") != gate_id or manifest.get("lv_id") != item.lv_id:
                 raise ResumeBridgeError("evidence Gate/LV binding mismatch")
