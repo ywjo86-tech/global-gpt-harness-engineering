@@ -24,6 +24,7 @@ from runtime.orchestrator.lv_review import (
     _sha256,
     _safe_run_id,
     _validate_production_provenance,
+    _validate_production_baseline,
     _validate_interpreter,
     _verify_legacy_lineage,
     _preflight,
@@ -58,6 +59,18 @@ class LVReviewTest(unittest.TestCase):
         payload["adoption"]["independent_validation"] = "FAILED"
         with self.assertRaisesRegex(LVReviewError, "checkpoint adoption provenance"):
             _validate_production_provenance(payload)
+
+    def test_checkpoint_adoption_binds_checkpoint_parent_not_governance_head(self) -> None:
+        payload = {
+            "completion_mode": "VERIFIED_CHECKPOINT_ADOPTION", "checkpoint_commit": "a" * 40,
+            "baseline_head": "b" * 40,
+            "adoption": {"checkpoint_parent": "b" * 40},
+        }
+        manifest = {"source_head": "c" * 40, "production_transition": {"baseline_head": "a" * 40}}
+        _validate_production_baseline(payload, manifest)
+        manifest["production_transition"]["baseline_head"] = "d" * 40
+        with self.assertRaisesRegex(LVReviewError, "checkpoint adoption baseline"):
+            _validate_production_baseline(payload, manifest)
 
     def test_production_root_is_explicit_repository_instance(self) -> None:
         with TemporaryDirectory() as directory:

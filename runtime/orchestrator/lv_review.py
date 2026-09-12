@@ -1315,6 +1315,23 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
         raise LVReviewError("production worker executor identity is invalid")
 
 
+def _validate_production_baseline(payload: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
+    if payload.get("completion_mode") == "VERIFIED_CHECKPOINT_ADOPTION":
+        adoption = payload.get("adoption")
+        transition = manifest.get("production_transition")
+        if (
+            not isinstance(adoption, Mapping)
+            or payload.get("baseline_head") != adoption.get("checkpoint_parent")
+            or not isinstance(transition, Mapping)
+            or transition.get("baseline_head") != payload.get("checkpoint_commit")
+        ):
+            raise LVReviewError("checkpoint adoption baseline does not match package")
+        return
+    if (payload.get("baseline_head") != manifest.get("source_head")
+            or payload.get("baseline_tree") != manifest.get("source_tree")):
+        raise LVReviewError("production worker baseline does not match package")
+
+
 def _safe_read_result(path: Path) -> tuple[dict[str, Any], str, bytes]:
     if not path.is_file() or path.is_symlink():
         raise LVReviewError("worker result is missing or is not a regular file")
@@ -2227,9 +2244,7 @@ def review_run(
         elif payload.get("worker_type") != "manual":
             raise LVReviewError("worker_type must be manual")
         if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":
-            if (payload.get("baseline_head") != context["manifest"].get("source_head")
-                    or payload.get("baseline_tree") != context["manifest"].get("source_tree")):
-                raise LVReviewError("production worker baseline does not match package")
+            _validate_production_baseline(payload, context["manifest"])
         else:
             for result_field, manifest_field in (
                 ("source_head_before", "source_head"),
