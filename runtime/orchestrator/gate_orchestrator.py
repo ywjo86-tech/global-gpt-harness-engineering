@@ -1398,7 +1398,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             state["review_payload"] = {key: value for key, value in prior.items()
                                        if key not in {"exit_code", "evidence_sha256", "hard_stop", "verdict_history", "remediation_verdict"}}
             return prior
-        worker_payload = context.get("worker_result") or state.get("worker_payload")
+        # A resumed production run can carry a historical worker_result in its
+        # initial context.  The just-restored sealed WORKER payload is the
+        # authoritative input for this lifecycle invocation.
+        worker_payload = state.get("worker_payload") or context.get("worker_result")
         if not isinstance(worker_payload, dict) or worker_payload.get("status") not in {"completed", "COMPLETED"}:
             raise GateControllerError("REVIEW requires a completed registered worker result")
         if not isinstance(worker_payload.get("tests"), list) or not worker_payload["tests"]:
@@ -1511,7 +1514,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             stored = json.loads(target.read_text(encoding="utf-8")); validate_handoff(stored, plan, auth)
             return prior_handoff
         prior = context.get("prior_evidence") or {}
-        worker_payload = context.get("worker_result") or state.get("worker_payload")
+        worker_payload = state.get("worker_payload") or context.get("worker_result")
         review_payload = state.get("review_payload")
         if not isinstance(worker_payload, dict) or not isinstance(review_payload, dict):
             raise GateControllerError("truthful worker/review handoff evidence is unavailable")
