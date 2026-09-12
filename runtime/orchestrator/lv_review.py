@@ -2225,6 +2225,7 @@ def review_run(
         current_identity = _capture_git_evidence(context["project_root"])
         working_actual = _actual_changes(context["project_root"])
         is_production = payload.get("schema_version") == "orchestration.product-completion-evidence.v1"
+        is_checkpoint_adoption = is_production and payload.get("completion_mode") == "VERIFIED_CHECKPOINT_ADOPTION"
         if is_production:
             actual = _production_committed_changes(
                 context["project_root"], payload["baseline_head"], payload["checkpoint_commit"]
@@ -2284,7 +2285,17 @@ def review_run(
                 violations.append(f"Git {git_field} differs from preflight evidence")
         if is_production:
             checkpoint_tree = _git(context["project_root"], "rev-parse", f"{payload['checkpoint_commit']}^{{tree}}").decode().strip()
-            if (payload.get("current_head") != payload.get("checkpoint_commit")
+            if is_checkpoint_adoption:
+                adopted = subprocess.run(["git", "-C", str(context["project_root"]), "merge-base", "--is-ancestor",
+                                           payload["checkpoint_commit"], current_identity["head"]], check=False)
+                later = set(_git(context["project_root"], "diff", "--name-only",
+                                 f"{payload['checkpoint_commit']}..{current_identity['head']}").decode().splitlines())
+                if (adopted.returncode != 0
+                        or payload.get("current_head") != current_identity["head"]
+                        or payload.get("current_tree") != current_identity["tree"]
+                        or later.intersection(set(context["manifest"]["owned_files"]))):
+                    violations.append("checkpoint adoption identity does not match current Git state")
+            elif (payload.get("current_head") != payload.get("checkpoint_commit")
                     or payload.get("current_head") != current_identity["head"]
                     or payload.get("current_tree") != current_identity["tree"]
                     or payload.get("current_tree") != checkpoint_tree):

@@ -9,6 +9,8 @@ from typing import Any, Mapping
 _SHA = re.compile(r"[0-9a-f]{40,64}\Z")
 _REQUIRED_IDS = ("project_id", "gate_id", "lv_id", "run_id", "approval_event_id", "plan_sha256")
 _COMMANDS = ("worker", "focused_test", "full_regression", "compile_import", "git_diff_check")
+_CHECKPOINT_ADOPTION_MODE = "VERIFIED_CHECKPOINT_ADOPTION"
+_CHECKPOINT_ADOPTION_COMMANDS = ("checkpoint_provenance", "focused_test", "full_regression", "compile_import", "git_diff_check")
 
 class ProductCompletionError(ValueError): pass
 
@@ -70,10 +72,18 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
     commands = evidence.get("commands")
     if not isinstance(commands, Mapping): reasons.append("COMMAND_EVIDENCE_MISSING")
     else:
-        for name in _COMMANDS:
+        command_names = _CHECKPOINT_ADOPTION_COMMANDS if mode == _CHECKPOINT_ADOPTION_MODE else _COMMANDS
+        for name in command_names:
             item = commands.get(name)
             if not isinstance(item, Mapping) or not isinstance(item.get("command"), list) or item.get("exit_code") != 0:
                 reasons.append(f"{name.upper()}_UNPROVEN")
+    if mode == _CHECKPOINT_ADOPTION_MODE:
+        adoption = evidence.get("adoption")
+        if (not isinstance(adoption, Mapping)
+                or adoption.get("schema_version") != "orchestration.verified-checkpoint-adoption.v1"
+                or adoption.get("checkpoint_commit") != evidence.get("checkpoint_commit")
+                or not isinstance(adoption.get("approval_record_hash"), str)):
+            reasons.append("CHECKPOINT_ADOPTION_EVIDENCE_INVALID")
     if evidence.get("review_verdict") != "PASS": reasons.append("REVIEW_NOT_PASS")
     if evidence.get("staged_changes") is not False or evidence.get("unstaged_changes") is not False: reasons.append("WORKTREE_NOT_DECLARED_CLEAN")
     checkpoint = evidence.get("checkpoint_commit")
@@ -82,9 +92,18 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
         try:
             head = _git(root, "rev-parse", "HEAD"); tree = _git(root, "rev-parse", f"{checkpoint}^{{tree}}")
             files = set(_git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines())
-            if terminal_head and head != checkpoint: reasons.append("CHECKPOINT_NOT_HEAD")
-            if evidence.get("current_head") != checkpoint: reasons.append("CHECKPOINT_BINDING_MISMATCH")
-            if not terminal_head:
+            if mode == _CHECKPOINT_ADOPTION_MODE:
+                if evidence.get("current_head") != head: reasons.append("CHECKPOINT_ADOPTION_HEAD_MISMATCH")
+                if evidence.get("current_tree") != _git(root, "rev-parse", "HEAD^{tree}"): reasons.append("CHECKPOINT_ADOPTION_TREE_MISMATCH")
+                ancestor = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, head], check=False)
+                if ancestor.returncode != 0: reasons.append("CHECKPOINT_NOT_ANCESTOR")
+                else:
+                    later = set(_git(root, "diff", "--name-only", f"{checkpoint}..{head}").splitlines())
+                    if later.intersection(set(owned)): reasons.append("PRIOR_LV_SCOPE_INVALIDATED")
+            else:
+                if terminal_head and head != checkpoint: reasons.append("CHECKPOINT_NOT_HEAD")
+                if evidence.get("current_head") != checkpoint: reasons.append("CHECKPOINT_BINDING_MISMATCH")
+            if not terminal_head and mode != _CHECKPOINT_ADOPTION_MODE:
                 ancestor = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, head], check=False)
                 if ancestor.returncode != 0: reasons.append("CHECKPOINT_NOT_ANCESTOR")
                 else:
