@@ -1,17 +1,28 @@
 import json
 import hashlib
 import tempfile
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from runtime.orchestrator.gate_orchestrator import GateLV, GatePlan
 from runtime.orchestrator.production_resume import (
-    ResumeBridgeError, build_resume_bridge, validate_resume_bridge,
+    ResumeBridgeError, _discover_run_ids, build_resume_bridge, validate_resume_bridge,
 )
 
 
 class ProductionResumeBridgeTests(unittest.TestCase):
+    def test_discovery_prefers_newest_lv_scoped_package(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "_workspace/orchestration-runs"
+            old = root / "old/G1-LV3-5/package.manifest.json"; old.parent.mkdir(parents=True)
+            new = root / "new/G1-LV3-5/package.manifest.json"; new.parent.mkdir(parents=True)
+            old.write_text(json.dumps({"gate_id": "GATE-1", "lv_id": "G1-LV3-5", "run_id": "old"}))
+            new.write_text(json.dumps({"gate_id": "GATE-1", "lv_id": "G1-LV3-5", "run_id": "new"}))
+            os.utime(old, ns=(1, 1)); os.utime(new, ns=(2, 2))
+            self.assertEqual(_discover_run_ids(root.parent.parent, "GATE-1")["G1-LV3-5"], "new")
+
     def _plan(self):
         return GatePlan("project", "", "GATE-1", "IMPLEMENTATION_PLAN.md", "a" * 64, [
             GateLV("GATE-1", "LV-1", 1, "one", [], [], [], "sequential", []),

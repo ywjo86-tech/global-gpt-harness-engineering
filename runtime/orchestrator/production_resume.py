@@ -79,7 +79,12 @@ def _discover_run_ids(harness_root: Path, gate_id: str, run_id_hint: str | None 
     # LV-scoped package manifests may live below a run namespace; inspect the
     # sealed manifests recursively so a namespaced successor is not mistaken
     # for an incomplete LV.
-    for manifest_path in (harness_root / "_workspace" / "orchestration-runs").rglob("package.manifest.json"):
+    manifests = sorted(
+        (harness_root / "_workspace" / "orchestration-runs").rglob("package.manifest.json"),
+        key=lambda path: (path.stat().st_mtime_ns, path.as_posix()),
+        reverse=True,
+    )
+    for manifest_path in manifests:
         try:
             manifest = _load(manifest_path)
         except ResumeBridgeError:
