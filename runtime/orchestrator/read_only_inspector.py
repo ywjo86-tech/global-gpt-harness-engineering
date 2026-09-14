@@ -11,7 +11,7 @@ from .contract_adapter import (
     validate_approval_state,
     validate_mapping_sources,
 )
-from .contract_loader import MANAGED_PROJECT_ROLE, load_contract
+from .contract_loader import ENGINE_HOST_ROLE, MANAGED_PROJECT_ROLE, load_contract
 
 
 class ReadOnlyValidationError(ValueError):
@@ -33,6 +33,12 @@ def _validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[s
     return {key: value for key, value in report.items() if key != "events"}
 
 
+def _required_contract_files_valid(contract: Any, role: str) -> bool:
+    if role == ENGINE_HOST_ROLE:
+        return Path(contract.paths.orchestration_state_md).is_file()
+    return not contract.missing_files
+
+
 def inspect_read_only(project_root: str | Path, *, role: str = MANAGED_PROJECT_ROLE) -> dict[str, Any]:
     root = Path(project_root).resolve()
     mapping = load_project_mapping(root)
@@ -43,7 +49,7 @@ def inspect_read_only(project_root: str | Path, *, role: str = MANAGED_PROJECT_R
         contract = load_contract(root, strict=True, role=role)
         return {"inspection_mode": "read_only_no_write", "write_operations_performed": False,
                 "contract_mapping": {**mapping.summary(root), "configured": True, "valid": True, "inspector_id": "generic.canonical"},
-                "project_static_inspect": {"project_id": root.name, "current_phase": contract.current_phase, "required_contract_files_valid": not contract.missing_files},
+                "project_static_inspect": {"project_id": root.name, "current_phase": contract.current_phase, "required_contract_files_valid": _required_contract_files_valid(contract, role)},
                 "business_lv_approval_state": {"namespace": "business_lv_gate_approval", "status": "generic_structural_valid", "validation": "static_only", "reused_as_runtime_approval": False},
                 "business_gate_state": {"namespace": "business_gate_state", "status": "generic_structural_valid", "validation": "static_only", "transition_authorized": True, "gate_1_started": True},
                 "codex_runtime_sandbox_approval_state": {"namespace": "codex_runtime_sandbox_approval", "status": "not_requested_read_only", "business_approval_reused": False, "runtime_mutation_authorized": False}}
@@ -167,7 +173,7 @@ def inspect_read_only(project_root: str | Path, *, role: str = MANAGED_PROJECT_R
         "project_static_inspect": {
             "project_id": root.name,
             "current_phase": contract.current_phase,
-            "required_contract_files_valid": not contract.missing_files,
+            "required_contract_files_valid": _required_contract_files_valid(contract, role),
         },
         "business_lv_approval_state": business_report,
         "business_gate_state": gate_report,

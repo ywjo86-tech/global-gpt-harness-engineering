@@ -46,6 +46,17 @@ def _extract_current_phase(plan_text: str, state_text: str) -> str:
             match = re.search(pattern, text)
             if match:
                 return match.group(1).strip()
+
+    # Engine-host state is append-only and may not carry a literal
+    # ``Current phase:`` line.  In that case, use the latest explicitly
+    # declared next-Gate identifier as the last known orchestration phase.
+    # This remains a read-only textual fallback; it does not authorize a
+    # transition or infer a new phase.
+    gate_pattern = r"(?is)The next Gate is defined as\s*`([^`]+)`"
+    for text in (state_text, plan_text):
+        matches = list(re.finditer(gate_pattern, text))
+        if matches:
+            return matches[-1].group(1).strip()
     return "unknown"
 
 

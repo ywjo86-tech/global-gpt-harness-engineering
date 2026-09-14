@@ -179,6 +179,8 @@ class ContractLoaderTest(unittest.TestCase):
         payload = json.loads(output.getvalue())
         self.assertEqual(payload["inspection_mode"], "read_only_no_write")
         self.assertFalse(payload["write_operations_performed"])
+        self.assertEqual(payload["project_static_inspect"]["current_phase"], "G-4B-RELEASE-HANDOFF")
+        self.assertTrue(payload["project_static_inspect"]["required_contract_files_valid"])
 
     def test_mapping_rejects_project_path_escape(self) -> None:
         with TemporaryDirectory() as project_dir, TemporaryDirectory() as mapping_dir:
