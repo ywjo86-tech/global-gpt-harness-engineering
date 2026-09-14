@@ -520,7 +520,6 @@ def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
     owned_files = state.get("owned_files")
     if (
         not isinstance(owned_files, list)
-        or not owned_files
         or any(not isinstance(item, str) or not item for item in owned_files)
         or len(set(owned_files)) != len(owned_files)
     ):
@@ -852,7 +851,7 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
            ("run_id","project_id","gate_id","lv_id","canonical_plan_sha256","package_manifest_sha256")):
         return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
                 "missing_fields":["malformed_binding"],"producer_contract_error":True}
-    if not isinstance(evidence["owned_files"], list) or not evidence["owned_files"]:
+    if not isinstance(evidence["owned_files"], list):
         return {"status":"REJECTED","error_code":"EVIDENCE_REQUIRED_FIELD_MISSING",
                 "missing_fields":["owned_files"],"producer_contract_error":True}
     # The v1 compatibility field is deliberately blank.  Hashing a payload
@@ -1310,6 +1309,18 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
         ):
             raise LVReviewError("checkpoint adoption provenance is invalid")
         return
+    if payload.get("completion_mode") == "VERIFICATION_ONLY":
+        authority = payload.get("verification_authority")
+        if (
+            not isinstance(authority, Mapping)
+            or authority.get("execution_obligation") != "NONE_SATISFIED"
+            or not isinstance(authority.get("canonical_authority_binding_digest"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", authority["canonical_authority_binding_digest"])
+            or payload.get("changed_files") != []
+            or payload.get("governed_effect_evidence") != []
+        ):
+            raise LVReviewError("verification-only provenance is invalid")
+        return
     executor = payload.get("executor")
     if not isinstance(executor, Mapping) or executor.get("identity") != "codex-cli-production":
         raise LVReviewError("production worker executor identity is invalid")
@@ -1541,14 +1552,26 @@ def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
     }
 
 
-def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest") -> tuple[list[dict[str, Any]], str | None]:
+def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest",
+               allow_test_only: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     test_targets = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     import_targets = [
         path.removesuffix(".py").replace("/", ".")
         for path in owned_files
         if path.endswith(".py") and not path.startswith("tests/")
     ]
-    if not test_targets or not import_targets:
+    if allow_test_only and not test_targets and not import_targets:
+        test_runner = runner if runner in {"pytest", "unittest"} else "pytest"
+        full = _run_command(
+            [str(interpreter), "-B", "-m", test_runner, "-q"]
+            if test_runner == "pytest"
+            else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"],
+            root,
+            180,
+        )
+        skipped = {"command": ["not-applicable"], "exit_code": 0, "timeout": False}
+        return [skipped, full, skipped], None
+    if not test_targets or (not import_targets and not allow_test_only):
         return [], "owned Python test/module scope is missing"
     for relative in test_targets:
         target = root / relative
@@ -1561,20 +1584,23 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
     commands = [
         ([str(interpreter), "-B", "-m", test_runner, "-q", *test_targets] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 60),
         ([str(interpreter), "-B", "-m", test_runner, "-q"] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 180),
-        ([
+    ]
+    if import_targets:
+        commands.append(([
             str(interpreter),
             "-B",
             "-c",
             "import importlib,sys; [importlib.import_module(name) for name in sys.argv[1:]]",
             *import_targets,
-        ], 30),
-    ]
+        ], 30))
     results: list[dict[str, Any]] = []
     for argv, timeout in commands:
         result = _run_command(argv, root, timeout)
         results.append({key: value for key, value in result.items() if key not in {"stdout", "stderr"}})
         if result["timeout"] or result["exit_code"] != 0:
             return results, f"independent test command failed (exit={result['exit_code']})"
+    if not import_targets:
+        results.append({"exit_code": 0, "timeout": False, "not_applicable": True})
     return results, None
 
 
@@ -1618,7 +1644,7 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
 
 def _owned_content_snapshot(root: Path, owned_files: list[str]) -> list[dict[str, Any]]:
     """Capture deterministic content evidence without following owned-path symlinks."""
-    if not isinstance(owned_files, list) or not owned_files:
+    if not isinstance(owned_files, list):
         raise LVReviewError("owned files are missing")
     root_resolved = root.resolve(strict=True)
     normalized: list[tuple[str, Path]] = []
@@ -2356,7 +2382,8 @@ def review_run(
             for path in context["manifest"]["owned_files"]
             if path.startswith("tests/") and path.endswith(".py")
         ]
-        if not owned_test_files or any(
+        verification_only = is_production and payload.get("completion_mode") == "VERIFICATION_ONLY"
+        if (not verification_only and not owned_test_files) or any(
             not (context["project_root"] / path).is_file()
             or (context["project_root"] / path).is_symlink()
             for path in owned_test_files
@@ -2378,6 +2405,7 @@ def review_run(
             context["interpreter"],
             list(context["manifest"]["owned_files"]),
             runner="unittest" if context["manifest"].get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else "pytest",
+            allow_test_only=verification_only,
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):

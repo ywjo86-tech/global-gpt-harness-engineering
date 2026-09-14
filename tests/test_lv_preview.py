@@ -86,6 +86,50 @@ class LVPreviewTest(unittest.TestCase):
             self.assertFalse(preview["codex_runtime_sandbox_approval_state"]["business_approval_reused"])
             self.assertEqual(before, read_only_fixtures.ReadOnlyInspectTest._tree_signature(root))
 
+    def test_plan_bound_empty_scope_exit_review_preview_is_valid(self) -> None:
+        plan = "\n".join(
+            [
+                "### Gate 1 - Core Model",
+                "",
+                "| ID | 작업 | 대상 | 완료조건 |",
+                "|---|---|---|---|",
+                "| G1-LV3-7 | Gate 1 Exit Review |  | Gate 1 판정 기록 |",
+                "",
+                "| ID | depends_on | execution | owned_files | input -> output / exit_check |",
+                "|---|---|---|---|---|",
+                "| G1-LV3-7 | G1-LV3-6 | sequential |  | 증거 검토 -> Gate 1 판정 |",
+                "",
+            ]
+        )
+        definition = parse_lv_definition(plan, "GATE-1", "G1-LV3-7", [])
+        self.assertEqual(definition.owned_files, [])
+
+    def test_related_test_with_multiple_app_files_keeps_declared_scope(self) -> None:
+        plan = "\n".join(
+            [
+                "### Gate 2 - Adpick Collector",
+                "",
+                "| ID | 작업 | 대상 | 완료조건 |",
+                "|---|---|---|---|",
+                "| G2-LV3-1 | API client | `app/collectors/adpick.py` | timeout 처리 |",
+                "",
+                "| ID | depends_on | execution | owned_files | input -> output / exit_check |",
+                "|---|---|---|---|---|",
+                "| G2-LV3-1 | Gate 1 | sequential | `app/collectors/base.py`, `app/collectors/adpick.py`, 관련 테스트 | mock 오류 테스트 |",
+                "",
+            ]
+        )
+        definition = parse_lv_definition(
+            plan,
+            "GATE-2",
+            "G2-LV3-1",
+            ["app/collectors/base.py", "app/collectors/adpick.py", "tests/test_adpick.py"],
+        )
+        self.assertEqual(
+            definition.owned_files,
+            ["app/collectors/base.py", "app/collectors/adpick.py", "tests/test_adpick.py"],
+        )
+
     def test_selected_source_string_matches_canonical_path(self) -> None:
         with TemporaryDirectory() as directory:
             root, mapping_dir = self._fixture(Path(directory))

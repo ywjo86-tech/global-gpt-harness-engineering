@@ -11,7 +11,7 @@ from .contract_adapter import (
     validate_approval_state,
     validate_mapping_sources,
 )
-from .contract_loader import load_contract
+from .contract_loader import MANAGED_PROJECT_ROLE, load_contract
 
 
 class ReadOnlyValidationError(ValueError):
@@ -33,14 +33,14 @@ def _validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[s
     return {key: value for key, value in report.items() if key != "events"}
 
 
-def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
+def inspect_read_only(project_root: str | Path, *, role: str = MANAGED_PROJECT_ROLE) -> dict[str, Any]:
     root = Path(project_root).resolve()
     mapping = load_project_mapping(root)
     # Generic onboarding contracts use the shared structural inspector; the
     # Wallet business approval parser is retained only for legacy mappings.
     generic_state = root / "docs" / "GATE_STATE.md"
     if mapping is not None and generic_state.is_file() and "FIRST_GATE_ACTIVE" in generic_state.read_text(encoding="utf-8"):
-        contract = load_contract(root, strict=True)
+        contract = load_contract(root, strict=True, role=role)
         return {"inspection_mode": "read_only_no_write", "write_operations_performed": False,
                 "contract_mapping": {**mapping.summary(root), "configured": True, "valid": True, "inspector_id": "generic.canonical"},
                 "project_static_inspect": {"project_id": root.name, "current_phase": contract.current_phase, "required_contract_files_valid": not contract.missing_files},
@@ -91,7 +91,7 @@ def inspect_read_only(project_root: str | Path) -> dict[str, Any]:
                 }
             )
 
-    contract = load_contract(root, strict=True)
+    contract = load_contract(root, strict=True, role=role)
 
     mapping_report: dict[str, Any] = {"configured": mapping is not None, "valid": True}
     business_report: dict[str, Any] = {

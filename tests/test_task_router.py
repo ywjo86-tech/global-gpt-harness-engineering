@@ -47,6 +47,27 @@ class TaskRouterTest(unittest.TestCase):
             self.assertGreaterEqual(agents.count("qa_reviewer_agent"), 1)
             self.assertGreaterEqual(agents.count("implementation_agent"), 1)
 
+    def test_capability_derivation_is_conservative(self) -> None:
+        with cloned_sample_project() as project:
+            contract = load_contract(project)
+            contract = replace(
+                contract,
+                development_plan_text="""
+### Documentation Reasoning
+- Review the handoff and summarize the plan.
+
+### Implementation Command
+- Implement the runtime change and run tests.
+""",
+            )
+            state = StateStore(project).state
+            tasks = route_tasks(contract, state)
+            by_title = {task.input.splitlines()[0]: task for task in tasks}
+            self.assertIn("read_only", by_title["Documentation Reasoning"].required_capabilities)
+            self.assertNotIn("filesystem_write", by_title["Documentation Reasoning"].required_capabilities)
+            self.assertIn("filesystem_write", by_title["Implementation Command"].required_capabilities)
+            self.assertIn("test", by_title["Implementation Command"].required_capabilities)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -145,6 +145,41 @@ class ContractLoaderTest(unittest.TestCase):
             with self.assertRaises(ContractLoadError):
                 load_contract(directory)
 
+    def test_explicit_engine_host_role_allows_missing_managed_lifecycle_files(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "global-gpt-harness-engineering"
+            (root / "runtime" / "orchestrator").mkdir(parents=True)
+            (root / ".agents" / "skills" / "harness").mkdir(parents=True)
+            (root / "docs" / "harness").mkdir(parents=True)
+            (root / "AGENTS.md").write_text("Global GPT Harness Engineering\n", encoding="utf-8")
+            (root / "runtime" / "orchestrator" / "cli.py").write_text("# host anchor\n", encoding="utf-8")
+            (root / ".agents" / "skills" / "harness" / "SKILL.md").write_text("---\nname: harness\n---\n", encoding="utf-8")
+            (root / "docs" / "harness" / "orchestration-state.md").write_text(
+                "Current phase: G-4B-RELEASE-HANDOFF\n", encoding="utf-8"
+            )
+            subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+            contract = load_contract(root, role="engine-host")
+            self.assertEqual(contract.current_phase, "G-4B-RELEASE-HANDOFF")
+            self.assertEqual(
+                set(Path(path).relative_to(root).as_posix() for path in contract.missing_files),
+                {"docs/DEVELOPMENT_PLAN.txt", "CHANGELOG.txt", "logs/app.log"},
+            )
+
+    def test_engine_host_role_rejects_unverified_checkout(self) -> None:
+        with TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ContractLoadError, "engine-host identity"):
+                load_contract(directory, role="engine-host")
+
+    def test_cli_passes_explicit_engine_host_role_to_read_only_inspector(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        output = StringIO()
+        with redirect_stdout(output):
+            exit_code = main(["inspect", "--read-only", "--project", str(root), "--role", "engine-host"])
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["inspection_mode"], "read_only_no_write")
+        self.assertFalse(payload["write_operations_performed"])
+
     def test_mapping_rejects_project_path_escape(self) -> None:
         with TemporaryDirectory() as project_dir, TemporaryDirectory() as mapping_dir:
             root = Path(project_dir) / "mapped-project"

@@ -252,6 +252,8 @@ class TaskSlice:
     handoff_report_path: str = ""
     result_path: str = ""
     manual_execution_path: str = ""
+    required_capabilities: list[str] = field(default_factory=list)
+    input_files: list[str] = field(default_factory=list)
 
     def as_request_payload(self) -> dict[str, Any]:
         return asdict(self)
@@ -373,6 +375,7 @@ class RuntimeState:
     fanin_report: dict[str, Any] = field(default_factory=dict)
     collection_report: dict[str, Any] = field(default_factory=dict)
     planning_artifact: dict[str, Any] = field(default_factory=dict)
+    authority_review: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

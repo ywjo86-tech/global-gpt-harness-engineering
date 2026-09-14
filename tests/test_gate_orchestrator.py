@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import tempfile
 import unittest
@@ -15,9 +17,11 @@ from runtime.orchestrator.gate_orchestrator import (
     advance_lifecycle, compatibility_dry_run, create_gate_authorization, derive_transition,
     gate_exit_action, initial_ledger, load_gate_plan, namespace_root, onboarding_dry_run, recovery_checkpoint,
     resume_from_checkpoint, select_assets, structured_handoff, validate_authorization,
-    validate_capability_handoff_projection, validate_concurrent_ownership, validate_handoff, validate_ledger, validate_owned_access,
+    validate_capability_handoff_projection, validate_concurrent_ownership, validate_handoff, validate_ledger, validate_owned_access, _canonical_hash, _find_exact_resume_namespace,
 )
-from runtime.orchestrator.gate_controller import GateControllerAdapters
+from runtime.orchestrator.resume_store import ResumeStore, RunBinding
+from runtime.orchestrator.cli import main as cli_main
+from runtime.orchestrator.gate_controller import GateControllerAdapters, run_gate_lifecycle
 from runtime.orchestrator.gate_approval import seal_approval_evidence
 from runtime.orchestrator.completeness import REQUIREMENT_IDS
 
@@ -40,6 +44,18 @@ PLAN = '''# Plan
 
 
 class GateOrchestratorTests(unittest.TestCase):
+    def test_resume_namespace_prefers_exact_sealed_binding_over_stale_adoption_namespace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "resume"; root.mkdir()
+            expected = RunBinding("project-one", "GATE-1", "G1-LV3-1", "run-1", "a" * 64, "b" * 64,
+                                  "main", "c" * 40, "d" * 64, {"app/a.py": "e" * 64})
+            stale = RunBinding("project-one", "GATE-1", "G1-LV3-1", "run-1", "a" * 64, "b" * 64,
+                               "main", "f" * 40, "d" * 64, {"app/a.py": "e" * 64})
+            ResumeStore(root / "G1-LV3-1-adoption-current", stale).append("WORKER", "1" * 64, checkpoint=True)
+            ResumeStore(root / "G1-LV3-1", expected).append("WORKER", "2" * 64, checkpoint=True)
+            selected = _find_exact_resume_namespace(root, expected)
+            self.assertIsNotNone(selected)
+            self.assertEqual(selected[0].name, "G1-LV3-1")
     def test_capability_crash_failpoint_is_disabled_by_default_and_explicit_only(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _test_only_crash_after_capability_stage
         from runtime.orchestrator.operational_capability import InjectedCrash
@@ -238,6 +254,97 @@ class GateOrchestratorTests(unittest.TestCase):
         handoff["changed_files"] = ["app/other.py"]
         with self.assertRaises(GateOrchestrationError): validate_handoff(handoff, self.plan, self.auth)
 
+    def test_full_plan_handoff_seals_preflight_and_accepts_legacy_v1(self) -> None:
+        cp = recovery_checkpoint(self.plan.project_id, "GATE-1", "G1-LV3-1", "run-full", {})
+        full_auth = create_gate_authorization(
+            self.plan, "AUTH-FULL-HANDOFF", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        handoff = structured_handoff(
+            self.plan, full_auth, lv_id="G1-LV3-1", run_id="run-full", branch="main", head="a" * 40,
+            completed_plan_items=["G1-LV3-1"], remaining_plan_items=[], changed_files=["app/model.py"],
+            tests=[{"status": "PASS"}], review={"verdict": "PASS", "hard_stop": True},
+            artifact_sha256="b" * 64, used_assets=["project-orchestrator"], recovery=cp,
+        )
+        self.assertEqual(handoff["schema_version"], "orchestration.gate.handoff.v2")
+        self.assertEqual(handoff["full_plan_preflight"], {
+            "requested_mode": FULL_PLAN, "full_plan_requested": True, "full_plan_eligible": True,
+            "full_plan_opt_in": True, "project_final_validation": True, "mutation_performed": False,
+        })
+        validate_handoff(handoff, self.plan, full_auth)
+        legacy = dict(handoff)
+        legacy["schema_version"] = "orchestration.gate.handoff.v1"
+        legacy.pop("full_plan_preflight")
+        legacy["handoff_sha256"] = _canonical_hash({key: value for key, value in legacy.items() if key != "handoff_sha256"})
+        validate_handoff(legacy, self.plan, full_auth)
+
+    def test_lifecycle_fixture_persists_and_verifies_full_plan_handoff_v2(self) -> None:
+        full_auth = create_gate_authorization(
+            self.plan, "AUTH-FULL-LIFECYCLE", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        stored = self.root.parent / "lifecycle-handoff.json"
+
+        def stage(status: str):
+            return lambda context: {
+                "status": status, "exit_code": 0,
+                "evidence_sha256": hashlib.sha256(f"{status}:{context['lv_id']}".encode()).hexdigest(),
+                "hard_stop": True,
+            }
+
+        def handoff(context):
+            payload = structured_handoff(
+                self.plan, full_auth, lv_id=context["lv_id"], run_id=context["run_id"],
+                branch="main", head="a" * 40, completed_plan_items=[context["lv_id"]],
+                remaining_plan_items=["G1-LV3-2", "G1-LV3-3"], changed_files=["app/model.py"],
+                tests=[{"status": "PASS"}], review={"verdict": "PASS", "hard_stop": True,
+                "worker_evidence_sha256": context["worker_result"]["evidence_sha256"]},
+                artifact_sha256=context["worker_result"]["evidence_sha256"],
+                used_assets=["fixture-runtime"], recovery={"fixture": True},
+            )
+            stored.write_text(json.dumps(payload), encoding="utf-8")
+            return {"status": "SEALED", "exit_code": 0,
+                    "evidence_sha256": payload["handoff_sha256"], "hard_stop": True}
+
+        adapters = GateControllerAdapters(
+            stage("SEALED"), stage("READY"), stage("COMPLETED"), stage("PASS"),
+            stage("PASS"), stage("CHECKPOINTED"), stage("EXITED"), handoff,
+        )
+        outcome = run_gate_lifecycle({
+            "project_id": self.plan.project_id, "gate_id": self.plan.gate_id,
+            "lv_id": "G1-LV3-1", "run_id": "lifecycle-v2", "plan_sha256": self.plan.canonical_plan_sha256,
+        }, adapters)
+        persisted = json.loads(stored.read_text(encoding="utf-8"))
+        validate_handoff(persisted, self.plan, full_auth)
+        self.assertEqual(persisted["schema_version"], "orchestration.gate.handoff.v2")
+        self.assertTrue(persisted["full_plan_preflight"]["full_plan_eligible"])
+        self.assertEqual(outcome["evidence"]["handoff"], persisted["handoff_sha256"])
+
+    def test_resume_rejects_resealed_full_plan_preflight_tamper(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        cp = recovery_checkpoint(self.plan.project_id, "GATE-1", "G1-LV3-1", "run-preflight-tamper", {})
+        handoff = structured_handoff(
+            self.plan, self.auth, lv_id="G1-LV3-1", run_id="run-preflight-tamper", branch="main", head="a" * 40,
+            completed_plan_items=["G1-LV3-1"], remaining_plan_items=["G1-LV3-2", "G1-LV3-3"],
+            changed_files=["app/model.py"], tests=[{"status": "PASS"}],
+            review={"verdict": "PASS", "hard_stop": True}, artifact_sha256="b" * 64,
+            used_assets=["project-orchestrator"], recovery=cp,
+        )
+        handoff["full_plan_preflight"]["full_plan_eligible"] = True
+        handoff["handoff_sha256"] = _canonical_hash({key: value for key, value in handoff.items() if key != "handoff_sha256"})
+        artifact = namespace_root(self.root.parent, self.plan.project_id, "artifact") / "run-preflight-tamper.handoff.json"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(json.dumps(handoff), encoding="utf-8")
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan", return_value=self.plan), \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization", return_value=self.auth), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_global_gate_bindings", return_value={"status": "VALIDATED"}), \
+             self.assertRaisesRegex(GateOrchestrationError, "Full Plan preflight mismatch"):
+            execute_gate(
+                self.root, "GATE-1", "run-preflight-tamper", harness_root=self.root.parent,
+                approval_evidence="unused", requirements_sha256="b" * 64, branch="main", head="c" * 40,
+                resume=True,
+            )
+
     def test_handoff_missing_field_or_sha_tamper_is_blocked(self) -> None:
         cp = recovery_checkpoint(self.plan.project_id, "GATE-1", "G1-LV3-1", "run-1", {})
         handoff = structured_handoff(self.plan, self.auth, lv_id="G1-LV3-1", run_id="run-1", branch="main", head="a"*40, completed_plan_items=[], remaining_plan_items=[], changed_files=[], tests=[], review={}, artifact_sha256="b"*64, used_assets=[], recovery=cp)
@@ -269,6 +376,47 @@ class GateOrchestratorTests(unittest.TestCase):
         with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping):
             result = compatibility_dry_run(self.root, "GATE-1")
         self.assertEqual(result["status"], "COMPATIBLE"); self.assertFalse(result["mutation_performed"]); self.assertFalse(result["full_plan_active"])
+
+    def test_full_plan_compatibility_dry_run_requires_and_reports_explicit_opt_in(self) -> None:
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping):
+            blocked = compatibility_dry_run(self.root, "GATE-1", mode=FULL_PLAN)
+            ready = compatibility_dry_run(
+                self.root,
+                "GATE-1",
+                mode=FULL_PLAN,
+                full_plan_opt_in=True,
+                project_final_validation=True,
+            )
+        self.assertEqual(blocked["status"], "BLOCKED")
+        self.assertTrue(blocked["full_plan_requested"])
+        self.assertFalse(blocked["full_plan_eligible"])
+        self.assertEqual(ready["status"], "COMPATIBLE")
+        self.assertTrue(ready["full_plan_requested"])
+        self.assertTrue(ready["full_plan_eligible"])
+        self.assertFalse(ready["full_plan_active"])
+        self.assertFalse(ready["mutation_performed"])
+
+    def test_cli_forwards_full_plan_dry_run_eligibility_flags(self) -> None:
+        outcome = {"status": "COMPATIBLE", "mutation_performed": False}
+        with patch("runtime.orchestrator.gate_orchestrator.compatibility_dry_run", return_value=outcome) as dry_run, redirect_stdout(StringIO()):
+            result = cli_main([
+                "gate-dry-run", "--project-root", str(self.root), "--gate-id", "GATE-1",
+                "--mode", FULL_PLAN, "--full-plan-opt-in", "--project-final-validation",
+            ])
+        self.assertEqual(result, 0)
+        dry_run.assert_called_once_with(
+            str(self.root), "GATE-1", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+
+    def test_full_plan_dry_run_documentation_matches_cli_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        expected = "--mode FULL_PLAN --full-plan-opt-in --project-final-validation"
+        for relative in (
+            "runtime/orchestrator/README.md",
+            "docs/harness/orchestration-runtime-engine.md",
+        ):
+            self.assertIn(expected, (root / relative).read_text(encoding="utf-8"), relative)
 
     def test_missing_mapping_dry_run_blocks(self) -> None:
         with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=None):

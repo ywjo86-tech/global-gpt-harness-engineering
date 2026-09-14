@@ -13,6 +13,7 @@ from runtime.orchestrator.approval_hash import calculate_record_hash
 from runtime.orchestrator.cli import main
 from runtime.orchestrator.contract_adapter import (
     ContractMappingError,
+    _ledger_payload,
     evaluate_canonical_state,
     load_project_mapping,
     sha256_file,
@@ -171,6 +172,29 @@ class GateStateLedgerTest(unittest.TestCase):
                     with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
                         with self.assertRaises(ContractMappingError):
                             evaluate_canonical_state(load_project_mapping(root))
+
+    def test_append_only_canonical_entries_select_the_latest_binding(self) -> None:
+        first = {
+            "schema_version": "orchestration.canonical-gate-state.v2", "project_id": "wallet",
+            "gate_id": "GATE-1", "phase": "PHASE-1", "plan_sha256": "a" * 64,
+            "gate_status": "READY_FOR_TRANSITION", "closure_status": "PREDECESSOR_CLOSED",
+            "approval_record_hash": "b" * 64,
+        }
+        latest = {**first, "approval_record_hash": "c" * 64}
+        text = "\n".join("```json\n" + json.dumps(payload) + "\n```" for payload in (first, latest))
+        self.assertEqual(_ledger_payload(text), latest)
+
+    def test_append_only_ledger_rejects_legacy_and_canonical_mixture(self) -> None:
+        legacy = {"schema_version": 1, "project_id": "wallet", "gate_id": "GATE-1", "gate_state": "GATE1_ACTIVE",
+                  "canonical_plan": "IMPLEMENTATION_PLAN.md", "plan_sha256": "a" * 64, "approval_id": "APR-1",
+                  "approval_record_hash": "b" * 64, "active_scope": ["G1-LV3-1"], "owned_files": ["app/config.py"]}
+        canonical = {"schema_version": "orchestration.canonical-gate-state.v2", "project_id": "wallet",
+                     "gate_id": "GATE-1", "phase": "PHASE-1", "plan_sha256": "a" * 64,
+                     "gate_status": "READY_FOR_TRANSITION", "closure_status": "PREDECESSOR_CLOSED",
+                     "approval_record_hash": "c" * 64}
+        text = "\n".join("```json\n" + json.dumps(payload) + "\n```" for payload in (legacy, canonical))
+        with self.assertRaisesRegex(ContractMappingError, "append-only"):
+            _ledger_payload(text)
 
     def test_scope_and_owned_file_traversal_fail_closed(self) -> None:
         with TemporaryDirectory() as directory:

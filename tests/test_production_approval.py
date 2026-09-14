@@ -62,6 +62,22 @@ class ProductionApprovalSchemaV2Tests(unittest.TestCase):
         approved = evaluate_production_authorization([event()], bindings(), now=NOW)
         self.assertEqual(approved["event_id"], "APR-G1-20260829T000000Z")
 
+    def test_empty_owned_file_scope_is_valid_for_plan_bound_exit_review(self):
+        approved = evaluate_production_authorization(
+            [
+                event(
+                    canonical_lv_scope=["G1-LV3-7"],
+                    owned_file_scope={"G1-LV3-7": []},
+                )
+            ],
+            bindings(
+                canonical_lv_scope=("G1-LV3-7",),
+                owned_file_scope={"G1-LV3-7": ()},
+            ),
+            now=NOW,
+        )
+        self.assertEqual(approved["owned_file_scope"], {"G1-LV3-7": []})
+
     def test_missing_branch_baseline_mode_and_time_are_blocked(self):
         for field in ("branch", "baseline_head", "approval_mode", "approved_at", "recorded_at"):
             value = event(); del value[field]

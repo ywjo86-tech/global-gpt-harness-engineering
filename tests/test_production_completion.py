@@ -27,6 +27,19 @@ class ProductCompletionTests(unittest.TestCase):
             result=verify_product_completion(root,evidence,{**ids,"owned_files":["x.py"]})
             self.assertEqual(result["status"],"PASS")
 
+    def test_verification_only_requires_sealed_authority_and_clean_baseline(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); subprocess.run(["git","init","-q",root],check=True)
+            env=["git","-C",root,"-c","user.name=T","-c","user.email=t@x"]
+            subprocess.run(env+["commit","--allow-empty","-qm","base"],check=True)
+            head=subprocess.check_output(["git","-C",root,"rev-parse","HEAD"],text=True).strip()
+            tree=subprocess.check_output(["git","-C",root,"rev-parse","HEAD^{tree}"],text=True).strip()
+            ids={"project_id":"p","gate_id":"g","lv_id":"l","run_id":"r","approval_event_id":"a","plan_sha256":"b"*64}
+            commands={k:{"command":[k],"exit_code":0} for k in ("worker","focused_test","full_regression","compile_import","git_diff_check")}
+            evidence={**ids,"attempt":1,"hard_stop":True,"completion_mode":"VERIFICATION_ONLY","changed_files":[],"commands":commands,"review_verdict":"PASS","staged_changes":False,"unstaged_changes":False,"checkpoint_commit":head,"current_head":head,"current_tree":tree,"baseline_head":head,"baseline_tree":tree,"artifact_sha_chain":{"a":"c"*64},"verification_authority":{"execution_obligation":"NONE_SATISFIED","canonical_authority_binding_digest":"d"*64}}
+            self.assertEqual(verify_product_completion(root,evidence,{**ids,"owned_files":["x.py"],"allow_verification_only":True})["status"],"PASS")
+            self.assertIn("VERIFICATION_ONLY_NOT_AUTHORIZED",verify_product_completion(root,evidence,{**ids,"owned_files":["x.py"]})["reasons"])
+
     def test_prior_checkpoint_accepts_valid_ancestor(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); subprocess.run(["git","init","-q",root],check=True)

@@ -333,6 +333,14 @@ class ContractCrossCheckTests(unittest.TestCase):
     def test_con_001_same_input_same_contract_digest(self) -> None:
         self.assertEqual(candidate().contract_digest, candidate().contract_digest)
 
+    def test_projection_allows_empty_noop_scope_only_when_targets_and_owned_scope_match(self) -> None:
+        base = projection()
+        empty = replace(base, change_targets=(), owned_scope=())
+        self.assertEqual(empty.change_targets, ())
+        self.assertEqual(empty.owned_scope, ())
+        with self.assertRaises(GovernedContractError):
+            replace(base, change_targets=(), owned_scope=("runtime/orchestrator/execution_contract.py",))
+
     def test_con_002_unvalidated_scope_routes_builder_fix(self) -> None:
         c = replace(candidate(), owned_scope=("outside/scope",))
         result = cross_check_contract(c, projection(), approval())

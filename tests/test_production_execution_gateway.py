@@ -10,7 +10,7 @@ from runtime.orchestrator.production_execution_gateway import (
     UnixSocketGatewayTransport, UnixSocketHostRunner,
     build_gateway_request, build_gateway_result, validate_gateway_request,
     validate_gateway_result, resolve_gateway_socket_path, _workspace_artifact_binding,
-    _digest,
+    _digest, _safe_broker_block,
 )
 from runtime.orchestrator.tool_authorization import (
     activate_contract, build_dec007_approved_contracts, owned_scope_digest,
@@ -29,6 +29,14 @@ def request():
 
 
 class GatewayContractTests(unittest.TestCase):
+    def test_broker_block_projection_is_content_free_and_fail_closed(self):
+        self.assertEqual(_safe_broker_block({
+            "stage": "HANDLE", "error_class": "ToolAuthorizationError",
+            "operation_class_id": "PROJECT_OWNED_FILE_WRITE", "raw": "secret"
+        }), {"stage": "HANDLE", "error_class": "ToolAuthorizationError",
+             "operation_class_id": "PROJECT_OWNED_FILE_WRITE"})
+        self.assertIsNone(_safe_broker_block({"stage": "OTHER", "error_class": "RuntimeError"}))
+
     def dec007_request(self):
         package_binding = "f" * 64
         approved = build_dec007_approved_contracts(

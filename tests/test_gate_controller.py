@@ -43,6 +43,18 @@ class GateControllerTests(unittest.TestCase):
         self.assertEqual(resolved, lv.owned_files)
         self.assertEqual(metadata["canonical_owned_scope_status"], "RESOLVED")
         self.assertEqual(metadata["caller_owned_scope_status"], "ABSENT")
+
+    def test_canonical_owned_scope_resolver_allows_plan_bound_empty_exit_review_scope(self):
+        lv = GateLV("GATE-1", "G1-LV3-3", 3, "Gate Exit Review", [], [], ["all verified"], "manual", [], None)
+        plan = GatePlan("fixture-project", ".", "GATE-1", "plan.md", SHA, [lv])
+        auth = GateAuthorization("v1", "a", "fixture-project", "GATE-1", SHA, [lv.lv_id], [lv.lv_id],
+                                 {lv.lv_id: []}, {lv.lv_id: ["all verified"]}, [], True, True, [],
+                                 "GATE_BY_GATE", "now", False, False)
+        resolved, metadata = resolve_canonical_owned_scope(plan, auth, lv.lv_id, caller_owned_files=[])
+        self.assertEqual(resolved, [])
+        self.assertEqual(metadata["canonical_owned_scope_status"], "RESOLVED")
+        self.assertEqual(metadata["canonical_owned_scope_count_bucket"], "0")
+        self.assertEqual(metadata["caller_owned_scope_status"], "EXACT")
     def _governed_descendant(self, temp: str, mutation: str = "", *, stop_after_worker: bool = False):
         project = Path(temp) / "project"; project.mkdir()
         harness = Path(temp) / "harness"

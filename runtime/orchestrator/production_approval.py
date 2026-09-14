@@ -125,7 +125,7 @@ def validate_v2_schema(event: Mapping[str, Any], *, now: datetime | None = None)
     if not isinstance(owned, dict) or set(owned) != set(scope):
         raise ProductionApprovalError("owned_file_scope must exactly cover canonical_lv_scope")
     for lv_id, paths in owned.items():
-        if not isinstance(paths, list) or not paths or len(paths) != len(set(paths)):
+        if not isinstance(paths, list) or len(paths) != len(set(paths)):
             raise ProductionApprovalError(f"invalid owned_file_scope for {lv_id}")
         for path in paths:
             _relative_path(path, "owned_file_scope path")

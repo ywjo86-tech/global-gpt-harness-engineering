@@ -28,6 +28,10 @@ class TransportError(RuntimeError):
     """Bounded compatibility or protocol failure."""
 
 
+class CrashAfterDurableWrite(TransportError):
+    """Explicit proof-only interruption after a governed durable WRITE."""
+
+
 @dataclass(frozen=True, slots=True)
 class WorkerSessionRef:
     provider: str
@@ -193,7 +197,7 @@ class CodexAppServerAdapter:
             raise TransportError("bounded tool result status is invalid")
         # Only bounded broker output is returned. Raw launcher output remains
         # private to the broker/security boundary.
-        return {"contentItems": [{"type": "inputText", "text": json.dumps({
+        return {"success": result.status == "COMPLETED", "contentItems": [{"type": "inputText", "text": json.dumps({
             "status": result.status,
             "result_presence": result.result_presence,
             "security_status": result.security_status,
@@ -234,6 +238,7 @@ class CodexAppServerAdapter:
             thread_id: str | None = None
             turn_id: str | None = None
             terminal = "UNKNOWN"
+            broker_block: dict[str, str] | None = None
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -257,7 +262,7 @@ class CodexAppServerAdapter:
                         raise TransportError("TRANSPORT_COMPATIBILITY_BLOCK")
                     send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
                     start_id = request("thread/start", {
-                        "experimentalRawEvents": False,
+                        "experimentalRawEvents": True,
                         "dynamicTools": [dict(item) for item in dynamic_tools],
                         "environments": [],
                         "approvalPolicy": "never",
@@ -283,13 +288,29 @@ class CodexAppServerAdapter:
                         turn_id = _safe_id(message.get("result", {}).get("turn", {}).get("id"), "turn")
                     continue
                 if message.get("method") == REQUIRED_SERVER_REQUEST and "id" in message:
+                    block_stage = "NORMALIZE"
+                    blocked_operation = "UNKNOWN"
                     try:
                         envelope = self.normalize_tool_request(message.get("params", {}),
                                                                worker_task_id=worker_task_id,
                                                                worker_action_id=worker_action_id)
+                        blocked_operation = envelope.operation_class_id
+                        block_stage = "HANDLE"
                         result = tool_handler(envelope)
                         send({"jsonrpc": "2.0", "id": message["id"], "result": self.protocol_result(result)})
-                    except Exception:
+                    except CrashAfterDurableWrite:
+                        terminal = "CRASHED"
+                        raise
+                    except Exception as exc:
+                        safe_error_class = (
+                            exc.__class__.__name__
+                            if exc.__class__.__name__ in {
+                                "TransportError", "ToolAuthorizationError", "ValueError", "TypeError"
+                            }
+                            else "Exception"
+                        )
+                        broker_block = {"stage": block_stage, "error_class": safe_error_class,
+                                        "operation_class_id": blocked_operation}
                         send({"jsonrpc": "2.0", "id": message["id"], "error": {
                             "code": -32001, "message": "BROKER_BLOCK"}})
                         terminal = "BROKER_BLOCKED"
@@ -300,11 +321,14 @@ class CodexAppServerAdapter:
                     terminal = "COMPLETED"; break
                 if method in {"turn/failed", "error"}:
                     terminal = "FAILED"; break
-            return {
+            outcome = {
                 "compatibility": asdict(compatibility), "registry": registry,
                 "session_ref": asdict(WorkerSessionRef("CODEX_APP_SERVER", thread_id or "UNKNOWN")),
                 "turn_ref": {"turn_id": turn_id or "UNKNOWN"}, "completion": terminal,
             }
+            if broker_block is not None:
+                outcome["broker_block"] = broker_block
+            return outcome
         finally:
             if process.poll() is None:
                 process.terminate()

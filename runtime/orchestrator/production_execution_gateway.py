@@ -40,6 +40,25 @@ def _digest(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(dict(payload))).hexdigest()
 
 
+def _safe_broker_block(value: object) -> dict[str, str] | None:
+    """Project only the fixed, content-free broker failure taxonomy."""
+    if not isinstance(value, Mapping):
+        return None
+    stage = value.get("stage")
+    error_class = value.get("error_class")
+    operation_class_id = value.get("operation_class_id")
+    if stage not in {"NORMALIZE", "HANDLE"}:
+        return None
+    if error_class not in {"TransportError", "ToolAuthorizationError", "ValueError", "TypeError", "Exception"}:
+        return None
+    if operation_class_id not in {
+        "PROJECT_OWNED_FILE_READ", "PROJECT_OWNED_FILE_WRITE", "PROJECT_OWNED_FILE_LIST", "UNKNOWN"
+    }:
+        return None
+    return {"stage": str(stage), "error_class": str(error_class),
+            "operation_class_id": str(operation_class_id)}
+
+
 def _request_id(payload: Mapping[str, Any]) -> str:
     seed = "|".join(str(payload.get(key, "")) for key in (
         "project_id", "run_id", "gate_id", "lv_id", "attempt", "package_preflight_binding_digest",
@@ -293,10 +312,12 @@ def validate_gateway_request(payload: Mapping[str, Any], *, expected: Mapping[st
         if canonical_binding.get("worker_task_id") != projection.get("worker_task_id"):
             raise GatewayError("canonical authority worker task binding mismatch")
     if projection or contracts:
+        projection_worker_task_id = projection.get("worker_task_id") if isinstance(projection, Mapping) else None
         if (not isinstance(projection, Mapping) or not isinstance(projection_digest, str)
                 or _digest(projection) != projection_digest
                 or projection.get("decision_ref") != DEC007_DECISION_REF
-                or projection.get("worker_task_id") != DEC007_WORKER_TASK_ID
+                or not isinstance(projection_worker_task_id, str)
+                or not projection_worker_task_id
                 or projection.get("active_contract_count") != 3
                 or set(projection.get("operation_class_ids", [])) != set(DEC007_CONTRACT_IDS)
                 or projection.get("owned_scope_sha256") != owned_scope_digest(owned_files)):
@@ -311,7 +332,8 @@ def validate_gateway_request(payload: Mapping[str, Any], *, expected: Mapping[st
                 raise GatewayError("sealed authorization contract is invalid") from exc
             if (contract.contract_status != "ACTIVE"
                     or contract.contract_id != DEC007_CONTRACT_IDS.get(contract.operation_class_id)
-                    or contract.worker_task_id != DEC007_WORKER_TASK_ID
+                    or contract.worker_task_id != projection_worker_task_id
+                    or contract.plan_task_refs != (projection_worker_task_id,)
                     or contract.authorization_decision_ref != DEC007_DECISION_REF
                     or contract.project_id != payload.get("project_id")
                     or contract.gate_id != payload.get("gate_id")
@@ -648,19 +670,23 @@ class UnixSocketHostRunner:
                                 final_message_metadata={"exists": True, "nonempty": True, "security": "PASS"},
                                 worker_result_identity={"transport": TRANSPORT_CONTRACT_VERSION},
                                 execution_status="COMPLETED" if completed else "BLOCKED")
+                            process_evidence = {"exit_code": 0 if completed else 1, "termination": "EXITED",
+                                "transport_compatibility": outcome.get("compatibility", {}),
+                                "registry": outcome.get("registry", {}),
+                                "governed_effect_evidence": list(
+                                    outcome.get("governed_effect_evidence", [])
+                                ),
+                                "structured_events": {"contract_version": request["structured_event_contract_version"],
+                                    "event_type_counts": {"BROKER_NATIVE_TURN": 1},
+                                    "event_type_sequence_category": "BROKER_NATIVE",
+                                    "unknown_event_count": 0, "parse_error_count": 0,
+                                    "terminal_event_present": completed}}
+                            broker_block = _safe_broker_block(outcome.get("broker_block"))
+                            if broker_block is not None:
+                                process_evidence["broker_block"] = broker_block
                             response = {"execution_request_id": request["execution_request_id"],
                                 "request_digest": request["request_digest"], "adopted": False,
-                                "process_evidence": {"exit_code": 0 if completed else 1, "termination": "EXITED",
-                                    "transport_compatibility": outcome.get("compatibility", {}),
-                                    "registry": outcome.get("registry", {}),
-                                    "governed_effect_evidence": list(
-                                        outcome.get("governed_effect_evidence", [])
-                                    ),
-                                    "structured_events": {"contract_version": request["structured_event_contract_version"],
-                                        "event_type_counts": {"BROKER_NATIVE_TURN": 1},
-                                        "event_type_sequence_category": "BROKER_NATIVE",
-                                        "unknown_event_count": 0, "parse_error_count": 0,
-                                        "terminal_event_present": completed}},
+                                "process_evidence": process_evidence,
                                 "adapter_evidence": {"backend": HOST_GATEWAY, "contract_version": TRANSPORT_CONTRACT_VERSION,
                                     "strict": False, "structured_event_contract_version": request["structured_event_contract_version"],
                                     "codex_version": PINNED_CODEX_VERSION,

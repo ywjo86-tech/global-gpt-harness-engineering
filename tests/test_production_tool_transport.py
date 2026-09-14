@@ -1,12 +1,16 @@
 import tempfile
 import os
 import json
+import subprocess
+import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from runtime.orchestrator.codex_dynamic_transport import ToolRequestEnvelope
+from runtime.orchestrator.codex_dynamic_transport import CrashAfterDurableWrite, ToolRequestEnvelope
 from runtime.orchestrator.effect_evidence_bridge import verify_single_governed_write_effect
 from runtime.orchestrator.production_tool_transport import ProductionToolTransport, production_operations
+from runtime.orchestrator.production_worker_executor import _secret_findings
 from runtime.orchestrator.tool_authorization import activate_contract, build_dec007_approved_contracts
 
 
@@ -23,6 +27,15 @@ def active(operation):
     approved = build_dec007_approved_contracts(
         project_id="PROJECT_1", gate_id="GATE_1", lv_id="LV_1", run_id="RUN_1",
         canonical_plan_sha256="b" * 64, owned_files=("owned.txt",))
+    contract = next(item for item in approved if item.operation_class_id == operation.operation_class_id)
+    return activate_contract(contract, package_binding_sha256=PACKAGE,
+                             authorized_decisions={"DEC-007": "USER_DECISION"}).to_dict()
+
+
+def active_for_owned_files(operation, owned_files):
+    approved = build_dec007_approved_contracts(
+        project_id="PROJECT_1", gate_id="GATE_1", lv_id="LV_1", run_id="RUN_1",
+        canonical_plan_sha256="b" * 64, owned_files=tuple(owned_files))
     contract = next(item for item in approved if item.operation_class_id == operation.operation_class_id)
     return activate_contract(contract, package_binding_sha256=PACKAGE,
                              authorized_decisions={"DEC-007": "USER_DECISION"}).to_dict()
@@ -59,6 +72,7 @@ class ProductionToolTransportTests(unittest.TestCase):
             read = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_READ", "TASK-4A-08",
                 "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001"}, "CALL_1"))
             self.assertEqual(read.security_status, "PASS")
+            self.assertTrue(read.bounded_payload["exists"])
             self.assertEqual(read.bounded_payload["content"], "initial")
             write = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
                 "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "changed"}, "CALL_2"))
@@ -66,6 +80,41 @@ class ProductionToolTransportTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "changed")
             self.assertEqual(len(list((root / "journal").glob("*.intent.json"))), 2)
             self.assertEqual(len(list((root / "journal").glob("*.receipt.json"))), 2)
+
+    def test_owned_file_list_exposes_id_to_path_mapping_inside_approved_scope(self):
+        operations = production_operations()
+        owned_files = ["app/collectors/base.py", "app/collectors/adpick.py", "tests/test_adpick.py"]
+        contracts = [active_for_owned_files(item, owned_files) for item in operations]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self.request(root, contracts)
+            request["owned_files"] = owned_files
+            transport = ProductionToolTransport(request=request, workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            result = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_LIST", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {}, "CALL_LIST"))
+            self.assertEqual(result.status, "COMPLETED")
+            self.assertEqual(result.bounded_payload["owned_file_ids"],
+                             ["OWNED_0001", "OWNED_0002", "OWNED_0003"])
+            self.assertEqual(result.bounded_payload["owned_files"], [
+                {"owned_file_id": "OWNED_0001", "path": "app/collectors/base.py"},
+                {"owned_file_id": "OWNED_0002", "path": "app/collectors/adpick.py"},
+                {"owned_file_id": "OWNED_0003", "path": "tests/test_adpick.py"},
+            ])
+
+    def test_missing_approved_owned_file_reads_as_absent_without_weakening_identity(self):
+        operations = production_operations()
+        contracts = [active(item) for item in operations]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transport = ProductionToolTransport(request=self.request(root, contracts), workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            result = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_READ", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001"}, "CALL_MISSING"))
+            self.assertEqual(result.status, "COMPLETED")
+            self.assertEqual(result.bounded_payload, {"exists": False, "content": ""})
+            self.assertEqual(len(list((root / "journal").glob("*.intent.json"))), 1)
+            self.assertEqual(len(list((root / "journal").glob("*.receipt.json"))), 1)
 
     def test_missing_contract_and_unknown_operation_have_zero_effect(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -162,6 +211,73 @@ class ProductionToolTransportTests(unittest.TestCase):
             self.assertEqual(identity["lv_id"], PROOF97_LV)
             self.assertEqual(identity["run_id"], PROOF97_RUN)
 
+    @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
+                         "actual installed Codex proof97 crash/resume is opt-in")
+    def test_installed_codex_first_write_crash_then_same_run_resume_blocks_duplicate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); target = root / "owned.txt"; journal = root / "journal"
+            target.write_text("before", encoding="utf-8")
+            contracts = [proof97_active(item) for item in production_operations()]
+            first = ProductionToolTransport(request=self.proof97_request(root, contracts), workspace_root=root,
+                                            journal_root=journal, security_scan=lambda _: True)
+            with self.assertRaisesRegex(CrashAfterDurableWrite, "injected crash after durable write"):
+                first.run(
+                    prompt=("Call PROJECT_OWNED_FILE_WRITE exactly once with owned_file_id OWNED_0001 "
+                            "and content \"proof97 actual first write\". Then finish."),
+                    timeout=90, dynamic_operation_class_ids=("PROJECT_OWNED_FILE_WRITE",),
+                    crash_after_durable_write=True,
+                )
+            self.assertEqual(target.read_text(encoding="utf-8"), "proof97 actual first write")
+            restarted = ProductionToolTransport(request=self.proof97_request(root, contracts), workspace_root=root,
+                                                journal_root=journal, security_scan=lambda _: True)
+            result = restarted.run(
+                prompt=("Call PROJECT_OWNED_FILE_WRITE exactly once with owned_file_id OWNED_0001 "
+                        "and content \"proof97 actual duplicate write\". Then finish."),
+                timeout=90, dynamic_operation_class_ids=("PROJECT_OWNED_FILE_WRITE",),
+            )
+            self.assertEqual(result["completion"], "BROKER_BLOCKED")
+            self.assertEqual(target.read_text(encoding="utf-8"), "proof97 actual first write")
+            self.assertEqual(len(list(journal.glob("*.intent.json"))), 1)
+            self.assertEqual(len(list(journal.glob("*.receipt.json"))), 1)
+            self.assertEqual(len(restarted.governed_effect_evidence()), 1)
+
+    @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
+                         "actual installed Codex separate-process resume is opt-in")
+    def test_installed_codex_separate_process_crash_then_resume_blocks_duplicate(self):
+        child = (
+            "import json,sys; from pathlib import Path; "
+            "from runtime.orchestrator.production_tool_transport import ProductionToolTransport; "
+            "request=json.load(sys.stdin); root=Path(sys.argv[1]); journal=Path(sys.argv[2]); "
+            "transport=ProductionToolTransport(request=request, workspace_root=root, journal_root=journal, security_scan=lambda _: True); "
+            "result=transport.run(prompt=sys.argv[3], timeout=120, dynamic_operation_class_ids=('PROJECT_OWNED_FILE_WRITE',), crash_after_durable_write=(sys.argv[4]=='crash')); "
+            "print(json.dumps(result, sort_keys=True))"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); target = root / "owned.txt"; journal = root / "journal"
+            target.write_text("before", encoding="utf-8")
+            request = self.proof97_request(root, [proof97_active(item) for item in production_operations()])
+            first = subprocess.run(
+                [sys.executable, "-c", child, str(root), str(journal),
+                 "Call PROJECT_OWNED_FILE_WRITE exactly once with owned_file_id OWNED_0001 and content \"proof97 process first write\". Then finish.",
+                 "crash"],
+                input=json.dumps(request), text=True, capture_output=True, cwd=Path(__file__).resolve().parents[1],
+                check=False, timeout=180,
+            )
+            self.assertNotEqual(first.returncode, 0)
+            self.assertEqual(target.read_text(encoding="utf-8"), "proof97 process first write")
+            second = subprocess.run(
+                [sys.executable, "-c", child, str(root), str(journal),
+                 "Call PROJECT_OWNED_FILE_WRITE exactly once with owned_file_id OWNED_0001 and content \"proof97 process duplicate write\". Then finish.",
+                 "resume"],
+                input=json.dumps(request), text=True, capture_output=True, cwd=Path(__file__).resolve().parents[1],
+                check=False, timeout=180,
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(json.loads(second.stdout)["completion"], "BROKER_BLOCKED")
+            self.assertEqual(target.read_text(encoding="utf-8"), "proof97 process first write")
+            self.assertEqual(len(list(journal.glob("*.intent.json"))), 1)
+            self.assertEqual(len(list(journal.glob("*.receipt.json"))), 1)
+
     def test_dynamic_registry_can_be_closed_to_required_operation_subset(self):
         contracts = [active(item) for item in production_operations()]
         with tempfile.TemporaryDirectory() as directory:
@@ -177,6 +293,17 @@ class ProductionToolTransportTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 transport.registry.dynamic_specs(("UNKNOWN_OPERATION",))
 
+    def test_proof_crash_injection_requires_explicit_actual_transport_opt_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = [proof97_active(item) for item in production_operations()]
+            transport = ProductionToolTransport(request=self.proof97_request(root, contracts), workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT", None)
+                with self.assertRaisesRegex(Exception, "explicit actual-transport opt-in"):
+                    transport.run(prompt="unused", adapter=object(), crash_after_durable_write=True)
+
     def test_authorized_sensitive_result_blocks_after_one_effect_and_is_not_journaled_raw(self):
         operation = production_operations()[0]
         with tempfile.TemporaryDirectory() as directory:
@@ -189,6 +316,28 @@ class ProductionToolTransportTests(unittest.TestCase):
             receipt = next((root / "journal").glob("*.receipt.json")).read_text(encoding="utf-8")
             self.assertNotIn("fixture", receipt)
             self.assertIn('"security_status":"BLOCK"', receipt)
+
+    @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
+                         "actual installed Codex security boundary proof is opt-in")
+    def test_installed_codex_secret_like_write_is_blocked_without_raw_persistence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); target = root / "owned.txt"; journal = root / "journal"
+            target.write_text("before", encoding="utf-8")
+            contracts = [proof97_active(item) for item in production_operations()]
+            transport = ProductionToolTransport(
+                request=self.proof97_request(root, contracts), workspace_root=root,
+                journal_root=journal, security_scan=lambda value: not bool(_secret_findings(value)),
+            )
+            result = transport.run(prompt=(
+                "Call PROJECT_OWNED_FILE_WRITE exactly once with owned_file_id OWNED_0001 "
+                "and content \"api_key=fixture-secret-sentinel\". Then finish."),
+                timeout=90, dynamic_operation_class_ids=("PROJECT_OWNED_FILE_WRITE",))
+            self.assertEqual(result["completion"], "BROKER_BLOCKED")
+            self.assertEqual(target.read_text(encoding="utf-8"), "before")
+            records = "\n".join(path.read_text(encoding="utf-8") for path in journal.glob("*.json"))
+            self.assertNotIn("fixture-secret-sentinel", records)
+            self.assertEqual(len(list(journal.glob("*.intent.json"))), 1)
+            self.assertEqual(len(list(journal.glob("*.receipt.json"))), 1)
 
     @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
                          "actual installed Codex broker integration is opt-in")

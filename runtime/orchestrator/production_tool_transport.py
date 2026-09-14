@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
-from .codex_dynamic_transport import CodexAppServerAdapter, ToolRequestEnvelope, ToolResultEnvelope
+from .codex_dynamic_transport import (
+    CrashAfterDurableWrite, CodexAppServerAdapter, ToolRequestEnvelope, ToolResultEnvelope,
+)
 from .effect_evidence_bridge import collect_governed_write_effect_evidence
 from .tool_authorization import (
-    DEC007_WORKER_TASK_ID,
     ClosedOperationRegistry, OperationIdentity, RegisteredOperation, SingleToolBroker,
     ToolAuthorizationContract, ToolAuthorizationError, ToolEffectJournal, owned_scope_digest,
 )
@@ -25,15 +27,19 @@ def production_operations() -> tuple[RegisteredOperation, ...]:
         RegisteredOperation("REG_PROJECT_READ_V1", _READ, "FILE_READ", "READ", "READ_ONLY",
             {"type": "object", "properties": {"owned_file_id": file_id},
              "required": ["owned_file_id"], "additionalProperties": False},
-            {"type": "object", "properties": {"content": {"type": "string"}}, "additionalProperties": False}),
+            {"type": "object", "properties": {
+                "exists": {"type": "boolean"}, "content": {"type": "string"},
+            }, "required": ["exists", "content"], "additionalProperties": False}),
         RegisteredOperation("REG_PROJECT_WRITE_V1", _WRITE, "FILE_WRITE", "WRITE", "PROJECT_WRITE",
             {"type": "object", "properties": {"owned_file_id": file_id, "content": {"type": "string"}},
              "required": ["owned_file_id", "content"], "additionalProperties": False},
             {"type": "object", "properties": {"status": {"type": "string"}}, "additionalProperties": False}),
         RegisteredOperation("REG_PROJECT_LIST_V1", _LIST, "FILE_READ", "READ", "READ_ONLY",
             {"type": "object", "properties": {}, "additionalProperties": False},
-            {"type": "object", "properties": {"owned_file_ids": {"type": "array"}},
-             "additionalProperties": False}),
+            {"type": "object", "properties": {
+                "owned_file_ids": {"type": "array"},
+                "owned_files": {"type": "array"},
+            }, "additionalProperties": False}),
     )
 
 
@@ -89,8 +95,11 @@ class ProductionToolTransport:
 
     def _read(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         target = self._target(arguments.get("owned_file_id"))
-        if not target.is_file(): raise ToolAuthorizationError("owned file is unavailable")
-        return {"content": target.read_text(encoding="utf-8")}
+        if not target.exists():
+            return {"exists": False, "content": ""}
+        if not target.is_file():
+            raise ToolAuthorizationError("owned file is unavailable")
+        return {"exists": True, "content": target.read_text(encoding="utf-8")}
 
     def _write(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         target = self._target(arguments.get("owned_file_id")); content = arguments.get("content")
@@ -104,7 +113,13 @@ class ProductionToolTransport:
 
     def _list(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         if arguments: raise ToolAuthorizationError("list operation arguments are invalid")
-        return {"owned_file_ids": sorted(self.file_bindings)}
+        return {
+            "owned_file_ids": sorted(self.file_bindings),
+            "owned_files": [
+                {"owned_file_id": file_id, "path": self.file_bindings[file_id]}
+                for file_id in sorted(self.file_bindings)
+            ],
+        }
 
     def _identity(self, envelope: ToolRequestEnvelope, *, scope_ref: str = "") -> OperationIdentity:
         operation = self.registry.resolve(envelope.operation_class_id)
@@ -160,13 +175,27 @@ class ProductionToolTransport:
         )
 
     def run(self, *, prompt: str, adapter: CodexAppServerAdapter | None = None,
-            timeout: int = 180, dynamic_operation_class_ids: tuple[str, ...] | None = None) -> Mapping[str, Any]:
+            timeout: int = 180, dynamic_operation_class_ids: tuple[str, ...] | None = None,
+            crash_after_durable_write: bool = False) -> Mapping[str, Any]:
         adapter = adapter or CodexAppServerAdapter()
+        if (crash_after_durable_write
+                and os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") != "1"):
+            raise ToolAuthorizationError("proof crash injection requires explicit actual-transport opt-in")
+
+        def handle(envelope: ToolRequestEnvelope) -> ToolResultEnvelope:
+            result = self.handle(envelope)
+            if (crash_after_durable_write and envelope.operation_class_id == _WRITE
+                    and result.status == "COMPLETED"):
+                raise CrashAfterDurableWrite("injected crash after durable write")
+            return result
+
         outcome = dict(adapter.run_turn(
             prompt=prompt,
             dynamic_tools=self.registry.dynamic_specs(dynamic_operation_class_ids),
-            tool_handler=self.handle,
-            worker_task_id=DEC007_WORKER_TASK_ID,
+            tool_handler=handle,
+            worker_task_id=str(
+                self.request.get("tool_authorization_projection", {}).get("worker_task_id", "")
+            ),
             worker_action_id="PRODUCTION_WORKER_TURN",
             timeout=timeout,
         ))

@@ -201,7 +201,7 @@ def authorize_tool_operation(contract: ToolAuthorizationContract | None,
 
 def owned_scope_digest(owned_files: Sequence[str]) -> str:
     if (not isinstance(owned_files, Sequence) or isinstance(owned_files, (str, bytes))
-            or not owned_files or any(not isinstance(item, str) or not item for item in owned_files)
+            or any(not isinstance(item, str) or not item for item in owned_files)
             or len(set(owned_files)) != len(owned_files)):
         raise ToolAuthorizationError("approved owned scope is missing or malformed")
     return _digest(sorted(owned_files))
@@ -218,10 +218,12 @@ def dec007_requirement_digest(operation_class_id: str) -> str:
 
 def build_dec007_approved_contracts(*, project_id: str, gate_id: str, lv_id: str,
                                     run_id: str, canonical_plan_sha256: str,
-                                    owned_files: Sequence[str]) -> tuple[ToolAuthorizationContract, ...]:
+                                    owned_files: Sequence[str],
+                                    worker_task_id: str = DEC007_WORKER_TASK_ID) -> tuple[ToolAuthorizationContract, ...]:
     """Build the exact user-approved DEC-007 set; activation remains package-owned."""
     for value, field in ((project_id, "project_id"), (gate_id, "gate_id"),
-                         (lv_id, "lv_id"), (run_id, "run_id")):
+                         (lv_id, "lv_id"), (run_id, "run_id"),
+                         (worker_task_id, "worker_task_id")):
         _safe_id(value, field)
     if not _SHA.fullmatch(canonical_plan_sha256):
         raise ToolAuthorizationError("DEC-007 canonical plan binding is invalid")
@@ -237,8 +239,8 @@ def build_dec007_approved_contracts(*, project_id: str, gate_id: str, lv_id: str
         contracts.append(ToolAuthorizationContract(
             contract_id=DEC007_CONTRACT_IDS[operation_class_id],
             contract_version=TOOL_AUTH_CONTRACT_VERSION, contract_status="APPROVED",
-            worker_task_id=DEC007_WORKER_TASK_ID, requirement_refs=refs,
-            plan_task_refs=(DEC007_WORKER_TASK_ID,), operation_class_id=operation_class_id,
+            worker_task_id=worker_task_id, requirement_refs=refs,
+            plan_task_refs=(worker_task_id,), operation_class_id=operation_class_id,
             capability_class=capability, operation_intent=intent, requirement_binding="REQUIRED",
             scope_binding="IN_SCOPE", scope_authorization_source="USER_DECISION",
             authorization_decision_ref=DEC007_DECISION_REF, validity_scope="TASK_ONLY",
@@ -556,7 +558,14 @@ class SingleToolBroker:
         if launcher is None:
             raise ToolAuthorizationError("registered launcher unavailable")
         effect_id = self.journal.begin(identity, authorization, scope_ref=scope_ref)
-        raw_private_result = launcher(dict(arguments))
+        try:
+            raw_private_result = launcher(dict(arguments))
+        except Exception:
+            # A begun effect must always reach a bounded terminal receipt.  In
+            # particular, a launcher-side security rejection must not leave an
+            # intent stranded as recovery-ambiguous evidence.
+            self.journal.complete(identity, execution_status="FAILED", security_status="BLOCK")
+            raise
         security_ok = bool(self.security_scan(raw_private_result))
         self.journal.complete(identity, execution_status="COMPLETED",
                               security_status="PASS" if security_ok else "BLOCK")

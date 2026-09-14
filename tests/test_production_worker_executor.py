@@ -24,6 +24,7 @@ from runtime.orchestrator.production_worker_executor import (
     _test_runner_metadata,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
+from runtime.orchestrator.lv_execution_package import canonical_json_bytes
 
 
 def _valid_structured_stdout(*, agent_text: str = "completed") -> bytes:
@@ -137,16 +138,23 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); request=self._fixture(root)
             python=root/".venv/bin/python"; pytest=root/".venv/bin/pytest"
-            python.write_text("#!/bin/sh\nif [ \"$1\" = \"-m\" ] && [ \"$2\" = \"pytest\" ]; then exit 17; fi\nexec python3 \"$@\"\n")
-            pytest.write_text("#!/bin/sh\nexit 0\n")
+            python.write_text("#!/bin/sh\nif [ \"$1\" = \"-m\" ] && [ \"$2\" = \"pytest\" ]; then exec python3 -m unittest discover -s tests -q; fi\nexec python3 \"$@\"\n")
+            pytest.write_text("#!/bin/sh\nexit 17\n")
             python.chmod(0o755); pytest.chmod(0o755)
             def runner(*args, **kwargs):
                 (root/"app").mkdir(); (root/"tests").mkdir()
                 (root/"app/x.py").write_text("x=1\n")
                 (root/"tests/test_x.py").write_text("def test_x(): assert True\n")
                 return subprocess.CompletedProcess(args[0],0,b"ok",b"")
-            result=execute_production_worker(request,executor=runner)
+            commands = []
+            def command(root_arg, argv, timeout=900, **kwargs):
+                commands.append(argv)
+                return {"command": argv, "exit_code": 0, "timeout": False,
+                        "stdout_sha256": "c" * 64, "stderr_sha256": "d" * 64}
+            with patch("runtime.orchestrator.production_worker_executor._command", side_effect=command):
+                result=execute_production_worker(request,executor=runner)
             self.assertEqual(result["independent_verification_status"], "PASS")
+            self.assertIn([str(python), "-m", "pytest", "-q", "tests/test_x.py"], commands)
             process=json.loads((root/"out/executor.process.json").read_text())
             self.assertEqual(process["worker_verification_failure_step"], "NONE")
             self.assertEqual(process["worker_verification_last_successful_step"], "DIFF_CHECK_EXECUTION")
@@ -1419,6 +1427,9 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             self.assertIn("Task effect requirement: MUTATION_REQUIRED", prompt)
             self.assertIn("Approved change-target count: 2", prompt)
             self.assertIn("a governed WRITE is required", prompt)
+            self.assertIn("do not stop after listing the scope", prompt)
+            self.assertIn("create the minimal target-state content through governed WRITE", prompt)
+            self.assertIn("limited to the mapped owned_file_id values", prompt)
 
     def test_runtime_prompt_artifact_matches_stdin_bytes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1504,6 +1515,60 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             self.assertEqual(set(result["changed_files"]),{"app/x.py","tests/test_x.py"})
             self.assertEqual(result["validation_events"], ["VALIDATION_STARTED", "FOCUSED_TEST_COMPLETED", "FULL_REGRESSION_COMPLETED", "WORKER_RESULT_SEALED"])
             self.assertFalse(subprocess.check_output(["git","-C",root,"status","--porcelain"],text=True))
+
+    def test_verification_only_authority_allows_zero_delta_after_independent_checks(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); request = self._fixture(root)
+            request.extra_context.update({
+                "task_effect_requirement": "NONE_SATISFIED",
+                "allow_verification_only": True,
+                "canonical_authority_binding": {"execution_obligation": "NONE_SATISFIED"},
+                "canonical_authority_binding_digest": "c" * 64,
+            })
+            ok = lambda root, argv, timeout=900, **kwargs: {"command": argv, "exit_code": 0, "timeout": False,
+                                                              "stdout_sha256": "c" * 64, "stderr_sha256": "d" * 64}
+            with patch("runtime.orchestrator.production_worker_executor._command", side_effect=ok):
+                result = execute_production_worker(
+                    request,
+                    executor=lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, b"ok", b""),
+                )
+            self.assertEqual(result["completion_mode"], "VERIFICATION_ONLY")
+            self.assertEqual(result["changed_files"], [])
+            self.assertEqual(result["checkpoint_commit"], request.state_snapshot["head"])
+
+    def test_verification_only_does_not_invoke_the_host_worker(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); request = self._fixture(root)
+            request.extra_context.update({
+                "execution_backend": "HOST_GATEWAY",
+                "run_root": str(root / "durable-run"),
+                "task_effect_requirement": "NONE_SATISFIED",
+                "allow_verification_only": True,
+                "canonical_authority_binding": {"execution_obligation": "NONE_SATISFIED"},
+                "canonical_authority_binding_digest": "c" * 64,
+            })
+            ok = lambda root, argv, timeout=900, **kwargs: {"command": argv, "exit_code": 0, "timeout": False,
+                                                              "stdout_sha256": "c" * 64, "stderr_sha256": "d" * 64}
+            with patch("runtime.orchestrator.production_worker_executor._command", side_effect=ok):
+                result = execute_production_worker(
+                    request,
+                    gateway_transport=lambda *args, **kwargs: self.fail("Host Worker must not run"),
+                )
+            process = json.loads((root / "out/executor.process.json").read_text())
+            self.assertEqual(result["completion_mode"], "VERIFICATION_ONLY")
+            self.assertEqual(process["execution_backend"], "VERIFICATION_ONLY")
+            self.assertEqual(process["governed_effect_evidence"], [])
+            self.assertEqual(process["final_message_target"]["staging_binding"], "NOT_APPLICABLE_VERIFICATION_ONLY")
+
+    def test_verification_only_requires_the_sealed_none_satisfied_binding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); request = self._fixture(root)
+            request.extra_context.update({"allow_verification_only": True, "task_effect_requirement": "NONE_SATISFIED"})
+            with self.assertRaisesRegex(ProductionWorkerError, "no product changes"):
+                execute_production_worker(
+                    request,
+                    executor=lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, b"ok", b""),
+                )
 
     def test_out_of_scope_commit_is_rejected(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1649,9 +1714,17 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); request=self._fixture(root)
             python=root/".venv/bin/python"; pytest=root/".venv/bin/pytest"
-            python.write_text("#!/bin/sh\nexec python3 \"$@\"\n"); pytest.write_text("#!/bin/sh\nexec python3 -m unittest discover -s tests -q\n")
+            python.write_text("#!/bin/sh\nif [ \"$1\" = \"-m\" ] && [ \"$2\" = \"pytest\" ]; then exec python3 -m unittest discover -s tests -q; fi\nexec python3 \"$@\"\n"); pytest.write_text("#!/bin/sh\nexit 17\n")
             python.chmod(0o755); pytest.chmod(0o755)
             result=execute_production_worker(request,timeout=300)
             self.assertEqual(result["status"],"completed")
             self.assertEqual(result["executor"]["identity"],EXECUTOR_ID)
             self.assertTrue(result["checkpoint_commit"])
+            self.assertEqual(result["baseline_head"], request.extra_context["source_snapshot"]["source_head"])
+            self.assertNotEqual(result["current_head"], result["baseline_head"])
+            self.assertTrue(result["baseline_tree"])
+            self.assertTrue(result["current_tree"])
+            self.assertEqual(result["review_verdict"], "PASS")
+            self.assertEqual(result["artifact_sha_chain"]["request"],
+                             hashlib.sha256(canonical_json_bytes(request.to_dict())).hexdigest())
+            self.assertTrue(result["artifact_sha_chain"]["process_evidence"])

@@ -105,17 +105,26 @@ def _approved_owned_files(values: list[str]) -> list[str]:
     return [_validated_project_path(value) for value in values]
 
 
-def _declared_owned_files(summary_row: dict[str, str], detail_row: dict[str, str]) -> list[str]:
+def _declared_owned_files(
+    summary_row: dict[str, str],
+    detail_row: dict[str, str],
+    *,
+    allow_empty: bool = False,
+) -> list[str]:
     summary_paths = re.findall(r"`([^`]+)`", summary_row.get("대상", ""))
     detail_owned = detail_row.get("owned_files", "")
     detail_paths = re.findall(r"`([^`]+)`", detail_owned)
-    declared = list(dict.fromkeys(summary_paths + detail_paths))
+    declared = list(dict.fromkeys(detail_paths + summary_paths))
     if "관련 테스트" in detail_owned:
-        app_paths = [path for path in declared if path.startswith("app/") and path.endswith(".py")]
-        if len(app_paths) != 1:
+        summary_app_paths = [path for path in summary_paths if path.startswith("app/") and path.endswith(".py")]
+        declared_app_paths = [path for path in declared if path.startswith("app/") and path.endswith(".py")]
+        if len(summary_app_paths) == 1:
+            declared.append(f"tests/test_{PurePosixPath(summary_app_paths[0]).stem}.py")
+        elif len(declared_app_paths) == 1:
+            declared.append(f"tests/test_{PurePosixPath(declared_app_paths[0]).stem}.py")
+        elif not declared_app_paths:
             raise LVPreviewValidationError("related test ownership is ambiguous")
-        declared.append(f"tests/test_{PurePosixPath(app_paths[0]).stem}.py")
-    if not declared:
+    if not declared and not allow_empty:
         raise LVPreviewValidationError("canonical plan does not declare owned files")
     return [_validated_project_path(value) for value in dict.fromkeys(declared)]
 
@@ -142,7 +151,7 @@ def parse_lv_definition(
         )
 
     approved = _approved_owned_files(approved_owned_files)
-    declared = _declared_owned_files(summary_rows[0], detail_rows[0])
+    declared = _declared_owned_files(summary_rows[0], detail_rows[0], allow_empty=not approved)
     if declared != approved:
         raise LVPreviewValidationError(
             f"canonical plan owned files do not match approved owned files: declared={declared}, approved={approved}"

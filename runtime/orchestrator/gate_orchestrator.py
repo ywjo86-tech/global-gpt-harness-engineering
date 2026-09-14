@@ -119,6 +119,36 @@ def _atomic_json(path: Path, payload: object, *, overwrite: bool = False) -> str
     return digest
 
 
+def _stable_run_binding(binding: RunBinding | Mapping[str, Any]) -> dict[str, Any]:
+    """Return immutable run identity, excluding mutable owned-file content."""
+    payload = binding.payload() if isinstance(binding, RunBinding) else dict(binding)
+    return {key: value for key, value in payload.items() if key != "owned_content_sha256"}
+
+
+def _find_exact_resume_namespace(
+    resume_root: Path,
+    binding: RunBinding,
+) -> tuple[Path, Path] | None:
+    """Find an existing resume namespace only when its immutable identity matches.
+
+    A worker checkpoint can advance HEAD, leaving an adoption-keyed namespace that
+    is present but stale for a sealed package. Presence alone must not prevent a
+    restart from locating a different namespace with the exact sealed binding.
+    """
+    expected = _stable_run_binding(binding)
+    for namespace in sorted(resume_root.iterdir()) if resume_root.is_dir() else ():
+        candidate = namespace / binding.project_id / binding.gate_id / binding.lv_id / binding.run_id / "events" / "000001.json"
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        try:
+            persisted = json.loads(candidate.read_text(encoding="utf-8")).get("binding")
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(persisted, dict) and _stable_run_binding(persisted) == expected:
+            return namespace, candidate
+    return None
+
+
 def _load_capability_checkpoint(path: Path, *, project_id: str, gate_id: str, lv_id: str,
                                 canonical_plan_sha256: str) -> dict[str, Mapping[str, Any]]:
     if not path.exists():
@@ -455,9 +485,22 @@ def _validate_resume_capability_filesystem(handoff: Mapping[str, Any]) -> None:
         raise GateOrchestrationError("resumed capability manifest digest drift")
 
 
+def _full_plan_preflight_projection(authorization: GateAuthorization) -> dict[str, Any]:
+    """Return the authorization-derived, non-executing Full Plan preflight record."""
+    return {
+        "requested_mode": authorization.mode,
+        "full_plan_requested": authorization.mode == FULL_PLAN,
+        "full_plan_eligible": authorization.mode == FULL_PLAN,
+        "full_plan_opt_in": authorization.full_plan_opt_in,
+        "project_final_validation": authorization.project_final_validation,
+        "mutation_performed": False,
+    }
+
+
 def structured_handoff(plan: GatePlan, authorization: GateAuthorization, *, lv_id: str, run_id: str, branch: str, head: str, completed_plan_items: list[str], remaining_plan_items: list[str], changed_files: list[str], tests: list[dict[str, Any]], review: dict[str, Any], artifact_sha256: str, used_assets: list[str], recovery: dict[str, Any]) -> dict[str, Any]:
+    full_plan_preflight = _full_plan_preflight_projection(authorization)
     fields = {
-        "schema_version": "orchestration.gate.handoff.v1", "project": plan.project_id, "gate": plan.gate_id, "lv": lv_id, "run_id": run_id,
+        "schema_version": "orchestration.gate.handoff.v2", "project": plan.project_id, "gate": plan.gate_id, "lv": lv_id, "run_id": run_id,
         "canonical_plan_sha256": plan.canonical_plan_sha256, "branch": branch, "head": head,
         "completed_plan_items": completed_plan_items, "remaining_plan_items": remaining_plan_items,
         "owned_files": authorization.owned_files_by_lv[lv_id], "changed_files": changed_files,
@@ -467,7 +510,7 @@ def structured_handoff(plan: GatePlan, authorization: GateAuthorization, *, lv_i
         "authorization": {"id": authorization.authorization_id, "derived": True},
         "prohibitions": ["non-owned change", "next Gate without authorization", "artifact overwrite", "secret access"],
         "used_assets": used_assets, "asset_selection_reason": "existing assets before capability-gap creation",
-        "recovery_checkpoint": recovery, "hard_stop": True,
+        "recovery_checkpoint": recovery, "full_plan_preflight": full_plan_preflight, "hard_stop": True,
     }
     fields["handoff_sha256"] = _canonical_hash(fields)
     return fields
@@ -475,11 +518,20 @@ def structured_handoff(plan: GatePlan, authorization: GateAuthorization, *, lv_i
 
 def validate_handoff(handoff: dict[str, Any], plan: GatePlan, authorization: GateAuthorization) -> None:
     required = {"schema_version", "project", "gate", "lv", "run_id", "canonical_plan_sha256", "branch", "head", "completed_plan_items", "remaining_plan_items", "owned_files", "changed_files", "tests", "review", "artifact_sha256", "known_issues", "deferred_items", "next_stage_input", "next_stage_completion_criteria", "authorization", "prohibitions", "used_assets", "asset_selection_reason", "recovery_checkpoint", "hard_stop", "handoff_sha256"}
+    schema_version = handoff.get("schema_version")
+    if schema_version == "orchestration.gate.handoff.v2":
+        required.add("full_plan_preflight")
+    elif schema_version != "orchestration.gate.handoff.v1":
+        raise GateOrchestrationError("unsupported structured handoff schema")
     if set(handoff) != required: raise GateOrchestrationError("structured handoff required field mismatch")
     unsigned = {key: value for key, value in handoff.items() if key != "handoff_sha256"}
     if handoff["handoff_sha256"] != _canonical_hash(unsigned): raise GateOrchestrationError("structured handoff SHA mismatch")
     if handoff["project"] != plan.project_id or handoff["gate"] != plan.gate_id or handoff["canonical_plan_sha256"] != plan.canonical_plan_sha256:
         raise GateOrchestrationError("structured handoff project/Gate/plan mismatch")
+    if schema_version == "orchestration.gate.handoff.v2":
+        expected_preflight = _full_plan_preflight_projection(authorization)
+        if handoff["full_plan_preflight"] != expected_preflight:
+            raise GateOrchestrationError("structured handoff Full Plan preflight mismatch")
     validate_owned_access(authorization, handoff["lv"], handoff["changed_files"])
 
 
@@ -502,15 +554,29 @@ def select_assets(global_assets: list[Mapping[str, Any]], project_assets: list[M
             "global_creation_authorized": False}
 
 
-def compatibility_dry_run(project_root: str | Path, gate_id: str, *, mode: str = GATE_BY_GATE) -> dict[str, Any]:
+def compatibility_dry_run(
+    project_root: str | Path,
+    gate_id: str,
+    *,
+    mode: str = GATE_BY_GATE,
+    full_plan_opt_in: bool = False,
+    project_final_validation: bool = False,
+) -> dict[str, Any]:
+    """Validate a Gate mode without activating it or writing lifecycle state."""
     root, project_id = _safe_project(project_root)
     try:
         plan = load_gate_plan(root, gate_id)
-        authorization = create_gate_authorization(plan, "DRY-RUN", mode=mode)
+        authorization = create_gate_authorization(
+            plan,
+            "DRY-RUN",
+            mode=mode,
+            full_plan_opt_in=full_plan_opt_in,
+            project_final_validation=project_final_validation,
+        )
         ledger = initial_ledger(plan); validate_ledger(plan, ledger)
-        return {"status": "COMPATIBLE", "project_id": project_id, "gate_id": gate_id, "plan_sha256": plan.canonical_plan_sha256, "lv_order": authorization.lv_order, "mutation_performed": False, "default_mode": GATE_BY_GATE, "full_plan_active": False}
+        return {"status": "COMPATIBLE", "project_id": project_id, "gate_id": gate_id, "plan_sha256": plan.canonical_plan_sha256, "lv_order": authorization.lv_order, "mutation_performed": False, "default_mode": GATE_BY_GATE, "full_plan_requested": mode == FULL_PLAN, "full_plan_eligible": authorization.mode == FULL_PLAN, "full_plan_active": False}
     except Exception as exc:
-        return {"status": "BLOCKED", "project_id": project_id, "gate_id": gate_id, "reason": str(exc), "mutation_performed": False, "default_mode": GATE_BY_GATE, "full_plan_active": False}
+        return {"status": "BLOCKED", "project_id": project_id, "gate_id": gate_id, "reason": str(exc), "mutation_performed": False, "default_mode": GATE_BY_GATE, "full_plan_requested": mode == FULL_PLAN, "full_plan_eligible": False, "full_plan_active": False}
 
 
 def onboarding_dry_run(project_root: str | Path, alias: str) -> dict[str, Any]:
@@ -857,8 +923,12 @@ def resolve_canonical_owned_scope(
         status.update(canonical_owned_scope_status="MISMATCH", current_lv_binding_status="MISMATCH")
         raise GateControllerError("manual worker prompt owned files are missing or malformed")
     status["current_lv_binding_status"] = "EXACT"
-    if not isinstance(approved, list) or not approved:
-        status["canonical_owned_scope_status"] = "EMPTY" if approved == [] else "MISSING"
+    # A Gate Exit Review may be an evidence-only LV: its canonical plan and
+    # approval both intentionally carry an empty owned-file scope.  Empty is
+    # therefore valid only when it exactly matches the plan below; a missing
+    # scope remains fail-closed.
+    if not isinstance(approved, list):
+        status["canonical_owned_scope_status"] = "MISSING"
         raise GateControllerError("manual worker prompt owned files are missing or malformed")
     try:
         canonical = [_safe_scope(value) for value in approved]
@@ -1152,30 +1222,25 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         # A worker checkpoint may advance Git HEAD after the original binding
         # was sealed.  On verified restart, locate only an existing namespace
         # with the exact run binding instead of deriving a new adoption store.
-        if context.get("resume") and not event_one.is_file():
-            resume_root = Path(harness_root) / "_workspace" / "global-gate-resume"
-            for namespace in resume_root.iterdir() if resume_root.is_dir() else ():
-                candidate = namespace / plan.project_id / plan.gate_id / lv_id / run_id / "events" / "000001.json"
-                if candidate.is_symlink() or not candidate.is_file():
-                    continue
+        if context.get("resume"):
+            current_matches = False
+            if event_one.is_file() and not event_one.is_symlink():
                 try:
-                    persisted_binding = json.loads(candidate.read_text(encoding="utf-8")).get("binding", {})
+                    persisted = json.loads(event_one.read_text(encoding="utf-8")).get("binding")
+                    current_matches = isinstance(persisted, dict) and _stable_run_binding(persisted) == _stable_run_binding(binding)
                 except (OSError, UnicodeError, json.JSONDecodeError):
-                    continue
-                if (persisted_binding.get("project_id") == plan.project_id
-                        and persisted_binding.get("gate_id") == plan.gate_id
-                        and persisted_binding.get("lv_id") == lv_id
-                        and persisted_binding.get("run_id") == run_id
-                        and persisted_binding.get("plan_sha256") == plan.canonical_plan_sha256
-                        and persisted_binding.get("requirements_sha256") == str(context["requirements_sha256"])):
-                    store_base, event_one = namespace, candidate
-                    break
+                    current_matches = False
+            if not current_matches:
+                resume_root = Path(harness_root) / "_workspace" / "global-gate-resume"
+                matched = _find_exact_resume_namespace(resume_root, binding)
+                if matched is not None:
+                    store_base, event_one = matched
         if event_one.is_file() and not event_one.is_symlink():
             persisted = json.loads(event_one.read_text(encoding="utf-8")).get("binding")
             if not isinstance(persisted, dict):
                 raise GateControllerError("persisted run binding is malformed")
-            stable = {key:value for key,value in binding.payload().items() if key != "owned_content_sha256"}
-            if {key:value for key,value in persisted.items() if key != "owned_content_sha256"} != stable:
+            stable = _stable_run_binding(binding)
+            if _stable_run_binding(persisted) != stable:
                 raise GateControllerError("persisted run binding identity drift")
             binding = RunBinding(**persisted)
         store = ResumeStore(store_base, binding)
@@ -1299,13 +1364,24 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             manifest=manifest, recovery_package=None, recovery_preflight=None,
             context=_, plan=plan, lv_id=lv_id, run_id=run_id,
         )
+        missing_owned_targets = [
+            path for path in manifest.get("owned_files", [])
+            if isinstance(path, str) and not (root / path).exists()
+        ]
+        execution_obligation = str(
+            canonical_extra["canonical_authority_binding"].get("execution_obligation", "MUTATION_REQUIRED")
+        )
+        if missing_owned_targets:
+            execution_obligation = "MUTATION_REQUIRED"
         request = WorkerRequest(
             project_root=str(root), task=task,
             contract_summary={"project_id": plan.project_id, "gate_id": plan.gate_id, "lv_id": lv_id,
                               "canonical_plan_sha256": plan.canonical_plan_sha256},
             state_snapshot={"branch": "sealed", "head": str(manifest.get("source_head", ""))},
             extra_context={"execution_mode": "production", "execution_backend": "HOST_GATEWAY", "run_id": run_id, "run_root": str(package_root),
-                           "task_effect_requirement":"MUTATION_REQUIRED","change_target_count":len(manifest.get("owned_files", [])),
+                           "task_effect_requirement": execution_obligation,
+                           "allow_verification_only": execution_obligation == "NONE_SATISFIED",
+                           "change_target_count":len(manifest.get("owned_files", [])),
                            "package_manifest_sha256": package_sha,
                            "preflight_evidence_sha256": state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"),
                            "attempt": 1,

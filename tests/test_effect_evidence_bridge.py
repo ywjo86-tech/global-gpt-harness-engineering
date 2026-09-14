@@ -175,7 +175,7 @@ class EffectEvidenceBridgeTests(unittest.TestCase):
                 "initial",
             )
 
-    def test_incomplete_write_intent_is_recovery_ambiguous(self):
+    def test_blocked_write_intent_gets_bounded_terminal_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "owned.txt").write_text("initial", encoding="utf-8")
@@ -196,18 +196,16 @@ class EffectEvidenceBridgeTests(unittest.TestCase):
             )
             self.assertEqual(
                 len(list((root / "journal").glob("*.receipt.json"))),
-                0,
+                1,
             )
-            with self.assertRaises(EffectEvidenceBridgeError) as caught:
-                collect_governed_write_effect_evidence(
-                    root / "journal",
-                    active_write_contract=write_contract(),
-                    expected_owned_scope=("owned.txt",),
-                )
-            self.assertEqual(
-                caught.exception.reason_taxonomy,
-                "EFFECT_EVIDENCE_RECOVERY_AMBIGUOUS",
+            evidence = collect_governed_write_effect_evidence(
+                root / "journal",
+                active_write_contract=write_contract(),
+                expected_owned_scope=("owned.txt",),
             )
+            self.assertEqual(len(evidence), 1)
+            self.assertFalse(evidence[0].security_passed)
+            self.assertFalse(evidence[0].mutation_performed)
 
     def test_single_governed_write_verifier_passes_only_exactly_once(self):
         with tempfile.TemporaryDirectory() as directory:

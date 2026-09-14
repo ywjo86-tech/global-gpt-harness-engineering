@@ -195,7 +195,7 @@ def _worker_prompt(manifest: dict[str, Any]) -> str:
     ):
         raise LVExecutionPackageError("manual worker prompt Stage contract is missing or malformed")
     owned_files = manifest.get("owned_files")
-    if not isinstance(owned_files, list) or not owned_files or len(set(owned_files)) != len(owned_files):
+    if not isinstance(owned_files, list) or len(set(owned_files)) != len(owned_files):
         raise LVExecutionPackageError("manual worker prompt owned files are missing or malformed")
     for item in owned_files:
         if (
@@ -212,11 +212,15 @@ def _worker_prompt(manifest: dict[str, Any]) -> str:
         for item in owned_files
         if item.startswith("tests/") and PurePosixPath(item).name.startswith("test_") and item.endswith(".py")
     ]
-    if not focused_tests:
+    if owned_files and not focused_tests:
         raise LVExecutionPackageError("manual worker prompt has no owned focused test")
-    owned = "\n".join(f"- {item}" for item in owned_files)
+    owned = "\n".join(f"- {item}" for item in owned_files) or "- none"
     checks = "\n".join(f"- {item}" for item in completion_checks)
-    focused_command = shlex.join([".venv/bin/python", "-m", "pytest", "-q", *focused_tests])
+    focused_command = (
+        shlex.join([".venv/bin/python", "-m", "pytest", "-q", *focused_tests])
+        if focused_tests
+        else "No focused owned-file test declared for this LV"
+    )
     full_command = ".venv/bin/python -m pytest -q"
     return (
         "# Manual LV Worker Package\n\n"
@@ -400,9 +404,11 @@ def create_lv_execution_package(
     if mapping is None:
         raise LVExecutionPackageError("a project contract mapping is required")
     canonical_state = dict(canonical_state_override) if canonical_state_override is not None else evaluate_canonical_state(mapping)
-    for field in ("gate_id", "approval_id", "approval_record_hash", "checkpoint_commit", "selected_source", "canonical_plan", "plan_sha256", "active_scope", "owned_files"):
+    for field in ("gate_id", "approval_id", "approval_record_hash", "checkpoint_commit", "selected_source", "canonical_plan", "plan_sha256", "active_scope"):
         if canonical_state.get(field) in (None, "", []):
             raise LVExecutionPackageError(f"canonical lifecycle evidence is missing: {field}")
+    if not isinstance(canonical_state.get("owned_files"), list):
+        raise LVExecutionPackageError("canonical lifecycle evidence is missing: owned_files")
     if canonical_state.get("gate_id") != gate_id or canonical_state.get("active_scope") != [lv_id]:
         raise LVExecutionPackageError("canonical lifecycle evidence does not match the requested Gate/LV")
     ledger = _ledger_binding(root, mapping, canonical_state)
@@ -436,6 +442,7 @@ def create_lv_execution_package(
         project_id=root.name, gate_id=gate_id, lv_id=lv_id, run_id=run_id,
         canonical_plan_sha256=preview["selected_canonical_plan"]["sha256"],
         owned_files=preview["approved_owned_files"],
+        worker_task_id=lv_id,
     )
     if ({contract.operation_class_id for contract in contracts} != set(DEC007_CONTRACT_IDS)
             or len(contracts) != len(DEC007_CONTRACT_IDS)):
@@ -475,7 +482,7 @@ def create_lv_execution_package(
     manifest["active_tool_authorization_contracts"] = active_tool_contracts
     manifest["tool_authorization_projection"] = {
         "decision_ref": DEC007_DECISION_REF,
-        "worker_task_id": "TASK-4A-08",
+        "worker_task_id": lv_id,
         "active_contract_count": len(active_tool_contracts),
         "contract_ids": sorted(item["contract_id"] for item in active_tool_contracts),
         "operation_class_ids": sorted(item["operation_class_id"] for item in active_tool_contracts),

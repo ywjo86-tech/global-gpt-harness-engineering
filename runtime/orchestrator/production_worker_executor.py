@@ -2098,7 +2098,7 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _safe_scope(values: object) -> list[str]:
-    if not isinstance(values, list) or not values:
+    if not isinstance(values, list):
         raise ProductionWorkerError("production worker owned scope is missing")
     result: list[str] = []
     for value in values:
@@ -2180,6 +2180,12 @@ def _command(root: Path, argv: list[str], timeout: int = 900, *,
         return {"command": argv, "exit_code": None, "timeout": False, "spawn_error": True,
                 "stdout_sha256": hashlib.sha256(b"").hexdigest(),
                 "stderr_sha256": hashlib.sha256(b"").hexdigest()}
+
+
+def _skipped_command(label: str) -> dict[str, Any]:
+    return {"command": [label], "exit_code": 0, "timeout": False, "skipped": True,
+            "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+            "stderr_sha256": hashlib.sha256(b"").hexdigest()}
 
 
 def _verification_bucket(value: int | None) -> str:
@@ -2298,8 +2304,8 @@ def _focused_execution_metadata(result: Mapping[str, Any] | None = None) -> dict
         exit_class = "UNKNOWN"
     return {
         "focused_runner_source": "PROJECT_REGISTERED_TOOLCHAIN",
-        "focused_runner_kind": "PYTEST_ENTRYPOINT",
-        "focused_command_builder_id": "REGISTERED_PYTEST_DIRECT_V1",
+        "focused_runner_kind": "PROJECT_PYTHON_MODULE",
+        "focused_command_builder_id": "PROJECT_PYTHON_MODULE_PYTEST_V1",
         "focused_argv_shape_id": "RUNNER_QUIET_SCOPED_TARGETS",
         "focused_test_scope_source_id": "OWNED_TEST_FILE_PROJECTION",
         "focused_cwd_source_id": "WORKER_PROJECT_ROOT",
@@ -2363,12 +2369,12 @@ def _bounded_collection_diagnostics(
         base["plugin_load_status"] = "PASS"
         return base
     configless = _command(
-        root, [str(runner), "--collect-only", "-q", "-c", os.devnull, *tests],
+        root, [str(runner), "-m", "pytest", "--collect-only", "-q", "-c", os.devnull, *tests],
         classify_collection=True,
     )
     plugin_env = dict(os.environ); plugin_env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     pluginless = _command(
-        root, [str(runner), "--collect-only", "-q", *tests],
+        root, [str(runner), "-m", "pytest", "--collect-only", "-q", *tests],
         env=plugin_env, classify_collection=True,
     )
     if configless.get("exit_code") == 0:
@@ -2476,8 +2482,22 @@ Task: {request.task.input}
 {scope}
 Completion criteria:
 {criteria}
-Use the existing project interpreter/environment. Do not use network, packages, secrets, system changes, Git mutation, approval/state changes, review, remediation, or the next Gate. Implement only the canonical Stage task within editable owned files, then return the minimal implementation completion report and exit immediately. Do not run focused/full regression or Harness validation; the deterministic Harness validator owns those checks. Do not manufacture orchestration artifacts; the controller collects evidence independently.{bounded}
+Use PROJECT_OWNED_FILE_LIST to map owned_file_id values to approved relative paths before any write. If MUTATION_REQUIRED is active and an approved owned file is missing or incomplete, do not stop after listing the scope or ask for additional context: create the minimal target-state content through governed WRITE, limited to the mapped owned_file_id values and existing parent directories. When this LV is an API client boundary before a later field-mapping LV, do not invent external response fields; implement only the bounded client/security behavior required by the criteria, such as configured origin, timeout, network error, JSON decoding, redirect rejection, and raw JSON response handling. Use the existing project interpreter/environment. Do not use network, packages, secrets, system changes, Git mutation, approval/state changes, review, remediation, or the next Gate. Implement only the canonical Stage task within editable owned files, then return the minimal implementation completion report and exit immediately. Do not run focused/full regression or Harness validation; the deterministic Harness validator owns those checks. Do not manufacture orchestration artifacts; the controller collects evidence independently.{bounded}
 """
+
+
+def _verification_only_authorized(request: WorkerRequest) -> bool:
+    """Permit a zero-delta result only from the sealed satisfied authority."""
+    binding = request.extra_context.get("canonical_authority_binding")
+    binding_digest = request.extra_context.get("canonical_authority_binding_digest")
+    return (
+        request.extra_context.get("allow_verification_only") is True
+        and request.extra_context.get("task_effect_requirement") == "NONE_SATISFIED"
+        and isinstance(binding, Mapping)
+        and binding.get("execution_obligation") == "NONE_SATISFIED"
+        and isinstance(binding_digest, str)
+        and bool(binding_digest)
+    )
 
 
 def execute_production_worker(request: WorkerRequest, *,
@@ -2527,7 +2547,10 @@ def execute_production_worker(request: WorkerRequest, *,
         # Direct legacy fixtures lack the orchestrator's durable run binding.
         # The production gate always supplies run_root and an explicit backend.
         configured_backend = LOCAL_CHILD
-    if configured_backend not in {LOCAL_CHILD, HOST_GATEWAY}:
+    verification_only = _verification_only_authorized(request)
+    if verification_only:
+        configured_backend = "VERIFICATION_ONLY"
+    if configured_backend not in {LOCAL_CHILD, HOST_GATEWAY, "VERIFICATION_ONLY"}:
         raise ProductionWorkerError("EXECUTION_BACKEND_REQUIRED")
     legacy_fixture = not request.extra_context.get("run_root")
     if configured_backend == LOCAL_CHILD and request.extra_context.get("execution_mode") == "production" and not legacy_fixture:
@@ -2537,7 +2560,14 @@ def execute_production_worker(request: WorkerRequest, *,
         "workspace_kind": "project_root",
         "branch": request.state_snapshot.get("branch", ""),
     }
-    if configured_backend == LOCAL_CHILD and (executor is not None or legacy_fixture):
+    if configured_backend == "VERIFICATION_ONLY":
+        gateway_request = {
+            "execution_backend": "VERIFICATION_ONLY",
+            "execution_request_id": "verification-only",
+            "request_digest": hashlib.sha256(canonical_json_bytes(request.to_dict())).hexdigest(),
+            "gateway_contract_version": GATEWAY_CONTRACT_VERSION,
+        }
+    elif configured_backend == LOCAL_CHILD and (executor is not None or legacy_fixture):
         # Legacy injected executor seam: it predates the durable host request
         # contract and is never selected by the production orchestrator.
         gateway_request = {"execution_backend": LOCAL_CHILD, "execution_request_id": "local-test-seam",
@@ -2605,9 +2635,16 @@ def execute_production_worker(request: WorkerRequest, *,
             "host_writable": True, "harness_writable": True,
             "staging_binding": "WORKSPACE_RELATIVE_EXACT",
         }
+    elif verification_only:
+        final_message_target_metadata = {
+            "target_scope": "RUN_ROOT", "codex_writable": False,
+            "host_writable": False, "harness_writable": True,
+            "staging_binding": "NOT_APPLICABLE_VERIFICATION_ONLY",
+        }
     else:
         final_message_target_metadata = _validate_final_message_target(root, execution_last)
-    argv = CodexExecutionAdapter().argv(root=root, last_message=execution_last)
+    argv = (["verification-only", "sealed-none-satisfied"] if verification_only
+            else CodexExecutionAdapter().argv(root=root, last_message=execution_last))
     pending_paths = [line[3:] for line in baseline_status.splitlines() if len(line) > 3]
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
@@ -2627,7 +2664,23 @@ def execute_production_worker(request: WorkerRequest, *,
                             "exit_code":0,"signal":None,"stdout_sha256":hashlib.sha256(b"").hexdigest(),
                             "stderr_sha256":hashlib.sha256(b"").hexdigest(),"secret_like_output_detected":False,"hard_stop":True}
     else:
-        if configured_backend == HOST_GATEWAY:
+        if configured_backend == "VERIFICATION_ONLY":
+            stdout = stderr = b""
+            worker_exit = 0; timed_out = False
+            adapter_evidence = {
+                "contract_version": "VERIFICATION_ONLY.v1",
+                "backend": "VERIFICATION_ONLY",
+                "strict": False,
+            }
+            process_evidence = {
+                "schema_version": "orchestration.production-worker-process.v1",
+                "pid": None, "process_group_id": None, "started_at": None, "ended_at": None,
+                "termination": "VERIFICATION_ONLY", "requested_signal": None, "exit_code": 0,
+                "signal": None, "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+                "stderr_sha256": hashlib.sha256(b"").hexdigest(), "secret_like_output_detected": False,
+                "governed_effect_evidence": [], "hard_stop": True,
+            }
+        elif configured_backend == HOST_GATEWAY:
             try:
                 if gateway_transport is None:
                     endpoint = gateway_request.get("transport_endpoint", "runtime/host-gateway.sock")
@@ -2804,7 +2857,7 @@ def execute_production_worker(request: WorkerRequest, *,
     )
     process_evidence["observability"] = ["CHILD_STARTED", "CHILD_EXITED" if process_evidence.get("termination") == "EXITED" else process_evidence.get("termination", "CHILD_EXITED")]
     process_path.write_bytes(canonical_json_bytes(process_evidence))
-    if worker_exit != 0 or timed_out or process_evidence["termination"] not in {"EXITED", "RESUMED_PENDING_CHECKPOINT", "ADOPTED_CHECKPOINT"}:
+    if worker_exit != 0 or timed_out or process_evidence["termination"] not in {"EXITED", "RESUMED_PENDING_CHECKPOINT", "ADOPTED_CHECKPOINT", "VERIFICATION_ONLY"}:
         if process_evidence["termination"] == "TIMED_OUT":
             raise ProductionWorkerError("WORKER_TIMEOUT: production executor failed or timed out")
         if process_evidence["termination"] == "CANCELLED":
@@ -2818,7 +2871,8 @@ def execute_production_worker(request: WorkerRequest, *,
         changed = [line[3:] for line in lines if len(line) > 3]
     else:
         changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", head).stdout.splitlines()
-    if not changed:
+    verification_only = _verification_only_authorized(request)
+    if not changed and not verification_only:
         diagnostic = _redact(last.read_text(encoding="utf-8", errors="replace")[:500]) if last.is_file() else "no final message"
         raise ProductionWorkerError(f"production executor produced no product changes: {diagnostic}")
     outside = [path for path in changed if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned)]
@@ -2835,24 +2889,30 @@ def execute_production_worker(request: WorkerRequest, *,
     if hardcoded_findings and not secret_handling_allowed:
         raise ProductionWorkerError("OWNED_DIFF_HARDCODED_CREDENTIAL: production worker security validation failed")
     tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
-    if not tests:
+    if not tests and not verification_only:
         raise ProductionWorkerError("production worker focused test scope is missing")
-    python = root / ".venv" / "bin" / "python"; pytest = root / ".venv" / "bin" / "pytest"
-    if not python.is_file() or not pytest.is_file():
+    python = root / ".venv" / "bin" / "python"
+    if not python.is_file():
         raise ProductionWorkerError("registered project interpreter is unavailable")
     process_evidence.update(_focused_execution_metadata())
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     commands = {
         "worker": {"command": argv, "exit_code": worker_exit, "timeout": timed_out,
                    "stdout_sha256": hashlib.sha256(stdout).hexdigest(), "stderr_sha256": hashlib.sha256(stderr).hexdigest()},
-        "focused_test": _command(root, [str(pytest), "-q", *tests], classify_collection=True),
-        "full_regression": _command(root, [str(pytest), "-q"]),
-        "compile_import": _command(root, [str(python), "-m", "compileall", "-q", *owned]),
+        "focused_test": (
+            _command(root, [str(python), "-m", "pytest", "-q", *tests], classify_collection=True)
+            if tests else _skipped_command("focused-test-not-applicable")
+        ),
+        "full_regression": _command(root, [str(python), "-m", "pytest", "-q"]),
+        "compile_import": (
+            _command(root, [str(python), "-m", "compileall", "-q", *owned])
+            if owned else _skipped_command("compile-owned-scope-not-applicable")
+        ),
         "git_diff_check": _command(root, ["git", "diff", "--check"] if head == baseline else ["git", "diff", "--check", f"{baseline}..{head}"]),
     }
     process_evidence.update(_focused_execution_metadata(commands.get("focused_test")))
     process_evidence.update(_bounded_collection_diagnostics(
-        root, pytest, python, tests, commands["focused_test"],
+        root, python, python, tests, commands["focused_test"],
     ))
     process_evidence.update(_independent_verification_metadata(commands, len(request.task.validation_criteria)))
     process_evidence["independent_verification_steps"] = _independent_verification_steps(commands)
@@ -2864,7 +2924,7 @@ def execute_production_worker(request: WorkerRequest, *,
     verification = _independent_verification_provenance(commands)
     if verification["worker_verification_failure_step"] != "NONE":
         raise _independent_verification_failure(commands)
-    if head == baseline:
+    if head == baseline and changed:
         expected_changed = sorted(changed)
         added = _git(root, "add", "--", *changed)
         if added.returncode != 0:
@@ -2898,7 +2958,7 @@ def execute_production_worker(request: WorkerRequest, *,
            "plan_sha256": request.contract_summary["canonical_plan_sha256"]}
     evidence = {**ids, "schema_version":"orchestration.product-completion-evidence.v1",
         "status":"completed", "tests":list(request.task.validation_criteria),
-        "attempt":int(request.extra_context["attempt"]), "completion_mode":"CODE_CHANGE", "owned_files":owned,
+        "attempt":int(request.extra_context["attempt"]), "completion_mode":("VERIFICATION_ONLY" if not changed else "CODE_CHANGE"), "owned_files":owned,
         "changed_files":changed, "baseline_head":baseline, "baseline_tree":baseline_tree,
         "current_head":head, "current_tree":tree, "checkpoint_commit":head, "commands":commands,
         "staged_changes":False, "unstaged_changes":False, "review_verdict":"PASS",
@@ -2910,6 +2970,10 @@ def execute_production_worker(request: WorkerRequest, *,
             process_evidence.get("governed_effect_evidence", [])
         ),
         "package_sha256":request.extra_context["package_manifest_sha256"],
+        "verification_authority": ({
+            "execution_obligation": "NONE_SATISFIED",
+            "canonical_authority_binding_digest": request.extra_context.get("canonical_authority_binding_digest", ""),
+        } if not changed else {}),
         "preflight_evidence_sha256":request.extra_context.get("preflight_evidence_sha256", ""),
         "validation_events": validation_events + ["WORKER_RESULT_SEALED"],
         **{key: process_evidence[key] for key in (

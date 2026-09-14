@@ -395,8 +395,13 @@ class ApprovedExecutionProjection:
         object.__setattr__(self, "requirement_refs", _sorted_unique_strings(self.requirement_refs, field_name="requirement_refs", allow_empty=False))
         object.__setattr__(self, "completion_criteria_ids", _sorted_unique_strings(self.completion_criteria_ids, field_name="completion_criteria_ids", allow_empty=False))
         object.__setattr__(self, "validation_criteria", _sorted_unique_strings(self.validation_criteria, field_name="validation_criteria", allow_empty=False))
-        object.__setattr__(self, "change_targets", _sorted_unique_strings(self.change_targets, field_name="change_targets", allow_empty=False))
-        object.__setattr__(self, "owned_scope", _sorted_unique_strings(self.owned_scope, field_name="owned_scope", allow_empty=False))
+        object.__setattr__(self, "change_targets", _sorted_unique_strings(self.change_targets, field_name="change_targets", allow_empty=True))
+        object.__setattr__(self, "owned_scope", _sorted_unique_strings(self.owned_scope, field_name="owned_scope", allow_empty=True))
+        if bool(self.change_targets) != bool(self.owned_scope):
+            raise GovernedContractError(
+                "change_targets and owned_scope must be both populated or both empty",
+                reason_taxonomy="INVALID_PROJECTION",
+            )
         object.__setattr__(self, "allowed_worker_terminal_states", _sorted_unique_strings(self.allowed_worker_terminal_states, field_name="allowed_worker_terminal_states", allow_empty=False))
         object.__setattr__(self, "allowed_capabilities", _sorted_unique_strings(self.allowed_capabilities, field_name="allowed_capabilities"))
         object.__setattr__(self, "permission_requirements", _sorted_unique_strings(self.permission_requirements, field_name="permission_requirements"))

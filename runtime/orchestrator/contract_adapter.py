@@ -371,25 +371,30 @@ def _ledger_payload(text: str) -> dict[str, Any]:
     if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:AKIA|gh[pousr]_|sk-[A-Za-z0-9])", text):
         raise ContractMappingError("Gate State ledger contains a secret-like value")
     blocks = re.findall(r"```json[ \t]*\r?\n(.*?)\r?\n```", text, flags=re.DOTALL)
-    if len(blocks) != 1:
-        raise ContractMappingError("Gate State ledger must contain exactly one json fenced block")
-    try:
-        value = json.loads(blocks[0], object_pairs_hook=_json_no_duplicate_keys)
-    except json.JSONDecodeError as exc:
-        raise ContractMappingError("Gate State ledger JSON is malformed") from exc
-    if not isinstance(value, dict):
-        raise ContractMappingError("Gate State ledger payload must be an object")
-    expected_fields = LEDGER_FIELDS_V2 if value.get("schema_version") == "orchestration.canonical-gate-state.v2" else LEDGER_FIELDS
-    if set(value) != expected_fields:
-        missing = sorted(expected_fields - set(value))
-        unknown = sorted(set(value) - expected_fields)
-        detail = []
-        if missing:
-            detail.append(f"missing fields: {', '.join(missing)}")
-        if unknown:
-            detail.append(f"unknown fields: {', '.join(unknown)}")
-        raise ContractMappingError("Gate State ledger fields are invalid (" + "; ".join(detail) + ")")
-    return value
+    if not blocks:
+        raise ContractMappingError("Gate State ledger must contain a json fenced block")
+    values: list[dict[str, Any]] = []
+    for block in blocks:
+        try:
+            value = json.loads(block, object_pairs_hook=_json_no_duplicate_keys)
+        except json.JSONDecodeError as exc:
+            raise ContractMappingError("Gate State ledger JSON is malformed") from exc
+        if not isinstance(value, dict):
+            raise ContractMappingError("Gate State ledger payload must be an object")
+        expected_fields = LEDGER_FIELDS_V2 if value.get("schema_version") == "orchestration.canonical-gate-state.v2" else LEDGER_FIELDS
+        if set(value) != expected_fields:
+            missing = sorted(expected_fields - set(value))
+            unknown = sorted(set(value) - expected_fields)
+            detail = []
+            if missing:
+                detail.append(f"missing fields: {', '.join(missing)}")
+            if unknown:
+                detail.append(f"unknown fields: {', '.join(unknown)}")
+            raise ContractMappingError("Gate State ledger fields are invalid (" + "; ".join(detail) + ")")
+        values.append(value)
+    if len(values) > 1 and any(value.get("schema_version") != "orchestration.canonical-gate-state.v2" for value in values):
+        raise ContractMappingError("append-only Gate State ledger entries must use canonical v2 schema")
+    return values[-1]
 
 
 def _validate_ledger_relative_path(value: object, field: str) -> str:

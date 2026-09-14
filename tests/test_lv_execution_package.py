@@ -58,7 +58,7 @@ class LVExecutionPackageTest(unittest.TestCase):
             self.assertEqual(manifest["owned_files"], ["app/config.py", "tests/test_config.py"])
             projection = manifest["tool_authorization_projection"]
             self.assertEqual(projection["decision_ref"], "DEC-007")
-            self.assertEqual(projection["worker_task_id"], "TASK-4A-08")
+            self.assertEqual(projection["worker_task_id"], "G1-LV3-1")
             self.assertEqual(projection["active_contract_count"], 3)
             self.assertEqual(set(projection["operation_class_ids"]), {
                 "PROJECT_OWNED_FILE_LIST", "PROJECT_OWNED_FILE_READ", "PROJECT_OWNED_FILE_WRITE",
@@ -137,13 +137,21 @@ class LVExecutionPackageTest(unittest.TestCase):
         ):
             self.assertIn(text, first)
 
+    def test_prompt_allows_empty_owned_scope_for_exit_review(self) -> None:
+        manifest = self._prompt_manifest()
+        manifest["lv_id"] = "G1-LV3-7"
+        manifest["task"] = {"purpose": "Gate 1 Exit Review", "execution": "sequential"}
+        manifest["owned_files"] = []
+        prompt = _worker_prompt(manifest)
+        self.assertIn("## Editable scope\n- none", prompt)
+        self.assertIn("No focused owned-file test declared for this LV", prompt)
+
     def test_prompt_missing_stage_or_malformed_owned_files_fail_closed(self) -> None:
         missing_stage = self._prompt_manifest()
         del missing_stage["task"]
         with self.assertRaisesRegex(LVExecutionPackageError, "Stage contract"):
             _worker_prompt(missing_stage)
         for owned_files in (
-            [],
             ["app/models/product.py", "app/models/product.py"],
             ["../app/models/product.py", "tests/test_product.py"],
             ["app/models/product.py"],

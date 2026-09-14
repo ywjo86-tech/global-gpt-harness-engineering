@@ -64,10 +64,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "production-gate-dry-run", "production-gate-run", "production-adopt-partial", "production-terminal", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "production-gate-dry-run", "production-gate-run", "production-adopt-partial", "production-checkpoint-adopt", "production-terminal", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
         sub = subparsers.add_parser(name)
         if name in {"production-adopt-partial", "production-terminal"}:
             sub.add_argument("--request", required=True)
+        elif name == "production-checkpoint-adopt":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--package-root", required=True)
+            sub.add_argument("--approval-log", required=True)
+            sub.add_argument("--approval-event-id", required=True)
         elif name in {"lv-plan", "lv-package"}:
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--gate-id", required=True)
@@ -95,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--gate-id", required=True)
             sub.add_argument("--mode", default="GATE_BY_GATE")
+            sub.add_argument("--full-plan-opt-in", action="store_true")
+            sub.add_argument("--project-final-validation", action="store_true")
             sub.add_argument("--mapping-root")
         elif name == "gate-run":
             sub.add_argument("--project-root", required=True)
@@ -159,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--mapping-root")
         else:
             sub.add_argument("--project", required=True)
+        if name in {"inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status"}:
+            sub.add_argument("--role", default="managed-project", choices=["managed-project", "engine-host"])
         if name in {"plan", "run", "gate"}:
             sub.add_argument("--mode", default="mock")
         if name in {"plan", "collect", "fanin", "gate", "status", "run"}:
@@ -536,6 +545,13 @@ def main(argv: list[str] | None = None) -> int:
         _record_startup_failure(category, exc, evidence_origin="TOP_LEVEL_BLOCK_FINALIZER")
         return True
     try:
+        if args.command == "production-checkpoint-adopt":
+            from .verified_checkpoint_adoption import write_verified_checkpoint_result
+            _print(write_verified_checkpoint_result(
+                project_root=args.project_root, package_root=args.package_root,
+                approval_log=args.approval_log, approval_event_id=args.approval_event_id,
+            ))
+            return 0
         if args.command in {"production-adopt-partial", "production-terminal"}:
             request_path=Path(args.request)
             if not request_path.is_file() or request_path.is_symlink(): raise ValueError("unsafe production request")
@@ -610,7 +626,13 @@ def main(argv: list[str] | None = None) -> int:
             return 10
         if args.command == "gate-dry-run":
             from .gate_orchestrator import compatibility_dry_run
-            outcome = compatibility_dry_run(args.project_root, args.gate_id, mode=args.mode)
+            outcome = compatibility_dry_run(
+                args.project_root,
+                args.gate_id,
+                mode=args.mode,
+                full_plan_opt_in=args.full_plan_opt_in,
+                project_final_validation=args.project_final_validation,
+            )
             _print(outcome)
             return 0 if outcome.get("status") == "COMPATIBLE" else 10
         if args.command in {"production-gate-dry-run", "production-gate-run"}:
@@ -946,9 +968,32 @@ def main(argv: list[str] | None = None) -> int:
                     _mark_decision_package_bridge("PACKAGE_ADAPTER_CALL", phase="DISPATCH_ENTERED",
                                                   semantics="PASS", adapter_intent="YES")
                     _mark_package_preentry("ADAPTER_OBJECT_RESOLUTION")
+                    # The direct production CLI path constructs adapters itself,
+                    # so it must provide the same launch-bound canonical Worker
+                    # authority as the orchestration entrypoint.
+                    from .codex_readiness import collect_codex_auth_readiness, default_probe_set
+                    from .production_canonical_authority import (
+                        build_production_canonical_worker_authority_provider,
+                        production_canonical_package_identity,
+                    )
+                    package_id, package_revision = production_canonical_package_identity(
+                        project_id=plan.project_id, gate_id=args.gate_id,
+                        lv_id=lv_id, run_id=args.run_id,
+                    )
+                    readiness_probes = default_probe_set()
+                    codex_auth_readiness = collect_codex_auth_readiness(
+                        run_id=args.run_id, worker_task_id=lv_id,
+                        package_id=package_id, package_revision=package_revision,
+                        probes=readiness_probes,
+                    )
+                    canonical_worker_authority_provider = build_production_canonical_worker_authority_provider(
+                        codex_auth_readiness=codex_auth_readiness,
+                        readiness_recheck_probes=readiness_probes,
+                    )
                     adapters = _production_adapters(
                         Path(args.project_root), plan, auth, lv_id, args.run_id, args.harness_root,
                         recovery if lv_id == initial_lv else None,
+                        canonical_worker_authority_provider=canonical_worker_authority_provider,
                     )
                     _mark_package_preentry("ADAPTER_RESOLVED")
                     _mark_package_preentry("LIFECYCLE_ENTRY")
@@ -1026,9 +1071,9 @@ def main(argv: list[str] | None = None) -> int:
             _print(outcome)
             return 0 if outcome.get("status") in {"BOOTSTRAPPED", "COMPATIBLE", "REGISTRATION_READY"} or not outcome.get("fail_closed") else 10
         if args.command == "inspect" and args.read_only:
-            _print(inspect_read_only(Path(args.project)))
+            _print(inspect_read_only(Path(args.project), role=args.role))
             return 0
-        engine = OrchestrationEngine(Path(args.project))
+        engine = OrchestrationEngine(Path(args.project), contract_role=args.role)
         if args.command == "inspect":
             _print(engine.inspect())
             return 0

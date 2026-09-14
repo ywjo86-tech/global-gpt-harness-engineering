@@ -96,7 +96,7 @@ def probe_codex_auth_status(
         for part in (completed.stdout or "", completed.stderr or "")
         if part and part.strip()
     )
-    if completed.returncode == 0 and combined == "Logged in using ChatGPT":
+    if completed.returncode == 0 and "Logged in using ChatGPT" in combined.splitlines():
         return READY
     return NOT_READY
 

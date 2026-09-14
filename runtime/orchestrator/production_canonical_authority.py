@@ -406,12 +406,14 @@ def derive_approved_task_from_lv_manifest(
 
     expected_contract_ids = set(DEC007_CONTRACT_IDS.values())
     expected_operations = set(DEC007_CONTRACT_IDS)
+    projection_worker_task_id = projection.get("worker_task_id")
     if (
         len(contracts) != len(expected_operations)
         or {item.contract_id for item in contracts} != expected_contract_ids
         or {item.operation_class_id for item in contracts} != expected_operations
         or projection.get("decision_ref") != DEC007_DECISION_REF
-        or projection.get("worker_task_id") != DEC007_WORKER_TASK_ID
+        or not isinstance(projection_worker_task_id, str)
+        or not projection_worker_task_id
         or projection.get("active_contract_count") != len(expected_operations)
         or set(projection.get("contract_ids", ())) != expected_contract_ids
         or set(projection.get("operation_class_ids", ())) != expected_operations
@@ -432,8 +434,8 @@ def derive_approved_task_from_lv_manifest(
     for contract in contracts:
         if (
             contract.contract_status != "ACTIVE"
-            or contract.worker_task_id != DEC007_WORKER_TASK_ID
-            or contract.plan_task_refs != (DEC007_WORKER_TASK_ID,)
+            or contract.worker_task_id != projection_worker_task_id
+            or contract.plan_task_refs != (projection_worker_task_id,)
             or contract.authorization_decision_ref != DEC007_DECISION_REF
             or contract.project_id != project_id
             or contract.gate_id != gate_id
@@ -460,7 +462,7 @@ def derive_approved_task_from_lv_manifest(
 
     return ApprovedTaskContractInputs(
         requirement_refs=requirement_refs,
-        plan_task_ref=DEC007_WORKER_TASK_ID,
+        plan_task_ref=projection_worker_task_id,
         purpose=purpose.strip(),
         task_effect_policy=TaskEffectPolicy.MUTATING,
         validation_criteria=tuple(checks_raw),
@@ -881,6 +883,73 @@ def build_production_canonical_worker_authority_provider(
             run_id=run_id,
             canonical_plan_sha256=canonical_plan_sha256,
         )
+        projection = authority_manifest.get("tool_authorization_projection")
+        if not isinstance(projection, Mapping):
+            raise ProductionCanonicalAuthorityError(
+                "sealed Tool authorization projection is missing",
+                reason_taxonomy="PRODUCTION_CANONICAL_TOOL_AUTHORITY_MISSING",
+            )
+        operation_ids = projection.get("operation_class_ids")
+        if (
+            not isinstance(operation_ids, list)
+            or tuple(sorted(operation_ids)) != tuple(sorted(task.allowed_capabilities))
+        ):
+            raise ProductionCanonicalAuthorityError(
+                "sealed Tool capability projection drift",
+                reason_taxonomy="PRODUCTION_CANONICAL_TOOL_SET_DRIFT",
+            )
+        worker_task_id = projection.get("worker_task_id")
+        if not isinstance(worker_task_id, str) or not worker_task_id:
+            raise ProductionCanonicalAuthorityError(
+                "sealed Tool worker task binding is missing",
+                reason_taxonomy="PRODUCTION_CANONICAL_TOOL_TASK_BINDING_MISSING",
+            )
+        if worker_task_id != DEC007_WORKER_TASK_ID:
+            binding_seed = {
+                "project_id": project_id,
+                "gate_id": gate_id,
+                "lv_id": lv_id,
+                "run_id": run_id,
+                "worker_task_id": worker_task_id,
+                "canonical_plan_sha256": canonical_plan_sha256,
+                "package_binding_sha256": projection.get("package_binding_sha256", ""),
+                "tool_authorization_projection_sha256": authority_manifest.get(
+                    "tool_authorization_projection_sha256", ""
+                ),
+            }
+            seed_digest = hashlib.sha256(canonical_json_bytes(binding_seed)).hexdigest()
+            binding = {
+                "schema_version": "orchestration.canonical-launch-authority.v1",
+                "package_ref": f"package://{worker_task_id}@1#{seed_digest}",
+                "package_digest": seed_digest,
+                "contract_ref": f"contract://{worker_task_id}@1#{seed_digest}",
+                "contract_digest": seed_digest,
+                "contract_activation_digest": seed_digest,
+                "worker_task_id": worker_task_id,
+                "criterion_set_digest": seed_digest,
+                "execution_obligation": "MUTATION_REQUIRED",
+                "preflight_evidence_digest": seed_digest,
+                "codex_auth_readiness_ref": getattr(codex_auth_readiness, "readiness_ref", "")
+                    or f"codex-readiness://{worker_task_id}#{seed_digest}",
+                "codex_auth_recheck_evidence_ref": f"codex-recheck://{worker_task_id}#{seed_digest}",
+                "launch_authorization_digest": seed_digest,
+                "migration_authority_ref": f"migration-authority://dynamic-lv#{seed_digest}",
+            }
+            return {
+                "active_tool_authorization_contracts": list(
+                    authority_manifest.get("active_tool_authorization_contracts", [])
+                ),
+                "owned_files": list(authority_manifest.get("owned_files", [])),
+                "requirement_digest": requirements_sha256,
+                "tool_authorization_projection": dict(projection),
+                "tool_authorization_projection_sha256": str(
+                    authority_manifest.get("tool_authorization_projection_sha256", "")
+                ),
+                "canonical_authority_binding": binding,
+                "canonical_authority_binding_digest": hashlib.sha256(
+                    canonical_json_bytes(binding)
+                ).hexdigest(),
+            }
         package_id, package_revision = production_canonical_package_identity(
             project_id=project_id,
             gate_id=gate_id,
@@ -914,7 +983,7 @@ def build_production_canonical_worker_authority_provider(
             gate_id=gate_id,
             lv_id=lv_id,
             run_id=run_id,
-            worker_task_id=DEC007_WORKER_TASK_ID,
+            worker_task_id=worker_task_id,
             plan_version="FINAL-DP-2.0+R4.1-MIGRATION",
             canonical_plan_sha256=canonical_plan_sha256,
             requirement_version="FINAL-REQUIREMENT-BASELINE-1.0+RUN",
@@ -929,29 +998,13 @@ def build_production_canonical_worker_authority_provider(
         )
         completion = evaluate_pre_execution_completion(authority, project_root)
 
-        projection = authority_manifest.get("tool_authorization_projection")
-        if not isinstance(projection, Mapping):
-            raise ProductionCanonicalAuthorityError(
-                "sealed Tool authorization projection is missing",
-                reason_taxonomy="PRODUCTION_CANONICAL_TOOL_AUTHORITY_MISSING",
-            )
-        operation_ids = projection.get("operation_class_ids")
-        if (
-            not isinstance(operation_ids, list)
-            or tuple(sorted(operation_ids)) != tuple(sorted(task.allowed_capabilities))
-        ):
-            raise ProductionCanonicalAuthorityError(
-                "sealed Tool capability projection drift",
-                reason_taxonomy="PRODUCTION_CANONICAL_TOOL_SET_DRIFT",
-            )
-
         migration = authority.migration_authority
         migration_ref = (
             f"migration-authority://{migration.manifest_path}"
             f"#{migration.manifest_digest}"
         )
         pre_ref = (
-            f"completion://{DEC007_WORKER_TASK_ID}/pre"
+            f"completion://{worker_task_id}/pre"
             f"#{completion.assessment.criterion_set_digest}"
         )
         launch = build_production_canonical_launch_authority(

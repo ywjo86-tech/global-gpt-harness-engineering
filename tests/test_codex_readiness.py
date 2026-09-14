@@ -181,6 +181,16 @@ class CodexReadinessTests(unittest.TestCase):
             READY,
         )
 
+    def test_login_status_probe_accepts_benign_extra_output(self):
+        class Result:
+            returncode = 0
+            stdout = "Logged in using ChatGPT\nnotice: cached session\n"
+            stderr = ""
+        self.assertEqual(
+            probe_codex_auth_status(runner=lambda *a, **k: Result()),
+            READY,
+        )
+
     def test_secret_free_environment_fingerprint_is_deterministic_and_not_raw_path(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / "codex"

@@ -1,5 +1,18 @@
 # Orchestration Runtime
 
+## Multi-Provider Modes
+
+The legacy modes remain `mock`, `manual`, and `codex-cli`. Phase 1 also accepts
+`nvidia` for read-only hosted reasoning and `hybrid` for deterministic routing:
+read-only reasoning tasks go to NVIDIA, while state-changing tasks remain on the
+Codex path. NVIDIA failures are reported as provider failures; they are not
+converted into automatic Codex fallback.
+
+NVIDIA execution reads `NVIDIA_API_KEY` from the process environment at request
+time only. Outbound context is limited to the task prompt and explicit
+`input_files`, with denylisted paths, byte limits, and secret redaction enforced
+before the request.
+
 ## Production approval v2 foundation
 
 Production execution uses `orchestration.production-approval.v2` events. Legacy
@@ -197,6 +210,8 @@ The Gate controller binds one authorization to the project, Gate, canonical plan
 
 `GATE_BY_GATE` is the default and stops after Gate Exit. `FULL_PLAN` is rejected unless final project validation and explicit opt-in are both true; no opt-in is activated by implementation or dry-run. `RESUME` verifies a sealed checkpoint SHA plus project, Gate, and run namespace before returning state, so completed LVs are not repeated and artifacts are not overwritten.
 
+New Gate handoffs use `orchestration.gate.handoff.v2` and seal the Full Plan preflight projection from the bound authorization. The projection records eligibility only; it is not evidence that a dry run activated or executed a Full Plan. Historical `orchestration.gate.handoff.v1` artifacts remain readable and verifiable.
+
 The completeness ledger maps every loaded LV plan item to Gate, LV, selected existing asset, owned files, tests, evidence SHA, and status. Missing, duplicate, reordered, unbound, or unevidenced completed items block Exit. Structured handoff uses an exact field set and canonical SHA, includes recovery checkpoint and next-stage boundaries, and revalidates changed files against the LV authorization.
 
 All approval, state, artifact, run, and secret paths live below distinct per-project namespaces. Project IDs and relative paths are validated, cross-project checkpoint/handoff reuse is rejected, and concurrent ownership of one file by different active LVs is blocked. Asset selection is global existing asset, then project existing asset, then composition; capability gaps are reported without authorizing global Skill/Agent creation.
@@ -205,13 +220,14 @@ CLI examples:
 
 ```text
 python3 -m runtime.orchestrator.cli gate-dry-run --project-root <project-root> --gate-id GATE-1 --mode GATE_BY_GATE
+python3 -m runtime.orchestrator.cli gate-dry-run --project-root <project-root> --gate-id GATE-1 --mode FULL_PLAN --full-plan-opt-in --project-final-validation
 python3 -m runtime.orchestrator.cli gate-validate --project-root <project-root> --gate-id GATE-1 --requirements-sha256 <sha256> --approval-evidence <approval.json> --requirement-evidence <requirements.json> --branch <branch> --head <head> --harness-root <harness-root>
 python3 -m runtime.orchestrator.cli gate-run --project-root <project-root> --gate-id GATE-1 --run-id <run-id> --requirements-sha256 <sha256> --approval-evidence <approval.json> --requirement-evidence <requirements.json> --branch <branch> --head <head> --harness-root <harness-root>
 python3 -m runtime.orchestrator.cli project-onboard --project-root <project-root> --alias <alias> --dry-run
 python3 -m runtime.orchestrator.cli production-gate-dry-run --project-root <project-root> --gate-id GATE-1 --harness-root <harness-root> --approval-log <approval-log> --approval-event-id <event-id>
 ```
 
-`gate-dry-run`, `gate-validate`, and `project-onboard --dry-run` are read-only. `gate-run` is the sole mutating Gate lifecycle surface: it validates every sealed binding before mutation, consumes only immutable lifecycle artifacts, records append-only checkpoints, and returns success only for `SYSTEM_TRANSITION` or Gate Exit. A missing sealed worker result returns the bounded `WORKER_RESULT_REQUIRED` hard stop instead of treating `WORKER_HANDOFF` as success.
+`gate-dry-run`, `gate-validate`, and `project-onboard --dry-run` are read-only. A `FULL_PLAN` dry run requires both explicit flags and reports eligibility only; it never activates the opt-in or starts a Gate. `gate-run` is the sole mutating Gate lifecycle surface: it validates every sealed binding before mutation, consumes only immutable lifecycle artifacts, records append-only checkpoints, and returns success only for `SYSTEM_TRANSITION` or Gate Exit. A missing sealed worker result returns the bounded `WORKER_RESULT_REQUIRED` hard stop instead of treating `WORKER_HANDOFF` as success.
 
 `production-gate-dry-run` is the explicit production approval v2 boundary. It
 selects one event by ID from the approval log, validates the v2 hash chain,

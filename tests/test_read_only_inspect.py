@@ -293,6 +293,8 @@ class ReadOnlyInspectTest(unittest.TestCase):
             {
                 sha256_file(wallet / "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md"),
                 sha256_file(wallet / "IMPLEMENTATION_PLAN.md"),
+                # Historical V20 source digest recorded by the Wallet plan and Gate 0 evidence.
+                "5671daaba1e7968fbdfb41e7ea812eb044b5c1e51045f9c34b9c476383daac41",
                 "fe1eb7611844211d6a731e608d487bd08c667e799bd77d2483b8748ea61c7a57",
             },
         )

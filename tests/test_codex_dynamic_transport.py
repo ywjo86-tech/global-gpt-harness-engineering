@@ -74,8 +74,11 @@ class CodexDynamicTransportTests(unittest.TestCase):
         writes = [json.loads(item) for item in process.stdin.writes]
         thread_start = next(item for item in writes if item.get("method") == "thread/start")
         turn_start = next(item for item in writes if item.get("method") == "turn/start")
+        self.assertTrue(thread_start["params"]["experimentalRawEvents"])
         self.assertEqual(thread_start["params"]["environments"], [])
         self.assertEqual(turn_start["params"]["environments"], [])
+        tool_response = next(item for item in writes if item.get("id") == 80)
+        self.assertTrue(tool_response["result"]["success"])
         self.assertFalse(any("command" in json.dumps(item).lower() for item in writes))
 
     def test_broker_failure_is_returned_as_block_without_native_fallback(self):
@@ -92,8 +95,35 @@ class CodexDynamicTransportTests(unittest.TestCase):
         result = adapter.run_turn(prompt="bounded", dynamic_tools=TOOLS,
                                   tool_handler=lambda _: (_ for _ in ()).throw(TransportError("BLOCK")))
         self.assertEqual(result["completion"], "BROKER_BLOCKED")
+        self.assertEqual(result["broker_block"], {
+            "stage": "HANDLE", "error_class": "TransportError",
+            "operation_class_id": "PROJECT_FILE_READ"})
+        self.assertNotIn("BLOCK", json.dumps(result["broker_block"]))
         response = next(json.loads(item) for item in process.stdin.writes if json.loads(item).get("id") == 90)
         self.assertEqual(response["error"]["message"], "BROKER_BLOCK")
+
+    def test_malformed_tool_request_reports_only_safe_normalization_class(self):
+        lines = [
+            json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 91, "method": "item/tool/call", "params": {
+                "tool": "PROJECT_FILE_READ", "callId": "call-3", "arguments": "secret raw value"}}) + "\n",
+        ]
+        process = _Process(lines)
+        adapter = CodexAppServerAdapter(process_factory=lambda *a, **k: process,
+                                        version_probe=lambda: "0.150.1")
+        result = adapter.run_turn(prompt="bounded", dynamic_tools=TOOLS,
+                                  tool_handler=lambda _: self.fail("handler must not run"))
+        self.assertEqual(result["broker_block"], {
+            "stage": "NORMALIZE", "error_class": "TransportError",
+            "operation_class_id": "UNKNOWN"})
+        self.assertNotIn("secret raw value", json.dumps(result))
+
+    def test_protocol_result_marks_noncompleted_result_unsuccessful(self):
+        response = CodexAppServerAdapter.protocol_result(ToolResultEnvelope(
+            "BLOCKED", "ABSENT", "PASS", {"status": "BLOCKED"}))
+        self.assertFalse(response["success"])
 
     @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
                          "actual installed Codex protocol test is opt-in")

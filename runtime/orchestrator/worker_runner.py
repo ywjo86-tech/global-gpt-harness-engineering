@@ -86,6 +86,45 @@ def main(argv: list[str] | None = None) -> int:
         run_id=request.extra_context.get("run_id", ""),
         run_root=request.extra_context.get("run_root", ""),
     )
+    if request.task.assigned_agent == "stage_gate_reviewer_agent":
+        # Gate decisions are a distinct bounded vocabulary.  Do not collapse
+        # NO-GO into the generic worker-failure status before stage_gate.py
+        # evaluates the decision. Persist the same conditional context that
+        # the reviewer used so the on-disk Gate artifact is audit-equivalent
+        # to the returned StageGateDecision.
+        result_payload["status"] = result.status
+        result_payload["decision"] = result.status
+        gate_risks = [item for item in result.findings if item.startswith("authority_review_")]
+        fanin_report = request.extra_context.get("fanin_report", {})
+        qa_required = bool(fanin_report.get("qa_required", False)) if isinstance(fanin_report, dict) else False
+        authority_review = request.extra_context.get("authority_review")
+        authority_conditional = (
+            isinstance(authority_review, dict)
+            and authority_review.get("decision") == "CONDITIONAL GO"
+        )
+        remaining_risks = list(gate_risks)
+        conditions: list[str] = []
+        if result.status == "CONDITIONAL GO":
+            if qa_required:
+                remaining_risks.append("QA follow-up remains advisable.")
+                conditions.append("complete QA follow-up before next phase")
+            if authority_conditional:
+                remaining_risks.append("authority review conditions remain.")
+                conditions.append("complete authority review conditions before next phase")
+            if not conditions:
+                remaining_risks.append("QA follow-up remains advisable.")
+                conditions.append("complete QA follow-up before next phase")
+        result_payload["remaining_risks"] = list(dict.fromkeys(remaining_risks))
+        result_payload["conditions"] = list(dict.fromkeys(conditions))
+        result_payload["evidence_reviewed"] = [
+            "development plan",
+            "orchestration state",
+            "worker outputs",
+            "fanin report",
+        ]
+        if isinstance(authority_review, dict):
+            result_payload["evidence_reviewed"].append("authority review packet")
+            result_payload["authority_review_checked"] = "yes"
     # Gate lifecycle consumes explicit, truthful arrays rather than inferring
     # evidence from worker prose.  The registered deterministic worker has no
     # mutation authority, so these are derived from its request contract.
@@ -96,7 +135,11 @@ def main(argv: list[str] | None = None) -> int:
     result_payload["tests"] = list(request.task.validation_criteria)
     result_payload["commands_summary"] = []
     result_payload["violations"] = []
-    result_payload["error"] = None if result_payload.get("status") == "completed" else {"message": "worker failed"}
+    result_payload["error"] = None if (
+        result_payload.get("status") == "completed"
+        or (request.task.assigned_agent == "stage_gate_reviewer_agent"
+            and result.status in {"GO", "CONDITIONAL GO", "NO-GO"})
+    ) else {"message": "worker failed"}
     result_payload["runtime_sandbox_approval_state"] = {"source": "external_codex_runtime", "state": "allowed_by_active_policy", "business_approval_reused": False, "verified_by_harness": False}
     extra = request.extra_context
     result_payload.update({

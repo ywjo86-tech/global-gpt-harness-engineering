@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import os
 import unittest
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from runtime.orchestrator.canonical_launch_bridge import (
     build_canonical_launch,
 )
 from runtime.orchestrator.codex_readiness import (
-    ReadinessProbeSet,
+    ReadinessProbeSet, default_probe_set,
     collect_codex_auth_readiness,
 )
 from runtime.orchestrator.completion_authority import (
@@ -177,10 +178,18 @@ class CanonicalLaunchBridgeTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         return authority, contract_bridge, assessment, readiness
 
-    def _build(self, *, completion_state=CompletionState.UNSATISFIED, recheck=None):
+    def _build(self, *, completion_state=CompletionState.UNSATISFIED, recheck=None, actual_readiness=False):
         authority, contract_bridge, assessment, readiness = self._fixture(
             completion_state=completion_state
         )
+        if actual_readiness:
+            readiness = collect_codex_auth_readiness(
+                run_id="run-proof",
+                worker_task_id="TASK-4A-08",
+                package_id="PKG-TASK-4A-08",
+                package_revision=1,
+                probes=default_probe_set(),
+            )
         return build_canonical_launch(
             package_id="PKG-TASK-4A-08",
             package_revision=1,
@@ -201,7 +210,7 @@ class CanonicalLaunchBridgeTests(unittest.TestCase):
             codex_auth_readiness=readiness,
             approval_context=authority.approval_context(),
             migration_authority_ref="migration-authority://R4.1/manifest",
-            readiness_recheck_probes=recheck or probes(),
+            readiness_recheck_probes=recheck or (default_probe_set() if actual_readiness else probes()),
             readiness_recheck_verified_at_utc="2026-09-09T15:00:05Z",
         )
 
@@ -229,6 +238,25 @@ class CanonicalLaunchBridgeTests(unittest.TestCase):
             result.gateway_authority_binding["codex_auth_readiness_ref"],
         )
         self.assertEqual(len(result.gateway_authority_binding_digest), 64)
+
+    @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
+                         "actual readiness import/recheck is opt-in")
+    def test_actual_readiness_is_consumed_by_canonical_launch_authority(self):
+        result = self._build(actual_readiness=True)
+        self.assertEqual(result.package.codex_auth_readiness_ref[:4], "CAE-")
+        self.assertEqual(
+            result.gateway_authority_binding["codex_auth_recheck_evidence_ref"][:4],
+            "CAE-",
+        )
+        self.assertNotEqual(
+            result.package.codex_auth_readiness_ref,
+            result.gateway_authority_binding["codex_auth_recheck_evidence_ref"],
+        )
+        self.assertTrue(result.preflight.ready)
+        self.assertEqual(
+            result.gateway_authority_binding["codex_auth_readiness_ref"],
+            result.package.codex_auth_readiness_ref,
+        )
 
     def test_launch_adjacent_environment_drift_blocks_before_authorization(self):
         with self.assertRaises(Exception) as caught:

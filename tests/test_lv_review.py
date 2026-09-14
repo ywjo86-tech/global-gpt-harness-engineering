@@ -24,6 +24,7 @@ from runtime.orchestrator.lv_review import (
     _sha256,
     _safe_run_id,
     _validate_production_provenance,
+    _run_tests,
     _validate_production_baseline,
     _validate_interpreter,
     _verify_legacy_lineage,
@@ -71,6 +72,33 @@ class LVReviewTest(unittest.TestCase):
         manifest["production_transition"]["baseline_head"] = "d" * 40
         with self.assertRaisesRegex(LVReviewError, "checkpoint adoption baseline"):
             _validate_production_baseline(payload, manifest)
+
+    def test_verification_only_provenance_requires_empty_effects_and_sealed_authority(self) -> None:
+        payload = {
+            "completion_mode": "VERIFICATION_ONLY", "changed_files": [],
+            "governed_effect_evidence": [],
+            "verification_authority": {
+                "execution_obligation": "NONE_SATISFIED",
+                "canonical_authority_binding_digest": "a" * 64,
+            },
+        }
+        _validate_production_provenance(payload)
+        payload["governed_effect_evidence"] = [{"mutation_performed": True}]
+        with self.assertRaisesRegex(LVReviewError, "verification-only provenance"):
+            _validate_production_provenance(payload)
+
+    def test_verification_only_test_scope_runs_without_product_import_target(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tests").mkdir()
+            (root / "tests/test_only.py").write_text("def test_only():\n    assert True\n")
+            with patch("runtime.orchestrator.lv_review._run_command", return_value={"exit_code": 0, "timeout": False}):
+                results, error = _run_tests(
+                    root, Path(sys.executable), ["tests/test_only.py"], allow_test_only=True,
+                )
+            self.assertIsNone(error)
+            self.assertEqual([item["exit_code"] for item in results], [0, 0, 0])
+            self.assertTrue(results[-1]["not_applicable"])
 
     def test_production_root_is_explicit_repository_instance(self) -> None:
         with TemporaryDirectory() as directory:
@@ -562,6 +590,23 @@ class LVReviewTest(unittest.TestCase):
     def test_canonical_binding_uses_current_manifest_ledger_and_mapping(self) -> None:
         with TemporaryDirectory() as directory:
             root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
+            with (
+                patch("runtime.orchestrator.lv_review.load_project_mapping", return_value=mapping),
+                patch("runtime.orchestrator.lv_review.evaluate_canonical_state", return_value=state),
+                patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
+            ):
+                _assert_canonical_binding(root, manifest)
+
+    def test_canonical_binding_allows_empty_owned_scope_for_exit_review(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
+            manifest = dict(manifest)
+            state = dict(state)
+            manifest["lv_id"] = "G1-LV3-7"
+            manifest["active_scope"] = ["G1-LV3-7"]
+            manifest["owned_files"] = []
+            state["active_scope"] = ["G1-LV3-7"]
+            state["owned_files"] = []
             with (
                 patch("runtime.orchestrator.lv_review.load_project_mapping", return_value=mapping),
                 patch("runtime.orchestrator.lv_review.evaluate_canonical_state", return_value=state),

@@ -10,6 +10,7 @@ _SHA = re.compile(r"[0-9a-f]{40,64}\Z")
 _REQUIRED_IDS = ("project_id", "gate_id", "lv_id", "run_id", "approval_event_id", "plan_sha256")
 _COMMANDS = ("worker", "focused_test", "full_regression", "compile_import", "git_diff_check")
 _CHECKPOINT_ADOPTION_MODE = "VERIFIED_CHECKPOINT_ADOPTION"
+_VERIFICATION_ONLY_MODE = "VERIFICATION_ONLY"
 _CHECKPOINT_ADOPTION_COMMANDS = ("checkpoint_provenance", "focused_test", "full_regression", "compile_import", "git_diff_check")
 
 class ProductCompletionError(ValueError): pass
@@ -65,8 +66,19 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
     if evidence.get("hard_stop") is not True: reasons.append("HARD_STOP_MISSING")
     owned = _safe_paths(contract.get("owned_files", [])); changed = _safe_paths(evidence.get("changed_files", []))
     mode = evidence.get("completion_mode", "CODE_CHANGE")
-    if not changed and mode != "PLAN_AUTHORIZED_NO_OP": reasons.append("CHANGED_FILES_EMPTY")
+    if not changed and mode not in {"PLAN_AUTHORIZED_NO_OP", _VERIFICATION_ONLY_MODE}: reasons.append("CHANGED_FILES_EMPTY")
     if mode == "PLAN_AUTHORIZED_NO_OP" and contract.get("allow_no_op") is not True: reasons.append("NO_OP_NOT_AUTHORIZED")
+    if mode == _VERIFICATION_ONLY_MODE:
+        authority = evidence.get("verification_authority")
+        if (
+            contract.get("allow_verification_only") is not True
+            or changed
+            or not isinstance(authority, Mapping)
+            or authority.get("execution_obligation") != "NONE_SATISFIED"
+            or not isinstance(authority.get("canonical_authority_binding_digest"), str)
+            or not authority["canonical_authority_binding_digest"]
+        ):
+            reasons.append("VERIFICATION_ONLY_NOT_AUTHORIZED")
     for path in changed:
         if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned): reasons.append("OWNED_SCOPE_VIOLATION")
     commands = evidence.get("commands")
@@ -84,6 +96,8 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
                 or adoption.get("checkpoint_commit") != evidence.get("checkpoint_commit")
                 or not isinstance(adoption.get("approval_record_hash"), str)):
             reasons.append("CHECKPOINT_ADOPTION_EVIDENCE_INVALID")
+    if mode == _VERIFICATION_ONLY_MODE and evidence.get("checkpoint_commit") != evidence.get("baseline_head"):
+        reasons.append("VERIFICATION_ONLY_CHECKPOINT_DRIFT")
     if evidence.get("review_verdict") != "PASS": reasons.append("REVIEW_NOT_PASS")
     if evidence.get("staged_changes") is not False or evidence.get("unstaged_changes") is not False: reasons.append("WORKTREE_NOT_DECLARED_CLEAN")
     checkpoint = evidence.get("checkpoint_commit")

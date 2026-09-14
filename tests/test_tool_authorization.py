@@ -20,6 +20,7 @@ from runtime.orchestrator.tool_authorization import (
     RegisteredOperation,
     SingleToolBroker,
     ToolEffectJournal,
+    owned_scope_digest,
 )
 
 
@@ -108,6 +109,15 @@ class ToolAuthorizationTests(unittest.TestCase):
         self.assertTrue(all(item.worker_task_id == "TASK-4A-08" for item in contracts))
         self.assertTrue(all(item.authorization_decision_ref == "DEC-007" for item in contracts))
         self.assertTrue(all(item.approval_authority == "USER_DECISION" for item in contracts))
+
+    def test_empty_owned_scope_has_stable_digest_for_exit_review(self):
+        self.assertEqual(owned_scope_digest(()), owned_scope_digest([]))
+        contracts = build_dec007_approved_contracts(
+            project_id="PROJECT_1", gate_id="GATE_1", lv_id="LV_7", run_id="RUN_1",
+            canonical_plan_sha256="b" * 64, owned_files=(),
+        )
+        self.assertEqual(len(contracts), 3)
+        self.assertTrue(all(item.owned_scope_sha256 == owned_scope_digest(()) for item in contracts))
 
     def test_unknown_operation_and_worker_self_approval_block(self):
         with self.assertRaises(ToolAuthorizationError):
