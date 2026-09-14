@@ -1,0 +1,28 @@
+{
+  "schema_version": "global-harness.full-plan-stable-baseline.final-approval.v1",
+  "recorded_at_utc": "2026-09-14T04:51:35+00:00",
+  "authority": "Project Owner",
+  "baseline_id": "FULL_PLAN_STABLE_BASELINE",
+  "approval_scope": "FULL_PLAN_STABLE_BASELINE final record only",
+  "approval_statement_verbatim": "APPROVE FULL_PLAN_STABLE_BASELINE FINAL RECORD",
+  "normalized_decision": "APPROVED",
+  "baseline_commit_sha": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "origin_main_sha": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "completion_status": "VERIFIED_COMPLETE",
+  "readiness": "PASS_READY_FOR_CONTROLLED_REAL_E2E",
+  "blocking_defects_found": 0,
+  "preapproval_packet": {
+    "completion_document_sha256": "f432bdba3368debc052f38e3dfb184b8e6387ee41e193bd082b3d0b17e9b1b4d",
+    "gate_regression_report_sha256": "3bae60f422811f15ec9d373f371fec88e60879fbb0bef7cb0e16b3f691731cce",
+    "final_manifest_sha256": "1d94096f8e254bbd27839395352fc3c89b2a7c0f4af3173bdcd2dda694bbe33b"
+  },
+  "operational_boundary": {
+    "commit_authorized": false,
+    "push_authorized": false,
+    "release_authorized": false,
+    "deployment_authorized": false,
+    "controlled_real_e2e_authorized": false,
+    "provider_expansion_authorized": false
+  },
+  "note": "This approval seals the FULL_PLAN_STABLE_BASELINE final record only. Commit, push, release, deployment, controlled real-project E2E execution, and provider expansion require separate explicit authorization."
+}
