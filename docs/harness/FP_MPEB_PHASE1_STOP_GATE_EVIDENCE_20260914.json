@@ -1,0 +1,68 @@
+{
+  "schema_version": "fp-mpeb-p1.stop-gate-evidence.v1",
+  "recorded_date": "2026-09-14",
+  "project_id": "FP-MPEB-P1",
+  "phase": "Phase 1 Multi-Provider Bootstrap",
+  "status": "CLOSED",
+  "gate004_decision": "GO",
+  "stop_gate": "SATISFIED",
+  "provider_expansion": "STOPPED_UNDER_CURRENT_PLAN",
+  "test012": "PASS",
+  "evidence": {
+    "EVD-004": "PASS",
+    "EVD-005": "PASS",
+    "EVD-006": "PASS",
+    "EVD-007": "PASS",
+    "EVD-008": "PASS",
+    "EVD-009": "PASS"
+  },
+  "go_conditions": {
+    "codex_execution_available_proven": true,
+    "nvidia_reasoning_available_proven": true,
+    "hybrid_routing_proven": true,
+    "common_result_contract_fanin_gate_proven": true,
+    "legacy_regression_proven": true,
+    "security_failure_isolation_proven": true,
+    "full_plan_resume_handoff_produced": true
+  },
+  "source_runtime_evidence": {
+    "gate004_decision_sha256": "d3ca6031e51933bc3b02514bc05aa966afcb58bd90229cccbef59bd3363584b4",
+    "full_plan_resume_handoff_sha256": "c21279b8847d25f66d4c5ba16602e8db0ac90147a4f0ea16c80a1ea30e17afe2",
+    "evd009_sha256": "7b58214914b9f735e9fa1f1ec4897c1562eff1e0399ae03d085cec27d3b854c3",
+    "test012_live_hybrid_sha256": "d9b52eaf9eb1767f41a8df3e4c1b197e96efe0fc9c1dcd28b08e307ed11edbcc"
+  },
+  "test012_runtime_binding": {
+    "branch": "migration/hamonikr-linux",
+    "head": "3c5ee4d07189d3d3111839207d25af2a7bffd40d",
+    "nvidia_provider": "nvidia",
+    "nvidia_model": "nvidia/nemotron-3-ultra-550b-a55b",
+    "nvidia_status": "completed",
+    "codex_provider": "codex",
+    "codex_status": "completed",
+    "common_result_schema": "orchestration.worker.result.v1",
+    "collector_status": "complete",
+    "fanin_readiness": "ready",
+    "secret_marker_found_in_run_artifacts": false,
+    "nvidia_to_codex_auto_fallback_used": false
+  },
+  "full_plan_resume": {
+    "authorization": "RESUME_FULL_PLAN_ORCHESTRATION",
+    "resume_boundary": "G-4B-RELEASE-HANDOFF fresh Stage Gate first",
+    "subsequent_g4b_handoff_status": "APPROVED_CLOSED",
+    "g4b_final_approval_sha256": "0c6187c1ca42cdad412fb23bab26f752791efae4bd213837405f7452e9da81c6"
+  },
+  "current_release_binding": {
+    "branch": "migration/hamonikr-linux",
+    "current_head": "e4e3375376ad29eb2407c08834796001414105fe",
+    "origin_main": "94ba2785177857a157b57b5b14c3119c7c3dfbf5",
+    "main_is_ancestor": true,
+    "commits_ahead_of_main": 178,
+    "full_regression": "1138 tests OK, skipped=9"
+  },
+  "operational_boundary": {
+    "main_merge_authorized": false,
+    "release_authorized": false,
+    "deployment_authorized": false,
+    "production_adoption_authorized": false
+  }
+}

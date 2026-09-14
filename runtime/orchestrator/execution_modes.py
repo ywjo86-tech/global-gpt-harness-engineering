@@ -6,7 +6,9 @@ from dataclasses import dataclass
 MOCK = "mock"
 MANUAL = "manual"
 CODEX_CLI = "codex-cli"
-SUPPORTED_EXECUTION_MODES = (MOCK, MANUAL, CODEX_CLI)
+NVIDIA = "nvidia"
+HYBRID = "hybrid"
+SUPPORTED_EXECUTION_MODES = (MOCK, MANUAL, CODEX_CLI, NVIDIA, HYBRID)
 
 
 @dataclass(slots=True)
@@ -21,6 +23,8 @@ def normalize_execution_mode(mode: str | None) -> str:
     normalized = (mode or MOCK).strip().lower().replace("_", "-")
     if normalized in {"codex", "codexcli"}:
         normalized = CODEX_CLI
+    if normalized in {"nvidia-hosted", "nvidia_api", "nvidia-api"}:
+        normalized = NVIDIA
     if normalized not in SUPPORTED_EXECUTION_MODES:
         raise ValueError(f"Unsupported execution mode: {mode}")
     return normalized
@@ -42,10 +46,23 @@ def mode_info(mode: str | None) -> ExecutionModeInfo:
             codex_cli_eligible=False,
             manual_fallback=True,
         )
+    if normalized == NVIDIA:
+        return ExecutionModeInfo(
+            mode=normalized,
+            description="Read-only NVIDIA hosted reasoning execution.",
+            codex_cli_eligible=False,
+            manual_fallback=False,
+        )
+    if normalized == HYBRID:
+        return ExecutionModeInfo(
+            mode=normalized,
+            description="Rule-based provider routing across NVIDIA reasoning and Codex state-changing execution.",
+            codex_cli_eligible=True,
+            manual_fallback=True,
+        )
     return ExecutionModeInfo(
         mode=normalized,
         description="Best-effort Codex CLI execution with manual fallback.",
         codex_cli_eligible=True,
         manual_fallback=True,
     )
-

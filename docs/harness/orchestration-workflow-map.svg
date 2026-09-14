@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1160" viewBox="0 0 1600 1160" role="img" aria-labelledby="title desc">
+  <title id="title">Global GPT Harness Engineering 프로젝트 오케스트레이션 작업 로직</title>
+  <desc id="desc">계약 확인, 계획, 위험 분류, 팬아웃, 수집과 팬인, 독립 Stage Gate, 재개 및 Production LV 확장 경로를 나타낸 흐름도.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker>
+    <style>
+      .bg{fill:#f8fafc}.title{font:700 28px sans-serif;fill:#0f172a}.sub{font:400 15px sans-serif;fill:#475569}
+      .box{stroke:#334155;stroke-width:2;rx:12}.core{fill:#dbeafe}.control{fill:#fef3c7}.review{fill:#dcfce7}.stop{fill:#fee2e2}.ext{fill:#ede9fe}
+      .label{font:700 16px sans-serif;fill:#0f172a}.small{font:400 13px sans-serif;fill:#1e293b}.tiny{font:400 12px sans-serif;fill:#334155}
+      .line{stroke:#334155;stroke-width:2;fill:none;marker-end:url(#arrow)}.dash{stroke:#7c3aed;stroke-width:2;stroke-dasharray:8 6;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="1160"/>
+  <text class="title" x="60" y="52">프로젝트 오케스트레이션 작업 로직 맵</text>
+  <text class="sub" x="60" y="80">계약 기반 계획 → 위험별 실행 → fan-out/fan-in → 독립 Stage Gate → handoff</text>
+
+  <rect class="box core" x="60" y="115" width="260" height="72"/><text class="label" x="190" y="143" text-anchor="middle">1. 프로젝트 시작/재개</text><text class="small" x="190" y="166" text-anchor="middle">요청과 기존 state 로드</text>
+  <rect class="box core" x="390" y="115" width="300" height="72"/><text class="label" x="540" y="143" text-anchor="middle">2. Preflight 계약 확인</text><text class="small" x="540" y="166" text-anchor="middle">DEVELOPMENT_PLAN / CHANGELOG / log / state</text>
+  <rect class="box core" x="760" y="115" width="300" height="72"/><text class="label" x="910" y="143" text-anchor="middle">3. 계획 수립</text><text class="small" x="910" y="166" text-anchor="middle">orchestrator agent → thread plan</text>
+  <rect class="box core" x="1130" y="115" width="330" height="72"/><text class="label" x="1295" y="143" text-anchor="middle">4. 계획 영속화</text><text class="small" x="1295" y="166" text-anchor="middle">planning_artifact + fanout_plan.json</text>
+  <path class="line" d="M320 151H390"/><path class="line" d="M690 151H760"/><path class="line" d="M1060 151H1130"/>
+
+  <rect class="box core" x="170" y="250" width="340" height="78"/><text class="label" x="340" y="280" text-anchor="middle">5. 실행 materialize</text><text class="small" x="340" y="303" text-anchor="middle">execution agent가 TaskSlice 생성</text>
+  <rect class="box control" x="610" y="250" width="380" height="78"/><text class="label" x="800" y="280" text-anchor="middle">6. 최고 위험도 분류</text><text class="small" x="800" y="303" text-anchor="middle">general / caution / dangerous</text>
+  <rect class="box control" x="1090" y="250" width="300" height="78"/><text class="label" x="1240" y="280" text-anchor="middle">7. 승인 경계</text><text class="small" x="1240" y="303" text-anchor="middle">pending slice만 대기/해제</text>
+  <path class="line" d="M1295 187V215H340V250"/><path class="line" d="M510 289H610"/><path class="line" d="M990 289H1090"/>
+
+  <rect class="box stop" x="1080" y="380" width="330" height="72"/><text class="label" x="1245" y="409" text-anchor="middle">승인 없음: 해당 slice 정지</text><text class="small" x="1245" y="432" text-anchor="middle">Safety approval ≠ Stage Gate</text>
+  <path class="line" d="M1240 328V380"/>
+  <rect class="box core" x="270" y="390" width="360" height="78"/><text class="label" x="450" y="420" text-anchor="middle">8. Fan-out 실행</text><text class="small" x="450" y="443" text-anchor="middle">격리 worker / local subprocess / Codex CLI</text>
+  <path class="line" d="M1090 289H450V390"/>
+
+  <rect class="box core" x="720" y="390" width="300" height="78"/><text class="label" x="870" y="420" text-anchor="middle">9. 결과 생성</text><text class="small" x="870" y="443" text-anchor="middle">result.json + handoff_report.md</text>
+  <rect class="box core" x="1110" y="510" width="300" height="78"/><text class="label" x="1260" y="540" text-anchor="middle">10. Collect</text><text class="small" x="1260" y="563" text-anchor="middle">결과·누락·상태 수집</text>
+  <path class="line" d="M630 429H720"/><path class="line" d="M1020 429H1260V510"/>
+
+  <rect class="box review" x="720" y="630" width="360" height="86"/><text class="label" x="900" y="662" text-anchor="middle">11. Fan-in 합성</text><text class="small" x="900" y="686" text-anchor="middle">missing / conflict / duplicate</text><text class="small" x="900" y="704" text-anchor="middle">coverage / risk / QA / readiness</text>
+  <path class="line" d="M1260 588V630H1080"/>
+  <rect class="box stop" x="250" y="630" width="350" height="86"/><text class="label" x="425" y="662" text-anchor="middle">누락·충돌: remediation</text><text class="small" x="425" y="687" text-anchor="middle">handoff와 Gate 요청 차단</text><text class="small" x="425" y="705" text-anchor="middle">필요 thread 재실행/보완</text>
+  <path class="line" d="M720 673H600"/><path class="line" d="M425 630V429H270"/>
+
+  <rect class="box review" x="720" y="770" width="360" height="82"/><text class="label" x="900" y="802" text-anchor="middle">12. 독립 Stage Gate</text><text class="small" x="900" y="826" text-anchor="middle">증거·phase·변경·위험 검토</text>
+  <path class="line" d="M900 716V770"/>
+  <rect class="box stop" x="150" y="790" width="300" height="72"/><text class="label" x="300" y="819" text-anchor="middle">NO-GO</text><text class="small" x="300" y="842" text-anchor="middle">현재 phase 유지/차단</text>
+  <rect class="box control" x="520" y="900" width="300" height="72"/><text class="label" x="670" y="929" text-anchor="middle">CONDITIONAL GO</text><text class="small" x="670" y="952" text-anchor="middle">조건 충족 전 대기</text>
+  <rect class="box review" x="900" y="900" width="300" height="72"/><text class="label" x="1050" y="929" text-anchor="middle">GO</text><text class="small" x="1050" y="952" text-anchor="middle">다음 phase 시작 가능</text>
+  <path class="line" d="M720 811H300V790"/><path class="line" d="M900 852V900H670"/><path class="line" d="M900 852V900H1050"/>
+  <path class="line" d="M520 936H450V429"/>
+
+  <rect class="box core" x="1260" y="900" width="260" height="72"/><text class="label" x="1390" y="929" text-anchor="middle">13. Handoff / state 갱신</text><text class="small" x="1390" y="952" text-anchor="middle">log + JSON + Markdown</text>
+  <path class="line" d="M1200 936H1260"/>
+  <path class="line" d="M1200 936H1260"/>
+  <path class="line" d="M1260 936H1550V151H1460"/>
+
+  <rect class="box ext" x="60" y="1030" width="1460" height="82"/>
+  <text class="label" x="85" y="1058">Production / LV 확장 레인</text>
+  <text class="tiny" x="85" y="1082">Gate plan + approval + requirements hash 검증 → LV package → preflight → sealed worker result → 독립 review → same-LV remediation(필요 시) → append-only checkpoint → Exit → handoff → SYSTEM_TRANSITION</text>
+  <path class="dash" d="M1050 972V1030"/>
+</svg>

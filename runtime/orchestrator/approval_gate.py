@@ -46,6 +46,14 @@ DANGEROUS_TOKENS = [
     "outside workspace",
 ]
 
+DISCOVERY_INTENT_CLASSIFICATION = {
+    "skill_discovery_read_only": DANGEROUS,
+    "project_skill_install": CAUTION,
+    "global_skill_install": DANGEROUS,
+    "project_skill_create": CAUTION,
+    "global_skill_create": DANGEROUS,
+}
+
 
 def classify_task(task: TaskSlice | dict[str, object], project_root: str | None = None) -> ApprovalAssessment:
     if isinstance(task, TaskSlice):
@@ -92,6 +100,21 @@ def classify_task(task: TaskSlice | dict[str, object], project_root: str | None 
         return ApprovalAssessment(CAUTION, "Task contains caution work items.", matched_rules)
 
     return ApprovalAssessment(GENERAL, "Task is within general work scope.", [])
+
+
+def classify_discovery_intent(intent: str) -> ApprovalAssessment:
+    """Classify Skill Discovery policy intents without executing them."""
+    if not isinstance(intent, str) or intent not in DISCOVERY_INTENT_CLASSIFICATION:
+        return ApprovalAssessment(DANGEROUS, "Unknown Skill Discovery intent; fail closed.", ["unknown-discovery-intent"])
+    classification = DISCOVERY_INTENT_CLASSIFICATION[intent]
+    reasons = {
+        "skill_discovery_read_only": "external read-only discovery requires dangerous approval",
+        "project_skill_install": "project file write and supply-chain review require approval",
+        "global_skill_install": "global Skill change requires escalation",
+        "project_skill_create": "project Skill/Agent creation requires approval",
+        "global_skill_create": "global Skill/Agent creation requires escalation",
+    }
+    return ApprovalAssessment(classification, reasons[intent], [intent])
 
 
 def approval_prompt_for(classification: str) -> str:

@@ -1,0 +1,35 @@
+{
+  "schema_version": "orch04.g4b.final-approval.v1",
+  "recorded_at": "2026-09-13T23:34:10.046599Z",
+  "authority": "Project Owner",
+  "approval_scope": "G-4B final handoff record only",
+  "approval_statement_verbatim": "승인할게.",
+  "normalized_decision": "APPROVED",
+  "handoff_status": "CLOSED",
+  "authority_unresolved_issues": [],
+  "qa_status": "CLOSED",
+  "release_deploy_push_authorized": false,
+  "production_adoption_authorized": false,
+  "separate_operational_approval_required": true,
+  "approved_preapproval_packet": {
+    "path": "_workspace/g-4b-release-handoff-fresh-20260914-r15-qa-fix/closure/approval_packet.sha256",
+    "sha256": "2eb0d2387e260aba7aa018f61fe5a51307a8325bc48bca97a7279bbe78ebbbf6"
+  },
+  "approval_request_at_decision": {
+    "path": "docs/harness/ORCH04_G4B_FINAL_APPROVAL_REQUEST_20260914.md",
+    "sha256": "4b3c5ffabdaf36da34c93bff85703b7c71e77bf55b1c3fbb67928176c188e5cf"
+  },
+  "source_scope_manifest": {
+    "path": "_workspace/g-4b-release-handoff-fresh-20260914-r15-qa-fix/closure/source_scope_manifest.sha256",
+    "sha256": "cce55c8a41e8685701c78684d8036e33bb358b33bc346e5c3a12a3f48148853f"
+  },
+  "qa_closure": {
+    "path": "_workspace/g-4b-release-handoff-fresh-20260914-r15-qa-fix/closure/qa_closure.json",
+    "sha256": "b3231f49f2bb4732cdfd51ef8151926eb8904938d9941ed4b62522d0ef497608"
+  },
+  "r15_gate_result": {
+    "path": "_workspace/g-4b-release-handoff-fresh-20260914-r15-qa-fix/gate/stage_gate_result.json",
+    "sha256": "3f06cd6e4b244f5fdd7b664ff6f071d155e125adbc9529849c045ef8088cb8a0"
+  },
+  "note": "This approval closes the G-4B handoff decision only. Release, deployment, remote push, and production adoption remain unauthorized without separate explicit approval."
+}

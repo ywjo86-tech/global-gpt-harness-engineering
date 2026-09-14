@@ -11,11 +11,12 @@ from runtime.agents import ProjectExecutionAgent, ProjectOrchestratorAgent
 
 from .approval_gate import CAUTION, DANGEROUS, approval_prompt_for
 from .codex_adapter import create_manual_task, detect_codex_cli, run_task_prompt
-from .contract_loader import ContractLoadError, load_contract
-from .execution_modes import CODEX_CLI, MANUAL, MOCK, normalize_execution_mode
+from .contract_loader import ContractLoadError, MANAGED_PROJECT_ROLE, load_contract
+from .execution_modes import CODEX_CLI, HYBRID, MANUAL, MOCK, NVIDIA, normalize_execution_mode
 from .fanin import build_fanin_report_from_collection, render_fanin_markdown
 from .fanout import build_fanout_plan, write_json
 from .prompt_builder import build_fanin_prompt
+from .provider_executor import execute_provider_task
 from .result_collector import collect_run_outputs
 from .schemas import ExecutionContract, FanInReport, PlanningArtifact, RuntimeState, TaskSlice, WorkerRequest
 from .stage_gate import run_stage_gate, write_stage_gate_prompt
@@ -30,14 +31,15 @@ def _write_json(path: str | Path, payload: object) -> None:
 
 
 class OrchestrationEngine:
-    def __init__(self, project_root: str | Path) -> None:
+    def __init__(self, project_root: str | Path, *, contract_role: str = MANAGED_PROJECT_ROLE) -> None:
         self.project_root = Path(project_root).resolve()
+        self.contract_role = contract_role
         self.repo_root = Path(__file__).resolve().parents[2]
         self.contract: ExecutionContract | None = None
         self.store = StateStore(self.project_root)
 
     def _load_contract(self) -> ExecutionContract:
-        self.contract = load_contract(self.project_root, strict=True)
+        self.contract = load_contract(self.project_root, strict=True, role=self.contract_role)
         return self.contract
 
     def _resolve_run_id(self, explicit_run_id: str | None = None) -> str:
@@ -333,9 +335,17 @@ class OrchestrationEngine:
         resumed_threads = sorted(self._existing_completed_threads(package.run_root))
         if resumed_threads:
             runnable = [task for task in runnable if task.thread_id not in set(resumed_threads)]
-        if normalized_mode == CODEX_CLI:
+        if normalized_mode in {CODEX_CLI, NVIDIA, HYBRID}:
             for task in runnable:
-                result = run_task_prompt(task.task_prompt_path, task.output_dir, normalized_mode)
+                if normalized_mode == CODEX_CLI:
+                    result = run_task_prompt(task.task_prompt_path, task.output_dir, normalized_mode)
+                else:
+                    result = execute_provider_task(
+                        task,
+                        mode=normalized_mode,
+                        project_root=str(self.project_root),
+                        local_worker=lambda local_task: self._execute_local_worker(local_task, contract.summary(), state_snapshot),
+                    )
                 runnable_results.append(
                     {
                         "thread_id": task.thread_id,

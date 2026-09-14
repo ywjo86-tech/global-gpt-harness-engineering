@@ -13,6 +13,10 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 - `python -m runtime.orchestrator.cli approve --project <project_path> --approval "..."`
 - `python -m runtime.orchestrator.cli gate --project <project_path>`
 - `python -m runtime.orchestrator.cli status --project <project_path>`
+- `python -m runtime.orchestrator.cli gate-dry-run --project-root <project_path> --gate-id <gate_id> --mode GATE_BY_GATE`
+- `python -m runtime.orchestrator.cli gate-dry-run --project-root <project_path> --gate-id <gate_id> --mode FULL_PLAN --full-plan-opt-in --project-final-validation` (read-only eligibility check; does not activate or run Full Plan)
+- `python -m runtime.orchestrator.cli gate-validate --project-root <project_path> --gate-id <gate_id> --requirements-sha256 <sha256> --approval-evidence <path> --requirement-evidence <path> --branch <branch> --head <head> --harness-root <harness_path>`
+- `python -m runtime.orchestrator.cli gate-run --project-root <project_path> --gate-id <gate_id> --run-id <run_id> --requirements-sha256 <sha256> --approval-evidence <path> --requirement-evidence <path> --branch <branch> --head <head> --harness-root <harness_path>`
 
 ## Runtime Responsibilities
 
@@ -26,6 +30,10 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 - Collect worker results into a fan-in report.
 - Call the stage gate reviewer as a separate execution unit.
 - Persist runtime state in machine-readable JSON and human-readable Markdown.
+- Validate the sealed fixed-command registry, canonical Gate approval, requirements/plan SHA, Git baseline, LV scope, and isolated project namespace before a real Gate lifecycle starts.
+- Report `FULL_PLAN` eligibility only when both explicit opt-in and final-project-validation flags are present; a dry run never activates that mode.
+- Seal that authorization-derived eligibility projection in new Gate handoffs (`orchestration.gate.handoff.v2`) without representing it as execution evidence; historical v1 handoffs remain valid for verification.
+- Execute package, preflight, sealed worker result, independent review, same-LV remediation when required, append-only checkpoint, Exit, handoff, and `SYSTEM_TRANSITION`; a missing worker result is a distinct hard stop and never a successful handoff.
 
 ## Safety Boundaries
 
@@ -47,7 +55,7 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 
 - `docs/harness/orchestration-execution-standard.md`
 - `docs/harness/orchestration-approval-rules.md`
-- `docs/harness/orchestration-runtime-work-items.md`
+- `docs/harness/orchestration-runtime-work-items.md` — global Gate orchestration requirements SHA-256 `f734be6f2a81c89428f28605a1ffcd12234a511e69ded4c607041a2e0b367361`
 - `docs/harness/orchestration-jarvis-bridge.md`
 - `docs/harness/stage-gate-reviewer.md`
 - `docs/harness/stage-gate-final-report-template.md`
@@ -63,4 +71,4 @@ The runtime is local, file-based, and CLI-invoked. It does not require a server,
 - Confirm bridge snapshots can be generated from runtime state for Jarvis consumption.
 
 ## Last Updated
-2026-06-18
+2026-09-12

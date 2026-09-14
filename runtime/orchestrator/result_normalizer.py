@@ -129,6 +129,10 @@ def normalize_worker_result(
         )
     ).strip()
     project_root = str(_first_non_empty(payload, ("project_root",), task_payload.get("project_root", ""))).strip()
+    provider = str(_first_non_empty(payload, ("provider",), task_payload.get("provider", ""))).strip()
+    model = str(_first_non_empty(payload, ("model", "provider_model"), task_payload.get("model", ""))).strip()
+    route_reason = str(_first_non_empty(payload, ("route_reason", "route_reason_code"), task_payload.get("route_reason", ""))).strip()
+    provider_error_class = str(_first_non_empty(payload, ("provider_error_class",), "")).strip()
 
     normalized = {
         "schema_version": SCHEMA_VERSION,
@@ -159,6 +163,18 @@ def normalize_worker_result(
         "task_purpose": str(_first_non_empty(payload, ("task_purpose",), task_payload.get("input", ""))).strip(),
         "task": task_payload,
     }
+    provider_trace = {
+        key: value
+        for key, value in {
+            "provider": provider,
+            "model": model,
+            "route_reason": route_reason,
+            "provider_error_class": provider_error_class,
+        }.items()
+        if value
+    }
+    if provider_trace:
+        normalized["provider_trace"] = provider_trace
     if payload.get("raw_payload") is not None:
         normalized["raw_payload"] = payload["raw_payload"]
     return normalized
@@ -189,6 +205,18 @@ def render_worker_handoff_markdown(result: dict[str, Any]) -> str:
         result.get("summary", "") or "none",
         "",
     ]
+    provider_trace = result.get("provider_trace") if isinstance(result.get("provider_trace"), dict) else {}
+    if provider_trace:
+        lines.extend(
+            [
+                "Provider Trace",
+                f"- provider: {provider_trace.get('provider', 'none')}",
+                f"- model: {provider_trace.get('model', 'none')}",
+                f"- route: {provider_trace.get('route_reason', 'none')}",
+                f"- error_class: {provider_trace.get('provider_error_class', 'none')}",
+                "",
+            ]
+        )
     for title, key in (
         ("Findings", "findings"),
         ("Warnings", "warnings"),

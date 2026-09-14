@@ -1,0 +1,2092 @@
+# FULL PLAN EXECUTION CONTRACT
+
+TARGET_RUNTIME_FILE: docs/DEVELOPMENT_PLAN.txt
+CONTRACT_TYPE: FULL_PLAN_EXECUTION_CONTRACT
+CONTRACT_STATUS: READY_FOR_CODEX
+
+# EC-00 CONTRACT IDENTITY
+
+PROJECT_NAME: Full Plan Multi-Provider Execution Bootstrap
+PROJECT_ID: FP-MPEB-P1
+SOURCE_IMPLEMENTATION_DESIGN_VERSION: V0.1
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_VERSION: V0.1
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_DATE: 2026-09-13
+SOURCE_IMPLEMENTATION_DESIGN_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_HANDOFF_READINESS: READY
+TARGET_REPOSITORY: `ywjo86-tech/global-gpt-harness-engineering`
+BASELINE_REF: `TO_BE_CAPTURED_AT_GATE_0_FROM_ACTUAL_ACTIVE_WORKTREE`
+SOURCE_DRIFT_STATUS: CLEAR
+AUTHORITATIVE_SOURCE: `FP-MPEB-P1_APPROVED_IMPLEMENTATION_DESIGN_V0.1.md`
+APPROVED_DEVELOPMENT_PLAN_BINDING: `Full_Plan_Multi_Provider_Execution_Bootstrap_Approved_Development_Plan_V0.1.md`
+
+## APPROVAL / HANDOFF AUTHORITY
+
+# ID-00 Document Control
+
+PROJECT_NAME: Full Plan Multi-Provider Execution Bootstrap  
+PROJECT_ID: FP-MPEB-P1  
+DOCUMENT_TYPE: IMPLEMENTATION_DESIGN
+
+DESIGN_VERSION: V0.1  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED
+APPROVED_VERSION: V0.1  
+APPROVED_DATE: 2026-09-13
+
+CREATED_DATE: 2026-09-13  
+LAST_UPDATED_DATE: 2026-09-13
+
+APPROVED_PLAN_VERSION: V0.1  
+APPROVED_PLAN_APPROVED_VERSION: V0.1  
+APPROVED_PLAN_APPROVED_DATE: 2026-09-13  
+APPROVED_PLAN_SOURCE_REF: `Full_Plan_Multi_Provider_Execution_Bootstrap_Approved_Development_Plan_V0.1.md`
+
+TARGET_REPOSITORY: `ywjo86-tech/global-gpt-harness-engineering`  
+BASELINE_REF: `TO_BE_CAPTURED_AT_GATE_0_FROM_ACTUAL_ACTIVE_WORKTREE`
+
+DESIGN_VERIFICATION_SOURCE_REF: `migration/hamonikr-linux @ 3c5ee4d07189d3d3111839207d25af2a7bffd40d + observed dirty working tree on 2026-09-13`  
+OBSERVED_REMOTE_BRANCH_REF: `origin/migration/hamonikr-linux @ c68ba9b2520df0dab22981f9a78a4d5ee7e087e4`  
+OBSERVED_REFERENCE_MAIN_FROM_APPROVED_PLAN: `94ba2785177857a157b57b5b14c3119c7c3dfbf5`
+
+---
+
+# ID-02 Approved Development Plan Binding
+
+## Planning Authority
+
+AUTHORITATIVE_PLAN: `Full_Plan_Multi_Provider_Execution_Bootstrap_Approved_Development_Plan_V0.1.md`  
+PLAN_VERSION: V0.1  
+APPROVED_VERSION: V0.1  
+APPROVED_DATE: 2026-09-13  
+SOURCE_REF: User-approved Requirements Analysis V0.1; source request Full Plan Multi-Provider Execution Bootstrap V0.1-DRAFT; repository `ywjo86-tech/global-gpt-harness-engineering` verified on 2026-09-13  
+TARGET_REPOSITORY: `ywjo86-tech/global-gpt-harness-engineering`  
+BASELINE_REF: `TO_BE_CAPTURED_AT_GATE_0_FROM_ACTUAL_ACTIVE_WORKTREE`
+
+## Preserved Planning Boundaries
+
+The Implementation Design preserves without silent modification:
+
+- User Intent
+- REQ-001 ~ REQ-014
+- NFR-001 ~ NFR-005
+- SEC-001 ~ SEC-005
+- OPS-001 ~ OPS-004
+- all Acceptance Conditions
+- IN SCOPE / OUT OF SCOPE
+- Technical / Compatibility / Security / Operational / Business-Cost Constraints
+- SC-001 ~ SC-009
+- DEL-001 ~ DEL-008
+
+No architecture decision below changes the approved WHAT. A future need to change Requirement, Scope, Constraint, Success Criterion, or Deliverable requires `PLAN_REVISION_REQUIRED`.
+
+---
+
+## FINAL APPROVAL / HANDOFF BASELINE
+
+# ID-25 User Approval
+
+Diagnosis PASS result:
+
+`READY_FOR_USER_APPROVAL`
+
+User decision:
+
+`구현설계 승인`
+
+Final approval state:
+
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: V0.1  
+APPROVED_DATE: 2026-09-13
+
+USER_APPROVAL: EXPLICIT  
+USER_APPROVAL_DECISION: 구현설계 승인
+
+This approval converts the diagnosed V0.1 design into the authoritative Approved Implementation Design without changing the diagnosed technical HOW.
+
+---
+
+# ID-27 Full Plan Handoff Readiness
+
+The next project is:
+
+`프로젝트 실행승인`
+
+Authoritative input after user approval:
+
+`Approved Implementation Design`
+
+HANDOFF_READINESS: READY
+
+Reason: Implementation Design Diagnosis is PASS and explicit user approval was recorded on 2026-09-13.
+
+Required Return Point: N/A
+
+The next project does not need to newly design:
+
+- Requirement
+- Architecture
+- Component
+- Interface
+- Task
+- Dependency
+- Change Target
+- Validation
+- Security
+- Permission
+- Evidence
+- Gate
+- Recovery
+- Ownership Boundary
+
+This document is now authoritative for the next project, `프로젝트 실행승인`.
+
+---
+
+# ID-28 Final Baseline Declaration
+
+When:
+
+`DESIGN_STATUS: APPROVED`
+
+and:
+
+`APPROVAL_STATUS: APPROVED`
+
+this V0.1 document becomes the authoritative Implementation Design baseline for:
+
+`프로젝트 실행승인`
+
+Only the approved version may be used as authority.
+
+The following are not authoritative:
+
+- superseded drafts
+- old diagnosis reports
+- abandoned architecture alternatives
+- retired task structures
+- unapproved design changes
+
+Final authoritative artifact:
+
+`APPROVED IMPLEMENTATION DESIGN`
+
+---
+
+## SOURCE / BASELINE COMPATIBILITY
+
+# ID-03 Current State Verification
+
+## Current Architecture Summary
+
+Read-only verification of the active local worktree on 2026-09-13 confirmed the following relevant flow:
+
+`Development Plan / Execution Contract`  
+→ `task_router.py` creates `TaskSlice` by Agent/Task responsibility  
+→ `engine.py` packages fan-out work  
+→ execution mode dispatch (`mock`, `manual`, `codex-cli`)  
+→ local worker or `codex_adapter.py`  
+→ `result_normalizer.py`  
+→ `result_collector.py`  
+→ `fanin.py`  
+→ `stage_gate.py`
+
+The active source also contains a separate production execution subsystem and a canonical LV worker contract (`orchestration.lv_worker.result.v1`). This design does not replace or generalize that production subsystem. The Multi-Provider bootstrap is scoped to the existing Full Plan Orchestration worker flow described above.
+
+## Relevant Components
+
+| ID | Component / Module | Current Responsibility | Verification Status |
+|---|---|---|---|
+| CMP-001 | `runtime/orchestrator/execution_modes.py` | Normalizes and describes `mock`, `manual`, `codex-cli` | VERIFIED |
+| CMP-002 | `runtime/orchestrator/task_router.py` | Development Plan section → Agent/TaskSlice routing | VERIFIED |
+| CMP-003 | `runtime/orchestrator/schemas.py::TaskSlice` | Task contract with scope, validation, status and run paths | VERIFIED |
+| CMP-004 | `runtime/orchestrator/codex_adapter.py` | Codex CLI execution and Codex→manual fallback | VERIFIED |
+| CMP-005 | `runtime/orchestrator/engine.py` | Planning, packaging, execution dispatch, collection, fan-in, gate lifecycle | VERIFIED |
+| CMP-006 | `runtime/orchestrator/result_normalizer.py` | Normalizes worker payloads to `orchestration.worker.result.v1` | VERIFIED |
+| CMP-007 | `runtime/orchestrator/result_collector.py` | Reads/normalizes task outputs and builds CollectionReport | VERIFIED |
+| CMP-008 | `runtime/orchestrator/fanin.py` | Converts normalized collection into provider-agnostic FanInReport | VERIFIED |
+| CMP-009 | `runtime/orchestrator/stage_gate.py` | Independent gate decision over fan-in/evidence | VERIFIED |
+| CMP-010 | `runtime/orchestrator/retry_policy.py`, `failure_recovery.py` | Existing task-level bounded retry/recovery concepts | VERIFIED |
+| CMP-011 | `runtime/agents/documentation_agent.py`, `qa_reviewer_agent.py` | Current local read-only reasoning-style workers | VERIFIED |
+| CMP-012 | `runtime/agents/implementation_agent.py` | Current implementation task worker boundary | VERIFIED |
+| CMP-013 | production execution modules and `lv_execution_package.py` | Separate production/canonical worker execution contract | VERIFIED / PRESERVE |
+
+## Relevant Interfaces
+
+| ID | Interface | Current Behavior | Verification Status |
+|---|---|---|---|
+| IF-001 | `normalize_execution_mode(mode)` | Accepts only legacy three modes | VERIFIED |
+| IF-002 | `route_tasks(contract, state) -> list[TaskSlice]` | Chooses Agent/Task but no Provider | VERIFIED |
+| IF-003 | `TaskSlice.as_request_payload()` | Serializes TaskSlice with `asdict` | VERIFIED |
+| IF-004 | `run_task_prompt(prompt, output_dir, mode)` | mock delegation/manual/Codex CLI, Codex failure→manual | VERIFIED |
+| IF-005 | `normalize_worker_result(...)` | Produces `orchestration.worker.result.v1` | VERIFIED |
+| IF-006 | `collect_run_outputs(run_root)` | Normalizes result files then determines completion/failure | VERIFIED |
+| IF-007 | `build_fanin_report_from_collection(...)` | Consumes common collection data, no Provider branch | VERIFIED |
+| IF-008 | `run_stage_gate(...)` | Consumes FanInReport and runtime state | VERIFIED |
+
+## Relevant Runtime Flow
+
+1. `engine.plan/run` loads the current contract and calls existing Task Router.
+2. `TaskSlice` is persisted in the fan-out package.
+3. `manual` generates manual execution artifacts.
+4. `codex-cli` calls `codex_adapter.run_task_prompt`; Codex unavailable/error becomes manual fallback.
+5. `mock` invokes local `worker_runner` through subprocess.
+6. Result files are normalized and collected.
+7. Fan-in uses normalized fields only.
+8. Stage Gate is downstream of fan-in and does not currently require Provider identity.
+
+## Relevant Dependencies
+
+| Dependency | Purpose | Current Status |
+|---|---|---|
+| Python standard library `urllib` | Existing outbound HTTP pattern available in repository | VERIFIED |
+| `NVIDIA_API_KEY` | NVIDIA Hosted API authentication | EXTERNAL / REQUIRED AT EXECUTION |
+| NVIDIA Hosted API | Read-only reasoning provider | EXTERNAL / REQUIRED AT EXECUTION |
+| Codex CLI | Existing state-changing execution backend | EXISTING / PRESERVE |
+| Current worker normalization | Unified result boundary | EXISTING / REUSE |
+
+## Existing Tests
+
+| Test / Test Area | Purpose | Status |
+|---|---|---|
+| `tests/test_codex_adapter_manual_mode.py` | manual and Codex→manual fallback, Codex result normalization | VERIFIED |
+| `tests/test_codex_runtime_flow.py` | manual/mock collect→fanin→gate runtime flows | VERIFIED |
+| `tests/test_task_router.py` | Agent routing behavior | VERIFIED |
+| `tests/test_result_normalizer.py` | worker v1 normalization/rendering | VERIFIED |
+| `tests/test_stage_gate.py` | independent Stage Gate behavior | VERIFIED |
+| production/canonical worker tests | Separate production runtime contract | VERIFIED / PRESERVE |
+
+No tests were executed during this Implementation Design project. Only source and test definitions were inspected.
+
+## Current Limitations
+
+- Provider selection is not a separate responsibility.
+- `TaskSlice` has no explicit Provider capability metadata.
+- `execution_modes.py` has no `nvidia` or `hybrid` mode.
+- `codex_adapter.py` is the only hosted/CLI execution adapter in the legacy worker flow.
+- Worker result v1 does not currently expose provider/model/route metadata.
+- No NVIDIA context sanitizer/bounded-context boundary exists.
+- Active worktree is dirty and local HEAD is ahead of the observed remote branch; Gate 0 must capture the exact source state before implementation changes.
+
+## Source Drift Status
+
+SOURCE_DRIFT_STATUS: CLEAR
+
+Rationale:
+
+- The Approved Development Plan explicitly did **not** make GitHub `main @ 94ba278...` the implementation baseline; DEC-001 required Gate 0 to adopt the actual active working tree.
+- The current active branch/HEAD differs from that reference, but the plan explicitly anticipated this condition.
+- Re-verification confirms the planning-level architecture facts needed by the approved requirements: legacy modes remain present; Task Router remains Provider-neutral; `TaskSlice` still lacks Provider capability metadata; worker v1 normalization remains; Fan-in/Stage Gate remain downstream of normalization.
+- The additional production/canonical subsystem does not change approved Requirement/Scope/Constraint/Success Criterion/Deliverable for this bootstrap and is explicitly preserved.
+
+If the active worktree changes again before implementation Gate 0, source verification must be repeated before any change task begins.
+
+---
+
+# EC-01 SCOPE
+
+# ID-05 Approved Scope and Constraints
+
+## IN SCOPE
+
+- Full Plan current-state Freeze / baseline recording
+- Execution Provider abstraction
+- Existing Codex Backend preservation
+- NVIDIA Hosted API Adapter capability
+- Rule-Based Provider Router
+- Minimal Task Capability metadata extension
+- NVIDIA / Hybrid execution modes
+- Existing Worker Result normalization extension
+- Provider/model execution metadata
+- timeout/retry/error normalization
+- explicit fallback/failure state
+- Secret/Credential Context sanitization and bounded context policy
+- Unit Test and existing regression verification
+- Hybrid E2E Smoke Test
+- STOP GATE and Full Plan resume handoff
+
+## OUT OF SCOPE
+
+- Jarvis UI 통합
+- ChatGPT 직접 입력 통합
+- Full MCP 확대
+- 자동 Provider benchmark
+- AI-based routing
+- Token/cost optimization 및 Cost dashboard
+- NVIDIA local hosting
+- 자동 multi-model routing
+- Claude/Gemini/Local LLM Provider
+- Provider marketplace
+- adaptive/self-learning routing
+
+## Approved Constraints
+
+### Technical
+
+- Existing Orchestrator Runtime and Result Normalizer must be reused.
+- Existing Task Router remains Agent/Task router; Provider routing is separate.
+- NVIDIA is remote read-only reasoning backend only.
+- No dynamic/AI router.
+
+### Compatibility
+
+- Preserve `mock`, `manual`, `codex-cli`.
+- Preserve Codex manual fallback semantics.
+- Fan-in / Stage Gate must not gain Provider-specific processing branches.
+
+### Security
+
+- NVIDIA is treated as an external hosted provider.
+- Secrets/credentials/environment credential values must never be transmitted.
+- Source/document transmission is allowed only after approved filtering, bounded task relevance, and forbidden-path enforcement.
+
+### Operational
+
+- NVIDIA failure must not crash the entire runtime.
+- Retry is bounded.
+- Automatic NVIDIA→Codex fallback must not recreate unconditional Codex concentration.
+
+### Business / Cost
+
+- Phase 1 exists to reduce Codex usage concentration.
+- Stop provider expansion after minimum hybrid proof is achieved.
+
+## Approved Success Criteria
+
+- SC-001: Legacy Codex-only and `mock`, `manual`, `codex-cli` behavior remains.
+- SC-002: At least one NVIDIA Hosted API read-only reasoning task succeeds.
+- SC-003: Codex/NVIDIA normalize to the same worker result flow; fan-in/gate remain provider-agnostic.
+- SC-004: deterministic Provider Router selects expected providers and exposes rationale.
+- SC-005: at least one Hybrid E2E has NVIDIA reasoning + Codex state-changing execution.
+- SC-006: NVIDIA timeout/auth/rate-limit/invalid response/other provider failures do not become uncaught runtime crashes.
+- SC-007: API key/secrets/credentials/forbidden context are absent from NVIDIA prompt/result/general logs.
+- SC-008: approved baseline regression has no functional damage.
+- SC-009: Codex + NVIDIA + Hybrid + Result Contract + Regression success triggers STOP and Full Plan resume.
+
+## Approved Deliverables
+
+- DEL-001: Full Plan Freeze Baseline Record and recovery reference
+- DEL-002: Provider-neutral Execution Boundary and compatible existing Codex path
+- DEL-003: Configurable NVIDIA read-only reasoning capability
+- DEL-004: Rule-Based Provider Routing and minimal Task Capability contract
+- DEL-005: Unified Worker Result extension and Provider traceability
+- DEL-006: Hosted Context Security and Provider Failure Isolation controls
+- DEL-007: Unit/Regression/Hybrid Smoke validation evidence and STOP GATE result
+- DEL-008: Full Plan Orchestration Resume Handoff
+
+---
+
+# EC-02 REQUIREMENTS / ACCEPTANCE / SUCCESS / DELIVERABLES
+
+# ID-04 Approved Requirements
+
+## Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| REQ-001 | Multi-Provider 변경 전에 Full Plan 기준 상태를 Freeze하고 복구 가능한 baseline reference를 남겨야 한다. | Branch/commit, 기존 기능, 알려진 이슈 및 검증 결과가 기록됨 | MUST |
+| REQ-002 | Orchestration Layer와 실행 Backend 사이에 Provider 선택 책임을 분리해야 한다. | Planner가 구체 Provider/model을 선택하지 않고 별도 Provider Routing 단계가 존재함 | MUST |
+| REQ-003 | 기존 Codex 실행 Backend의 기능과 fallback 동작을 유지해야 한다. | `codex-cli` 기존 경로가 Multi-Provider 도입 후에도 동작함 | MUST |
+| REQ-004 | NVIDIA Hosted API를 Worker Backend로 호출할 수 있어야 한다. | 구성된 NVIDIA 모델로 최소 1개 Reasoning Task가 정상 완료됨 | MUST |
+| REQ-005 | NVIDIA Endpoint와 Model은 Runtime configuration으로 분리해야 한다. | 코드 수정 없이 model/endpoint 설정 변경 가능 | MUST |
+| REQ-006 | Provider Router는 Phase 1에서 deterministic Rule-Based 방식으로 Task 특성에 따라 Codex/NVIDIA를 선택해야 한다. | 동일 Task metadata에 대해 동일 Provider가 선택됨 | MUST |
+| REQ-007 | Task 계약은 Provider 선택에 필요한 최소 Capability 정보를 표현할 수 있어야 한다. | Read-only, reasoning, filesystem write, shell/test/git 등 실행 특성을 구분 가능 | MUST |
+| REQ-008 | `mock`, `manual`, `codex-cli`를 유지하면서 NVIDIA와 Hybrid 실행을 지원해야 한다. | 기존 3 Mode 회귀 없이 Hybrid 실행 가능 | MUST |
+| REQ-009 | NVIDIA Backend는 Phase 1에서 state-changing 작업을 직접 수행하지 않아야 한다. | filesystem write/shell/test/git 작업이 NVIDIA로 직접 실행되지 않음 | MUST |
+| REQ-010 | Codex와 NVIDIA 결과는 동일 Worker Result normalization 흐름으로 수렴해야 한다. | Fan-in/Stage Gate가 Provider별 분기 없이 결과를 처리함 | MUST |
+| REQ-011 | Normalized Result에는 실행 Provider 추적에 필요한 metadata를 기록할 수 있어야 한다. | 최소 provider/model/task 또는 동등한 추적 metadata 확인 가능 | MUST |
+| REQ-012 | NVIDIA 호출 실패 시 bounded retry 후 명시적 failure/fallback 상태로 전환해야 한다. | Provider 오류가 전체 Runtime uncaught crash로 전파되지 않음 | MUST |
+| REQ-013 | Hybrid Mode에서 Reasoning과 Execution Task가 서로 다른 Provider로 실제 분배되어야 한다. | 혼합 E2E Smoke Scenario 최소 1개 성공 | MUST |
+| REQ-014 | Phase 1 STOP GATE 조건 충족 후 Provider 기능 확대를 중단해야 한다. | Codex + NVIDIA + Hybrid + Result Contract + Regression 조건 충족 후 Phase 종료 | MUST |
+
+## Non-Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| NFR-001 | 기존 Full Plan의 변경 범위를 최소화해야 한다. | Fan-in/Stage Gate 등 Provider 비관련 상위 계층에 불필요한 Provider 분기 없음 | MUST |
+| NFR-002 | Provider 추가가 기존 Orchestration 논리 변경을 최소화하는 구조여야 한다. | 향후 Provider 추가 시 Planner/Fan-in 재작성 필요 없음 | SHOULD |
+| NFR-003 | Routing은 Phase 1 동안 재현 가능하고 설명 가능해야 한다. | Task → Provider 선택 이유를 확인할 수 있음 | MUST |
+| NFR-004 | 외부 Provider 호출에는 명시적 timeout과 제한된 retry가 있어야 한다. | 무한 대기/무한 retry가 존재하지 않음 | MUST |
+| NFR-005 | Multi-Provider 기능은 Unit Test와 E2E Smoke Test가 가능해야 한다. | Adapter, Router, normalization, failure path에 자동 검증 존재 | MUST |
+
+## Security Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| SEC-001 | `NVIDIA_API_KEY`는 환경변수로만 읽고 Source Code에 저장하지 않아야 한다. | 저장소/설정파일에 실제 Key 값 없음 | MUST |
+| SEC-002 | API Key와 Credential 값이 Prompt, Result, 일반 로그에 포함되지 않아야 한다. | 보안 테스트에서 Secret 값 미노출 | MUST |
+| SEC-003 | NVIDIA로 Context를 전송하기 전에 Secret/Credential filtering을 수행해야 한다. | `.env`, API_KEY, PASSWORD, TOKEN, SECRET, PRIVATE_KEY, SSH_KEY, certificate/credential data가 차단됨 | MUST |
+| SEC-004 | NVIDIA Worker는 Phase 1에서 Host filesystem write, shell execution, git operation 권한을 가져서는 안 된다. | NVIDIA execution path에 해당 권한이 없음 | MUST |
+| SEC-005 | 외부 Provider로 전송하는 Context는 Task 수행에 필요한 범위로 제한해야 한다. | 전체 Repository 무조건 전송 방식이 아닌 bounded context policy 존재 | MUST |
+
+## Operational Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| OPS-001 | Provider, model, timeout, retry 등 주요 실행 설정은 코드와 분리되어야 한다. | Runtime configuration으로 확인 가능 | MUST |
+| OPS-002 | Provider 실행 결과 및 실패 원인을 운영자가 확인할 수 있어야 한다. | task/provider/model/status/error class가 추적 가능 | MUST |
+| OPS-003 | Multi-Provider 변경 전 baseline으로 복구 가능한 운영 절차가 있어야 한다. | Freeze reference 또는 작업 branch 기준 복구 가능 | MUST |
+| OPS-004 | NVIDIA 모델 가용성 변화가 코드 재설계로 연결되지 않아야 한다. | 모델 ID 교체가 configuration 변경 수준에서 가능 | SHOULD |
+
+---
+
+## SUCCESS CRITERIA / DELIVERABLE BINDING
+
+The approved Success Criteria and Deliverables are preserved verbatim in EC-01 and are linked requirement-by-requirement in EC-13 Traceability. No requirement, acceptance condition, success criterion, or deliverable is altered by this execution contract.
+
+# EC-03 ARCHITECTURE / COMPONENTS / CHANGE TARGETS
+
+# ID-06 Architecture Design
+
+## Current Architecture Boundary
+
+In-scope legacy worker execution boundary:
+
+`ExecutionContract`  
+→ `Task Router`  
+→ `TaskSlice`  
+→ `Engine execution mode dispatch`  
+→ `{Local Worker | Codex Adapter | Manual}`  
+→ `Worker Result Normalizer`  
+→ `Result Collector`  
+→ `Fan-in`  
+→ `Stage Gate`
+
+Preserved separate boundary:
+
+`production_*` modules + canonical LV execution package/result contract.
+
+## Target Architecture
+
+`ExecutionContract`  
+→ `Task Router` **(Agent selection + explicit required_capabilities only)**  
+→ `TaskSlice` **(+ required_capabilities, input_files)**  
+→ `Execution Mode Policy` (`mock/manual/codex-cli/nvidia/hybrid`)  
+→ **Provider Router** (`ProviderRouteDecision`)  
+→ **Provider Executor**  
+→ `{Codex Adapter | NVIDIA Adapter | legacy manual/local worker}`  
+→ `Worker Result Normalizer v1 + optional provider metadata`  
+→ unchanged `Result Collector`  
+→ unchanged `Fan-in`  
+→ unchanged/provider-agnostic `Stage Gate`
+
+NVIDIA path only:
+
+`Task prompt + explicit input_files`  
+→ **Context Sanitizer**  
+→ bounded sanitized context  
+→ NVIDIA OpenAI-compatible `POST /v1/chat/completions`  
+→ envelope validation  
+→ normalized worker result  
+→ existing result file/handoff artifacts.
+
+## Preserved Architecture
+
+- Existing Planner/Task Router ownership of Agent/Task selection.
+- Existing Codex adapter and Codex→manual fallback semantics.
+- Existing local mock worker execution.
+- Existing manual task generation.
+- Existing `orchestration.worker.result.v1` schema identity.
+- Existing Result Collector and Fan-in interpretation of completion/failure.
+- Existing Stage Gate semantics.
+- Existing production/canonical execution subsystem.
+
+## Changed Architecture
+
+- Execution modes extend with `nvidia` and `hybrid`.
+- `TaskSlice` gains backward-compatible capability/context fields.
+- Engine gains provider routing/dispatch only for the two new modes.
+- Result normalizer preserves optional provider trace metadata.
+- External-context security boundary is introduced before NVIDIA transport.
+
+## New Architecture Elements
+
+- `provider_router.py`
+- `provider_executor.py`
+- `context_sanitizer.py`
+- `nvidia_adapter.py`
+
+## Architecture Decisions
+
+| ID | Decision | Related Requirements | Rationale |
+|---|---|---|---|
+| ARC-001 | Provider routing is a new layer after Task/Agent routing and before backend execution. | REQ-002, REQ-006, NFR-002 | Prevents Planner/Agent Router from learning Provider/model details. |
+| ARC-002 | Legacy modes remain behaviorally intact; add only `nvidia` and `hybrid`. | REQ-003, REQ-008, SC-001 | Lowest compatibility risk. |
+| ARC-003 | Task capabilities are represented by `required_capabilities: list[str]` with stable vocabulary: `reasoning`, `read_only`, `filesystem_write`, `shell`, `test`, `git`. | REQ-007 | Backward-compatible serialization and deterministic set-based routing. |
+| ARC-004 | Unknown/empty/ambiguous capabilities route to Codex in `hybrid`; they are rejected in `nvidia` mode. | REQ-006, REQ-009, RISK-004 | Fail-safe against sending state-changing work to NVIDIA. |
+| ARC-005 | State-changing set = `{filesystem_write, shell, test, git}`; presence of any member prohibits NVIDIA. | REQ-009, SEC-004 | Explicit safety invariant. |
+| ARC-006 | `nvidia` mode permits only tasks containing both `reasoning` and `read_only` and no state-changing capability. | REQ-004, REQ-009 | Makes NVIDIA-only mode safe and explainable. |
+| ARC-007 | `hybrid` routes safe read-only reasoning to NVIDIA and everything else to Codex. | REQ-006, REQ-013, NFR-003 | Implements minimal deterministic hybrid split. |
+| ARC-008 | No automatic NVIDIA→Codex fallback in Phase 1. NVIDIA failure becomes normalized `provider_failed`; Codex-routed tasks retain existing Codex→manual fallback. | REQ-003, REQ-012, RISK-005 | Prevents hidden Codex load concentration while preserving legacy fallback. |
+| ARC-009 | NVIDIA adapter uses Python standard-library HTTP (`urllib`) and OpenAI-compatible Chat Completions; no new SDK dependency. | REQ-004, NFR-001 | Repository already uses stdlib outbound HTTP patterns; smaller change surface. |
+| ARC-010 | Hosted default endpoint is `https://integrate.api.nvidia.com/v1`, overridable by `NVIDIA_ENDPOINT`; `NVIDIA_MODEL` is mandatory with no compiled model default. | REQ-005, OPS-001, OPS-004 | Endpoint/model remain runtime configuration; model availability changes do not require code changes. |
+| ARC-011 | External request endpoint is `<NVIDIA_ENDPOINT>/chat/completions`, using OpenAI-compatible non-streaming chat completion. | REQ-004 | Matches current NVIDIA hosted/NIM API contract. |
+| ARC-012 | All outbound NVIDIA context passes through one sanitizer; no adapter path may bypass it. | SEC-002, SEC-003, SEC-005 | Single auditable security boundary. |
+| ARC-013 | Context is allowlist-based: task-specific prompt plus explicit `TaskSlice.input_files`; no repository walk/autoload. | SEC-005 | Enforces minimum-context policy. |
+| ARC-014 | Context defaults: max 8 input files, max 16 KiB/file, max 64 KiB total UTF-8 payload after sanitization. | SEC-005, NFR-004 | Concrete bounded policy while remaining enough for Phase 1 reasoning smoke. |
+| ARC-015 | Sanitizer uses path deny + redaction + post-scan fail-closed. Unresolved credential markers reject the request before network I/O. | SEC-002, SEC-003 | Prevents secret leakage even when redaction is incomplete. |
+| ARC-016 | Provider metadata extends worker result v1 through optional fields; schema version remains `orchestration.worker.result.v1`. | REQ-010, REQ-011, NFR-001 | Avoids breaking downstream consumers. |
+| ARC-017 | Fan-in/Stage Gate do not select or interpret Provider; Provider metadata is observational only. | REQ-010, NFR-001 | Maintains architecture boundary. |
+| ARC-018 | NVIDIA transport timeout/retry configuration: default timeout 30s, max retries 2, exponential backoff base 1s; all values runtime-configurable. | REQ-012, NFR-004, OPS-001 | Bounded behavior with explicit defaults. |
+| ARC-019 | Retry only transient classes: timeout/network, HTTP 408, 429, and 5xx. Auth/config/other 4xx and malformed response are non-retryable. | REQ-012, NFR-004 | Avoids useless retry loops. |
+| ARC-020 | NVIDIA error artifacts/logs record only safe `error_class`, HTTP status, attempt count, provider/model and route reason; never Authorization header, raw request body, API key or raw vendor error body. | SEC-002, OPS-002 | Provides observability without credential leakage. |
+| ARC-021 | Current production/canonical LV execution modules are outside this bootstrap change boundary. | NFR-001 | Avoids collision with the separate production contract observed in the active worktree. |
+| ARC-022 | Gate 0 must freeze dirty active worktree without resetting, cleaning, checking out another branch, or discarding unrelated edits. | REQ-001, OPS-003 | Current active state contains uncommitted work and is the approved baseline source per DEC-001. |
+
+### External API Basis
+
+Current NVIDIA documentation states that NIM exposes an OpenAI-compatible API including `POST /v1/chat/completions`; NVIDIA Build hosted examples use `https://integrate.api.nvidia.com/v1` as the base URL. The implementation must still treat endpoint/model as configuration, not a code invariant.
+
+---
+
+# ID-07 Component Design
+
+| ID | Component | Responsibility | Related Requirements | Change Type |
+|---|---|---|---|---|
+| CMP-001 | Execution Modes | Preserve legacy modes and add `nvidia`, `hybrid` | REQ-003, REQ-008 | MODIFY |
+| CMP-002 | Task Router | Continue Agent routing; annotate explicit capability metadata conservatively | REQ-006, REQ-007 | MODIFY |
+| CMP-003 | TaskSlice Schema | Carry `required_capabilities` and `input_files` with defaults | REQ-007, SEC-005 | MODIFY |
+| CMP-004 | Codex Adapter | Existing Codex behavior/fallback | REQ-003 | PRESERVE |
+| CMP-005 | Provider Router | Pure deterministic Task+Mode→Route decision | REQ-002, REQ-006, NFR-003 | CREATE |
+| CMP-006 | Context Sanitizer | Build bounded, secret-filtered outbound context | SEC-002, SEC-003, SEC-005 | CREATE |
+| CMP-007 | NVIDIA Adapter | Configured HTTPS call, retry/error classification, response extraction | REQ-004, REQ-005, REQ-012 | CREATE |
+| CMP-008 | Provider Executor | Invoke selected backend and produce common result artifacts | REQ-002, REQ-010, REQ-012 | CREATE |
+| CMP-009 | Orchestration Engine | Use Provider Router/Executor only for `nvidia`/`hybrid`; preserve legacy branches | REQ-008, REQ-013 | MODIFY |
+| CMP-010 | Result Normalizer | Preserve worker v1 and optional provider/model/error metadata | REQ-010, REQ-011, OPS-002 | MODIFY |
+| CMP-011 | Result Collector | Consume normalized results as today | REQ-010 | PRESERVE |
+| CMP-012 | Fan-in | Provider-agnostic merge/readiness | REQ-010, NFR-001 | PRESERVE |
+| CMP-013 | Stage Gate | Provider-agnostic gate over FanInReport | REQ-010, NFR-001 | PRESERVE |
+| CMP-014 | Production/Canonical Runtime | Separate observed production execution contract | NFR-001 | PRESERVE |
+| CMP-015 | Orchestrator README | Document new modes/config/security/failure semantics | OPS-001, OPS-002 | MODIFY |
+
+## Component Details
+
+### CMP-005 — Provider Router
+
+Responsibility: Pure routing decision without network, file mutation, subprocess execution, or model selection logic.
+
+Inputs:
+- normalized execution mode
+- `TaskSlice.required_capabilities`
+- task/thread/agent identity for trace only
+
+Outputs:
+- `ProviderRouteDecision(provider, route_reason, allowed, required_capabilities)`
+
+Rules:
+- `codex-cli` → existing Codex path, no new router behavior required.
+- `mock` / `manual` → existing paths.
+- `nvidia` + safe read-only reasoning → NVIDIA.
+- `nvidia` + state-changing/unknown → route rejection.
+- `hybrid` + safe read-only reasoning → NVIDIA.
+- `hybrid` + state-changing/unknown → Codex.
+
+Error Behavior: Invalid mode/capability value fails closed; no NVIDIA dispatch.
+
+Compatibility: Absent `required_capabilities` on legacy serialized TaskSlice becomes empty list and therefore safe-defaults away from NVIDIA.
+
+### CMP-006 — Context Sanitizer
+
+Responsibility: Produce the only payload eligible for external Provider transmission.
+
+Inputs:
+- task-specific worker prompt text
+- explicit `input_files`
+- project root
+- configured byte/file limits
+
+Outputs:
+- sanitized text context
+- safe audit metadata: included file paths, byte counts, redaction count, rejection class
+
+Path policy:
+- no recursive repository scan
+- resolve every file under project root
+- reject symlinks and path escape
+- deny `.env`, `.env.*`, `.git/**`, credential/secret/private-key/certificate-key material and equivalent forbidden path classes
+
+Content policy:
+- redact values associated with `API_KEY`, `PASSWORD`, `TOKEN`, `SECRET`, `PRIVATE_KEY`, `SSH_KEY`, `AUTHORIZATION`, `CREDENTIAL`
+- redact bearer tokens and PEM/private-key blocks
+- post-scan sanitized output for unresolved secret patterns
+- unresolved sensitive pattern → `context_security_rejected` before network call
+
+Bound policy:
+- max 8 explicit input files
+- max 16 KiB decoded UTF-8 text per file
+- max 64 KiB total sanitized context
+- oversize file/content is deterministically truncated with a non-secret truncation marker; context exceeding total limit after assembly is rejected rather than silently exceeding the policy
+
+### CMP-007 — NVIDIA Adapter
+
+Responsibility: Execute one sanitized reasoning request and return a safe provider result.
+
+Runtime configuration:
+- `NVIDIA_API_KEY`: required, no default
+- `NVIDIA_ENDPOINT`: default `https://integrate.api.nvidia.com/v1`
+- `NVIDIA_MODEL`: required, no compiled default
+- `NVIDIA_TIMEOUT_SECONDS`: default `30`
+- `NVIDIA_MAX_RETRIES`: default `2`
+- `NVIDIA_RETRY_BACKOFF_SECONDS`: default `1`
+- `NVIDIA_MAX_TOKENS`: default `2048`
+
+Transport:
+- HTTPS endpoint derived as `<NVIDIA_ENDPOINT.rstrip('/')>/chat/completions`
+- `Authorization: Bearer <NVIDIA_API_KEY>` exists only in request memory
+- JSON body includes configured model, non-streaming messages, bounded context and max token limit
+- no tool-calling, shell, filesystem, git or test capability
+
+Response contract:
+- HTTP 2xx
+- JSON object
+- non-empty `choices[0].message.content`
+- content is treated as worker summary; model is not required to emit executable actions or a secondary JSON schema
+
+Error classes:
+- `nvidia_config_error`
+- `nvidia_auth_error`
+- `nvidia_rate_limit`
+- `nvidia_timeout`
+- `nvidia_network_error`
+- `nvidia_server_error`
+- `nvidia_client_error`
+- `nvidia_invalid_response`
+- `context_security_rejected`
+
+Retry:
+- retry: timeout/network/408/429/5xx
+- no retry: missing key/model, 401/403, other 4xx, invalid response, sanitizer rejection
+- maximum attempts = 1 initial + configured `NVIDIA_MAX_RETRIES`
+
+### CMP-008 — Provider Executor
+
+Responsibility: Convert route decision into backend execution without exposing Provider branches to Fan-in/Gate.
+
+NVIDIA success:
+- write normalized `result.json`
+- write normal worker `handoff_report.md` / compatibility handoff if required
+- include `provider=nvidia`, configured model, route reason, attempt count, status
+
+NVIDIA terminal failure:
+- write normalized result with `status=provider_failed`
+- include safe error class/attempt count
+- do not call Codex automatically
+- return control to engine; independent remaining tasks may continue
+
+Codex route:
+- call existing `codex_adapter.run_task_prompt` unchanged
+- preserve existing Codex→manual fallback
+- normalize/preserve `provider=codex` and route metadata when a worker result exists
+
+### CMP-009 — Orchestration Engine
+
+Legacy behavior:
+- `mock`, `manual`, `codex-cli` branches remain semantically unchanged.
+
+New modes:
+- build all tasks/packages through existing planner and packaging.
+- apply Provider Router only to `runnable` tasks.
+- pending/approval-gated tasks remain pending/manual according to existing safety path.
+- provider failures are accumulated as failed worker states; no uncaught Provider exception leaves the execution loop.
+- collection/fan-in happens through existing result files.
+
+Execution ordering for Phase 1:
+- preserve existing Codex sequential semantics.
+- NVIDIA read-only reasoning tasks may run in a bounded thread pool only after their sanitized request context has been materialized from the same pre-execution task package; Codex state-changing tasks remain sequential.
+- if safe pre-materialization cannot be guaranteed by the implementation, execute new-provider tasks sequentially rather than introducing concurrent source-read/write races.
+
+### CMP-010 — Result Normalizer
+
+Add optional fields without changing `SCHEMA_VERSION`:
+
+- `provider`
+- `model`
+- `route_reason`
+- `provider_status`
+- `provider_attempts`
+- `provider_error_class`
+
+Existing required/observed fields remain unchanged. `thread_id` remains the task trace identifier satisfying REQ-011's task-equivalent trace.
+
+---
+
+# ID-10 Change Targets
+
+## Verified Change Targets
+
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | `runtime/orchestrator/execution_modes.py` | MODIFY | TASK-002 | VERIFIED |
+| CT-002 | `runtime/orchestrator/schemas.py` | MODIFY | TASK-002 | VERIFIED |
+| CT-003 | `runtime/orchestrator/task_router.py` | MODIFY | TASK-002 | VERIFIED |
+| CT-004 | `runtime/orchestrator/provider_router.py` | CREATE | TASK-003 | NEW PATH DECIDED |
+| CT-005 | `runtime/orchestrator/context_sanitizer.py` | CREATE | TASK-004 | NEW PATH DECIDED |
+| CT-006 | `runtime/orchestrator/nvidia_adapter.py` | CREATE | TASK-005 | NEW PATH DECIDED |
+| CT-007 | `runtime/orchestrator/provider_executor.py` | CREATE | TASK-006 | NEW PATH DECIDED |
+| CT-008 | `runtime/orchestrator/engine.py` | MODIFY | TASK-006 | VERIFIED |
+| CT-009 | `runtime/orchestrator/result_normalizer.py` | MODIFY | TASK-007 | VERIFIED |
+| CT-010 | `runtime/orchestrator/README.md` | MODIFY | TASK-008 | VERIFIED |
+| CT-011 | `tests/test_task_router.py` | MODIFY | TASK-008 | VERIFIED |
+| CT-012 | `tests/test_result_normalizer.py` | MODIFY | TASK-008 | VERIFIED |
+| CT-013 | `tests/test_provider_router.py` | CREATE | TASK-008 | NEW PATH DECIDED |
+| CT-014 | `tests/test_context_sanitizer.py` | CREATE | TASK-008 | NEW PATH DECIDED |
+| CT-015 | `tests/test_nvidia_adapter.py` | CREATE | TASK-008 | NEW PATH DECIDED |
+| CT-016 | `tests/test_hybrid_runtime_flow.py` | CREATE | TASK-008 | NEW PATH DECIDED |
+| CT-017 | `tests/test_codex_adapter_manual_mode.py` | PRESERVE / REGRESSION | TASK-009 | VERIFIED |
+| CT-018 | `tests/test_codex_runtime_flow.py` | PRESERVE / REGRESSION | TASK-009 | VERIFIED |
+| CT-019 | `tests/test_stage_gate.py` | PRESERVE / REGRESSION | TASK-009 | VERIFIED |
+
+## Explicit Preserved / Forbidden Change Areas
+
+The following current areas are not Multi-Provider change targets unless a focused regression fix is proven necessary and separately reviewed within approved scope:
+
+- `runtime/orchestrator/fanin.py`
+- `runtime/orchestrator/result_collector.py`
+- `runtime/orchestrator/stage_gate.py`
+- `runtime/orchestrator/lv_execution_package.py`
+- `runtime/orchestrator/production_*`
+- `runtime/orchestrator/gate_*` production lifecycle modules
+- unrelated current dirty-worktree changes
+
+## Unverified Targets
+
+N/A — existing target paths were verified; new paths are design-created paths, not claims about existing files.
+
+---
+
+# EC-04 INTERFACES / EXECUTION FLOW
+
+# ID-08 Interface Design
+
+| ID | Interface | Source | Target | Purpose | Related Requirements |
+|---|---|---|---|---|---|
+| IF-001 | `normalize_execution_mode` extended vocabulary | Engine/CLI | Mode policy | Add `nvidia`, `hybrid` without altering legacy normalization | REQ-008 |
+| IF-002 | `TaskSlice.required_capabilities` | Task Router | Provider Router | Explicit task capability contract | REQ-007 |
+| IF-003 | `TaskSlice.input_files` | Task/Package | Context Sanitizer | Explicit context allowlist | SEC-005 |
+| IF-004 | `route_provider(task, mode)` | Engine | Provider Router | Deterministic provider decision | REQ-002, REQ-006 |
+| IF-005 | `build_sanitized_context(...)` | Provider Executor | Context Sanitizer | Secret-filtered bounded payload | SEC-002, SEC-003, SEC-005 |
+| IF-006 | `run_nvidia_reasoning(...)` | Provider Executor | NVIDIA Hosted API | Read-only reasoning request | REQ-004, REQ-005 |
+| IF-007 | `execute_provider_task(...)` | Engine | Provider Executor | Backend execution boundary | REQ-002, REQ-010, REQ-012 |
+| IF-008 | `normalize_worker_result` provider fields | Provider Executor/Collector | Result Contract | Unified result + trace metadata | REQ-010, REQ-011 |
+| IF-009 | existing CollectionReport/FanInReport | Result Collector | Fan-in/Stage Gate | Provider-neutral result flow | REQ-010, NFR-001 |
+
+## Interface Details
+
+### IF-004 — Provider Route Decision
+
+Input:
+- execution mode
+- TaskSlice
+
+Output:
+- provider: `codex | nvidia | none`
+- allowed: bool
+- route_reason: stable reason code/string
+- required_capabilities: sorted copy
+
+Contract:
+- pure/deterministic
+- no environment/model lookup affects provider choice
+- same mode + same capabilities = same decision
+
+Error Handling:
+- unknown capability value does not enable NVIDIA
+- invalid mode is rejected by existing mode normalization
+
+### IF-005 — Sanitized Context Contract
+
+Input:
+- prompt text
+- explicit input file paths
+- project root
+- bound settings
+
+Output:
+- sanitized text only
+- safe metadata only
+
+Contract:
+- no network
+- no shell
+- no recursive source discovery
+- no secret values returned in metadata/error text
+
+### IF-006 — NVIDIA HTTP Contract
+
+Input:
+- sanitized context
+- runtime configuration
+- task identity
+
+Output:
+- provider payload with summary/status/model/attempt/error class
+
+Contract:
+- OpenAI-compatible chat completion
+- `stream=false`
+- read-only reasoning prompt; model output is data, not executable instruction
+- no tool definitions/callbacks
+
+Error Handling:
+- categorized bounded retry
+- safe failure object instead of uncaught provider exception
+
+### IF-008 — Unified Worker Result Extension
+
+Input:
+- existing worker/codex/nvidia payload
+
+Output:
+- same `orchestration.worker.result.v1`
+- optional provider metadata
+
+Compatibility:
+- consumers that ignore additional keys continue to work
+- legacy results without provider metadata still normalize correctly
+
+Security Considerations:
+- provider error class only, no raw auth/body
+- model name is non-secret config metadata
+
+---
+
+# ID-09 Data / Control / State Flow
+
+## Data Flow
+
+1. Approved plan and runtime contract are loaded through current contract loader.
+2. Task Router creates TaskSlice and adds conservative `required_capabilities`; explicitly selected context files populate `input_files`.
+3. Fan-out package persists TaskSlice using existing serialization.
+4. For legacy modes, current execution path is used unchanged.
+5. For `nvidia`/`hybrid`, Provider Router reads only mode + capabilities and returns a route decision.
+6. NVIDIA route passes task prompt + input files through Context Sanitizer.
+7. Sanitizer produces bounded sanitized context or a fail-closed rejection.
+8. NVIDIA Adapter sends only sanitized context and config-required model metadata.
+9. Adapter returns safe success/failure payload.
+10. Provider Executor writes the same result/handoff artifact pattern used by the existing worker flow.
+11. Result Normalizer produces worker v1 including optional provider metadata.
+12. Result Collector and Fan-in consume common result data without Provider branching.
+13. Stage Gate evaluates FanInReport as today.
+
+## Control Flow
+
+### Legacy modes
+
+- `mock` → unchanged local worker path
+- `manual` → unchanged manual artifact path
+- `codex-cli` → unchanged Codex path including manual fallback
+
+### NVIDIA mode
+
+- safe read-only reasoning → sanitize → NVIDIA → normalize
+- state-changing/unknown → explicit `routing_rejected` / failed task result; no NVIDIA call, no Codex auto fallback
+
+### Hybrid mode
+
+- safe read-only reasoning → sanitize → NVIDIA → normalize
+- state-changing/unknown → existing Codex adapter → normalize/manual fallback if Codex fails
+
+### NVIDIA Failure Isolation
+
+`Provider call`  
+→ classify error  
+→ transient? bounded retry  
+→ retry budget exhausted/non-retryable  
+→ normalized `provider_failed`  
+→ continue independent tasks  
+→ Collection/Fan-in reports failure  
+→ Gate cannot pass until recovery/remediation.
+
+## State Transitions
+
+| Current State | Event | Next State | Failure State |
+|---|---|---|---|
+| `pending` | safe hybrid route decision | `provider_selected:nvidia` | `routing_rejected` |
+| `pending` | state-changing hybrid route decision | `provider_selected:codex` | `routing_rejected` |
+| `provider_selected:nvidia` | sanitization pass | `provider_running` | `provider_failed:context_security_rejected` |
+| `provider_running` | valid response | `completed` | `provider_failed` |
+| `provider_running` | transient failure, budget remains | `retrying` | N/A |
+| `retrying` | retry succeeds | `completed` | `provider_failed` |
+| `provider_selected:codex` | Codex success | `completed` | existing `manual_fallback` |
+| any worker completed/failed | collect/fan-in | `fanin_ready` or `fanin_blocked` | `fanin_blocked` |
+
+No new global Provider-specific Stage Gate state is introduced.
+
+---
+
+## EXECUTION-CRITICAL APPENDIX CONTRACTS
+
+# Appendix A — Deterministic Routing Matrix
+
+| Mode | Capabilities | Provider / Outcome | Reason |
+|---|---|---|---|
+| mock | any | existing local mock | legacy preserve |
+| manual | any | existing manual | legacy preserve |
+| codex-cli | any | existing Codex CLI | legacy preserve |
+| nvidia | reasoning + read_only only | NVIDIA | explicitly eligible read-only reasoning |
+| nvidia | any state-changing capability | routing rejected | NVIDIA mutation prohibited |
+| nvidia | empty/unknown/ambiguous | routing rejected | fail-safe |
+| hybrid | reasoning + read_only only | NVIDIA | offload safe reasoning |
+| hybrid | filesystem_write | Codex | state-changing |
+| hybrid | shell | Codex | state-changing |
+| hybrid | test | Codex | state-changing |
+| hybrid | git | Codex | state-changing |
+| hybrid | empty/unknown/ambiguous | Codex | conservative default |
+
+State-changing capability always has precedence over `read_only` if contradictory metadata is encountered; contradictory capability input is treated as unsafe and routes Codex in Hybrid / rejects in NVIDIA-only mode.
+
+# Appendix B — NVIDIA Failure Matrix
+
+| Failure | Retry | Terminal State | Automatic Codex Fallback |
+|---|---:|---|---|
+| Missing API key/model/config | No | `provider_failed:nvidia_config_error` | No |
+| Sanitizer rejection | No | `provider_failed:context_security_rejected` | No |
+| HTTP 401/403 | No | `provider_failed:nvidia_auth_error` | No |
+| HTTP 408 | Yes, bounded | `provider_failed:nvidia_timeout` | No |
+| HTTP 429 | Yes, bounded | `provider_failed:nvidia_rate_limit` | No |
+| HTTP 5xx | Yes, bounded | `provider_failed:nvidia_server_error` | No |
+| network/timeout exception | Yes, bounded | classified provider failure | No |
+| other HTTP 4xx | No | `provider_failed:nvidia_client_error` | No |
+| invalid/malformed response | No | `provider_failed:nvidia_invalid_response` | No |
+| success | N/A | `completed` | N/A |
+
+Codex-routed work continues to use the existing Codex→manual fallback behavior.
+
+# Appendix C — Runtime Configuration Contract
+
+| Variable | Required | Default | Secret | Purpose |
+|---|---|---|---|---|
+| `NVIDIA_API_KEY` | Yes for NVIDIA call | none | YES | Hosted API auth |
+| `NVIDIA_ENDPOINT` | No | `https://integrate.api.nvidia.com/v1` | No | Hosted base endpoint |
+| `NVIDIA_MODEL` | Yes for NVIDIA call | none | No | Current configured reasoning model |
+| `NVIDIA_TIMEOUT_SECONDS` | No | `30` | No | Per-attempt timeout |
+| `NVIDIA_MAX_RETRIES` | No | `2` | No | Additional retry count |
+| `NVIDIA_RETRY_BACKOFF_SECONDS` | No | `1` | No | Exponential backoff base |
+| `NVIDIA_MAX_TOKENS` | No | `2048` | No | Response output bound |
+
+Invalid numeric configuration fails closed with `nvidia_config_error` rather than silently using unsafe values.
+
+# Appendix D — Authoritative Source Notes
+
+- Approved planning authority: `Full_Plan_Multi_Provider_Execution_Bootstrap_Approved_Development_Plan_V0.1.md`.
+- Current source verification: active local `migration/hamonikr-linux` worktree inspected read-only on 2026-09-13.
+- NVIDIA API reference checked 2026-09-13: `https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html`.
+- NVIDIA hosted Build examples checked 2026-09-13 use base URL `https://integrate.api.nvidia.com/v1`.
+
+# EC-05 IMPLEMENTATION TASKS
+
+# ID-11 Implementation Tasks
+
+## TASK-001 — Freeze Actual Active Baseline
+
+Purpose: Satisfy DEC-001/REQ-001 before any Multi-Provider source change.
+
+Related Requirements:
+- REQ-001
+- OPS-003
+- NFR-001
+
+Related Architecture:
+- ARC-022
+
+Dependencies:
+- none
+
+Change Targets:
+- no Multi-Provider source file modification
+- baseline evidence location under the execution run evidence area
+
+Inputs:
+- actual active repo/worktree at execution start
+
+Expected Output:
+- branch name
+- HEAD SHA
+- remote URL and observed tracking ref
+- full `git status --porcelain=v1 --branch`
+- tracked unstaged/staged diff hashes and recoverable patch artifacts
+- untracked-file manifest and recoverable copy/archive for in-scope worktree state
+- known issues/current validation baseline references
+- immutable baseline manifest hash
+
+Validation:
+- TEST-001
+
+Ownership Boundary:
+- source-state observation and freeze evidence only
+
+Preserved Areas:
+- entire existing worktree contents
+
+Forbidden Areas:
+- no reset/clean/checkout/rebase/stash/drop of user work
+- no deletion of untracked files
+
+Completion Condition:
+- GATE-001 GO
+
+## TASK-002 — Extend Mode and Task Capability Contract
+
+Purpose: Add new execution vocabulary and minimal capability/context metadata while keeping legacy payload compatibility.
+
+Related Requirements:
+- REQ-007, REQ-008
+- NFR-003
+
+Related Architecture:
+- ARC-002, ARC-003, ARC-004, ARC-005
+
+Dependencies:
+- TASK-001
+
+Change Targets:
+- CT-001, CT-002, CT-003
+
+Inputs:
+- existing ExecutionModeInfo, TaskSlice, Task Router
+
+Expected Output:
+- `NVIDIA="nvidia"`, `HYBRID="hybrid"`
+- legacy aliases unchanged
+- TaskSlice defaults: `required_capabilities=[]`, `input_files=[]`
+- conservative capability derivation helper in Task Router
+
+Capability derivation policy:
+- pure review/analysis/documentation section with no mutation verb → `reasoning`,`read_only`
+- implementation or mutation intent → `reasoning`,`filesystem_write`
+- explicit shell/command intent adds `shell`
+- explicit test execution intent adds `test`
+- explicit git/commit/merge/branch intent adds `git`
+- any state-changing capability removes `read_only`
+- ambiguity must result in state-changing-safe metadata, never NVIDIA-eligible metadata
+
+Validation:
+- TEST-002, TEST-003
+
+Ownership Boundary:
+- mode/schema/task metadata only; no backend call
+
+Preserved Areas:
+- existing Agent selection patterns and risk classification semantics
+
+Forbidden Areas:
+- no Provider/model choice inside Task Router
+
+Completion Condition:
+- legacy TaskSlice payloads still load; deterministic capabilities produced
+
+## TASK-003 — Implement Deterministic Provider Router
+
+Purpose: Separate Provider choice from Task/Agent routing.
+
+Related Requirements:
+- REQ-002, REQ-006, REQ-009, REQ-013
+- NFR-003
+
+Related Architecture:
+- ARC-001, ARC-004 ~ ARC-007
+
+Dependencies:
+- TASK-002
+
+Change Targets:
+- CT-004
+
+Inputs:
+- normalized mode
+- TaskSlice.required_capabilities
+
+Expected Output:
+- pure `ProviderRouteDecision`
+- stable route reason codes
+- safe-default matrix
+
+Validation:
+- TEST-003
+
+Ownership Boundary:
+- no network, shell, file mutation, model/config selection
+
+Preserved Areas:
+- Planner/Task Router Agent responsibility
+
+Forbidden Areas:
+- no dynamic/AI routing
+- no benchmarks/ranking/cost scoring
+
+Completion Condition:
+- full routing matrix unit-tested and deterministic
+
+## TASK-004 — Implement Hosted Context Sanitizer
+
+Purpose: Build fail-closed, bounded outbound context.
+
+Related Requirements:
+- SEC-002, SEC-003, SEC-005
+- NFR-004
+
+Related Architecture:
+- ARC-012 ~ ARC-015
+
+Dependencies:
+- TASK-002
+
+Change Targets:
+- CT-005
+
+Inputs:
+- worker prompt
+- explicit input_files
+- project root
+- limits
+
+Expected Output:
+- sanitized bounded context
+- safe metadata
+- deterministic rejection classes
+
+Validation:
+- TEST-004
+
+Ownership Boundary:
+- read-only local file access for explicit context only
+
+Preserved Areas:
+- repository content
+
+Forbidden Areas:
+- no write/shell/git
+- no recursive repo scan
+- no credential value in exception/log metadata
+
+Completion Condition:
+- security test matrix passes before any real NVIDIA request is allowed
+
+## TASK-005 — Implement NVIDIA Hosted Reasoning Adapter
+
+Purpose: Call current NVIDIA hosted OpenAI-compatible API as a read-only reasoning backend.
+
+Related Requirements:
+- REQ-004, REQ-005, REQ-009, REQ-012
+- NFR-004
+- SEC-001, SEC-004
+- OPS-001, OPS-004
+
+Related Architecture:
+- ARC-009 ~ ARC-011, ARC-018 ~ ARC-020
+
+Dependencies:
+- TASK-004
+
+Change Targets:
+- CT-006
+
+Inputs:
+- sanitized context only
+- environment configuration
+
+Expected Output:
+- safe success/failure provider payload
+- bounded retry
+- no SDK dependency
+
+Validation:
+- TEST-005
+
+Ownership Boundary:
+- HTTPS request/response only
+
+Preserved Areas:
+- host source files and command environment
+
+Forbidden Areas:
+- no local tool execution from model output
+- no filesystem writes except caller-owned result artifact path
+- no shell/test/git
+- no API key persistence
+
+Completion Condition:
+- mocked adapter error/success matrix passes
+
+## TASK-006 — Integrate Provider Executor and New Modes into Engine
+
+Purpose: Connect route decisions to backends without changing downstream Fan-in/Gate.
+
+Related Requirements:
+- REQ-002, REQ-003, REQ-008, REQ-010, REQ-012, REQ-013
+- NFR-001, NFR-002
+
+Related Architecture:
+- ARC-001, ARC-002, ARC-008, ARC-017, ARC-021
+
+Dependencies:
+- TASK-003, TASK-005, TASK-007
+
+Change Targets:
+- CT-007, CT-008
+
+Inputs:
+- existing run package and runnable/pending tasks
+
+Expected Output:
+- `nvidia` and `hybrid` worker execution
+- legacy branches intact
+- provider failures captured as worker failures
+- Codex path still calls current adapter
+
+Validation:
+- TEST-007, TEST-009, TEST-010, TEST-011
+
+Ownership Boundary:
+- worker execution dispatch only
+
+Preserved Areas:
+- Collector/Fan-in/Stage Gate
+- production/canonical runtime
+
+Forbidden Areas:
+- no Provider branch in Fan-in/Stage Gate
+- no automatic NVIDIA→Codex fallback
+
+Completion Condition:
+- mocked hybrid integration succeeds and legacy mode tests remain green
+
+## TASK-007 — Extend Worker Result Trace Metadata
+
+Purpose: Preserve common Worker Result while making Provider execution observable.
+
+Related Requirements:
+- REQ-010, REQ-011
+- OPS-002
+
+Related Architecture:
+- ARC-016, ARC-020
+
+Dependencies:
+- TASK-002
+
+Change Targets:
+- CT-009
+
+Inputs:
+- existing worker v1 normalization
+
+Expected Output:
+- optional provider/model/route/error metadata
+- handoff renderer includes safe provider trace
+
+Validation:
+- TEST-006
+
+Ownership Boundary:
+- normalization/rendering only
+
+Preserved Areas:
+- schema version and legacy core fields
+
+Forbidden Areas:
+- no raw provider request/authorization/error body
+
+Completion Condition:
+- legacy normalization tests + new provider metadata tests pass
+
+## TASK-008 — Add Unit and Integration Test Contracts / Documentation
+
+Purpose: Encode the design invariants before live smoke validation.
+
+Related Requirements:
+- NFR-005
+- SEC-002, SEC-003, SEC-004, SEC-005
+- OPS-001, OPS-002
+
+Related Architecture:
+- all new architecture decisions
+
+Dependencies:
+- TASK-002 ~ TASK-007 as applicable
+
+Change Targets:
+- CT-010 ~ CT-016
+
+Inputs:
+- implemented modules/interfaces
+
+Expected Output:
+- routing, sanitizer, adapter, result metadata and hybrid-flow automated tests
+- operator documentation for config/modes/error semantics
+
+Validation:
+- TEST-002 ~ TEST-007, TEST-009
+
+Ownership Boundary:
+- tests/docs only
+
+Preserved Areas:
+- no production runtime behavior change through test fixture shortcuts
+
+Forbidden Areas:
+- no live secret in fixture/source
+
+Completion Condition:
+- focused automated validation set is complete
+
+## TASK-009 — Execute Regression and Live Hybrid Validation
+
+Purpose: Prove compatibility and minimum real hybrid behavior.
+
+Related Requirements:
+- REQ-003, REQ-004, REQ-008, REQ-013
+- NFR-005
+- SEC-002, SEC-003
+
+Related Architecture:
+- ARC-002, ARC-007, ARC-016, ARC-017
+
+Dependencies:
+- TASK-006, TASK-008
+
+Change Targets:
+- CT-017 ~ CT-019 are regression targets, not intended feature modifications
+
+Inputs:
+- configured valid NVIDIA API key/model
+- available Codex CLI for Hybrid E2E state-changing leg
+- baseline validation record
+
+Expected Output:
+- live NVIDIA reasoning smoke evidence
+- live/mocked failure-isolation evidence as required
+- Hybrid E2E evidence showing NVIDIA + Codex in one run
+- legacy regression evidence
+- provider-neutral Fan-in/Stage Gate evidence
+
+Validation:
+- TEST-008 ~ TEST-012
+
+Ownership Boundary:
+- validation only
+
+Preserved Areas:
+- no extra provider feature work after success
+
+Forbidden Areas:
+- no benchmark/ranking/optimizer exploration
+
+Completion Condition:
+- GATE-003 GO
+
+## TASK-010 — Evaluate STOP GATE and Produce Full Plan Resume Handoff
+
+Purpose: End Phase 1 when the approved minimum is proven.
+
+Related Requirements:
+- REQ-014
+- OPS-003
+
+Related Architecture:
+- STOP rule from Approved Plan
+
+Dependencies:
+- TASK-009
+
+Change Targets:
+- runtime/evidence/handoff artifacts only; no new Provider features
+
+Inputs:
+- all required validation/evidence
+
+Expected Output:
+- STOP GATE decision
+- Full Plan resume handoff
+
+Validation:
+- TEST-012
+
+Ownership Boundary:
+- gate/handoff only
+
+Preserved Areas:
+- all Provider features beyond approved minimum
+
+Forbidden Areas:
+- no new provider/model selection logic
+- no benchmark/cost dashboard/dynamic routing
+
+Completion Condition:
+- GATE-004 GO and DEL-008 ready
+
+---
+
+# ID-12 Task Dependencies
+
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-001 | SEQUENTIAL | none | Must freeze active baseline first. |
+| TASK-002 | SEQUENTIAL | TASK-001 | Shared schema/mode foundation must be stable before parallel work. |
+| TASK-003 | PARALLEL_SAFE | TASK-002 | New router file; no overlap with sanitizer/normalizer files. |
+| TASK-004 | PARALLEL_SAFE | TASK-002 | New sanitizer file; independent ownership. |
+| TASK-007 | PARALLEL_SAFE | TASK-002 | Normalizer file separate from new router/sanitizer. |
+| TASK-005 | SEQUENTIAL | TASK-004 | Adapter cannot bypass sanitizer. |
+| TASK-006 | FAN_IN | TASK-003, TASK-005, TASK-007 | Engine integration requires routing, secure transport and result metadata. |
+| TASK-008 | FAN_IN | TASK-002 ~ TASK-007 | Tests/docs depend on implemented contracts. |
+| TASK-009 | SEQUENTIAL | TASK-006, TASK-008 | Validation only after implementation surface converges. |
+| TASK-010 | SEQUENTIAL | TASK-009 | STOP decision only after all evidence exists. |
+
+## Execution Order
+
+1. TASK-001
+2. TASK-002
+3. Parallel-safe branch: TASK-003 + TASK-004 + TASK-007
+4. TASK-005 after TASK-004
+5. FI-001 → TASK-006
+6. TASK-008
+7. TASK-009
+8. TASK-010
+
+No parallel worker may modify `engine.py`, `schemas.py`, `task_router.py`, or the same test file concurrently.
+
+---
+
+## FULL PLAN EXECUTION STRUCTURE
+
+# ID-20 Full Plan Execution Structure
+
+This section defines execution structure only and does not execute the Full Plan.
+
+## Execution Sequence
+
+`PLAN / BASELINE FREEZE`  
+→ `IMPLEMENT FOUNDATION`  
+→ `FOCUSED UNIT/MODULE TEST`  
+→ `HYBRID INTEGRATION`  
+→ `TARGETED + PROGRAM REGRESSION`  
+→ `INDEPENDENT REVIEW`  
+→ `STOP GATE`  
+→ `FULL PLAN RESUME HANDOFF`
+
+## Phase / Task Mapping
+
+| Execution Phase | Tasks | Validation | Gate |
+|---|---|---|---|
+| PLAN / BASELINE FREEZE | TASK-001 | TEST-001 | GATE-001 |
+| IMPLEMENT FOUNDATION | TASK-002 ~ TASK-007 | TEST-002 ~ TEST-006 | GATE-002 |
+| FOCUSED TEST | TASK-008 | TEST-002 ~ TEST-007, TEST-009 | GATE-002 |
+| HYBRID INTEGRATION | TASK-006, TASK-009 | TEST-007, TEST-008, TEST-009, TEST-011 | GATE-003 |
+| TARGETED REGRESSION | TASK-009 | TEST-010, TEST-011 | GATE-003 |
+| INDEPENDENT REVIEW | TASK-009 | evidence review EVD-002 ~ EVD-008 | GATE-003 |
+| STAGE/STOP GATE | TASK-010 | TEST-012 | GATE-004 |
+| HANDOFF | TASK-010 | EVD-009 completeness | GATE-004 |
+
+---
+
+# EC-06 VALIDATION
+
+# ID-13 Validation / Test Design
+
+## Validation Strategy
+
+Validation follows four layers only where needed:
+
+- L1 Unit: deterministic routing, capability derivation, sanitizer, adapter error classification, result metadata.
+- L2 Module: Provider Executor/Engine integration with mocked provider transport.
+- L3 Integration: Provider-neutral collection/fan-in/gate with mixed normalized results.
+- L4 Production E2E: real NVIDIA Hosted API reasoning and real Hybrid scenario with existing Codex backend.
+- L6 Program Regression: existing legacy modes and approved Full Plan baseline regression.
+
+L5 Pilot is not required for this bootstrap.
+
+## Test Contracts
+
+| ID | Level | Target | Related Requirements | Related Tasks | Pass Condition |
+|---|---|---|---|---|---|
+| TEST-001 | Manual Gate Verification | Active baseline freeze | REQ-001, OPS-003 | TASK-001 | Branch/HEAD/status/diff/untracked recovery artifacts and manifest hash captured before source changes. |
+| TEST-002 | L1 | mode + TaskSlice backward compatibility | REQ-007, REQ-008 | TASK-002 | Legacy three modes unchanged; old TaskSlice payload loads; new modes normalize; defaults are safe. |
+| TEST-003 | L1 | capability derivation + Provider Router matrix | REQ-002, REQ-006, REQ-007, REQ-009, NFR-003 | TASK-002, TASK-003 | Same input yields same route; all state-changing/unknown cases never route NVIDIA. |
+| TEST-004 | L1 | Context Sanitizer | SEC-002, SEC-003, SEC-005 | TASK-004 | `.env`/forbidden paths blocked; secret values absent after redaction; post-scan failure blocks call; limits enforced. |
+| TEST-005 | L1 | NVIDIA Adapter mocked HTTP | REQ-004, REQ-005, REQ-012, NFR-004, SEC-001 | TASK-005 | Success response parsed; transient classes retry within budget; auth/invalid response fail safely; no secret in errors. |
+| TEST-006 | L1 | Result Normalizer provider metadata | REQ-010, REQ-011, OPS-002 | TASK-007 | schema version stays v1; legacy output unchanged; provider/model/task trace available when supplied. |
+| TEST-007 | L2 | Engine + Provider Executor mocked hybrid flow | REQ-008, REQ-010, REQ-013 | TASK-006 | reasoning→NVIDIA, write task→Codex; both produce common result artifacts. |
+| TEST-008 | L4 | Live NVIDIA reasoning smoke | REQ-004, REQ-005, SC-002 | TASK-009 | Configured current model returns one completed sanitized reasoning task. |
+| TEST-009 | L2/L3 | Failure isolation | REQ-012, NFR-004, SC-006 | TASK-006, TASK-008 | timeout/401/429/5xx/invalid response produce classified result and no uncaught runtime crash. |
+| TEST-010 | L6 | Legacy `mock`, `manual`, `codex-cli` regression | REQ-003, REQ-008, SC-001, SC-008 | TASK-009 | Approved baseline behavior unchanged including Codex→manual fallback. |
+| TEST-011 | L3 | Provider-neutral Collector/Fan-in/Stage Gate | REQ-010, NFR-001, SC-003 | TASK-006, TASK-009 | Mixed provider results collect/fan-in/gate without Provider-specific downstream branch. |
+| TEST-012 | L4/L6 | Hybrid E2E + STOP criteria | REQ-013, REQ-014, SC-005, SC-009 | TASK-009, TASK-010 | Single run proves NVIDIA reasoning + Codex state-changing leg, common result flow, regression pass; STOP gate conditions complete. |
+
+## Regression Requirements
+
+The regression baseline must include at minimum:
+
+- existing `tests/test_codex_adapter_manual_mode.py`
+- existing `tests/test_codex_runtime_flow.py`
+- existing `tests/test_task_router.py`
+- existing `tests/test_result_normalizer.py`
+- existing `tests/test_stage_gate.py`
+- any current baseline Full Plan regression set captured by TASK-001
+- focused production/canonical tests only if modified files have proven cross-boundary impact; otherwise those source modules remain untouched
+
+## Manual Verification
+
+- Verify no actual `NVIDIA_API_KEY` value exists in source/config/test fixture/diff.
+- Verify runtime/general logs do not contain request Authorization header or sanitized-out secret fixture values.
+- Verify normalized result includes provider/model/thread trace but no request body/key.
+- Verify STOP GATE prevents additional Provider feature expansion after success.
+
+---
+
+# EC-07 SECURITY
+
+# ID-14 Security Design
+
+## Security Design Rules
+
+| ID | Approved SEC Requirement | Security Design Rule | Related Task | Validation |
+|---|---|---|---|---|
+| SEC-D-001 | SEC-001 | Read `NVIDIA_API_KEY` from process environment at request time only; never persist/default/echo it. | TASK-005 | TEST-005, TEST-008 |
+| SEC-D-002 | SEC-002 | Never log Authorization/request body/raw credential-bearing error; normalized metadata is safe-only. | TASK-004, TASK-005, TASK-007 | TEST-004, TEST-005, TEST-006 |
+| SEC-D-003 | SEC-003 | All outbound context goes through path deny + known-secret redaction + post-scan fail-closed. | TASK-004 | TEST-004 |
+| SEC-D-004 | SEC-004 | NVIDIA adapter exposes no filesystem write, shell, test, git or tool-calling interface. | TASK-003, TASK-005, TASK-006 | TEST-003, TEST-007 |
+| SEC-D-005 | SEC-005 | Only task prompt + explicit input_files; max 8 files/16KiB each/64KiB total; no repo walk. | TASK-004 | TEST-004, TEST-008 |
+
+## Security Constraints to Preserve
+
+- Hosted Provider is external/untrusted with respect to repository secret boundary.
+- Model output is untrusted data and is never executed as a command/tool call in NVIDIA path.
+- Capability routing is fail-safe: uncertainty never enables NVIDIA.
+- Source file path must resolve under project root and not be a symlink.
+- Credential filenames/content are blocked/redacted before network I/O.
+
+## Prohibited Security Changes
+
+- storing API keys in `.env` committed config, JSON/YAML/TOML source, test snapshots, logs or result artifacts
+- enabling NVIDIA host write/shell/test/git
+- sending entire repository or automatically discovered files
+- logging raw Provider request/response bodies in general logs
+- weakening forbidden-path/secret policy to make a smoke test pass
+- adding unrelated authentication/security scope
+
+---
+
+# EC-08 PERMISSIONS / CAPABILITIES
+
+# ID-15 Permission / Capability Design
+
+## Allowed Within Approved Scope
+
+| ID | Action / Capability | Reason |
+|---|---|---|
+| PERM-001 | Read current repo/source for Gate 0 freeze and implementation | Required for approved existing-project implementation. |
+| PERM-002 | Existing Codex backend performs approved state-changing task capabilities | Explicitly preserved by plan. |
+| PERM-003 | NVIDIA adapter performs outbound HTTPS reasoning request with sanitized context | Approved REQ-004/DEC-002. |
+| PERM-004 | NVIDIA path reads task-specific prompt and explicitly allowlisted source/docs | Needed for bounded context and allowed by DEC-002 after sanitization. |
+| PERM-005 | Runtime writes its own result/handoff/evidence artifacts | Existing orchestration responsibility. |
+
+## Separate Approval Required
+
+| ID | Action | Why Separate Approval Is Required |
+|---|---|---|
+| PERM-006 | Add another Provider (Claude/Gemini/local LLM/etc.) | Explicit OUT OF SCOPE. |
+| PERM-007 | NVIDIA local NIM hosting | Explicit OUT OF SCOPE. |
+| PERM-008 | Dynamic/AI/cost/performance-aware routing | Explicit OUT OF SCOPE. |
+| PERM-009 | Broaden NVIDIA context policy beyond explicit bounded allowlist | Changes approved security constraint. |
+| PERM-010 | Enable NVIDIA tool execution or host mutation | Violates SEC-004 and approved Provider role. |
+
+## Prohibited Actions
+
+- NVIDIA filesystem write
+- NVIDIA shell command execution
+- NVIDIA test execution
+- NVIDIA git operation
+- credential/environment secret transmission
+- automatic whole-repository transmission
+- unconditional NVIDIA→Codex fallback
+- benchmark/ranking/optimizer feature work in Phase 1
+
+---
+
+# EC-09 EVIDENCE
+
+# ID-16 Evidence Requirements
+
+| ID | Purpose | Source | Related Requirement | Related Task / Test | Expected Proof |
+|---|---|---|---|---|---|
+| EVD-001 | Freeze/recovery baseline | Gate 0 source snapshot | REQ-001, OPS-003 | TASK-001 / TEST-001 | branch, HEAD, status, diff/untracked recovery artifacts, manifest hash, baseline validations |
+| EVD-002 | Deterministic routing | Unit test output | REQ-006, REQ-007, NFR-003 | TASK-003 / TEST-003 | routing matrix with stable route reasons |
+| EVD-003 | Secret/bounded-context protection | Sanitizer security tests | SEC-002, SEC-003, SEC-005 | TASK-004 / TEST-004 | secret fixtures absent; forbidden paths rejected; size limits enforced |
+| EVD-004 | NVIDIA execution capability | Live hosted smoke | REQ-004, REQ-005 | TASK-009 / TEST-008 | completed reasoning task with provider/model/thread metadata, no secret data |
+| EVD-005 | Failure isolation | Mocked/live failure tests | REQ-012, NFR-004 | TASK-006/009 / TEST-009 | classified failure, bounded attempts, process continues/no uncaught crash |
+| EVD-006 | Unified result contract | Result/fan-in tests | REQ-010, REQ-011 | TASK-007/009 / TEST-006/011 | same worker v1 contract and provider-neutral fan-in/gate |
+| EVD-007 | Legacy compatibility | Regression output | REQ-003, REQ-008, SC-001, SC-008 | TASK-009 / TEST-010 | legacy modes pass baseline regression |
+| EVD-008 | Hybrid distribution | Hybrid E2E | REQ-013 | TASK-009 / TEST-012 | one run shows NVIDIA reasoning and Codex state-changing route with common fan-in |
+| EVD-009 | STOP/Resume readiness | Final Gate | REQ-014 | TASK-010 / TEST-012 | all STOP predicates satisfied and Full Plan resume handoff produced |
+
+No runtime evidence is generated by this Implementation Design project.
+
+---
+
+# EC-10 FAN-OUT / FAN-IN
+
+# ID-17 Fan-Out / Fan-In Design
+
+## Fan-Out Decision
+
+FAN_OUT: ALLOWED
+
+Reason:
+
+Implementation work may parallelize only after the shared mode/schema foundation is stable, and only across files with independent ownership. The active worktree already contains unrelated modifications, so overlapping writes are prohibited.
+
+## Parallel Work Units
+
+| Work Unit | Tasks | Ownership Boundary | Input | Expected Output | Forbidden Overlap |
+|---|---|---|---|---|---|
+| FW-001 | TASK-003 | `provider_router.py` only | final capability contract | deterministic route module | no `engine.py` / `schemas.py` changes |
+| FW-002 | TASK-004 | `context_sanitizer.py` only | context contract | sanitizer module | no adapter/engine changes |
+| FW-003 | TASK-007 | `result_normalizer.py` only | provider metadata contract | backward-compatible normalization | no engine/router edits |
+
+TASK-005 follows FW-002 because sanitizer is a mandatory security predecessor.
+
+## Fan-In / Merge Points
+
+| Merge Point | Inputs | Required Validation |
+|---|---|---|
+| FI-001 | TASK-003 + TASK-005 + TASK-007 | TEST-003, TEST-004, TEST-005, TEST-006 |
+| FI-002 | TASK-006 + TASK-008 | TEST-007, TEST-009 |
+| FI-003 | all implementation + validation | TEST-010, TEST-011, TEST-012 |
+
+Shared-file work (`execution_modes.py`, `schemas.py`, `task_router.py`, `engine.py`) is Sequential Execution.
+
+Runtime Hybrid fan-out also obeys capability isolation: NVIDIA work is read-only; Codex state-changing work retains existing ownership/approval boundaries. No concurrency optimization is required to satisfy Phase 1.
+
+---
+
+# EC-11 GATES / REVIEW
+
+# ID-18 Gate Design
+
+## GATE-001 — Baseline Freeze Gate
+
+Purpose: Ensure implementation starts from a recoverable exact active source state.
+
+Required Tasks:
+- TASK-001
+
+Required Validation:
+- TEST-001
+
+Required Evidence:
+- EVD-001
+
+Required Review:
+- implementation executor verifies active repo identity and no destructive baseline action
+
+Decision States:
+- GO
+- CONDITIONAL_GO
+- NO_GO
+
+GO Condition:
+- exact active branch/HEAD/dirty state and recoverable tracked/untracked state captured
+- repo identity matches target
+
+CONDITIONAL_GO Condition:
+- only non-material evidence metadata is incomplete and can be completed before first source write; no source write allowed until complete
+
+NO_GO Condition:
+- source cannot be recovered, repo identity mismatches, or source drift changes approved requirement/scope/constraint/success/deliverable
+
+Gate Bypass: NOT ALLOWED
+
+## GATE-002 — Provider Foundation Security Gate
+
+Purpose: Prevent unsafe external calls before routing/sanitization/adapter/result contracts are proven.
+
+Required Tasks:
+- TASK-002, TASK-003, TASK-004, TASK-005, TASK-007, TASK-008 focused unit set
+
+Required Validation:
+- TEST-002 ~ TEST-006
+
+Required Evidence:
+- EVD-002, EVD-003
+
+Required Review:
+- independent check of state-changing routing invariant and secret boundary
+
+GO Condition:
+- no state-changing/unknown task can route NVIDIA
+- sanitizer fail-closed tests pass
+- adapter retry/error tests pass
+- worker v1 compatibility proven
+
+CONDITIONAL_GO Condition:
+- documentation-only issue with no security/routing/runtime impact
+
+NO_GO Condition:
+- any secret exposure, unbounded context path, NVIDIA mutation capability, non-deterministic route, unbounded retry, or legacy contract break
+
+Gate Bypass: NOT ALLOWED
+
+## GATE-003 — Hybrid Integration Gate
+
+Purpose: Prove minimum real multi-provider behavior without downstream Provider coupling.
+
+Required Tasks:
+- TASK-006, TASK-008, TASK-009
+
+Required Validation:
+- TEST-007 ~ TEST-011
+
+Required Evidence:
+- EVD-004, EVD-005, EVD-006, EVD-007
+
+Required Review:
+- independent architecture/regression review
+
+GO Condition:
+- live NVIDIA reasoning succeeds
+- legacy modes regress cleanly
+- provider failure is isolated
+- Collector/Fan-in/Stage Gate remain Provider-neutral
+
+CONDITIONAL_GO Condition:
+- external NVIDIA service instability prevents only live success while all local contracts pass; this does **not** permit final STOP GATE and requires re-running the same gate later
+
+NO_GO Condition:
+- legacy regression, security failure, downstream Provider branch, or runtime crash on Provider failure
+
+Gate Bypass: NOT ALLOWED
+
+## GATE-004 — Phase 1 STOP / Full Plan Resume Gate
+
+Purpose: Enforce approved STOP rule.
+
+Required Tasks:
+- TASK-010
+
+Required Validation:
+- TEST-012 plus referenced regression/security validations
+
+Required Evidence:
+- EVD-004 through EVD-009
+
+Required Review:
+- independent final review against SC-001 ~ SC-009
+
+GO Condition:
+- Codex execution available/proven
+- NVIDIA reasoning available/proven
+- Hybrid routing proven
+- common Result Contract/fan-in/gate proven
+- legacy regression proven
+- security/failure isolation proven
+- Full Plan resume handoff produced
+
+CONDITIONAL_GO Condition:
+- NOT USED for Phase 1 completion; incomplete STOP predicate means gate remains open
+
+NO_GO Condition:
+- any STOP predicate missing or failed
+
+Gate Bypass: NOT ALLOWED
+
+On GO, additional Provider feature development is prohibited under this plan; work returns to Full Plan Orchestration.
+
+---
+
+# EC-12 RECOVERY
+
+# ID-19 Recovery Design
+
+## RCV-001 — Gate 0 Source Mismatch / Unrecoverable Dirty State
+
+Trigger:
+- active repo/branch/HEAD differs after design verification, or dirty state cannot be captured recoverably
+
+Affected Tasks:
+- TASK-001 and all downstream tasks
+
+Recovery Flow:
+
+Failure → Diagnose source state → Re-verify current architecture → Capture recoverable state → Determine plan impact → Independent Review → Same GATE-001 re-evaluation
+
+Recovery Validation:
+- TEST-001
+
+Recovery Gate:
+- GATE-001
+
+Prohibited Bypass:
+- reset/clean/discard to force baseline match
+- continuing with stale source assumptions
+
+If Requirement/Scope/Constraint/Success Criterion/Deliverable changes, return `PLAN_REVISION_REQUIRED`.
+
+## RCV-002 — NVIDIA Transient Failure
+
+Trigger:
+- timeout/network/408/429/5xx
+
+Affected Tasks:
+- NVIDIA-routed runtime task
+
+Recovery Flow:
+
+Failure → classify → bounded retry/backoff → terminal `provider_failed` if exhausted → Diagnose → remediate config/provider availability → focused smoke → regression/integration → Same GATE-003 re-evaluation
+
+Recovery Validation:
+- TEST-005, TEST-009, TEST-008
+
+Recovery Gate:
+- GATE-003
+
+Prohibited Bypass:
+- unbounded retry
+- unconditional Codex auto fallback
+- marking failed reasoning as completed
+
+## RCV-003 — Context Security Rejection
+
+Trigger:
+- forbidden path, unresolved secret marker, path escape/symlink, context policy violation
+
+Affected Tasks:
+- NVIDIA-routed task only
+
+Recovery Flow:
+
+Failure → Diagnose requested context → remove/replace unsafe input or reduce allowlist → focused sanitizer validation → provider smoke → regression → independent review → Same GATE-002/GATE-003 re-evaluation
+
+Recovery Validation:
+- TEST-004, TEST-008
+
+Prohibited Bypass:
+- disabling sanitizer
+- weakening forbidden policy solely for task completion
+
+## RCV-004 — Unsafe Routing Detection
+
+Trigger:
+- any filesystem_write/shell/test/git or unknown task is observed routed to NVIDIA
+
+Affected Tasks:
+- TASK-002, TASK-003, TASK-006
+
+Recovery Flow:
+
+Failure → Diagnose capability derivation/router rule → remediate conservative metadata/rule → TEST-003 → TEST-007 → regression → independent review → Same GATE-002/GATE-003 re-evaluation
+
+Prohibited Bypass:
+- manual Provider override to NVIDIA
+
+## RCV-005 — Legacy Regression
+
+Trigger:
+- `mock`, `manual`, `codex-cli`, Codex manual fallback, collection/fan-in/gate regression
+
+Affected Tasks:
+- source task responsible for regression
+
+Recovery Flow:
+
+Failure → Diagnose changed boundary → remediate minimal diff → focused test → legacy regression → independent review → Same GATE-003 re-evaluation
+
+Prohibited Bypass:
+- accepting regression to obtain Hybrid success
+
+---
+
+# EC-13 TRACEABILITY
+
+# ID-21 Design Traceability
+
+| Requirement | Success Criterion | Architecture | Component | Task | Validation | Evidence | Gate | Deliverable |
+|---|---|---|---|---|---|---|---|---|
+| REQ-001 | SC-008 | ARC-022 | baseline boundary | TASK-001 | TEST-001 | EVD-001 | GATE-001 | DEL-001 |
+| REQ-002 | SC-003 | ARC-001 | CMP-005, CMP-008 | TASK-003, TASK-006 | TEST-003, TEST-007 | EVD-002, EVD-006 | GATE-002/003 | DEL-002 |
+| REQ-003 | SC-001, SC-008 | ARC-002, ARC-008 | CMP-004, CMP-009 | TASK-006, TASK-009 | TEST-010 | EVD-007 | GATE-003 | DEL-002, DEL-007 |
+| REQ-004 | SC-002 | ARC-009 ~ ARC-011 | CMP-007 | TASK-005, TASK-009 | TEST-005, TEST-008 | EVD-004 | GATE-003 | DEL-003 |
+| REQ-005 | SC-002 | ARC-010, ARC-018 | CMP-007 | TASK-005 | TEST-005, TEST-008 | EVD-004 | GATE-003 | DEL-003 |
+| REQ-006 | SC-004 | ARC-004 ~ ARC-007 | CMP-005 | TASK-003 | TEST-003 | EVD-002 | GATE-002 | DEL-004 |
+| REQ-007 | SC-004 | ARC-003, ARC-005 | CMP-002, CMP-003 | TASK-002 | TEST-002, TEST-003 | EVD-002 | GATE-002 | DEL-004 |
+| REQ-008 | SC-001, SC-005 | ARC-002, ARC-007 | CMP-001, CMP-009 | TASK-002, TASK-006, TASK-009 | TEST-007, TEST-010, TEST-012 | EVD-007, EVD-008 | GATE-003/004 | DEL-004, DEL-007 |
+| REQ-009 | SC-005, SC-007 | ARC-004 ~ ARC-007 | CMP-005, CMP-007 | TASK-003, TASK-005 | TEST-003, TEST-007 | EVD-002, EVD-003 | GATE-002 | DEL-003, DEL-006 |
+| REQ-010 | SC-003 | ARC-016, ARC-017 | CMP-008, CMP-010, CMP-011, CMP-012, CMP-013 | TASK-006, TASK-007 | TEST-006, TEST-011 | EVD-006 | GATE-003 | DEL-005 |
+| REQ-011 | SC-003, SC-004 | ARC-016, ARC-020 | CMP-010 | TASK-007 | TEST-006 | EVD-006 | GATE-002/003 | DEL-005 |
+| REQ-012 | SC-006 | ARC-008, ARC-018 ~ ARC-020 | CMP-007, CMP-008, CMP-009 | TASK-005, TASK-006 | TEST-005, TEST-009 | EVD-005 | GATE-002/003 | DEL-006 |
+| REQ-013 | SC-005 | ARC-007 | CMP-005, CMP-008, CMP-009 | TASK-006, TASK-009 | TEST-007, TEST-012 | EVD-008 | GATE-004 | DEL-004, DEL-007 |
+| REQ-014 | SC-009 | STOP rule / GATE-004 | handoff boundary | TASK-010 | TEST-012 | EVD-009 | GATE-004 | DEL-007, DEL-008 |
+| NFR-001 | SC-001, SC-008 | ARC-002, ARC-016, ARC-017, ARC-021 | CMP-011 ~ CMP-014 preserved | TASK-006, TASK-009 | TEST-010, TEST-011 | EVD-006, EVD-007 | GATE-003 | DEL-002 |
+| NFR-002 | SC-003 | ARC-001, ARC-016 | CMP-005, CMP-008 | TASK-003, TASK-006 | TEST-007, TEST-011 | EVD-006 | GATE-003 | DEL-002 |
+| NFR-003 | SC-004 | ARC-004 ~ ARC-007 | CMP-005 | TASK-003 | TEST-003 | EVD-002 | GATE-002 | DEL-004 |
+| NFR-004 | SC-006 | ARC-018, ARC-019 | CMP-007 | TASK-005 | TEST-005, TEST-009 | EVD-005 | GATE-002/003 | DEL-006 |
+| NFR-005 | SC-005, SC-008 | validation architecture | test components | TASK-008, TASK-009 | TEST-002 ~ TEST-012 | EVD-002 ~ EVD-008 | GATE-002/003/004 | DEL-007 |
+| SEC-001 | SC-007 | ARC-010, ARC-020 | CMP-007 | TASK-005 | TEST-005, TEST-008 | EVD-003, EVD-004 | GATE-002/003 | DEL-006 |
+| SEC-002 | SC-007 | ARC-012, ARC-015, ARC-020 | CMP-006, CMP-007, CMP-010 | TASK-004, TASK-005, TASK-007 | TEST-004, TEST-005, TEST-006 | EVD-003 | GATE-002 | DEL-006 |
+| SEC-003 | SC-007 | ARC-012 ~ ARC-015 | CMP-006 | TASK-004 | TEST-004 | EVD-003 | GATE-002 | DEL-006 |
+| SEC-004 | SC-005, SC-007 | ARC-005, ARC-006, ARC-009 | CMP-005, CMP-007 | TASK-003, TASK-005 | TEST-003, TEST-007 | EVD-002, EVD-003 | GATE-002 | DEL-006 |
+| SEC-005 | SC-007 | ARC-013, ARC-014 | CMP-006 | TASK-004 | TEST-004 | EVD-003 | GATE-002 | DEL-006 |
+| OPS-001 | SC-002, SC-006 | ARC-010, ARC-018 | CMP-007, CMP-015 | TASK-005, TASK-008 | TEST-005, TEST-008 | EVD-004, EVD-005 | GATE-003 | DEL-003, DEL-006 |
+| OPS-002 | SC-004, SC-006 | ARC-016, ARC-020 | CMP-010, CMP-015 | TASK-007, TASK-008 | TEST-006, TEST-009 | EVD-005, EVD-006 | GATE-003 | DEL-005, DEL-006 |
+| OPS-003 | SC-008, SC-009 | ARC-022 | baseline/handoff | TASK-001, TASK-010 | TEST-001, TEST-012 | EVD-001, EVD-009 | GATE-001/004 | DEL-001, DEL-007 |
+| OPS-004 | SC-002 | ARC-010 | CMP-007 | TASK-005 | TEST-005, TEST-008 | EVD-004 | GATE-003 | DEL-003 |
+
+Every MUST requirement has Architecture → Component → Task → Validation → Evidence → Gate → Deliverable coverage. SHOULD requirements NFR-002 and OPS-004 are also covered.
+
+---
+
+# EC-14 PROJECTION INTEGRITY
+
+NO_SEMANTIC_EXPANSION: CONFIRMED
+NO_SEMANTIC_LOSS: CONFIRMED
+NO_UNAUTHORIZED_SCOPE_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_REQUIREMENT_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_ARCHITECTURE_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_TASK_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_VALIDATION_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_SECURITY_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_PERMISSION_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_EVIDENCE_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_GATE_CHANGE: CONFIRMED
+NO_UNAUTHORIZED_RECOVERY_CHANGE: CONFIRMED
+SOURCE_DRIFT_STATUS: CLEAR
+
+requirements_coverage: REQ 14/14; NFR 5/5; SEC 5/5; OPS 4/4
+success_criteria_coverage: SC 9/9
+deliverables_coverage: DEL 8/8
+architecture_coverage: ARC 22/22
+components_coverage: CMP 15/15
+interfaces_coverage: IF 9/9
+change_targets_coverage: CT 19/19
+tasks_coverage: TASK 10/10
+validations_coverage: TEST 12/12
+security_design_coverage: SEC-D 5/5
+permissions_coverage: PERM 10/10
+evidence_coverage: EVD 9/9
+fan_out_coverage: FW 3/3
+fan_in_coverage: FI 3/3
+gates_coverage: GATE 4/4
+recovery_coverage: RCV 5/5
+traceability_coverage: COMPLETE
+
+HANDOFF_RESULT: READY_FOR_CONTRACT_DIAGNOSIS
+
+## POST-APPROVAL CHANGE CONTROL
+
+# ID-26 Post-Approval Change Control
+
+If a material change affects technical HOW only:
+
+Implementation Design Revision  
+→ Implementation Design Diagnosis  
+→ User Design Re-approval
+
+If a material change affects Requirement, Scope, Constraint, Success Criterion, or Deliverable:
+
+Development Plan Revision  
+→ Development Plan Diagnosis  
+→ User Plan Re-approval  
+→ Implementation Design Revision  
+→ Implementation Design Diagnosis  
+→ User Design Re-approval
+
+---
+
+## APPROVED PLAN BOUNDARY CHECK
+
+# ID-22 Plan Boundary Check
+
+## Requirement Changes
+
+UNAUTHORIZED_REQUIREMENT_CHANGE: NONE
+
+Details: No approved REQ/NFR/SEC/OPS text or acceptance condition is changed.
+
+## Scope Changes
+
+UNAUTHORIZED_SCOPE_CHANGE: NONE
+
+Details: No provider beyond Codex/NVIDIA is introduced; no benchmark/dynamic router/cost optimizer/local NIM/Jarvis/MCP expansion is added.
+
+## Constraint Changes
+
+UNAUTHORIZED_CONSTRAINT_CHANGE: NONE
+
+Details: Existing legacy mode compatibility, external secret boundary, read-only NVIDIA role, bounded retry and Provider-neutral Fan-in/Gate are preserved.
+
+## Success Criteria Changes
+
+UNAUTHORIZED_SUCCESS_CRITERIA_CHANGE: NONE
+
+## Deliverable Changes
+
+UNAUTHORIZED_DELIVERABLE_CHANGE: NONE
+
+PLAN_REVISION_REQUIRED: NO
+
+---
+
+## ASSUMPTIONS / OPEN ISSUES / EXECUTION PRECONDITIONS
+
+# ID-23 Design Assumptions / Open Issues
+
+## Verified Facts
+
+- VF-D-001: actual inspected local worktree is `migration/hamonikr-linux @ 3c5ee4d07189d3d3111839207d25af2a7bffd40d` and is dirty.
+- VF-D-002: observed remote branch `migration/hamonikr-linux` points to `c68ba9b2520df0dab22981f9a78a4d5ee7e087e4`; local branch is ahead of observed remote.
+- VF-D-003: `execution_modes.py` exposes `mock`, `manual`, `codex-cli` only.
+- VF-D-004: `task_router.py` selects Agent/Task and `TaskSlice` currently lacks explicit Provider capability metadata.
+- VF-D-005: `result_normalizer.py` uses `orchestration.worker.result.v1`.
+- VF-D-006: Collector/Fan-in consume common normalized result fields and do not require Provider identity.
+- VF-D-007: current source includes a separate production/canonical worker subsystem with `orchestration.lv_worker.result.v1`; this is preserved outside the bootstrap change boundary.
+- VF-D-008: repository already uses Python standard-library `urllib` for outbound HTTP patterns; no project-level dependency manifest requiring a separate HTTP SDK was found in the inspected root.
+- VF-D-009: current NVIDIA official API documentation exposes OpenAI-compatible `POST /v1/chat/completions`; hosted Build examples use `https://integrate.api.nvidia.com/v1` as base URL.
+
+## Technical Assumptions
+
+- ASM-D-001: exact `NVIDIA_MODEL` is an execution environment value, not a compiled design constant. The smoke execution records the chosen current model ID as evidence.
+- ASM-D-002: NVIDIA Hosted API credentials and network access will be available in the execution environment for L4 validation.
+- ASM-D-003: Codex CLI availability required by the approved Hybrid E2E will be validated at execution time; absence does not change the design but prevents GATE-004 GO.
+- ASM-D-004: new optional TaskSlice fields with default empty lists remain backward-compatible with old serialized task payloads.
+
+## Open Design Questions
+
+N/A — all implementation-critical HOW decisions needed for this Phase 1 design are resolved.
+
+## Design Blockers
+
+N/A — no unresolved design blocker.
+
+## Deferred Technical Decisions
+
+- DD-D-001: exact live `NVIDIA_MODEL` value is deliberately runtime configuration and is captured in EVD-004 rather than compiled into source. No new architecture/design decision is required to change it.
+- DD-D-002: bounded NVIDIA read-only parallelism may remain sequential in the first implementation if context pre-materialization cannot guarantee race-free source snapshots; this does not affect approved success criteria.
+
+No blocker required for correct implementation is silently deferred.
+
+---
+
+# EC-15 CONTRACT DIAGNOSIS RESULT
+
+DIAGNOSIS_DECISION: PASS
+DIAGNOSIS_READINESS: READY_FOR_CODEX
+BLOCKER_COUNT: 0
+MAJOR_COUNT: 0
+MINOR_COUNT: 0
+SOURCE_DRIFT_STATUS: CLEAR
+
+## INDEPENDENT CONTRACT DIAGNOSIS
+
+1. Authority integrity: PASS — Approved Implementation Design V0.1 is the sole technical authority; approved version/date/status/handoff readiness and repository/baseline identity are preserved.
+2. No Semantic Expansion: PASS — no new Requirement, Architecture, Component, Interface, Task, Dependency, Change Target, Validation, Security rule, Permission, Evidence, Fan-Out/Fan-In rule, Gate, Recovery rule, or Ownership Boundary was introduced.
+3. No Semantic Loss: PASS — REQ 14/14, NFR 5/5, SEC 5/5, OPS 4/4, SC 9/9, DEL 8/8, ARC 22/22, CMP 15/15, IF 9/9, CT 19/19, TASK 10/10, TEST 12/12, SEC-D 5/5, PERM 10/10, EVD 9/9, FW 3/3, FI 3/3, GATE 4/4, and RCV 5/5 are retained.
+4. Stable Reference Integrity: PASS — approved stable IDs and traceability relationships are retained without renumbering.
+5. Execution Integrity: PASS — task dependencies, execution order, ownership boundaries, preserved/forbidden areas, completion conditions, routing matrix, provider failure matrix, and runtime configuration contract are preserved.
+6. Validation / Security / Permission / Evidence Integrity: PASS — validation levels and pass conditions, sanitizer/credential boundaries, permission separation, and evidence requirements are retained.
+7. Gate / Recovery Integrity: PASS — GATE-001 through GATE-004 and RCV-001 through RCV-005 retain approved decision/re-entry/no-bypass semantics.
+8. Source Compatibility: PASS — Approved Design source drift state remains CLEAR; Gate 0 must capture the actual active worktree baseline before implementation writes, exactly as approved.
+9. Projection Check: PASS — independent structural/coverage diagnosis found 0 blocker, 0 major, and 0 minor findings.
+
+FINAL_READINESS: READY_FOR_CODEX
+CONTRACT_STATUS: READY_FOR_CODEX

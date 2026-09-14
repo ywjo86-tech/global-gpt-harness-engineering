@@ -21,6 +21,8 @@ def _write_json(path: Path, payload: object) -> None:
 def _normalize_gate_status(value: Any) -> str:
     text = str(value or "").strip().replace("_", " ").replace("-", " ")
     normalized = " ".join(text.split()).upper()
+    if normalized == "NO GO":
+        normalized = "NO-GO"
     if normalized in {"GO", "CONDITIONAL GO", "NO-GO", "PENDING"}:
         return normalized
     return normalized or "NO-GO"
@@ -184,6 +186,13 @@ def run_stage_gate(
 
     request_path = runtime_dir / "stage_gate_request.json"
     result_path = runtime_dir / "stage_gate.json"
+    extra_context = {
+        "fanin_report": fanin_report.to_dict(),
+        "next_step": "advance if gate allows",
+    }
+    if state_snapshot.get("authority_review"):
+        extra_context["authority_review"] = state_snapshot["authority_review"]
+
     request_payload = {
         "project_root": str(Path(project_root).resolve()),
         "task": {
@@ -204,10 +213,7 @@ def run_stage_gate(
         "contract_summary": contract.summary(),
         "fanin_report": fanin_report.to_dict(),
         "state_snapshot": state_snapshot,
-        "extra_context": {
-            "fanin_report": fanin_report.to_dict(),
-            "next_step": "advance if gate allows",
-        },
+        "extra_context": extra_context,
     }
     request_path.write_text(json.dumps(request_payload, indent=2, ensure_ascii=False), encoding="utf-8")
     subprocess.run(
@@ -224,6 +230,12 @@ def run_stage_gate(
         check=True,
     )
     payload = _normalize_gate_payload(json.loads(result_path.read_text(encoding="utf-8")), contract)
+    # The phase supplied by the active runtime snapshot is authoritative for
+    # this Gate invocation.  Preserve it if a worker/normalizer returned a
+    # stale or unknown phase value.
+    snapshot_phase = str(state_snapshot.get("current_phase", "")).strip()
+    if snapshot_phase:
+        payload["phase"] = snapshot_phase
     _write_json(gate_result_json, payload)
     gate_result_md.write_text(render_stage_gate_markdown(payload), encoding="utf-8")
     if payload.get("status") in {"GO", "CONDITIONAL GO", "NO-GO"}:

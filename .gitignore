@@ -1,6 +1,12 @@
 # Workspace handoffs and local working material
 _workspace/
 
+# Local imported reference packages and nested working roots
+R4 Architecture Freeze/
+global-gpt-harness-orch02/
+global-gpt-harness-orch03/
+global-gpt-harness-orch04/
+
 # Secrets and local environment
 .env
 .env.*

@@ -83,6 +83,26 @@ class ResultNormalizerTest(unittest.TestCase):
         self.assertIn("Validation Criteria", markdown)
         self.assertIn("Paths", markdown)
 
+    def test_provider_trace_metadata_is_optional_and_rendered(self) -> None:
+        normalized = normalize_worker_result(
+            {
+                "thread_id": "T2",
+                "agent_name": "qa_reviewer_agent",
+                "status": "completed",
+                "summary": "reasoned",
+                "provider": "nvidia",
+                "model": "model-x",
+                "route_reason": "hybrid_read_only_to_nvidia",
+            },
+            source="nvidia",
+            mode="nvidia",
+        )
+        self.assertEqual(normalized["schema_version"], SCHEMA_VERSION)
+        self.assertEqual(normalized["provider_trace"]["provider"], "nvidia")
+        markdown = render_worker_handoff_markdown(normalized)
+        self.assertIn("Provider Trace", markdown)
+        self.assertIn("hybrid_read_only_to_nvidia", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

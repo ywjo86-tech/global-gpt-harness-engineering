@@ -19,6 +19,15 @@ SECTION_PATTERNS = [
     ("implementation_agent", ["implementation", "implement", "runtime", "code", "feature", "build", "executor", "dispatch", "module", "refactor"]),
 ]
 
+MUTATION_RE = re.compile(
+    r"\b(add|apply|build|change|commit|create|delete|edit|fix|implement|modify|move|patch|remove|rename|replace|run|update|write)\b",
+    re.IGNORECASE,
+)
+SHELL_RE = re.compile(r"\b(command|shell|subprocess|terminal|cli|bash|pytest|unittest|test execution)\b", re.IGNORECASE)
+TEST_RE = re.compile(r"\b(pytest|unittest|regression|tests?|validation)\b", re.IGNORECASE)
+GIT_RE = re.compile(r"\b(git|commit|merge|branch|rebase|checkout)\b", re.IGNORECASE)
+READ_ONLY_RE = re.compile(r"\b(review|analysis|analyze|documentation|docs|readme|summary|handoff|reasoning)\b", re.IGNORECASE)
+
 
 def _extract_sections(plan_text: str) -> list[SectionPlan]:
     sections: list[SectionPlan] = []
@@ -43,6 +52,28 @@ def _match_agent(section: SectionPlan) -> str | None:
         if any(keyword in haystack for keyword in keywords):
             return agent_name
     return None
+
+
+def derive_required_capabilities(title: str, body: str) -> list[str]:
+    haystack = f"{title}\n{body}"
+    capabilities: set[str] = {"reasoning"}
+    state_changing = bool(MUTATION_RE.search(haystack))
+    if SHELL_RE.search(haystack):
+        capabilities.add("shell")
+        state_changing = True
+    if TEST_RE.search(haystack):
+        capabilities.add("test")
+    if GIT_RE.search(haystack):
+        capabilities.add("git")
+        state_changing = True
+    if state_changing:
+        capabilities.add("filesystem_write")
+        capabilities.discard("read_only")
+    elif READ_ONLY_RE.search(haystack):
+        capabilities.add("read_only")
+    else:
+        capabilities.add("filesystem_write")
+    return sorted(capabilities)
 
 
 def _build_task(contract: ExecutionContract, state: RuntimeState, thread_id: str, agent_name: str, section: SectionPlan) -> TaskSlice:
@@ -86,6 +117,7 @@ def _build_task(contract: ExecutionContract, state: RuntimeState, thread_id: str
         forbidden_scope=forbidden_scope,
         merge_point="fanin",
         status="pending",
+        required_capabilities=derive_required_capabilities(section.title, section.body),
     )
     assessment = classify_task(task, contract.paths.project_root)
     task.risk_class = assessment.classification
