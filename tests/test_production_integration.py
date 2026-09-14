@@ -16,8 +16,9 @@ class ProductionIntegrationTests(unittest.TestCase):
   return root,[{"path":"a.json","kind":"package","lv_id":"done"},{"path":"b.json","kind":"review","lv_id":"next","checkpoint_summary":"cp"}]
  def test_actual_format_project_fixtures_are_temporary_and_sources_unchanged(self):
   harness=Path(__file__).resolve().parents[1];mapping=next((harness/"runtime/orchestrator/contract_mappings").glob("*.json"));spec=json.loads(mapping.read_text());source=harness.parent/spec["project_id"]
-  second=next(p for p in harness.parent.iterdir() if p!=source and (p/"AGENTS.md").is_file() and (p/"docs/DEVELOPMENT_PLAN.txt").is_file())
-  candidates=[(source,Path(spec["canonical_implementation_source"]["path"])),(second,Path("docs/DEVELOPMENT_PLAN.txt"))]
+  source_plan=source/Path(spec["canonical_implementation_source"]["path"])
+  if not source.is_dir() or not source_plan.is_file():self.skipTest("production integration smoke skipped: external mapped project is not available")
+  candidates=[(source,Path(spec["canonical_implementation_source"]["path"])),(harness,Path("docs/DEVELOPMENT_PLAN.txt"))]
   before=[]
   with tempfile.TemporaryDirectory() as d:
    for index,(root,relative) in enumerate(candidates):

@@ -287,6 +287,13 @@ class ReadOnlyInspectTest(unittest.TestCase):
 
     def test_wallet_stored_event_matches_canonical_record_hash(self) -> None:
         wallet = REPO_ROOT.parent / "wallet-affiliate-collector"
+        required = [
+            wallet / "IMPLEMENTATION_PLAN.md",
+            wallet / "WALLET_AFFILIATE_IMPLEMENTATION_PLAN_V20.md",
+            wallet / "docs" / "APPROVAL_LOG.md",
+        ]
+        if not wallet.is_dir() or any(not path.is_file() for path in required):
+            self.skipTest("Wallet canonical-record smoke skipped: external project fixture is not available")
         text = (wallet / "docs" / "APPROVAL_LOG.md").read_text(encoding="utf-8")
         report = _validate_approval_state(
             text,
