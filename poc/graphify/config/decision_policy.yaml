@@ -1,0 +1,18 @@
+schema_version: gch.graphify.decision-policy.v1
+policy_version: DPOL-1
+hard_safety:
+  require_zero_provider_writes: true
+  require_fallback_pass: true
+  require_backend_independence: true
+  require_memory_independence: true
+  require_source_precedence: true
+  require_context_boundary: true
+  require_phase_boundary: true
+  require_reserved_phase_isolation: true
+material_benefit:
+  graphify_min_verified_rate: 0.75
+  graphify_must_exceed_baseline_verified_count: true
+conditional_go:
+  allow_equal_verified_count_if_all_safety_pass: true
+negative_evidence_retention: required
+fallback_provider: existing_inspection

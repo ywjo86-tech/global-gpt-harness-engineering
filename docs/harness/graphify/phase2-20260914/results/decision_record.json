@@ -1,0 +1,65 @@
+{
+  "record_type": "DecisionRecord",
+  "decision": "GO",
+  "predecessor_stable_baseline_ref": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "source_reverification_ref": "runtime/orchestrator_runs/gch-graphify-task002-gpt-20260914T185720/outputs/TASK-002/current_source_drift_verification.json",
+  "graphify_version_qualified": "0.9.58",
+  "policy_version": "DPOL-1",
+  "policy_digest": "da0234a70d9c378bc275a5eb47562a2ddd3f577a73e681fb9043e07f6f57dfce",
+  "safety_gate_results": {
+    "zero_provider_writes": true,
+    "fallback_pass": true,
+    "backend_independence": true,
+    "phase_boundary": true,
+    "current_repository_boundary": true,
+    "memory_independence": true,
+    "source_precedence": true,
+    "context_assembly_boundary": true,
+    "reserved_phase_isolation": true,
+    "core_regression_pass": true
+  },
+  "comparative_metric_summary": {
+    "graphify": {
+      "scenario_count": 4,
+      "completed_count": 4,
+      "verified_count": 4,
+      "verified_rate": 1.0,
+      "average_latency_ms": 674.735,
+      "estimated_tokens_total": 3529
+    },
+    "existing_inspection": {
+      "scenario_count": 4,
+      "completed_count": 4,
+      "verified_count": 0,
+      "verified_rate": 0.0,
+      "average_latency_ms": 8.921,
+      "estimated_tokens_total": 792
+    }
+  },
+  "canonical_verification_summary": {
+    "graphify_verified_rate": 1.0,
+    "graphify_verified_count": 4,
+    "baseline_verified_count": 0,
+    "material_benefit": true
+  },
+  "backend_independence_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/backend_independence.json",
+  "current_repository_intelligence_boundary_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/current_repository_boundary.json",
+  "memory_independence_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/memory_independence.json",
+  "source_precedence_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/source_precedence.json",
+  "context_assembly_boundary_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/context_assembly_boundary.json",
+  "conditions": [],
+  "fallback_status": "PASS",
+  "evidence_refs": [
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/comparative_report.json",
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/fallback_evidence.json",
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/independent_regression_review.json",
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/gate003.json",
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/gate008.json",
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/reserved_phase_isolation.json",
+    "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/controlled_baseline_guard.json"
+  ],
+  "decision_finalized": true,
+  "closure_state": null,
+  "next_master_phase": "PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION",
+  "decision_digest": "aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505"
+}

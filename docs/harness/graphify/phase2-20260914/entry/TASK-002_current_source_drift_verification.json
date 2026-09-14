@@ -1,0 +1,43 @@
+{
+  "record_type": "CurrentSourceDriftVerificationRecord",
+  "task_id": "TASK-002",
+  "baseline_ref": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "current_head": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+  "origin_main": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+  "branch": "main",
+  "baseline_is_ancestor": true,
+  "post_baseline_commits": [
+    "25428e9bf1991ee26957bd84c39a3505b47a667a docs(harness): seal Full Plan stable baseline final record"
+  ],
+  "post_baseline_committed_change_class": "DOCUMENTATION_SEAL_ONLY",
+  "post_baseline_committed_paths": [
+    "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_20260914.json",
+    "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_COMPLETION_20260914.md",
+    "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_MANIFEST_20260914.json",
+    "docs/harness/FULL_PLAN_STABLE_BASELINE_GATE_REGRESSION_REPORT_20260914.md"
+  ],
+  "protected_core_hash_check": "ALL_UNCHANGED",
+  "protected_core_target_count": 11,
+  "codex_hooks_json_expected_absent": true,
+  "codex_hooks_json_actual_absent": true,
+  "existing_inspection_symbol": "runtime/orchestrator/read_only_inspector.py::inspect_read_only",
+  "existing_inspection_symbol_verified": true,
+  "working_tree_dirty": true,  "tracked_worktree_changes": [
+    "docs/DEVELOPMENT_PLAN.txt",
+    "docs/harness/orchestration-state.md"
+  ],
+  "tracked_worktree_change_class": "APPROVED_GRAPHIFY_CONTRACT_AND_STATE_ACTIVATION",
+  "untracked_scope_class": "PHASE2_POC_AND_RUNTIME_EVIDENCE",
+  "unresolved_what_impact_drift": false,
+  "source_drift_detected": false,
+  "historical_drift_status": "RECORDED_AND_RESOLVED",
+  "current_source_baseline": "REVERIFIED",
+  "test_002_status": "PASS",
+  "entry_effect": "TASK-002 prerequisite satisfied; Graphify PoC entry remains closed pending TASK-003, TASK-016, TASK-004, and separate install approval.",
+  "notes": [
+    "The stable code ref remains 958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37.",
+    "The current main/docs head 25428e9bf1991ee26957bd84c39a3505b47a667a adds only the sealed baseline evidence documents.",
+    "All protected core and Existing Inspection preserve targets checked against the stable ref are byte-identical by SHA-256.",
+    "No current protected-core worktree mutation was detected."
+  ]
+}

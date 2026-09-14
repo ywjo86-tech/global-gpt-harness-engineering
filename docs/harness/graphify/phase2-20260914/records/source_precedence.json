@@ -1,0 +1,13 @@
+{
+  "record_type": "SourcePrecedenceResult",
+  "authoritative_source": "CURRENT_REPOSITORY",
+  "authoritative_value": "CURRENT_REPOSITORY_AUTHORITATIVE",
+  "lower_priority_fixtures": [
+    "LOWER_PRIORITY_OVERRIDE"
+  ],
+  "conflicting_lower_priority_values": [
+    "LOWER_PRIORITY_OVERRIDE"
+  ],
+  "lower_priority_override_applied": false,
+  "verified": true
+}

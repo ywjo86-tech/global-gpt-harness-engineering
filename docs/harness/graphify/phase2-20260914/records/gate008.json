@@ -1,0 +1,12 @@
+{
+  "record_type": "GraphifyGateRecord",
+  "gate_id": "GATE-008",
+  "gate_status": "GO",
+  "checks": {
+    "current_repository_boundary": true,
+    "memory_independence": true,
+    "source_precedence": true,
+    "context_assembly_boundary": true
+  },
+  "bypass_used": false
+}

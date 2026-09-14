@@ -1,0 +1,21 @@
+schema_version: gch.graphify.scenarios.v1
+source_ref: 25428e9bf1991ee26957bd84c39a3505b47a667a
+scenarios:
+  - id: S001
+    query: provider router
+    expected_source: runtime/orchestrator/provider_router.py
+    category: symbol_path
+  - id: S002
+    query: read only inspector
+    expected_source: runtime/orchestrator/read_only_inspector.py
+    category: symbol_path
+  - id: S003
+    query: worker authority
+    expected_source: runtime/orchestrator/worker_authority.py
+    category: symbol_path
+  - id: S004
+    query: completion authority
+    expected_source: runtime/orchestrator/completion_authority.py
+    category: symbol_path
+refresh_rule: graph source_ref must equal scenario source_ref
+negative_evidence_required: true

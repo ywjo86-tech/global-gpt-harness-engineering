@@ -1,0 +1,31 @@
+{
+  "record_type": "MemoryIndependenceResult",
+  "scanned_runtime_surface": [
+    "poc/graphify/contracts.py",
+    "poc/graphify/graphify_adapter.py",
+    "poc/graphify/baseline_adapter.py",
+    "poc/graphify/canonical_verifier.py",
+    "poc/graphify/comparator.py",
+    "poc/graphify/environment.py",
+    "poc/graphify/entry_gate.py",
+    "poc/graphify/baseline_guard.py",
+    "poc/graphify/current_repository_boundary.py",
+    "poc/graphify/source_precedence.py",
+    "poc/graphify/context_assembly_boundary.py",
+    "poc/graphify/phase_boundary.py",
+    "poc/graphify/decision.py",
+    "poc/graphify/decision_closure.py",
+    "poc/graphify/handoff.py"
+  ],
+  "forbidden_dependency_tokens": [
+    "obsidian",
+    "notion",
+    "memory_adapter",
+    "project_memory"
+  ],
+  "violations": [],
+  "obsidian_connected": false,
+  "notion_connected": false,
+  "memory_adapter_connected": false,
+  "verified": true
+}

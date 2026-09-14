@@ -1,0 +1,30 @@
+{
+  "record_type": "ReservedPhaseIsolationResult",
+  "scanned_paths": [
+    "poc/graphify/backend_independence.py",
+    "poc/graphify/baseline_adapter.py",
+    "poc/graphify/baseline_guard.py",
+    "poc/graphify/canonical_verifier.py",
+    "poc/graphify/comparator.py",
+    "poc/graphify/context_assembly_boundary.py",
+    "poc/graphify/contracts.py",
+    "poc/graphify/current_repository_boundary.py",
+    "poc/graphify/decision.py",
+    "poc/graphify/decision_closure.py",
+    "poc/graphify/entry_gate.py",
+    "poc/graphify/environment.py",
+    "poc/graphify/graphify_adapter.py",
+    "poc/graphify/handoff.py",
+    "poc/graphify/memory_independence.py",
+    "poc/graphify/phase_boundary.py",
+    "poc/graphify/source_precedence.py",
+    "poc/graphify/config/decision_policy.yaml",
+    "poc/graphify/config/provider_boundary.yaml",
+    "poc/graphify/config/scenarios.yaml",
+    "poc/graphify/config/version_lock.json"
+  ],
+  "phase7_violations": [],
+  "phase8_violations": [],
+  "violations": [],
+  "verified": true
+}

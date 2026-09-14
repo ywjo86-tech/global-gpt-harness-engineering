@@ -1,0 +1,81 @@
+{
+  "record_type": "ControlledBaselineGuardRecord",
+  "baseline_ref": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "guard_status": "CLEAR",
+  "verification_status": "VERIFIED",
+  "protected_paths": [
+    "runtime/orchestrator/stage_gate.py",
+    "runtime/orchestrator/completion_contract.py",
+    "runtime/orchestrator/execution_contract.py",
+    "runtime/orchestrator/worker_authority.py",
+    "tests/test_worker_authority.py",
+    "AGENTS.md",
+    ".gitignore",
+    "runtime/orchestrator/provider_router.py",
+    "runtime/orchestrator/read_only_inspector.py",
+    "tests/test_read_only_inspect.py",
+    "runtime/orchestrator/completion_authority.py"
+  ],
+  "expected_absent_paths": [
+    ".codex/hooks.json"
+  ],
+  "verified_hashes": {
+    "runtime/orchestrator/stage_gate.py": {
+      "baseline_sha256": "774bcfa5cb98099616ad1280471cdff512251831e38cc3c6c34f0cb7104f4875",
+      "current_sha256": "774bcfa5cb98099616ad1280471cdff512251831e38cc3c6c34f0cb7104f4875"
+    },
+    "runtime/orchestrator/completion_contract.py": {
+      "baseline_sha256": "ffdd027c7ac2950d002cc72909c80aedbc181fbde33a4faf24f9159f0d239b07",
+      "current_sha256": "ffdd027c7ac2950d002cc72909c80aedbc181fbde33a4faf24f9159f0d239b07"
+    },
+    "runtime/orchestrator/execution_contract.py": {
+      "baseline_sha256": "de6f0479dc8de1f11a4590847b8733ef036135275f998436532f65c2c68ff24c",
+      "current_sha256": "de6f0479dc8de1f11a4590847b8733ef036135275f998436532f65c2c68ff24c"
+    },
+    "runtime/orchestrator/worker_authority.py": {
+      "baseline_sha256": "17310f9c9b7c5fe99d0c23aacf3c89968a13ccdcde392e2928475a0ecd29a725",
+      "current_sha256": "17310f9c9b7c5fe99d0c23aacf3c89968a13ccdcde392e2928475a0ecd29a725"
+    },
+    "tests/test_worker_authority.py": {
+      "baseline_sha256": "bb8af8de27cd6320ece4294591a3faed17f98ab6435e1bdb751856d2c4316635",
+      "current_sha256": "bb8af8de27cd6320ece4294591a3faed17f98ab6435e1bdb751856d2c4316635"
+    },
+    "AGENTS.md": {
+      "baseline_sha256": "03cc5cd630b1149b1ec883f5d6aa34cfd57286aca11b481b11ae4b1f2e4e3e14",
+      "current_sha256": "03cc5cd630b1149b1ec883f5d6aa34cfd57286aca11b481b11ae4b1f2e4e3e14"
+    },
+    ".gitignore": {
+      "baseline_sha256": "043e232efcb47902f47c943f6c99b234b6858925da7d7d704b7b5f290b22c06c",
+      "current_sha256": "043e232efcb47902f47c943f6c99b234b6858925da7d7d704b7b5f290b22c06c"
+    },
+    "runtime/orchestrator/provider_router.py": {
+      "baseline_sha256": "3f0ba0bb98c179651f603497dfaa94290b00525a250114af0fa4ce0799213b13",
+      "current_sha256": "3f0ba0bb98c179651f603497dfaa94290b00525a250114af0fa4ce0799213b13"
+    },
+    "runtime/orchestrator/read_only_inspector.py": {
+      "baseline_sha256": "ce9996cee4a50f7cefadd702cb11b3ad93676f83fddf9ed10ea5422e8965a181",
+      "current_sha256": "ce9996cee4a50f7cefadd702cb11b3ad93676f83fddf9ed10ea5422e8965a181"
+    },
+    "tests/test_read_only_inspect.py": {
+      "baseline_sha256": "e96ee7aaa6fdf78215fe4594007337d4c427f9b18ef48bbf8a6a03087e5250e4",
+      "current_sha256": "e96ee7aaa6fdf78215fe4594007337d4c427f9b18ef48bbf8a6a03087e5250e4"
+    },
+    "runtime/orchestrator/completion_authority.py": {
+      "baseline_sha256": "c992e3d0b77fd083dff442e401191ed01e5a282af25115a816ba279a438c9fc9",
+      "current_sha256": "c992e3d0b77fd083dff442e401191ed01e5a282af25115a816ba279a438c9fc9"
+    }
+  },
+  "requested_change_paths": [],
+  "requested_protected_paths": [],
+  "controlled_change_required": false,
+  "entry_eligible": true,
+  "reasons": [],
+  "external_controlled_change_sequence": [
+    "Change Request",
+    "Impact Analysis",
+    "Controlled Change",
+    "Regression Test",
+    "Baseline Reconfirmation"
+  ],
+  "escalation_record": null
+}

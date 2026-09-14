@@ -1,0 +1,124 @@
+{
+  "record_type": "GraphifyPhase2FinalEvidenceManifest",
+  "artifact_policy": "ORCHESTRATION_EVIDENCE_ONLY",
+  "graph_artifact_included": false,
+  "production_adoption_allowed": false,
+  "files": [
+    {
+      "path": "records/backend_independence.json",
+      "sha256": "65e774ab1def360fd8bb51c7cf28c0fcd9365f2c1568136f0633bc51b5107cad"
+    },
+    {
+      "path": "records/code_only_extract.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "records/code_only_extract.stdout.log",
+      "sha256": "719a7470020960d14c8cafcb03db6ddc4e2ece65d7969c357795d8480a68a01b"
+    },
+    {
+      "path": "records/context_assembly_boundary.json",
+      "sha256": "e79445c59a282d5a0eb0ff948d7814d2c1d2f377b39e88f68b45c73eea0371e3"
+    },
+    {
+      "path": "records/controlled_baseline_guard.json",
+      "sha256": "726926df22eef55c77eee2fa9049ab8336e81d8197e21e87f9143cb5ee9d78b0"
+    },
+    {
+      "path": "records/current_repository_boundary.json",
+      "sha256": "9f4347dd61a6024c7e0598379ede50cc9df565f89678dd35be89a2da45f10667"
+    },
+    {
+      "path": "records/environment_record.json",
+      "sha256": "2cb936e3d0e3b374d48178cf723ec6fcff007fdb2fbf1d565aef01a661460053"
+    },
+    {
+      "path": "records/gate003.json",
+      "sha256": "be786313accce77cdb4f5e478fd11b94cf330d0987f014f180c41a27045ce3c6"
+    },
+    {
+      "path": "records/gate004.json",
+      "sha256": "132597a5df958bfd51f8bd152b2db913d50079adf8c391457d4b47271030956b"
+    },
+    {
+      "path": "records/gate006.json",
+      "sha256": "f72ff70a2e52699e1b34a492515b6b1832dd9fb7b9b363f625d41acaf30907cf"
+    },
+    {
+      "path": "records/gate008.json",
+      "sha256": "d9068eaf557ee2123c8212b9e1de21bae5cbf59063fff87a7ca81f645a3e1b05"
+    },
+    {
+      "path": "records/gate009.json",
+      "sha256": "8014159ac869112b01f2e990768a7be140f1f8a5800903454b55ee87c9357c00"
+    },
+    {
+      "path": "records/graph_manifest_freshness.json",
+      "sha256": "faf206e1b1165ee807269172f5ec0a423abf93553b14083e3ca24dfdd081acbc"
+    },
+    {
+      "path": "records/independent_regression_review.json",
+      "sha256": "dd9de1c670352557d034ff80998109cc40e334e93ee2650762468c7e8f56fa04"
+    },
+    {
+      "path": "records/memory_independence.json",
+      "sha256": "920e08e7f43a1b72a488e1d5a3a68ab5f69764700a4482f9adb3e8d338df7b0a"
+    },
+    {
+      "path": "records/mutation_manifest.after.json",
+      "sha256": "9454910df7c4f791add267963c630baa9efec0c2f144bddd4ab51ba2ca59435d"
+    },
+    {
+      "path": "records/mutation_manifest.before.json",
+      "sha256": "9454910df7c4f791add267963c630baa9efec0c2f144bddd4ab51ba2ca59435d"
+    },
+    {
+      "path": "records/phase_boundary.json",
+      "sha256": "d0ab24501425f0d0182d43cb6ae297ab9aaa90c93c7a66451a6ac275f8443ab3"
+    },
+    {
+      "path": "records/regression_core.log",
+      "sha256": "b12e24fb7d05e915a515ae0ad61b4bd51bd3d2a9071f9253cfb22a2205639f26"
+    },
+    {
+      "path": "records/regression_graphify.log",
+      "sha256": "8cc1136dcea6ae4c790c7f11ffb13260b0b59ec27775dc44abcf9e8ddf860105"
+    },
+    {
+      "path": "records/reserved_phase_isolation.json",
+      "sha256": "de584e073ea1fa588025558ac763e8c6474f3166a372e43842e1acc41f9bb566"
+    },
+    {
+      "path": "records/source_precedence.json",
+      "sha256": "7293098aa12a4f2441d3db39fc81b34a4c7c4d15f0d4029d59adff61e08929da"
+    },
+    {
+      "path": "results/comparative_report.json",
+      "sha256": "087d6b9473453cc522c910f2b9daffa1c1f660a277230c268460f8ed2fbedaa8"
+    },
+    {
+      "path": "results/decision_record.closed.json",
+      "sha256": "3e8347e7c2f7db3acbc3449b40094548c5c4affdb0415e1b8bf8d8a6a787ae25"
+    },
+    {
+      "path": "results/decision_record.json",
+      "sha256": "8837296fd03687d9e6d1f28ff43a0222130134acb41b1e704cad081f09505909"
+    },
+    {
+      "path": "results/fallback_evidence.json",
+      "sha256": "ea667bda0e7a6a39a1506589310e18eb4a41641c7dc39a8eff998e88c1004e0e"
+    },
+    {
+      "path": "results/graphify_decision_closure.json",
+      "sha256": "a6aa0303b1a376d387f99fb83c2a4e8a44956ca7046dd34e061a772e4bbdb6eb"
+    },
+    {
+      "path": "results/phase2_completion_record.json",
+      "sha256": "507b2af3c899484d7dd515f2c9567f8ce62991b88dce2fd9b79dc9f72c1e5393"
+    },
+    {
+      "path": "results/phase3_handoff.json",
+      "sha256": "8b165dd09335bbe2c44e9ffb8525fc9a099f6a716add739312e066827a83fb0e"
+    }
+  ]
+}

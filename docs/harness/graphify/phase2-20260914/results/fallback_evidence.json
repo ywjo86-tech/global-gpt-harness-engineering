@@ -1,0 +1,21 @@
+{
+  "record_type": "GraphifyFallbackEvidence",
+  "result": {
+    "provider_id": "existing_inspection",
+    "scenario_id": "FALLBACK-FINAL",
+    "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+    "status": "completed",
+    "output": "{\"business_gate_state\": {\"namespace\": \"business_gate_state\", \"status\": \"not_configured\", \"transition_authorized\": false, \"validation\": \"static_only\"}, \"business_lv_approval_state\": {\"namespace\": \"business_lv_gate_approval\", \"reused_as_runtime_approval\": false, \"status\": \"not_configured\", \"validation\": \"static_only\"}, \"codex_runtime_sandbox_approval_state\": {\"business_approval_reused\": false, \"namespace\": \"codex_runtime_sandbox_approval\", \"runtime_mutation_authorized\": false, \"status\": \"not_requested_read_only\"}, \"contract_mapping\": {\"configured\": false, \"valid\": true}, \"inspection_mode\": \"read_only_no_write\", \"project_static_inspect\": {\"current_phase\": \"G-4B-RELEASE-HANDOFF\", \"project_id\": \"source-snapshot\", \"required_contract_files_valid\": true}, \"write_operations_performed\": false}",
+    "source_files": [],
+    "write_performed": false,
+    "freshness_state": "CURRENT",
+    "confidence": "CANONICAL",
+    "error": ""
+  },
+  "metadata": {
+    "fallback_used": true,
+    "primary_error": "FileNotFoundError:Graphify CLI or graph.json is missing",
+    "fallback_provider": "existing_inspection"
+  },
+  "fallback_pass": true
+}

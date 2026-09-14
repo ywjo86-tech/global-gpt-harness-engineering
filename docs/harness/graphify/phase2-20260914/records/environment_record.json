@@ -1,0 +1,23 @@
+{
+  "record_type": "GraphifyIsolatedEnvironmentRecord",
+  "project_root": "/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering",
+  "run_root": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000",
+  "source_snapshot": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/workspace/source-snapshot",
+  "graphify_output": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/workspace/graphify-output",
+  "venv_path": "",
+  "canonical_mutation_detected": false,
+  "secret_patterns_excluded": [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "id_rsa*",
+    "secrets.*",
+    "credentials.*",
+    "*.p12",
+    "*.pfx"
+  ],
+  "shared_http_allowed": false,
+  "git_hook_install_allowed": false,
+  "ready_for_package_installation": true
+}

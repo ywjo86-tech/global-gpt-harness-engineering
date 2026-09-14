@@ -1,0 +1,10 @@
+{
+  "record_type": "GraphifyGateRecord",
+  "gate_id": "GATE-006",
+  "gate_status": "GO",
+  "next_master_phase": "PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION",
+  "phase3_handoff_ready": true,
+  "production_adoption_allowed": false,
+  "bypass_used": false,
+  "reasons": []
+}

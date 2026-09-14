@@ -1,0 +1,29 @@
+{
+  "record_type": "BackendIndependenceResult",
+  "scanned_runtime_surface": [
+    "poc/graphify/contracts.py",
+    "poc/graphify/graphify_adapter.py",
+    "poc/graphify/baseline_adapter.py",
+    "poc/graphify/canonical_verifier.py",
+    "poc/graphify/comparator.py",
+    "poc/graphify/environment.py",
+    "poc/graphify/entry_gate.py",
+    "poc/graphify/baseline_guard.py",
+    "poc/graphify/current_repository_boundary.py",
+    "poc/graphify/source_precedence.py",
+    "poc/graphify/context_assembly_boundary.py",
+    "poc/graphify/phase_boundary.py",
+    "poc/graphify/decision.py",
+    "poc/graphify/decision_closure.py",
+    "poc/graphify/handoff.py"
+  ],
+  "forbidden_import_tokens": [
+    "codex",
+    "execution_backend",
+    "full_mcp",
+    "mcp_backend"
+  ],
+  "backend_specific_request_fields": [],
+  "violations": [],
+  "verified": true
+}

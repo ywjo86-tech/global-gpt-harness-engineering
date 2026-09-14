@@ -1,5 +1,58 @@
 # Orchestration State
 
+> Updated: `2026-09-14`
+>
+> Scope: GCH-GRAPHIFY UPGRADE-001 PHASE 2 final closure and PHASE 3 handoff
+
+## Current Phase
+
+- Active project: `GCH-GRAPHIFY`
+- Active lifecycle: `UPGRADE`
+- Completed master phase: `PHASE 2 — Graphify PoC`
+- PHASE 2 state: `COMPLETE / GRAPHIFY_DECISION_CLOSED`
+- Provider decision: `GO`
+- Final decision digest: `aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505`
+- Graphify qualified version: `0.9.58`
+- Installation scope: `ISOLATED_TMP_VENV_ONLY`
+- Production adoption: `NOT AUTHORIZED`
+- Artifact policy: `LOCAL_ONLY_POC`
+- Active contract: `docs/DEVELOPMENT_PLAN.txt`
+- Archived previous contract: `docs/history/upgrades/2026-09-14-UPGRADE-001/GCH-GRAPHIFY_NO_NATIVE_VERSION_DEVELOPMENT_PLAN.txt`
+- Full Plan Core baseline guard: `CLEAR`
+
+## Final Gate Boundary
+
+- `GATE-002`: `OPEN`
+- `GATE-003`: `GO`
+- `GATE-004`: `GO`
+- `GATE-008`: `GO`
+- `GATE-009`: `GO`
+- `GATE-006`: `GO`
+- Next master phase: `PHASE 3 — Execution Backend Contract Finalization`
+- Graphify remains a non-authoritative optional Repository Intelligence sidecar.
+- Existing Inspection remains the mandatory fallback provider.
+- No PHASE 3 implementation is performed by this closure.
+
+## Validation Summary
+
+- Final Graphify suite: `58 PASS`
+- Selected Full Plan core regression: `147 PASS / 1 skipped`
+- Code-only PoC: external semantic backend not used.
+- `.codex/hooks.json`: absent.
+- System-global `graphify`: absent.
+- Full Plan protected-core mutation: none.
+
+## Git Recording Boundary
+
+- Local Graphify PHASE 2 final-record commit: authorized by the current user instruction.
+- Remote push: not included in this authorization boundary.
+
+## Superseded Current-State Note
+
+Earlier ORCH04/G-4B sections below are preserved as historical state and evidence.
+They are not the active current state after GCH-GRAPHIFY UPGRADE-001 contract
+activation.
+
 > Updated: `2026-09-11`
 >
 > Scope: Global harness R4/R4.1/R4.2 ORCH04 integration and Gate progression

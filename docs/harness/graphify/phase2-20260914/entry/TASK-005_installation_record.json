@@ -1,0 +1,42 @@
+{
+  "record_type": "GraphifyIsolatedInstallationRecord",
+  "task_id": "TASK-005",
+  "gate_id": "GATE-002",
+  "gate_status": "OPEN",
+  "package_name": "graphifyy",
+  "version": "0.9.58",
+  "exact_requirement": "graphifyy[mcp]==0.9.58",
+  "wheel_path": "/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500/packages/graphifyy-0.9.58-py3-none-any.whl",
+  "wheel_sha256": "e239803288e91c723d6e30540860bd6d5a1dc3f0914b9fc1104b0233e98aaeb8",
+  "venv_path": "/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500/venv",
+  "cli_path": "/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500/venv/bin/graphify",
+  "source_snapshot": "/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500/workspace/source-snapshot",
+  "graphify_output": "/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500/workspace/graphify-output",
+  "pip_check": "PASS",
+  "global_install_present": false,
+  "graphify_skill_install_invoked": false,
+  "git_hook_install_invoked": false,
+  "shared_http_enabled": false,
+  "external_semantic_backend_enabled": false,
+  "canonical_manifest": {
+    "protected_hashes": {
+      "runtime/orchestrator/stage_gate.py": "774bcfa5cb98099616ad1280471cdff512251831e38cc3c6c34f0cb7104f4875",
+      "runtime/orchestrator/completion_contract.py": "ffdd027c7ac2950d002cc72909c80aedbc181fbde33a4faf24f9159f0d239b07",
+      "runtime/orchestrator/execution_contract.py": "de6f0479dc8de1f11a4590847b8733ef036135275f998436532f65c2c68ff24c",
+      "runtime/orchestrator/worker_authority.py": "17310f9c9b7c5fe99d0c23aacf3c89968a13ccdcde392e2928475a0ecd29a725",
+      "tests/test_worker_authority.py": "bb8af8de27cd6320ece4294591a3faed17f98ab6435e1bdb751856d2c4316635",
+      "AGENTS.md": "03cc5cd630b1149b1ec883f5d6aa34cfd57286aca11b481b11ae4b1f2e4e3e14",
+      ".gitignore": "043e232efcb47902f47c943f6c99b234b6858925da7d7d704b7b5f290b22c06c",
+      "runtime/orchestrator/provider_router.py": "3f0ba0bb98c179651f603497dfaa94290b00525a250114af0fa4ce0799213b13",
+      "runtime/orchestrator/read_only_inspector.py": "ce9996cee4a50f7cefadd702cb11b3ad93676f83fddf9ed10ea5422e8965a181",
+      "tests/test_read_only_inspect.py": "e96ee7aaa6fdf78215fe4594007337d4c427f9b18ef48bbf8a6a03087e5250e4",
+      "runtime/orchestrator/completion_authority.py": "c992e3d0b77fd083dff442e401191ed01e5a282af25115a816ba279a438c9fc9"
+    },
+    "missing_protected_paths": [],
+    "expected_absent": {
+      ".codex/hooks.json": true
+    }
+  },
+  "controlled_baseline_guard": "CLEAR",
+  "ready_for_code_only_poc": true
+}

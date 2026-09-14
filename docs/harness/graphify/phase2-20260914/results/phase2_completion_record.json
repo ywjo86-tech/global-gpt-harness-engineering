@@ -1,0 +1,19 @@
+{
+  "record_type": "GraphifyPhase2CompletionRecord",
+  "state": "GRAPHIFY_DECISION_CLOSED",
+  "provider_decision": "GO",
+  "decision_digest": "aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505",
+  "gate003": "GO",
+  "gate004": "GO",
+  "gate008": "GO",
+  "gate009": "GO",
+  "gate006": "GO",
+  "graphify_version": "0.9.58",
+  "graphify_install_scope": "ISOLATED_TMP_VENV_ONLY",
+  "production_adoption_allowed": false,
+  "commit_authorized": false,
+  "push_authorized": false,
+  "next_master_phase": "PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION",
+  "handoff_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/phase3_handoff.json",
+  "closure_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/graphify_decision_closure.json"
+}

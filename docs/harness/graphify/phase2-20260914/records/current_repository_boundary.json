@@ -1,0 +1,24 @@
+{
+  "record_type": "CurrentRepositoryIntelligenceBoundaryResult",
+  "requested_capabilities": [
+    "change_impact",
+    "dependency_reference",
+    "freshness_confidence",
+    "investigation_support",
+    "path_neighbor",
+    "repository_structure",
+    "symbol_lookup"
+  ],
+  "allowed_capabilities": [
+    "change_impact",
+    "dependency_reference",
+    "freshness_confidence",
+    "investigation_support",
+    "path_neighbor",
+    "repository_structure",
+    "symbol_lookup"
+  ],
+  "unsupported_capabilities": [],
+  "forbidden_capabilities": [],
+  "verified": true
+}

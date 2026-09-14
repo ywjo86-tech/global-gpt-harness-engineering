@@ -1,0 +1,73 @@
+{
+  "schema_version": "gch.graphify.version-qualification.v1",
+  "record_type": "VersionQualificationRecord",
+  "qualification_date": "2026-09-14",
+  "qualification_status": "QUALIFIED_PINNED_FOR_INSTALLATION_REQUEST",
+  "package_name": "graphifyy",
+  "cli_name": "graphify",
+  "version": "0.9.58",
+  "exact_requirement": "graphifyy[mcp]==0.9.58",
+  "source_repository": "Graphify-Labs/graphify",
+  "source_tag": "v0.9.58",
+  "source_commit": "23f2ffaa43fd12f25d9eabe91e6d184b5d89b474",
+  "distribution": {
+    "wheel": {
+      "filename": "graphifyy-0.9.58-py3-none-any.whl",
+      "sha256": "e239803288e91c723d6e30540860bd6d5a1dc3f0914b9fc1104b0233e98aaeb8"
+    },
+    "sdist": {
+      "filename": "graphifyy-0.9.58.tar.gz",
+      "sha256": "169598570fa226de76b7fe24052980da06f307877483baacabd034abd73fb175"
+    }
+  },
+  "trusted_publishing_attested": true,
+  "license": "Apache-2.0",
+  "requires_python": ">=3.10",  "approved_extras": ["mcp"],
+  "forbidden_or_out_of_scope_extras": [
+    "all", "openai", "gemini", "anthropic", "kimi", "bedrock", "ollama",
+    "neo4j", "falkordb", "google", "postgres", "video", "watch"
+  ],
+  "transport_policy": {
+    "allowed": ["stdio"],
+    "shared_http_allowed": false,
+    "external_semantic_backend_allowed": false
+  },
+  "installer_policy": {
+    "graphify_auto_installer_allowed": false,
+    "assistant_skill_registration_allowed_during_task_003": false,
+    "package_installation_performed": false,
+    "automatic_upgrade_allowed": false
+  },
+  "local_compatibility": {
+    "os": "Ubuntu 24.04.4 LTS",
+    "architecture": "x86_64",
+    "python": "3.12.3",
+    "python_requirement_satisfied": true,
+    "graphify_already_installed": false,
+    "uv_available": false,
+    "pipx_available": false
+  },  "security_review": {
+    "published_security_advisories_observed": 0,
+    "security_policy_support_table_stale": true,
+    "known_issue_notes": [
+      "Upstream issue #2513 reports assistant-skill semantic backend/provider-key behavior; the first PoC excludes assistant auto-install and external semantic-provider extras.",
+      "Absence of published advisories is not treated as proof of absence of vulnerabilities."
+    ]
+  },
+  "requalification_rules": [
+    "Any package version change requires a new VersionQualificationRecord.",
+    "Any source tag/commit or distribution hash mismatch closes the entry gate.",
+    "Any extras change requires requalification.",
+    "Any switch from stdio/local-only or introduction of an external semantic backend requires separate review and approval."
+  ],
+  "qualification_sources": [
+    "PyPI graphifyy 0.9.58 release metadata and hashes",
+    "PyPI Trusted Publishing attestation for Graphify-Labs/graphify v0.9.58",
+    "Graphify official install/CLI documentation",
+    "Graphify-Labs/graphify security overview and package metadata"
+  ],
+  "test_003_status": "PASS",
+  "test_019_preinstall_status": "PASS_VERSION_CHANGE_REQUALIFICATION_ENFORCED",
+  "installation_ready_subject_to_gate": true,
+  "dangerous_work_install_approval_consumed": false
+}

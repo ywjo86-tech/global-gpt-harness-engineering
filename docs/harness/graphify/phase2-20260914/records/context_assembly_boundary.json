@@ -1,0 +1,26 @@
+{
+  "record_type": "ContextAssemblyBoundaryResult",
+  "scanned_runtime_paths": [
+    "poc/graphify/backend_independence.py",
+    "poc/graphify/baseline_adapter.py",
+    "poc/graphify/baseline_guard.py",
+    "poc/graphify/canonical_verifier.py",
+    "poc/graphify/comparator.py",
+    "poc/graphify/context_assembly_boundary.py",
+    "poc/graphify/contracts.py",
+    "poc/graphify/current_repository_boundary.py",
+    "poc/graphify/decision.py",
+    "poc/graphify/decision_closure.py",
+    "poc/graphify/entry_gate.py",
+    "poc/graphify/environment.py",
+    "poc/graphify/graphify_adapter.py",
+    "poc/graphify/handoff.py",
+    "poc/graphify/memory_independence.py",
+    "poc/graphify/phase_boundary.py",
+    "poc/graphify/reserved_phase_isolation.py",
+    "poc/graphify/source_precedence.py"
+  ],
+  "violations": [],
+  "context_assembly_owned_by_graphify": false,
+  "verified": true
+}

@@ -1,0 +1,21 @@
+{
+  "record_type": "GraphifyPhase2GitFinalRecord",
+  "project": "GCH-GRAPHIFY",
+  "phase": "PHASE 2 — Graphify PoC",
+  "state": "GRAPHIFY_DECISION_CLOSED",
+  "decision": "GO",
+  "decision_digest": "aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505",
+  "gate009": "GO",
+  "gate006": "GO",
+  "next_master_phase": "PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION",
+  "graphify_version": "0.9.58",
+  "production_adoption_allowed": false,
+  "artifact_policy": "LOCAL_ONLY_POC",
+  "local_commit_authorized": true,
+  "remote_push_authorized": false,
+  "source_head_before_commit": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+  "full_plan_core_mutated": false,
+  "final_graphify_tests": "58 PASS",
+  "selected_core_regression": "147 PASS / 1 skipped",
+  "evidence_manifest_sha256": "b1d2ea554e71e303ec17b9da33bf2ad6194fa3e3ef17f6ed6738b3b1ce306ffb"
+}

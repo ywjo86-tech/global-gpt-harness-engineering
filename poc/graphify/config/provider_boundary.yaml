@@ -1,0 +1,21 @@
+schema_version: gch.graphify.provider-boundary.v1
+scope: current_repository_intelligence_only
+allowed_capabilities:
+  - repository_structure
+  - symbol_lookup
+  - dependency_reference
+  - path_neighbor
+  - change_impact
+  - freshness_confidence
+  - investigation_support
+forbidden_capabilities:
+  - execution_backend_control
+  - provider_routing
+  - memory_persistence
+  - project_continuity
+  - workflow_governance
+  - context_assembly
+provider_selection_authority: PROVIDER_ROUTER
+task_level_provider_hardcoding: prohibited
+graphify_write_operations: prohibited
+existing_inspection_write_operations: prohibited

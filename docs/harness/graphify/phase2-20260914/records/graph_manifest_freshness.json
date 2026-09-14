@@ -1,0 +1,12 @@
+{
+  "record_type": "GraphManifestFreshnessResult",
+  "manifest_present": true,
+  "required_sources": [
+    "runtime/orchestrator/provider_router.py",
+    "runtime/orchestrator/read_only_inspector.py",
+    "runtime/orchestrator/worker_authority.py",
+    "runtime/orchestrator/completion_authority.py"
+  ],
+  "missing_sources": [],
+  "freshness_verified": true
+}

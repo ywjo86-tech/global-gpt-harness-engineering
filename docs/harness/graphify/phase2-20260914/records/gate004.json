@@ -1,0 +1,8 @@
+{
+  "record_type": "GraphifyGateRecord",
+  "gate_id": "GATE-004",
+  "gate_status": "GO",
+  "decision_digest": "aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505",
+  "hard_safety_pass": true,
+  "bypass_used": false
+}

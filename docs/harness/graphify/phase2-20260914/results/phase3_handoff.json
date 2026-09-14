@@ -1,0 +1,76 @@
+{
+  "record_type": "Phase3HandoffPackage",
+  "decision_record_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/decision_record.closed.json",
+  "graphify_decision_closure_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/graphify_decision_closure.json",
+  "decision": "GO",
+  "decision_digest": "aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505",
+  "recommended_repository_intelligence_provider": "graphify_optional_sidecar",
+  "fallback_provider": "existing_inspection",
+  "mandatory_canonical_verification_rule": "Material Graphify claims must be revalidated against the current repository and matching source_ref before authority-bearing use.",
+  "backend_independence_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/backend_independence.json",
+  "memory_independence_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/memory_independence.json",
+  "source_precedence_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/source_precedence.json",
+  "context_assembly_boundary_result_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/context_assembly_boundary.json",
+  "reserved_phase_isolation_ref": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/reserved_phase_isolation.json",
+  "forbidden_dependencies": [
+    "Memory Adapter",
+    "Obsidian",
+    "Notion"
+  ],
+  "source_of_truth_precedence": "Current Repository > Approved Baseline > lower-priority memory/view assertions",
+  "permitted_use_cases": [
+    "repository structure investigation",
+    "symbol/reference/path/neighbor investigation",
+    "dependency and change-impact investigation",
+    "freshness/confidence-assisted investigation"
+  ],
+  "restrictions": [
+    "Graphify is not governance, approval, completion, release, or execution authority.",
+    "Graphify must remain optional; Existing Inspection fallback is mandatory.",
+    "No direct Memory Adapter, Obsidian, or Notion dependency.",
+    "No Memory Capture/Retrieval/Merge/Injection or Context Assembly ownership.",
+    "No Execution Backend, Full MCP, AI Office, Jarvis, PHASE 6, PHASE 7, or PHASE 8 implementation in this handoff.",
+    "PoC transport remains local-only; shared HTTP is not approved."
+  ],
+  "production_policy_prerequisites": [
+    "GATE-005 must decide commit|ignore|local-only before production graph artifact adoption.",
+    "Exact Graphify version changes require requalification.",
+    "Production adoption requires a fresh canonical/source-revision check."
+  ],
+  "production_adoption_allowed": false,
+  "current_artifact_policy": "LOCAL_ONLY_POC",
+  "unresolved_limitations": [
+    "Graphify average scenario latency observed: 674.735 ms.",
+    "Existing Inspection average scenario latency observed: 8.921 ms.",
+    "Initial PoC is code-only; documents, papers, images, and external semantic backends were excluded.",
+    "Graph output is disposable and must be refreshed when repository/source revision changes."
+  ],
+  "evidence_index": {
+    "decision_record": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/decision_record.closed.json",
+    "decision_closure": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/graphify_decision_closure.json",
+    "backend_independence": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/backend_independence.json",
+    "phase_boundary": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/phase_boundary.json",
+    "current_repository_boundary": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/current_repository_boundary.json",
+    "memory_independence": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/memory_independence.json",
+    "source_precedence": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/source_precedence.json",
+    "context_boundary": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/context_assembly_boundary.json",
+    "reserved_phase_isolation": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/reserved_phase_isolation.json",
+    "independent_regression_review": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/independent_regression_review.json",
+    "fallback_evidence": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/fallback_evidence.json",
+    "comparative_report": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/results/comparative_report.json",
+    "controlled_baseline_guard": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/controlled_baseline_guard.json",
+    "graph_manifest_freshness": "/tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/records/graph_manifest_freshness.json"
+  },
+  "master_phase_order_assertion": "FULL_PLAN_STABLE -> GRAPHIFY_DECISION_CLOSED -> PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION",
+  "next_master_phase": "PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION",
+  "graphify_authority_statement": "Graphify is a non-authoritative optional Repository Intelligence sidecar.",
+  "no_future_phase_implementation_statement": "This package contains no implementation of PHASE 3, 4, 5, 6, 7, or 8.",
+  "forbidden_phase_implementations": [
+    "PHASE_3_EXECUTION_BACKEND_CONTRACT_IMPLEMENTATION",
+    "PHASE_4_FULL_MCP_IMPLEMENTATION",
+    "PHASE_5_AI_OFFICE_IMPLEMENTATION",
+    "PHASE_6_PROJECT_CONTINUITY_MEMORY_IMPLEMENTATION",
+    "PHASE_7_PROVIDER_RUNTIME_EXPANSION",
+    "PHASE_8_INSTRUCTION_GOVERNANCE_RUNTIME"
+  ]
+}

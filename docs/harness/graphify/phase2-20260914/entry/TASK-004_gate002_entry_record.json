@@ -1,0 +1,20 @@
+{
+  "record_type": "GraphifyPoCEntryGateRecord",
+  "gate_id": "GATE-002",
+  "gate_status": "OPEN",
+  "entry_eligible": true,
+  "package_installation_authorized": true,
+  "poc_runtime_ready": false,
+  "next_step": "TASK-005",
+  "prerequisites": {
+    "predecessor_verified": true,
+    "current_source_reverified": true,
+    "version_qualified": true,
+    "controlled_baseline_clear": true,
+    "dangerous_install_approval": true,
+    "baseline_refs_consistent": true
+  },
+  "baseline_ref": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "exact_requirement": "graphifyy[mcp]==0.9.58",
+  "reasons": []
+}

@@ -1,0 +1,451 @@
+{
+  "record_type": "ComparativePoCReport",
+  "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+  "scenario_count": 4,
+  "rows": [
+    {
+      "provider_id": "graphify",
+      "scenario_id": "S001",
+      "latency_ms": 650.979,
+      "output_chars": 3533,
+      "estimated_tokens": 883,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "graphify",
+        "scenario_id": "S001",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/provider_router.py",
+        "candidate_source_files": [
+          "runtime/orchestrator/approval_gate.py",
+          "runtime/orchestrator/execution_modes.py",
+          "runtime/orchestrator/lv_execution_package.py",
+          "runtime/orchestrator/production_canonical_authority.py",
+          "runtime/orchestrator/provider_executor.py",
+          "runtime/orchestrator/provider_router.py",
+          "runtime/orchestrator/schemas.py",
+          "runtime/orchestrator/task_router.py",
+          "tests/test_task_router.py"
+        ],
+        "canonical_source_exists": true,
+        "candidate_hit": true,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "verified": true,
+        "reasons": []
+      },
+      "result": {
+        "provider_id": "graphify",
+        "scenario_id": "S001",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "Graph: /tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/workspace/graphify-output/graphify-out/graph.json (4099 nodes) | Traversal: BFS depth=2 | Start: ['provider_router.py', 'provider()', 'task_router.py'] | 217 nodes found\n\n[!] TRUNCATED: showing 32 of 217 nodes (~1000-token budget). The answer may be among the 185 cut nodes — raise the token budget (CLI: --budget) or narrow the query (e.g. context_filter=['call'], or get_node for a specific symbol).\n\nNODE provider_router.py [src=runtime/orchestrator/provider_router.py loc=L1 community=]\nNODE provider() [src=runtime/orchestrator/production_canonical_authority.py loc=L815 community=]\nNODE task_router.py [src=runtime/orchestrator/task_router.py loc=L1 community=]\nNODE canonical_json_bytes() [src=runtime/orchestrator/lv_execution_package.py loc=L50 community=]\nNODE typing [src= loc= community=]\nNODE TaskSlice [src=runtime/orchestrator/schemas.py loc=L234 community=]\nNODE dataclasses [src= loc= community=]\nNODE schemas.py [src=runtime/orchestrator/schemas.py loc=L1 community=]\nNODE re [src= loc= community=]\nNODE RuntimeState [src=runtime/orchestrator/schemas.py loc=L355 community=]\nNODE ExecutionContract [src=runtime/orchestrator/schemas.py loc=L210 community=]\nNODE materialize_production_canonical_contract_authority() [src=runtime/orchestrator/production_canonical_authority.py loc=L73 community=]\nNODE ProductionCanonicalAuthorityError [src=runtime/orchestrator/production_canonical_authority.py loc=L48 community=]\nNODE derive_approved_task_from_lv_manifest() [src=runtime/orchestrator/production_canonical_authority.py loc=L313 community=]\nNODE build_production_canonical_launch_authority() [src=runtime/orchestrator/production_canonical_authority.py loc=L223 community=]\nNODE provider_executor.py [src=runtime/orchestrator/provider_executor.py loc=L1 community=]\nNODE approval_gate.py [src=runtime/orchestrator/approval_gate.py loc=L1 community=]\nNODE normalize_execution_mode() [src=runtime/orchestrator/execution_modes.py loc=L22 community=]\nNODE route_tasks() [src=runtime/orchestrator/task_router.py loc=L127 community=]\nNODE build_production_canonical_worker_authority_provider() [src=runtime/orchestrator/production_canonical_authority.py loc=L808 community=]\nNODE validate_recovery_parent_lv_authority() [src=runtime/orchestrator/production_canonical_authority.py loc=L553 community=]\nNODE execution_modes.py [src=runtime/orchestrator/execution_modes.py loc=L1 community=]\nNODE _build_task() [src=runtime/orchestrator/task_router.py loc=L79 community=]\nNODE classify_task() [src=runtime/orchestrator/approval_gate.py loc=L58 community=]\nNODE test_task_router.py [src=tests/test_task_router.py loc=L1 community=]\nNODE build_worker_authority_extra_context() [src=runtime/orchestrator/production_canonical_authority.py loc=L484 community=]\nNODE route_provider() [src=runtime/orchestrator/provider_router.py loc=L30 community=]\nNODE _canonical_materialization_created_at() [src=runtime/orchestrator/production_canonical_authority.py loc=L719 community=]\nNODE production_canonical_package_identity() [src=runtime/orchestrator/production_canonical_authority.py loc=L702 community=]\nNODE evaluate_pre_execution_completion() [src=runtime/orchestrator/production_canonical_authority.py loc=L209 community=]\nNODE Path [src= loc= community=]\nNODE SectionPlan [src=runtime/orchestrator/task_router.py loc=L11 community=]\n... (truncated — 185 more nodes cut by ~1000-token budget. Narrow with context_filter=['call'] or use get_node for a specific symbol)\n",
+        "source_files": [
+          "runtime/orchestrator/approval_gate.py",
+          "runtime/orchestrator/execution_modes.py",
+          "runtime/orchestrator/lv_execution_package.py",
+          "runtime/orchestrator/production_canonical_authority.py",
+          "runtime/orchestrator/provider_executor.py",
+          "runtime/orchestrator/provider_router.py",
+          "runtime/orchestrator/schemas.py",
+          "runtime/orchestrator/task_router.py",
+          "tests/test_task_router.py"
+        ],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "existing_inspection",
+      "scenario_id": "S001",
+      "latency_ms": 9.603,
+      "output_chars": 794,
+      "estimated_tokens": 198,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "existing_inspection",
+        "scenario_id": "S001",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/provider_router.py",
+        "candidate_source_files": [],
+        "canonical_source_exists": true,
+        "candidate_hit": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "verified": false,
+        "reasons": [
+          "expected_source_not_found"
+        ]
+      },
+      "result": {
+        "provider_id": "existing_inspection",
+        "scenario_id": "S001",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "{\"business_gate_state\": {\"namespace\": \"business_gate_state\", \"status\": \"not_configured\", \"transition_authorized\": false, \"validation\": \"static_only\"}, \"business_lv_approval_state\": {\"namespace\": \"business_lv_gate_approval\", \"reused_as_runtime_approval\": false, \"status\": \"not_configured\", \"validation\": \"static_only\"}, \"codex_runtime_sandbox_approval_state\": {\"business_approval_reused\": false, \"namespace\": \"codex_runtime_sandbox_approval\", \"runtime_mutation_authorized\": false, \"status\": \"not_requested_read_only\"}, \"contract_mapping\": {\"configured\": false, \"valid\": true}, \"inspection_mode\": \"read_only_no_write\", \"project_static_inspect\": {\"current_phase\": \"G-4B-RELEASE-HANDOFF\", \"project_id\": \"source-snapshot\", \"required_contract_files_valid\": true}, \"write_operations_performed\": false}",
+        "source_files": [],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "graphify",
+      "scenario_id": "S002",
+      "latency_ms": 659.178,
+      "output_chars": 3550,
+      "estimated_tokens": 887,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "graphify",
+        "scenario_id": "S002",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/read_only_inspector.py",
+        "candidate_source_files": [
+          "poc/graphify/baseline_adapter.py",
+          "runtime/orchestrator/cli.py",
+          "runtime/orchestrator/contract_adapter.py",
+          "runtime/orchestrator/contract_loader.py",
+          "runtime/orchestrator/lv_preview.py",
+          "runtime/orchestrator/read_only_inspector.py",
+          "tests/test_lv_preview.py",
+          "tests/test_read_only_inspect.py"
+        ],
+        "canonical_source_exists": true,
+        "candidate_hit": true,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "verified": true,
+        "reasons": []
+      },
+      "result": {
+        "provider_id": "graphify",
+        "scenario_id": "S002",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "Graph: /tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/workspace/graphify-output/graphify-out/graph.json (4099 nodes) | Traversal: BFS depth=2 | Start: ['read_only_inspector.py', 'ReadOnlyInspectTest', '_read()'] | 217 nodes found\n\n[!] TRUNCATED: showing 34 of 217 nodes (~1000-token budget). The answer may be among the 183 cut nodes — raise the token budget (CLI: --budget) or narrow the query (e.g. context_filter=['call'], or get_node for a specific symbol).\n\nNODE read_only_inspector.py [src=runtime/orchestrator/read_only_inspector.py loc=L1 community=]\nNODE ReadOnlyInspectTest [src=tests/test_read_only_inspect.py loc=L21 community=]\nNODE _read() [src=runtime/orchestrator/read_only_inspector.py loc=L27 community=]\nNODE pathlib [src= loc= community=]\nNODE typing [src= loc= community=]\nNODE cli.py [src=runtime/orchestrator/cli.py loc=L1 community=]\nNODE contract_adapter.py [src=runtime/orchestrator/contract_adapter.py loc=L1 community=]\nNODE load_project_mapping() [src=runtime/orchestrator/contract_adapter.py loc=L121 community=]\nNODE re [src= loc= community=]\nNODE load_contract() [src=runtime/orchestrator/contract_loader.py loc=L79 community=]\nNODE evaluate_canonical_state() [src=runtime/orchestrator/contract_adapter.py loc=L597 community=]\nNODE lv_preview.py [src=runtime/orchestrator/lv_preview.py loc=L1 community=]\nNODE test_lv_preview.py [src=tests/test_lv_preview.py loc=L1 community=]\nNODE sha256_file() [src=runtime/orchestrator/contract_adapter.py loc=L76 community=]\nNODE contract_loader.py [src=runtime/orchestrator/contract_loader.py loc=L1 community=]\nNODE test_read_only_inspect.py [src=tests/test_read_only_inspect.py loc=L1 community=]\nNODE inspect_read_only() [src=runtime/orchestrator/read_only_inspector.py loc=L42 community=]\nNODE _validate_approval_state() [src=runtime/orchestrator/read_only_inspector.py loc=L31 community=]\nNODE ._approval_text() [src=tests/test_read_only_inspect.py loc=L61 community=]\nNODE ._event() [src=tests/test_read_only_inspect.py loc=L26 community=]\nNODE baseline_adapter.py [src=poc/graphify/baseline_adapter.py loc=L1 community=]\nNODE validate_approval_state() [src=runtime/orchestrator/contract_adapter.py loc=L226 community=]\nNODE .test_payload_tampering_cases_fail_closed_with_cli_exit_five() [src=tests/test_read_only_inspect.py loc=L424 community=]\nNODE ._wallet_lifecycle_fixture() [src=tests/test_read_only_inspect.py loc=L95 community=]\nNODE validate_mapping_sources() [src=runtime/orchestrator/contract_adapter.py loc=L200 community=]\nNODE ReadOnlyValidationError [src=runtime/orchestrator/read_only_inspector.py loc=L17 community=]\nNODE ._run_read_only_inspect() [src=tests/test_read_only_inspect.py loc=L179 community=]\nNODE .test_gate_one_active_fixture_has_committed_exact_scope_ledger() [src=tests/test_read_only_inspect.py loc=L213 community=]\nNODE .test_transition_ready_fixture_has_no_gate_state_ledger() [src=tests/test_read_only_inspect.py loc=L192 community=]\nNODE Path [src= loc= community=]\nNODE ._cli_fixture() [src=tests/test_read_only_inspect.py loc=L64 community=]\nNODE .test_null_and_missing_are_distinct_and_missing_required_field_is_rejected() [src=tests/test_read_only_inspect.py loc=L473 community=]\nNODE .test_renewal_and_revocation_use_the_same_lineage_sequence() [src=tests/test_read_only_inspect.py loc=L334 community=]\nNODE ._tree_signature() [src=tests/test_read_only_inspect.py loc=L186 community=]\n... (truncated — 183 more nodes cut by ~1000-token budget. Narrow with context_filter=['call'] or use get_node for a specific symbol)\n",
+        "source_files": [
+          "poc/graphify/baseline_adapter.py",
+          "runtime/orchestrator/cli.py",
+          "runtime/orchestrator/contract_adapter.py",
+          "runtime/orchestrator/contract_loader.py",
+          "runtime/orchestrator/lv_preview.py",
+          "runtime/orchestrator/read_only_inspector.py",
+          "tests/test_lv_preview.py",
+          "tests/test_read_only_inspect.py"
+        ],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "existing_inspection",
+      "scenario_id": "S002",
+      "latency_ms": 8.486,
+      "output_chars": 794,
+      "estimated_tokens": 198,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "existing_inspection",
+        "scenario_id": "S002",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/read_only_inspector.py",
+        "candidate_source_files": [],
+        "canonical_source_exists": true,
+        "candidate_hit": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "verified": false,
+        "reasons": [
+          "expected_source_not_found"
+        ]
+      },
+      "result": {
+        "provider_id": "existing_inspection",
+        "scenario_id": "S002",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "{\"business_gate_state\": {\"namespace\": \"business_gate_state\", \"status\": \"not_configured\", \"transition_authorized\": false, \"validation\": \"static_only\"}, \"business_lv_approval_state\": {\"namespace\": \"business_lv_gate_approval\", \"reused_as_runtime_approval\": false, \"status\": \"not_configured\", \"validation\": \"static_only\"}, \"codex_runtime_sandbox_approval_state\": {\"business_approval_reused\": false, \"namespace\": \"codex_runtime_sandbox_approval\", \"runtime_mutation_authorized\": false, \"status\": \"not_requested_read_only\"}, \"contract_mapping\": {\"configured\": false, \"valid\": true}, \"inspection_mode\": \"read_only_no_write\", \"project_static_inspect\": {\"current_phase\": \"G-4B-RELEASE-HANDOFF\", \"project_id\": \"source-snapshot\", \"required_contract_files_valid\": true}, \"write_operations_performed\": false}",
+        "source_files": [],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "graphify",
+      "scenario_id": "S003",
+      "latency_ms": 694.086,
+      "output_chars": 3564,
+      "estimated_tokens": 891,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "graphify",
+        "scenario_id": "S003",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/worker_authority.py",
+        "candidate_source_files": [
+          "runtime/orchestrator/canonical_launch_bridge.py",
+          "runtime/orchestrator/completion_contract.py",
+          "runtime/orchestrator/effect_evidence_bridge.py",
+          "runtime/orchestrator/execution_contract.py",
+          "runtime/orchestrator/fixed_runner.py",
+          "runtime/orchestrator/gate_controller.py",
+          "runtime/orchestrator/gate_orchestrator.py",
+          "runtime/orchestrator/lv_execution_package.py",
+          "runtime/orchestrator/post_worker_authority_bridge.py",
+          "runtime/orchestrator/production_canonical_authority.py",
+          "runtime/orchestrator/production_worker_executor.py",
+          "runtime/orchestrator/schemas.py",
+          "runtime/orchestrator/worker_authority.py",
+          "tests/test_canonical_launch_bridge.py",
+          "tests/test_production_canonical_authority.py",
+          "tests/test_worker_authority.py"
+        ],
+        "canonical_source_exists": true,
+        "candidate_hit": true,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "verified": true,
+        "reasons": []
+      },
+      "result": {
+        "provider_id": "graphify",
+        "scenario_id": "S003",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "Graph: /tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/workspace/graphify-output/graphify-out/graph.json (4099 nodes) | Traversal: BFS depth=2 | Start: ['worker_authority.py', 'worker()', '._authority()'] | 447 nodes found\n\n[!] TRUNCATED: showing 35 of 447 nodes (~1000-token budget). The answer may be among the 412 cut nodes — raise the token budget (CLI: --budget) or narrow the query (e.g. context_filter=['call'], or get_node for a specific symbol).\n\nNODE worker_authority.py [src=runtime/orchestrator/worker_authority.py loc=L1 community=]\nNODE worker() [src=runtime/orchestrator/gate_orchestrator.py loc=L1289 community=]\nNODE ._authority() [src=tests/test_production_canonical_authority.py loc=L91 community=]\nNODE pathlib [src= loc= community=]\nNODE canonical_json_bytes() [src=runtime/orchestrator/lv_execution_package.py loc=L50 community=]\nNODE json [src= loc= community=]\nNODE typing [src= loc= community=]\nNODE TaskSlice [src=runtime/orchestrator/schemas.py loc=L234 community=]\nNODE hashlib [src= loc= community=]\nNODE dataclasses [src= loc= community=]\nNODE execute_production_worker() [src=runtime/orchestrator/production_worker_executor.py loc=L2503 community=]\nNODE execution_contract.py [src=runtime/orchestrator/execution_contract.py loc=L1 community=]\nNODE _production_adapters() [src=runtime/orchestrator/gate_orchestrator.py loc=L960 community=]\nNODE os [src= loc= community=]\nNODE test_worker_authority.py [src=tests/test_worker_authority.py loc=L1 community=]\nNODE WorkerRequest [src=runtime/orchestrator/schemas.py loc=L283 community=]\nNODE CompletionAssessment [src=runtime/orchestrator/completion_contract.py loc=L132 community=]\nNODE GateControllerError [src=runtime/orchestrator/gate_controller.py loc=L21 community=]\nNODE ExecutionPackage [src=runtime/orchestrator/execution_contract.py loc=L821 community=]\nNODE CanonicalExecutionContract [src=runtime/orchestrator/execution_contract.py loc=L425 community=]\nNODE completion_contract.py [src=runtime/orchestrator/completion_contract.py loc=L1 community=]\nNODE canonical_launch_bridge.py [src=runtime/orchestrator/canonical_launch_bridge.py loc=L1 community=]\nNODE ActivationProfile [src=runtime/orchestrator/execution_contract.py loc=L45 community=]\nNODE post_worker_authority_bridge.py [src=runtime/orchestrator/post_worker_authority_bridge.py loc=L1 community=]\nNODE CompletionState [src=runtime/orchestrator/completion_contract.py loc=L20 community=]\nNODE evaluate_worker_result() [src=runtime/orchestrator/worker_authority.py loc=L409 community=]\nNODE RemediationLedger [src=runtime/orchestrator/worker_authority.py loc=L908 community=]\nNODE WorkerAuthorityError [src=runtime/orchestrator/worker_authority.py loc=L30 community=]\nNODE test_canonical_launch_bridge.py [src=tests/test_canonical_launch_bridge.py loc=L1 community=]\nNODE ExecutionObligation [src=runtime/orchestrator/completion_contract.py loc=L26 community=]\nNODE review_post_quality() [src=runtime/orchestrator/worker_authority.py loc=L675 community=]\nNODE effect_evidence_bridge.py [src=runtime/orchestrator/effect_evidence_bridge.py loc=L1 community=]\nNODE materialize_production_canonical_contract_authority() [src=runtime/orchestrator/production_canonical_authority.py loc=L73 community=]\nNODE namespace_root() [src=runtime/orchestrator/gate_orchestrator.py loc=L538 community=]\nNODE run_sealed_action() [src=runtime/orchestrator/fixed_runner.py loc=L207 community=]\n... (truncated — 412 more nodes cut by ~1000-token budget. Narrow with context_filter=['call'] or use get_node for a specific symbol)\n",
+        "source_files": [
+          "runtime/orchestrator/canonical_launch_bridge.py",
+          "runtime/orchestrator/completion_contract.py",
+          "runtime/orchestrator/effect_evidence_bridge.py",
+          "runtime/orchestrator/execution_contract.py",
+          "runtime/orchestrator/fixed_runner.py",
+          "runtime/orchestrator/gate_controller.py",
+          "runtime/orchestrator/gate_orchestrator.py",
+          "runtime/orchestrator/lv_execution_package.py",
+          "runtime/orchestrator/post_worker_authority_bridge.py",
+          "runtime/orchestrator/production_canonical_authority.py",
+          "runtime/orchestrator/production_worker_executor.py",
+          "runtime/orchestrator/schemas.py",
+          "runtime/orchestrator/worker_authority.py",
+          "tests/test_canonical_launch_bridge.py",
+          "tests/test_production_canonical_authority.py",
+          "tests/test_worker_authority.py"
+        ],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "existing_inspection",
+      "scenario_id": "S003",
+      "latency_ms": 9.133,
+      "output_chars": 794,
+      "estimated_tokens": 198,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "existing_inspection",
+        "scenario_id": "S003",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/worker_authority.py",
+        "candidate_source_files": [],
+        "canonical_source_exists": true,
+        "candidate_hit": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "verified": false,
+        "reasons": [
+          "expected_source_not_found"
+        ]
+      },
+      "result": {
+        "provider_id": "existing_inspection",
+        "scenario_id": "S003",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "{\"business_gate_state\": {\"namespace\": \"business_gate_state\", \"status\": \"not_configured\", \"transition_authorized\": false, \"validation\": \"static_only\"}, \"business_lv_approval_state\": {\"namespace\": \"business_lv_gate_approval\", \"reused_as_runtime_approval\": false, \"status\": \"not_configured\", \"validation\": \"static_only\"}, \"codex_runtime_sandbox_approval_state\": {\"business_approval_reused\": false, \"namespace\": \"codex_runtime_sandbox_approval\", \"runtime_mutation_authorized\": false, \"status\": \"not_requested_read_only\"}, \"contract_mapping\": {\"configured\": false, \"valid\": true}, \"inspection_mode\": \"read_only_no_write\", \"project_static_inspect\": {\"current_phase\": \"G-4B-RELEASE-HANDOFF\", \"project_id\": \"source-snapshot\", \"required_contract_files_valid\": true}, \"write_operations_performed\": false}",
+        "source_files": [],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "graphify",
+      "scenario_id": "S004",
+      "latency_ms": 694.695,
+      "output_chars": 3475,
+      "estimated_tokens": 868,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "graphify",
+        "scenario_id": "S004",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/completion_authority.py",
+        "candidate_source_files": [
+          "runtime/orchestrator/canonical_launch_bridge.py",
+          "runtime/orchestrator/completion_authority.py",
+          "runtime/orchestrator/completion_contract.py",
+          "runtime/orchestrator/completion_contract_bridge.py",
+          "runtime/orchestrator/execution_contract.py",
+          "runtime/orchestrator/production_canonical_authority.py",
+          "runtime/orchestrator/worker_authority.py",
+          "tests/test_canonical_contract_bridge.py",
+          "tests/test_canonical_launch_bridge.py",
+          "tests/test_canonical_migration_quality_binding.py",
+          "tests/test_completion_contract.py",
+          "tests/test_execution_contract.py",
+          "tests/test_post_worker_authority_bridge.py",
+          "tests/test_production_canonical_authority.py",
+          "tests/test_worker_authority.py"
+        ],
+        "canonical_source_exists": true,
+        "candidate_hit": true,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "verified": true,
+        "reasons": []
+      },
+      "result": {
+        "provider_id": "graphify",
+        "scenario_id": "S004",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "Graph: /tmp/gch-graphify-poc/gch-graphify-final-20260914T200000/workspace/graphify-output/graphify-out/graph.json (4099 nodes) | Traversal: BFS depth=2 | Start: ['._completion_authority()', '._authority()', 'CompletionAssessment'] | 282 nodes found\n\n[!] TRUNCATED: showing 28 of 282 nodes (~1000-token budget). The answer may be among the 254 cut nodes — raise the token budget (CLI: --budget) or narrow the query (e.g. context_filter=['call'], or get_node for a specific symbol).\n\nNODE ._completion_authority() [src=tests/test_canonical_contract_bridge.py loc=L38 community=]\nNODE ._authority() [src=tests/test_production_canonical_authority.py loc=L91 community=]\nNODE CompletionAssessment [src=runtime/orchestrator/completion_contract.py loc=L132 community=]\nNODE execution_contract.py [src=runtime/orchestrator/execution_contract.py loc=L1 community=]\nNODE production_canonical_authority.py [src=runtime/orchestrator/production_canonical_authority.py loc=L1 community=]\nNODE worker_authority.py [src=runtime/orchestrator/worker_authority.py loc=L1 community=]\nNODE test_worker_authority.py [src=tests/test_worker_authority.py loc=L1 community=]\nNODE test_execution_contract.py [src=tests/test_execution_contract.py loc=L1 community=]\nNODE completion_contract.py [src=runtime/orchestrator/completion_contract.py loc=L1 community=]\nNODE test_post_worker_authority_bridge.py [src=tests/test_post_worker_authority_bridge.py loc=L1 community=]\nNODE canonical_launch_bridge.py [src=runtime/orchestrator/canonical_launch_bridge.py loc=L1 community=]\nNODE build_canonical_launch() [src=runtime/orchestrator/canonical_launch_bridge.py loc=L108 community=]\nNODE materialize_task_4a_08_completion_authority() [src=runtime/orchestrator/completion_authority.py loc=L264 community=]\nNODE completion_contract_bridge.py [src=runtime/orchestrator/completion_contract_bridge.py loc=L1 community=]\nNODE test_canonical_migration_quality_binding.py [src=tests/test_canonical_migration_quality_binding.py loc=L1 community=]\nNODE evaluate_worker_result() [src=runtime/orchestrator/worker_authority.py loc=L409 community=]\nNODE build_execution_package() [src=runtime/orchestrator/execution_contract.py loc=L934 community=]\nNODE test_canonical_launch_bridge.py [src=tests/test_canonical_launch_bridge.py loc=L1 community=]\nNODE test_production_canonical_authority.py [src=tests/test_production_canonical_authority.py loc=L1 community=]\nNODE materialize_production_canonical_contract_authority() [src=runtime/orchestrator/production_canonical_authority.py loc=L73 community=]\nNODE assessment() [src=tests/test_worker_authority.py loc=L51 community=]\nNODE ._fixture() [src=tests/test_canonical_migration_quality_binding.py loc=L69 community=]\nNODE build_production_canonical_launch_authority() [src=runtime/orchestrator/production_canonical_authority.py loc=L223 community=]\nNODE CanonicalMigrationQualityBindingTests [src=tests/test_canonical_migration_quality_binding.py loc=L68 community=]\nNODE assess_frozen_completion() [src=runtime/orchestrator/completion_contract_bridge.py loc=L174 community=]\nNODE test_completion_contract.py [src=tests/test_completion_contract.py loc=L1 community=]\nNODE assessment() [src=tests/test_execution_contract.py loc=L46 community=]\nNODE CanonicalLaunchBridgeTests [src=tests/test_canonical_launch_bridge.py loc=L70 community=]\n... (truncated — 254 more nodes cut by ~1000-token budget. Narrow with context_filter=['call'] or use get_node for a specific symbol)\n",
+        "source_files": [
+          "runtime/orchestrator/canonical_launch_bridge.py",
+          "runtime/orchestrator/completion_authority.py",
+          "runtime/orchestrator/completion_contract.py",
+          "runtime/orchestrator/completion_contract_bridge.py",
+          "runtime/orchestrator/execution_contract.py",
+          "runtime/orchestrator/production_canonical_authority.py",
+          "runtime/orchestrator/worker_authority.py",
+          "tests/test_canonical_contract_bridge.py",
+          "tests/test_canonical_launch_bridge.py",
+          "tests/test_canonical_migration_quality_binding.py",
+          "tests/test_completion_contract.py",
+          "tests/test_execution_contract.py",
+          "tests/test_post_worker_authority_bridge.py",
+          "tests/test_production_canonical_authority.py",
+          "tests/test_worker_authority.py"
+        ],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "EXTRACTED",
+        "error": ""
+      },
+      "error": ""
+    },
+    {
+      "provider_id": "existing_inspection",
+      "scenario_id": "S004",
+      "latency_ms": 8.46,
+      "output_chars": 794,
+      "estimated_tokens": 198,
+      "verification": {
+        "record_type": "CanonicalVerificationResult",
+        "provider_id": "existing_inspection",
+        "scenario_id": "S004",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "expected_source": "runtime/orchestrator/completion_authority.py",
+        "candidate_source_files": [],
+        "canonical_source_exists": true,
+        "candidate_hit": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "verified": false,
+        "reasons": [
+          "expected_source_not_found"
+        ]
+      },
+      "result": {
+        "provider_id": "existing_inspection",
+        "scenario_id": "S004",
+        "source_ref": "25428e9bf1991ee26957bd84c39a3505b47a667a",
+        "status": "completed",
+        "output": "{\"business_gate_state\": {\"namespace\": \"business_gate_state\", \"status\": \"not_configured\", \"transition_authorized\": false, \"validation\": \"static_only\"}, \"business_lv_approval_state\": {\"namespace\": \"business_lv_gate_approval\", \"reused_as_runtime_approval\": false, \"status\": \"not_configured\", \"validation\": \"static_only\"}, \"codex_runtime_sandbox_approval_state\": {\"business_approval_reused\": false, \"namespace\": \"codex_runtime_sandbox_approval\", \"runtime_mutation_authorized\": false, \"status\": \"not_requested_read_only\"}, \"contract_mapping\": {\"configured\": false, \"valid\": true}, \"inspection_mode\": \"read_only_no_write\", \"project_static_inspect\": {\"current_phase\": \"G-4B-RELEASE-HANDOFF\", \"project_id\": \"source-snapshot\", \"required_contract_files_valid\": true}, \"write_operations_performed\": false}",
+        "source_files": [],
+        "write_performed": false,
+        "freshness_state": "CURRENT",
+        "confidence": "CANONICAL",
+        "error": ""
+      },
+      "error": ""
+    }
+  ],
+  "metrics": {
+    "graphify": {
+      "scenario_count": 4,
+      "completed_count": 4,
+      "verified_count": 4,
+      "verified_rate": 1.0,
+      "average_latency_ms": 674.735,
+      "estimated_tokens_total": 3529
+    },
+    "existing_inspection": {
+      "scenario_count": 4,
+      "completed_count": 4,
+      "verified_count": 0,
+      "verified_rate": 0.0,
+      "average_latency_ms": 8.921,
+      "estimated_tokens_total": 792
+    }
+  },
+  "negative_evidence": [
+    {
+      "scenario_id": "S001",
+      "provider_id": "existing_inspection",
+      "error": "",
+      "reasons": [
+        "expected_source_not_found"
+      ]
+    },
+    {
+      "scenario_id": "S002",
+      "provider_id": "existing_inspection",
+      "error": "",
+      "reasons": [
+        "expected_source_not_found"
+      ]
+    },
+    {
+      "scenario_id": "S003",
+      "provider_id": "existing_inspection",
+      "error": "",
+      "reasons": [
+        "expected_source_not_found"
+      ]
+    },
+    {
+      "scenario_id": "S004",
+      "provider_id": "existing_inspection",
+      "error": "",
+      "reasons": [
+        "expected_source_not_found"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Changelog
+
+## 2026-09-14 - GCH-GRAPHIFY UPGRADE-001 PHASE 2 Complete
+
+- Completed Graphify Current Repository Intelligence PoC under the approved Full Plan HYBRID contract.
+- Qualified and pinned `graphifyy[mcp]==0.9.58`; installation remained isolated to a disposable `/tmp` virtual environment.
+- Completed code-only/local-only PoC with no external semantic backend and no shared HTTP transport.
+- Final provider decision: `GO`.
+- Final lifecycle state: `GRAPHIFY_DECISION_CLOSED`.
+- Final decision digest: `aa220c78ff228a26d4611ea329008cdbbfa4f1e60845bfba14dad84d00899505`.
+- `GATE-009=GO` and `GATE-006=GO`; next master phase is PHASE 3 — Execution Backend Contract Finalization.
+- Graphify remains optional and non-authoritative; Existing Inspection remains mandatory fallback.
+- Production adoption remains not authorized; graph artifact policy remains `LOCAL_ONLY_POC`.
+- Full Plan Core protected baseline remained `CLEAR`; `.codex/hooks.json` and system-global Graphify remain absent.
+- Final Graphify regression: 58 PASS. Selected Full Plan core regression: 147 PASS / 1 skipped.
+
+## 2026-09-14 - GCH-GRAPHIFY UPGRADE-001 Contract Activation
+
+- Activated approved Full Plan execution contract for GCH-GRAPHIFY.
+- Archived previous canonical contract at `docs/history/upgrades/2026-09-14-UPGRADE-001/GCH-GRAPHIFY_NO_NATIVE_VERSION_DEVELOPMENT_PLAN.txt`.
+- Previous/archived contract SHA-256: `d773a26bc01e0efc60d382d5dd95915733228be4620619f6529943730c366c19`.
+- Approved/activated Graphify contract SHA-256 at activation: `3231bbdf5fa70798ae9f3ace037448af172ec1d7b26f49d25b4d9258d25dd5f2`.
+- The installation and execution statements in this activation entry describe the historical pre-execution state and are superseded by the completion entry above.

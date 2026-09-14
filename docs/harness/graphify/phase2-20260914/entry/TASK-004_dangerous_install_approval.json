@@ -1,0 +1,18 @@
+{
+  "schema_version": "gch.graphify.dangerous-install-approval.v1",
+  "record_type": "DangerousWorkApprovalRecord",
+  "recorded_at": "2026-09-14T19:09:54+09:00",
+  "authority": "Project Owner",
+  "approval_scope": "GRAPHIFY_PACKAGE_INSTALLATION",
+  "approval_statement_verbatim": "위험 확인 후 승인",
+  "normalized_decision": "APPROVED",
+  "package_requirement": "graphifyy[mcp]==0.9.58",
+  "allowed_environment": "isolated_graphify_poc_environment_only",
+  "shared_http_allowed": false,
+  "external_semantic_backend_allowed": false,
+  "global_or_user_skill_install_allowed": false,
+  "git_hook_install_allowed": false,
+  "protected_core_mutation_allowed": false,
+  "commit_authorized": false,
+  "push_authorized": false
+}
