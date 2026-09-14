@@ -30,7 +30,7 @@ The self-lifecycle exception is valid only when all of the following are true:
 
 When all four conditions hold, the host may omit the ordinary managed-project files `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log`. This is a documented self-lifecycle exception only: it must not create placeholder files, synthesize contract contents, or pretend that missing files exist.
 
-The exception is not implemented as an automatic runtime bypass. The current contract loader has no engine-host role parameter; if the role, repository identity, or scope is not explicitly established, the normal strict contract check remains in force. A host run in ordinary managed-project mode is also strict.
+The exception is not an automatic runtime bypass. The contract loader and high-level CLI require an explicit `role="engine-host"` (CLI: `--role engine-host`) and verify the exact Git top-level plus all host anchors before allowing the exception. If the role, repository identity, or scope is not explicitly established, the normal strict contract check remains in force. A host run in ordinary managed-project mode is also strict.
 
 The exception never applies to `wallet-affiliate-collector`, `jarvis-assistant`, `llmwiki-action-api`, any other external project, or a similarly named repository. External projects continue to require their own strict lifecycle contracts and their own mapping/evidence rules.
 

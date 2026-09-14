@@ -1,0 +1,60 @@
+{
+  "schema_version": "orchestration.orch04.authority-disposition.v1",
+  "review_scope": "ORCH04 implementation result and remaining issue disposition",
+  "authority": "Project Owner (user-confirmed)",
+  "decision": "CONDITIONAL GO",
+  "accepted_evidence_refs": [
+    "docs/harness/G_4A_ACTUAL_PROOF97_ATTEMPT_EVIDENCE.md",
+    "docs/harness/ORCH04_REMAINING_ISSUE_EVIDENCE_INDEX.md",
+    "tests/test_production_canonical_provider_wiring.py",
+    "tests/test_migration_authority.py",
+    "tests/test_migration_quality_authority.py",
+    "tests/test_completion_authority.py",
+    "tests/test_completion_contract_bridge.py"
+  ],
+  "rejected_or_missing_evidence": [
+    "ISSUE-056", "ISSUE-059", "ISSUE-063", "ISSUE-064",
+    "ISSUE-065", "ISSUE-066", "ISSUE-067", "ISSUE-069", "ISSUE-070",
+    "ISSUE-071", "ISSUE-075"
+  ],
+  "conditions": [
+    "DEFERRED issues remain blocked from unconditional Gate completion.",
+    "Actual evidence gaps must be addressed before the deferred issues are promoted to RESOLVED.",
+    "G-4B-RELEASE-HANDOFF must recheck all deferred issues and the linked evidence packet."
+  ],
+  "next_gate": "G-4B-RELEASE-HANDOFF",
+  "required_issue_ids": [
+    "ISSUE-025", "ISSUE-056", "ISSUE-059", "ISSUE-060", "ISSUE-063",
+    "ISSUE-064", "ISSUE-065", "ISSUE-066", "ISSUE-067", "ISSUE-068",
+    "ISSUE-069", "ISSUE-070", "ISSUE-071", "ISSUE-075", "ISSUE-089",
+    "ISSUE-090", "ISSUE-091", "ISSUE-092", "ISSUE-093", "ISSUE-094",
+    "ISSUE-095", "ISSUE-096", "ISSUE-097"
+  ],
+  "issue_dispositions": {
+    "ISSUE-025": "RESOLVED",
+    "ISSUE-056": "DEFERRED",
+    "ISSUE-059": "DEFERRED",
+    "ISSUE-060": "RESOLVED",
+    "ISSUE-063": "DEFERRED",
+    "ISSUE-064": "DEFERRED",
+    "ISSUE-065": "DEFERRED",
+    "ISSUE-066": "DEFERRED",
+    "ISSUE-067": "DEFERRED",
+    "ISSUE-068": "RESOLVED",
+    "ISSUE-069": "DEFERRED",
+    "ISSUE-070": "DEFERRED",
+    "ISSUE-071": "DEFERRED",
+    "ISSUE-075": "DEFERRED",
+    "ISSUE-089": "RESOLVED",
+    "ISSUE-090": "RESOLVED",
+    "ISSUE-091": "RESOLVED",
+    "ISSUE-092": "RESOLVED",
+    "ISSUE-093": "RESOLVED",
+    "ISSUE-094": "RESOLVED",
+    "ISSUE-095": "RESOLVED",
+    "ISSUE-096": "RESOLVED",
+    "ISSUE-097": "RESOLVED"
+  },
+  "status": "APPROVED_CONDITIONAL",
+  "approval_recorded": true
+}

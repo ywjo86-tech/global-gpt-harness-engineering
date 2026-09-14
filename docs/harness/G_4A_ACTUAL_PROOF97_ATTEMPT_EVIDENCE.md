@@ -528,3 +528,170 @@ Result:
 Ran 1060 tests in 51.896s
 OK (skipped=3)
 ```
+
+## 10. Current Dangerous-Work Recheck
+
+The following checks were executed directly on `2026-09-11` after explicit dangerous-work
+approval. They are append-only evidence and do not rewrite earlier results.
+
+Secret-free live readiness collection outside the restricted sandbox returned:
+
+```text
+auth_status: READY
+cli_version: 0.150.1
+recheck_policy: ALWAYS_BEFORE_CODEX_LAUNCH
+```
+
+The launch-adjacent recheck also returned `READY`; the initial and recheck launch binding
+digests matched. No raw authentication data was emitted or persisted.
+
+Actual installed Codex checks:
+
+```text
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_codex_dynamic_transport.CodexDynamicTransportTests.test_installed_codex_01501_actual_dynamic_transport
+Ran 1 test in 13.567s
+OK
+
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_uses_dec007_active_broker_path
+Ran 1 test in 10.294s
+OK
+
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_duplicate_write_after_restart_is_broker_blocked
+Ran 1 test in 38.692s
+OK
+```
+
+These results prove current readiness, dynamic transport, active Broker-path reachability,
+and restarted same-`RUN_ID` duplicate blocking. They do not by themselves replace the
+immutable proof97 Gate decision or close `ISSUE-025`; those authority decisions remain
+separate.
+
+## 11. Current Direct Crash/Resume Boundary Check
+
+The official direct crash/resume and governed-effect checks were re-executed on
+`2026-09-11`:
+
+```text
+python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_proof97_crash_after_durable_write_resume_blocks_duplicate_effect tests.test_production_tool_transport.ProductionToolTransportTests.test_same_run_write_resume_blocks_new_provider_call_id_duplicate tests.test_effect_evidence_bridge
+Ran 9 tests in 0.142s
+OK
+```
+
+This confirms the direct durable-write crash boundary, same-`RUN_ID` duplicate blocking,
+and exact single-governed-effect verifier behavior. The official actual Codex path still
+has no crash injection immediately after its first durable WRITE; the actual Codex
+verification currently proves transport, Broker reachability, and restarted duplicate
+blocking. A fresh actual first-WRITE/crash/resume run therefore remains unexecuted.
+
+## 12. Actual Crash/Resume Path Remediation
+
+The missing actual Codex crash boundary was implemented with an explicit,
+actual-transport opt-in crash signal. The adapter preserves that signal as an execution
+crash instead of converting it into a normal `BROKER_BLOCKED` response. The transport
+then reuses the same proof request identity and durable journal for the resumed turn.
+
+The new actual Codex proof test was executed on `2026-09-11` outside the restricted
+sandbox:
+
+```text
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_first_write_crash_then_same_run_resume_blocks_duplicate
+Ran 1 test in 42.493s
+OK
+```
+
+The first actual Codex turn performed the bounded fixture WRITE and crashed only after
+the durable effect was committed. The resumed turn used the same `RUN_ID` and journal;
+the duplicate WRITE was blocked, the first content remained, and the journal retained
+one intent and one receipt.
+
+The crash signal is rejected unless `HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1` is explicitly
+set, so ordinary production calls cannot activate the proof-only interruption.
+
+Post-remediation focused regression:
+
+```text
+python3 -m unittest -q tests.test_codex_dynamic_transport tests.test_production_tool_transport tests.test_effect_evidence_bridge
+Ran 22 tests in 0.347s
+OK (skipped=4)
+```
+
+Post-remediation full regression:
+
+```text
+python3 -m unittest discover -s tests -p 'test_*.py' -q
+Ran 1068 tests in 50.819s
+OK (skipped=6)
+```
+
+## 13. Post-Implementation Verification
+
+The crash/resume implementation and its explicit opt-in guard were verified after the
+runtime and test changes:
+
+```text
+python3 -m unittest -q tests.test_codex_dynamic_transport tests.test_production_tool_transport tests.test_effect_evidence_bridge
+Ran 23 tests in 0.344s
+OK (skipped=4)
+
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_first_write_crash_then_same_run_resume_blocks_duplicate
+Ran 1 test in 42.493s
+OK
+
+python3 -m unittest discover -s tests -p 'test_*.py' -q
+Ran 1069 tests in 50.892s
+OK (skipped=6)
+```
+
+The previously missing path is now directly exercised: actual Codex performs the first
+bounded WRITE, the explicit proof-only crash signal is raised after durable effect
+publication, and a new transport resumes with the same `RUN_ID` and journal. The resumed
+duplicate is blocked and the single-effect invariant remains intact.
+
+## 14. Actual Security Boundary Recheck
+
+The actual installed Codex Broker-native path was rechecked with a synthetic
+secret-like WRITE sentinel on `2026-09-11`. No real secret value was used.
+
+```text
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_secret_like_write_is_blocked_without_raw_persistence
+Ran 1 test in 5.764s
+OK
+```
+
+The actual turn reached the closed Broker, returned `BROKER_BLOCKED`, left the target
+fixture unchanged, and persisted no sentinel in the bounded journal. A launcher-side
+rejection now closes the begun effect with a terminal `FAILED/BLOCK` receipt, preventing
+recovery-ambiguous evidence collection.
+
+The focused security/gateway/worker regression passed `132 PASS / 7 skipped`, and the
+full regression passed `1,070 PASS / 9 skipped`. This is implementation and runtime
+evidence for `ISSUE-025`; it does not by itself constitute the pending independent
+authority disposition or final Full Plan approval.
+
+## 15. Approved G-4A Proof Re-entry
+
+After the explicit dangerous-work approval, the required pre-proof full regression and
+the bounded actual proof were executed on `2026-09-11`:
+
+```text
+python3 -m unittest discover -s tests -p 'test_*.py' -q
+Ran 1,070 tests in 51.698s
+OK (skipped=9)
+
+HARNESS_RUN_ACTUAL_CODEX_TRANSPORT=1 python3 -m unittest -v tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_first_write_crash_then_same_run_resume_blocks_duplicate
+Ran 1 test in 10.615s
+OK
+
+python3 -m unittest -q tests.test_effect_evidence_bridge tests.test_completion_authority
+Ran 19 tests in 0.143s
+OK (skipped=1)
+```
+
+The actual proof used the approved bounded fixture scope. The first Codex turn
+performed exactly one durable WRITE and then raised the explicit proof-only crash. A
+new transport resumed with the same `RUN_ID` and journal; the duplicate WRITE was
+blocked, the first fixture content remained, and the single-effect verifier passed.
+
+This is fresh actual proof evidence for the G-4A crash/resume and effect boundary. It
+does not independently close the remaining R4 authority issues or create final Full
+Plan approval.
