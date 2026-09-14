@@ -44,7 +44,8 @@
 
 ## Git Recording Boundary
 
-- Local Graphify PHASE 2 final-record commit: authorized by the current user instruction.
+- Graphify PHASE 2 implementation/evidence commit: `31dc614e1297bd0b45feebb843f976640064ac07`.
+- Local final Git record sealing: in progress in the follow-up metadata commit.
 - Remote push: not included in this authorization boundary.
 
 ## Superseded Current-State Note

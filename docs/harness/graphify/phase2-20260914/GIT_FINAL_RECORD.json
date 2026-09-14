@@ -17,5 +17,7 @@
   "full_plan_core_mutated": false,
   "final_graphify_tests": "58 PASS",
   "selected_core_regression": "147 PASS / 1 skipped",
-  "evidence_manifest_sha256": "b1d2ea554e71e303ec17b9da33bf2ad6194fa3e3ef17f6ed6738b3b1ce306ffb"
+  "evidence_manifest_sha256": "b1d2ea554e71e303ec17b9da33bf2ad6194fa3e3ef17f6ed6738b3b1ce306ffb",
+  "implementation_commit_sha": "31dc614e1297bd0b45feebb843f976640064ac07",
+  "local_commit_completed": true
 }
