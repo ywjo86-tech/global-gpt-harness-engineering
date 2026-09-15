@@ -1511,6 +1511,28 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             self.assertIn("sealed pre-result partial attempt", prompt)
             self.assertIn("relative_path", prompt)
 
+    def test_pre_result_partial_recovery_adopts_fully_materialized_pending_targets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); request = self._fixture(root)
+            (root / "app").mkdir(); (root / "tests").mkdir()
+            (root / "app/x.py").write_text("def add_one(value): return value + 1\n")
+            (root / "tests/test_x.py").write_text("def test_x(): assert True\n")
+            request.extra_context.update({
+                "attempt": 3, "pre_result_partial_recovery": True,
+                "recovery_id": "r-recovery-03",
+                "recovery_source_kind": "PRE_RESULT_PARTIAL_SOURCE",
+            })
+            ok=lambda root,argv,timeout=900,**kwargs:{"command":argv,"exit_code":0,"timeout":False,"stdout_sha256":"c"*64,"stderr_sha256":"d"*64}
+            with patch("runtime.orchestrator.production_worker_executor._command", side_effect=ok):
+                result=execute_production_worker(
+                    request, executor=lambda *a,**k:self.fail("materialized partial must not rerun worker"))
+            process=json.loads((root/"out/executor.process.json").read_text())
+            self.assertEqual(process["termination"], "RESUMED_PENDING_CHECKPOINT")
+            self.assertTrue(process["partial_recovery_materialized"])
+            self.assertEqual(result["attempt"], 3)
+            self.assertEqual(set(result["changed_files"]), {"app/x.py", "tests/test_x.py"})
+            self.assertFalse(subprocess.check_output(["git","-C",root,"status","--porcelain"],text=True))
+
     def test_pre_result_partial_recovery_requires_attempt_two_and_recovery_binding(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); request=self._fixture(root); (root/"app").mkdir(); (root/"app/x.py").write_text("x=1\n")

@@ -2669,6 +2669,11 @@ def execute_production_worker(request: WorkerRequest, *,
             raise ProductionWorkerError("pre-result partial recovery ID is missing")
         if request.extra_context.get("recovery_source_kind") != "PRE_RESULT_PARTIAL_SOURCE":
             raise ProductionWorkerError("pre-result partial recovery source binding is invalid")
+    materialized_partial_recovery = (
+        pre_result_partial_recovery
+        and bool(pending_paths)
+        and all((root / scope.rstrip("/")).exists() for scope in owned)
+    )
     cancel_path = output / "cancel.request"
     if adoption:
         stdout = stderr = b""
@@ -2677,13 +2682,14 @@ def execute_production_worker(request: WorkerRequest, *,
                             "started_at":None,"ended_at":None,"termination":"ADOPTED_CHECKPOINT","requested_signal":None,
                             "exit_code":0,"signal":None,"stdout_sha256":hashlib.sha256(b"").hexdigest(),
                             "stderr_sha256":hashlib.sha256(b"").hexdigest(),"secret_like_output_detected":False,"hard_stop":True}
-    elif pending_paths and not pre_result_partial_recovery:
+    elif pending_paths and (not pre_result_partial_recovery or materialized_partial_recovery):
         stdout = stderr = b""
         worker_exit = 0; timed_out = False
         process_evidence = {"schema_version":"orchestration.production-worker-process.v1","pid":None,"process_group_id":None,
                             "started_at":None,"ended_at":None,"termination":"RESUMED_PENDING_CHECKPOINT","requested_signal":None,
                             "exit_code":0,"signal":None,"stdout_sha256":hashlib.sha256(b"").hexdigest(),
-                            "stderr_sha256":hashlib.sha256(b"").hexdigest(),"secret_like_output_detected":False,"hard_stop":True}
+                            "stderr_sha256":hashlib.sha256(b"").hexdigest(),"secret_like_output_detected":False,
+                            "partial_recovery_materialized":materialized_partial_recovery,"hard_stop":True}
     else:
         if configured_backend == "VERIFICATION_ONLY":
             stdout = stderr = b""
