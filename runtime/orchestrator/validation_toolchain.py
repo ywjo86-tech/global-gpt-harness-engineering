@@ -79,13 +79,21 @@ def _android_runner(root: Path) -> tuple[str, tuple[str, ...]]:
     root_wrapper = root / "gradlew"
     if _safe_regular_file(root, root_wrapper):
         return "ANDROID_GRADLE_WRAPPER", ("./gradlew",)
+    if root_wrapper.exists() or root_wrapper.is_symlink():
+        raise ValidationToolchainError("Android project Gradle wrapper is unsafe")
     nested_wrapper = root / "android-app" / "gradlew"
-    if _safe_regular_file(root, nested_wrapper) and _nested_wrapper_pinned(root):
-        # The wrapper lives inside the approved android-app/ scope while the
-        # canonical Gradle project root remains the repository root. Invoking
-        # through sh avoids requiring executable-bit mutation from the bounded
-        # text-write transport.
-        return "ANDROID_GRADLE_WRAPPER", ("sh", "android-app/gradlew", "-p", ".")
+    nested_jar = root / "android-app" / "gradle" / "wrapper" / "gradle-wrapper.jar"
+    nested_props = root / "android-app" / "gradle" / "wrapper" / "gradle-wrapper.properties"
+    if _safe_regular_file(root, nested_wrapper):
+        if _nested_wrapper_pinned(root):
+            # The wrapper lives inside the approved android-app/ scope while the
+            # canonical Gradle project root remains the repository root. Invoking
+            # through sh avoids requiring executable-bit mutation from the bounded
+            # text-write transport.
+            return "ANDROID_GRADLE_WRAPPER", ("sh", "android-app/gradlew", "-p", ".")
+        raise ValidationToolchainError("Android owned scope requires a complete pinned Gradle wrapper")
+    if any(path.exists() or path.is_symlink() for path in (nested_wrapper, nested_jar, nested_props)):
+        raise ValidationToolchainError("Android owned scope requires a complete pinned Gradle wrapper")
     system_gradle = shutil.which("gradle")
     if system_gradle:
         resolved = Path(system_gradle).resolve()

@@ -67,7 +67,9 @@ class ValidationToolchainTests(unittest.TestCase):
 
     def test_bootstrap_can_defer_missing_project_native_manifests(self):
         with tempfile.TemporaryDirectory() as d:
-            plan=resolve_validation_commands(Path(d),['android-app/','backend/'],allow_deferred=True)
+            from unittest.mock import patch
+            with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=None):
+                plan=resolve_validation_commands(Path(d),['android-app/','backend/'],allow_deferred=True)
             self.assertTrue(plan.deferred)
             self.assertEqual(plan.profile_ids,('ANDROID_GRADLE_BOOTSTRAP','NODE_PACKAGE_MANIFEST'))
 
