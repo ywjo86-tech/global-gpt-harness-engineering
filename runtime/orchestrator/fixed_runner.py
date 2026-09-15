@@ -76,10 +76,18 @@ def _safe_id(value: str, label: str) -> str:
 def _safe_relative(value: str) -> str:
     if not isinstance(value, str) or not value or _FORBIDDEN_META.search(value) or "\\" in value:
         raise FixedRunnerError("unsafe owned file")
-    pure = PurePosixPath(value)
-    if pure.is_absolute() or ".." in pure.parts or pure.as_posix() != value:
+    # Owned scope may be either an exact file (``path/file``) or a directory
+    # authority (``path/``).  PurePosixPath intentionally strips a trailing
+    # slash, so validate the path body canonically and then preserve the
+    # directory marker instead of rejecting a valid sealed scope.
+    directory_scope = value.endswith("/")
+    body = value[:-1] if directory_scope else value
+    if not body:
         raise FixedRunnerError("unsafe owned file")
-    return value
+    pure = PurePosixPath(body)
+    if pure.is_absolute() or ".." in pure.parts or pure.as_posix() != body:
+        raise FixedRunnerError("unsafe owned file")
+    return f"{body}/" if directory_scope else body
 
 
 def _validate_command(command: RegisteredCommand) -> None:

@@ -71,6 +71,16 @@ class FixedRunnerTests(unittest.TestCase):
         for value in ("../other/file", "/etc/passwd", "app/x;rm"):
             with self.subTest(value=value), self.assertRaises(FixedRunnerError): self.manifest(owned_files=[value])
 
+    def test_directory_owned_scope_is_preserved_and_unsafe_variants_are_blocked(self):
+        manifest = self.manifest(owned_files=["settings.gradle.kts", "android-app/", "backend/"])
+        self.assertEqual(manifest["payload"]["owned_files"],
+                         ["settings.gradle.kts", "android-app/", "backend/"])
+        validate_action_manifest(manifest, expected_project_id="wallet-affiliate-collector",
+                                 expected_requirements_sha256=SHA)
+        for value in ("android-app//", "android-app/../other/", "/android-app/", "backend/;rm"):
+            with self.subTest(value=value), self.assertRaises(FixedRunnerError):
+                self.manifest(owned_files=[value])
+
     def test_manifest_and_requirements_drift_are_blocked(self):
         manifest = self.manifest(); manifest["payload"]["head"] = "d" * 40
         with self.assertRaisesRegex(FixedRunnerError, "manifest drift"):
