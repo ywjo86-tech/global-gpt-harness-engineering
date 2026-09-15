@@ -47,6 +47,24 @@ class ProductionDecisionTests(unittest.TestCase):
             self.assertEqual(out["recovery_state"],"TERMINATED_ADOPTABLE_PARTIAL")
             self.assertEqual(out["inherited_completed_lvs"],["L0"]); self.assertFalse(out["mutation_performed"])
 
+    def test_directory_scope_and_partial_subset_are_adoptable(self):
+        with tempfile.TemporaryDirectory() as d:
+            args, art = self.fixture(Path(d)); project = Path(args["project_root"])
+            (project / "app/a.py").unlink(); (project / "tests/test_a.py").unlink()
+            (project / "app").rmdir(); (project / "tests").rmdir()
+            package = {"project_id": "fixture", "gate_id": "G1", "lv_id": "L1", "run_id": "fixture-run",
+                       "owned_files": ["settings.gradle.kts", "gradle/libs.versions.toml", "android-app/", "backend/"]}
+            package_sha = write(art / "package.manifest.json", package, True)
+            request_path = art / "worker.request.json"
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+            request["extra_context"]["package_manifest_sha256"] = package_sha
+            write(request_path, request)
+            (project / "settings.gradle.kts").write_text("rootProject.name = \"Fixture\"\n", encoding="utf-8")
+            out = build_production_decision(**args)
+            self.assertEqual(out["selected_action"], "OFFICIAL_PARTIAL_ADOPTION")
+            self.assertEqual(out["recovery_state"], "TERMINATED_ADOPTABLE_PARTIAL")
+            self.assertEqual(out["owned_scope"], package["owned_files"])
+
     def test_live_worker_waits_and_blocks_duplicate(self):
         with tempfile.TemporaryDirectory() as d:
             args,art=self.fixture(Path(d)); write(art/"executor.process.json",{"pid":123,"started_at":"same"})

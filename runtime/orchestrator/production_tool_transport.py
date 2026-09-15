@@ -19,19 +19,50 @@ from .tool_authorization import (
 _READ = "PROJECT_OWNED_FILE_READ"
 _WRITE = "PROJECT_OWNED_FILE_WRITE"
 _LIST = "PROJECT_OWNED_FILE_LIST"
+_SENSITIVE_SCOPE_PARTS = frozenset({".git", ".env", "auth.json", "credentials", "credentials.json"})
+
+
+def _validate_owned_scope(value: object) -> bool:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ToolAuthorizationError("approved owned file is unsafe for Broker access")
+    directory_scope = value.endswith("/")
+    raw = value[:-1] if directory_scope else value
+    candidate = PurePosixPath(raw)
+    lowered = {part.lower() for part in candidate.parts}
+    if (not raw or candidate.is_absolute() or ".." in candidate.parts or not candidate.parts
+            or candidate.as_posix() != raw or lowered.intersection(_SENSITIVE_SCOPE_PARTS)):
+        raise ToolAuthorizationError("approved owned file is unsafe for Broker access")
+    return directory_scope
+
+
+def _validate_child_path(value: object) -> str:
+    if not isinstance(value, str) or not value or value.endswith("/") or "\\" in value:
+        raise ToolAuthorizationError("owned directory child path is unsafe")
+    candidate = PurePosixPath(value)
+    lowered = {part.lower() for part in candidate.parts}
+    if (candidate.is_absolute() or ".." in candidate.parts or not candidate.parts
+            or candidate.as_posix() != value or lowered.intersection(_SENSITIVE_SCOPE_PARTS)):
+        raise ToolAuthorizationError("owned directory child path is unsafe")
+    return candidate.as_posix()
 
 
 def production_operations() -> tuple[RegisteredOperation, ...]:
     file_id = {"type": "string", "pattern": r"OWNED_[0-9]{4}"}
+    relative_path = {
+        "type": "string", "minLength": 1,
+        "description": "Child file path required only when owned_file_id denotes an approved directory scope.",
+    }
     return (
         RegisteredOperation("REG_PROJECT_READ_V1", _READ, "FILE_READ", "READ", "READ_ONLY",
-            {"type": "object", "properties": {"owned_file_id": file_id},
+            {"type": "object", "properties": {"owned_file_id": file_id, "relative_path": relative_path},
              "required": ["owned_file_id"], "additionalProperties": False},
             {"type": "object", "properties": {
                 "exists": {"type": "boolean"}, "content": {"type": "string"},
             }, "required": ["exists", "content"], "additionalProperties": False}),
         RegisteredOperation("REG_PROJECT_WRITE_V1", _WRITE, "FILE_WRITE", "WRITE", "PROJECT_WRITE",
-            {"type": "object", "properties": {"owned_file_id": file_id, "content": {"type": "string"}},
+            {"type": "object", "properties": {
+                "owned_file_id": file_id, "relative_path": relative_path, "content": {"type": "string"},
+            },
              "required": ["owned_file_id", "content"], "additionalProperties": False},
             {"type": "object", "properties": {"status": {"type": "string"}}, "additionalProperties": False}),
         RegisteredOperation("REG_PROJECT_LIST_V1", _LIST, "FILE_READ", "READ", "READ_ONLY",
@@ -56,17 +87,14 @@ class ProductionToolTransport:
     def __init__(self, *, request: Mapping[str, Any], workspace_root: Path,
                  journal_root: Path, security_scan) -> None:
         self.request = dict(request)
-        self.workspace_root = workspace_root
+        self.workspace_root = Path(workspace_root).resolve()
         self.registry = ClosedOperationRegistry(production_operations())
         owned = list(request.get("owned_files", []))
-        for relative in owned:
-            value = PurePosixPath(relative) if isinstance(relative, str) else PurePosixPath("..")
-            lowered = {part.lower() for part in value.parts}
-            if (value.is_absolute() or ".." in value.parts or not value.parts
-                    or ".git" in lowered or ".env" in lowered
-                    or lowered.intersection({"auth.json", "credentials", "credentials.json"})):
-                raise ToolAuthorizationError("approved owned file is unsafe for Broker access")
+        directory_flags = [_validate_owned_scope(relative) for relative in owned]
         self.file_bindings = {f"OWNED_{index:04d}": relative for index, relative in enumerate(owned, 1)}
+        self.directory_bindings = {
+            f"OWNED_{index:04d}" for index, is_directory in enumerate(directory_flags, 1) if is_directory
+        }
         contracts = {}
         for value in request.get("active_tool_authorization_contracts", []):
             contract = _contract(value)
@@ -80,34 +108,81 @@ class ProductionToolTransport:
             security_scan=security_scan,
         )
 
-    def _target(self, file_id: object) -> Path:
+    def _target(self, file_id: object, relative_path: object = None, *, require_file: bool = False) -> tuple[Path, str, bool]:
         if not isinstance(file_id, str) or file_id not in self.file_bindings:
             raise ToolAuthorizationError("owned file identity is unknown")
-        target = self.workspace_root / self.file_bindings[file_id]
-        root = self.workspace_root.resolve()
+        binding = str(self.file_bindings[file_id])
+        directory_scope = file_id in self.directory_bindings
+        if directory_scope:
+            base = binding[:-1]
+            if relative_path is None:
+                if require_file:
+                    raise ToolAuthorizationError("owned directory write requires child path")
+                target = self.workspace_root / base
+                scope_ref = binding
+                directory_probe = True
+            else:
+                child = _validate_child_path(relative_path)
+                target = self.workspace_root / base / child
+                scope_ref = f"{binding}{child}"
+                directory_probe = False
+        else:
+            if relative_path is not None:
+                raise ToolAuthorizationError("exact owned file does not accept child path")
+            target = self.workspace_root / binding
+            scope_ref = binding
+            directory_probe = False
+        root = self.workspace_root
         try: target.resolve(strict=False).relative_to(root)
         except ValueError as exc: raise ToolAuthorizationError("owned file binding escaped workspace") from exc
         current = target
-        while current != self.workspace_root:
+        while current != root:
             if current.is_symlink(): raise ToolAuthorizationError("owned file binding is unsafe")
             current = current.parent
-        return target
+        return target, scope_ref, directory_probe
+
+    def _ensure_safe_parent(self, target: Path) -> None:
+        root = self.workspace_root
+        try:
+            relative_parent = target.parent.relative_to(root)
+        except ValueError as exc:
+            raise ToolAuthorizationError("owned file parent escaped workspace") from exc
+        current = root
+        for part in relative_parent.parts:
+            current = current / part
+            if current.exists() or current.is_symlink():
+                if current.is_symlink() or not current.is_dir():
+                    raise ToolAuthorizationError("owned file parent is unsafe")
+                continue
+            current.mkdir()
+            if current.is_symlink() or not current.is_dir():
+                raise ToolAuthorizationError("owned file parent is unsafe")
 
     def _read(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
-        target = self._target(arguments.get("owned_file_id"))
+        target, _scope_ref, directory_probe = self._target(
+            arguments.get("owned_file_id"), arguments.get("relative_path")
+        )
         if not target.exists():
             return {"exists": False, "content": ""}
+        if directory_probe:
+            if not target.is_dir():
+                raise ToolAuthorizationError("owned directory scope is unavailable")
+            return {"exists": True, "content": ""}
         if not target.is_file():
             raise ToolAuthorizationError("owned file is unavailable")
         return {"exists": True, "content": target.read_text(encoding="utf-8")}
 
     def _write(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
-        target = self._target(arguments.get("owned_file_id")); content = arguments.get("content")
+        target, _scope_ref, _directory_probe = self._target(
+            arguments.get("owned_file_id"), arguments.get("relative_path"), require_file=True
+        )
+        content = arguments.get("content")
         if not isinstance(content, str): raise ToolAuthorizationError("owned file content is malformed")
         if not self._security_scan(content.encode("utf-8")):
             raise ToolAuthorizationError("tool request failed security validation")
-        if not target.parent.is_dir() or target.parent.is_symlink():
-            raise ToolAuthorizationError("owned file parent is unsafe")
+        self._ensure_safe_parent(target)
+        if target.exists() and not target.is_file():
+            raise ToolAuthorizationError("owned file target is unavailable")
         target.write_text(content, encoding="utf-8")
         return {"status": "COMPLETED"}
 
@@ -129,26 +204,45 @@ class ProductionToolTransport:
         package_binding = matching.get("package_binding_sha256", "")
         plan_digest = str(self.request.get("canonical_plan_sha256") or "")
         requirement_digest = str(matching.get("requirement_digest") or self.request.get("requirement_digest") or "")
-        if envelope.operation_class_id == _WRITE:
-            seed = f"{self.request.get('run_id')}|{envelope.operation_class_id}|{scope_ref}"
-        else:
-            seed = f"{self.request.get('run_id')}|{envelope.provider_call_id}|{envelope.operation_class_id}"
-        dispatch_id = "DISPATCH_" + hashlib.sha256(seed.encode()).hexdigest()[:24]
-        return OperationIdentity(
-            operation.operation_registration_id, dispatch_id, "CODEX_DYNAMIC_TOOL_CALL_V1",
-            envelope.operation_class_id, envelope.worker_task_id, envelope.worker_action_id,
-            str(self.request.get("project_id")), str(self.request.get("gate_id")), str(self.request.get("lv_id")),
-            str(self.request.get("run_id")), plan_digest, requirement_digest, str(package_binding),
-            owned_scope_digest(list(self.request.get("owned_files", []))),
+
+        def build(seed: str) -> OperationIdentity:
+            dispatch_id = "DISPATCH_" + hashlib.sha256(seed.encode()).hexdigest()[:24]
+            return OperationIdentity(
+                operation.operation_registration_id, dispatch_id, "CODEX_DYNAMIC_TOOL_CALL_V1",
+                envelope.operation_class_id, envelope.worker_task_id, envelope.worker_action_id,
+                str(self.request.get("project_id")), str(self.request.get("gate_id")), str(self.request.get("lv_id")),
+                str(self.request.get("run_id")), plan_digest, requirement_digest, str(package_binding),
+                owned_scope_digest(list(self.request.get("owned_files", []))),
+            )
+
+        if envelope.operation_class_id != _WRITE:
+            return build(f"{self.request.get('run_id')}|{envelope.provider_call_id}|{envelope.operation_class_id}")
+
+        base_seed = f"{self.request.get('run_id')}|{envelope.operation_class_id}|{scope_ref}"
+        identity = build(base_seed)
+        attempt = self.request.get("attempt", 1)
+        if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt <= 1:
+            return identity
+        evidence = {item.effect_id: item for item in self.governed_effect_evidence()}
+        prior = evidence.get(identity.effect_id)
+        if prior is None or prior.mutation_performed or prior.security_passed:
+            return identity
+        target, _scope, _directory_probe = self._target(
+            envelope.arguments.get("owned_file_id"), envelope.arguments.get("relative_path"), require_file=True
         )
+        if target.exists():
+            return identity
+        return build(f"{base_seed}|recovery-attempt|{attempt}")
 
     def _scope_ref(self, envelope: ToolRequestEnvelope) -> str:
         if envelope.operation_class_id not in {_READ, _WRITE}:
             return ""
-        file_id = envelope.arguments.get("owned_file_id")
-        if not isinstance(file_id, str) or file_id not in self.file_bindings:
-            raise ToolAuthorizationError("owned file identity is unknown")
-        return str(self.file_bindings[file_id])
+        _target, scope_ref, _directory_probe = self._target(
+            envelope.arguments.get("owned_file_id"),
+            envelope.arguments.get("relative_path"),
+            require_file=envelope.operation_class_id == _WRITE,
+        )
+        return scope_ref
 
     def handle(self, envelope: ToolRequestEnvelope) -> ToolResultEnvelope:
         scope_ref = self._scope_ref(envelope)

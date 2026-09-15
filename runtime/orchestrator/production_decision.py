@@ -46,13 +46,19 @@ def _safe_scope(scope: object) -> list[str]:
     for item in scope:
         if not isinstance(item, str) or not item or "\\" in item:
             raise ProductionDecisionError("owned scope is unsafe")
-        value = PurePosixPath(item)
-        if value.is_absolute() or ".." in value.parts or value.as_posix() != item:
+        directory_scope = item.endswith("/")
+        raw = item[:-1] if directory_scope else item
+        value = PurePosixPath(raw)
+        if not raw or value.is_absolute() or ".." in value.parts or value.as_posix() != raw:
             raise ProductionDecisionError("owned scope is unsafe")
         result.append(item)
     if len(result) != len(set(result)):
         raise ProductionDecisionError("owned scope contains duplicates")
     return result
+
+
+def _within_owned_scope(path: str, scopes: Sequence[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
 
 
 def _process_state(process: Mapping[str, Any] | None) -> tuple[str, bool]:
@@ -140,8 +146,8 @@ def build_production_decision(*, project_root: str | Path, harness_root: str | P
     status = subprocess.run(["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
                             capture_output=True, text=True, check=True).stdout.splitlines()
     changed = [line[3:] for line in status if len(line) > 3]
-    outside = [path for path in changed if path not in scope]
-    if outside or (changed and set(changed) != set(scope)):
+    outside = [path for path in changed if not _within_owned_scope(path, scope)]
+    if outside:
         raise ProductionDecisionError("partial workspace does not match owned scope")
     process_path = artifact / "executor.process.json"
     process = _json(process_path) if process_path.exists() else None

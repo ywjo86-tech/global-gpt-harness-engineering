@@ -101,6 +101,37 @@ class EffectEvidenceBridgeTests(unittest.TestCase):
             self.assertTrue(item.intent_receipt_consistent)
             self.assertEqual((root / "owned.txt").read_text(encoding="utf-8"), "changed")
 
+    def test_directory_child_scope_projects_as_governed_effect_evidence(self):
+        owned_files = ("android-app/",)
+        approved = build_dec007_approved_contracts(
+            project_id="PROJECT_1", gate_id="GATE_1", lv_id="LV_1", run_id="RUN_1",
+            canonical_plan_sha256=PLAN, owned_files=owned_files,
+        )
+        active = tuple(activate_contract(
+            contract, package_binding_sha256=PACKAGE, authorized_decisions={"DEC-007": "USER_DECISION"}
+        ) for contract in approved)
+        write = next(item for item in active if item.operation_class_id == "PROJECT_OWNED_FILE_WRITE")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = {
+                "project_id": "PROJECT_1", "run_id": "RUN_1", "gate_id": "GATE_1", "lv_id": "LV_1",
+                "canonical_plan_sha256": PLAN, "owned_files": list(owned_files),
+                "active_tool_authorization_contracts": [item.to_dict() for item in active],
+            }
+            transport = ProductionToolTransport(request=payload, workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            transport.handle(ToolRequestEnvelope(
+                "PROJECT_OWNED_FILE_WRITE", "TASK-4A-08", "PRODUCTION_WORKER_TURN",
+                {"owned_file_id": "OWNED_0001", "relative_path": "src/main/Main.kt", "content": "class Main\n"},
+                "CALL_DIR_WRITE",
+            ))
+            evidence = collect_governed_write_effect_evidence(
+                root / "journal", active_write_contract=write, expected_owned_scope=owned_files,
+            )
+            self.assertEqual(len(evidence), 1)
+            self.assertEqual(evidence[0].scope_ref, "android-app/src/main/Main.kt")
+            self.assertTrue(evidence[0].mutation_performed)
+
     def test_read_is_not_promoted_to_mutation_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from .tool_authorization import (
@@ -13,12 +13,36 @@ from .tool_authorization import (
 from .worker_authority import GovernedEffectEvidence
 
 WRITE_OPERATION = "PROJECT_OWNED_FILE_WRITE"
+_SENSITIVE_SCOPE_PARTS = frozenset({".git", ".env", "auth.json", "credentials", "credentials.json"})
 
 
 class EffectEvidenceBridgeError(RuntimeError):
     def __init__(self, message: str, *, reason_taxonomy: str) -> None:
         super().__init__(message)
         self.reason_taxonomy = reason_taxonomy
+
+
+def _scope_ref_within_owned_scope(scope_ref: str, owned_scope: tuple[str, ...]) -> bool:
+    if scope_ref in owned_scope:
+        return True
+    if not scope_ref or "\\" in scope_ref:
+        return False
+    candidate = PurePosixPath(scope_ref)
+    lowered = {part.lower() for part in candidate.parts}
+    if (candidate.is_absolute() or ".." in candidate.parts or not candidate.parts
+            or candidate.as_posix() != scope_ref or lowered.intersection(_SENSITIVE_SCOPE_PARTS)):
+        return False
+    for scope in owned_scope:
+        if not isinstance(scope, str) or not scope.endswith("/"):
+            continue
+        base = PurePosixPath(scope[:-1])
+        try:
+            child = candidate.relative_to(base)
+        except ValueError:
+            continue
+        if child.parts:
+            return True
+    return False
 
 
 def _canonical(value: object) -> bytes:
@@ -161,7 +185,7 @@ def collect_governed_write_effect_evidence(
             or not effect_id
             or intent_path.name != f"{effect_id}.intent.json"
             or not isinstance(scope_ref, str)
-            or scope_ref not in owned_scope
+            or not _scope_ref_within_owned_scope(scope_ref, owned_scope)
             or intent.get("authorization_status") != "AUTHORIZED"
         ):
             raise EffectEvidenceBridgeError(

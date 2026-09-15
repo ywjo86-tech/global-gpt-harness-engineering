@@ -116,6 +116,105 @@ class ProductionToolTransportTests(unittest.TestCase):
             self.assertEqual(len(list((root / "journal").glob("*.intent.json"))), 1)
             self.assertEqual(len(list((root / "journal").glob("*.receipt.json"))), 1)
 
+    def test_missing_parent_for_exact_owned_file_is_created_safely(self):
+        owned_files = ["gradle/libs.versions.toml"]
+        contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self.request(root, contracts); request["owned_files"] = owned_files
+            transport = ProductionToolTransport(request=request, workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            result = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "[versions]\n"}, "CALL_WRITE"))
+            self.assertEqual(result.status, "COMPLETED")
+            self.assertEqual((root / "gradle/libs.versions.toml").read_text(encoding="utf-8"), "[versions]\n")
+            evidence = transport.governed_effect_evidence()
+            self.assertEqual([item.scope_ref for item in evidence], ["gradle/libs.versions.toml"])
+            self.assertTrue(evidence[0].mutation_performed)
+
+    def test_directory_scope_child_write_read_and_multiple_effects_are_bounded(self):
+        owned_files = ["android-app/"]
+        contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self.request(root, contracts); request["owned_files"] = owned_files
+            transport = ProductionToolTransport(request=request, workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            first = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "relative_path": "build.gradle.kts",
+                "content": "plugins {}\n"}, "CALL_WRITE_1"))
+            second = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001",
+                "relative_path": "src/main/AndroidManifest.xml", "content": "<manifest />\n"}, "CALL_WRITE_2"))
+            self.assertEqual((first.status, second.status), ("COMPLETED", "COMPLETED"))
+            read = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_READ", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "relative_path": "build.gradle.kts"},
+                "CALL_READ"))
+            self.assertEqual(read.bounded_payload["content"], "plugins {}\n")
+            probe = transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_READ", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001"}, "CALL_PROBE"))
+            self.assertEqual(probe.bounded_payload, {"exists": True, "content": ""})
+            evidence = transport.governed_effect_evidence()
+            self.assertEqual(sorted(item.scope_ref for item in evidence),
+                             ["android-app/build.gradle.kts", "android-app/src/main/AndroidManifest.xml"])
+            self.assertTrue(all(item.mutation_performed and item.security_passed for item in evidence))
+
+    def test_directory_scope_blocks_unsafe_child_and_symlink_escape(self):
+        owned_files = ["android-app/"]
+        contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self.request(root, contracts); request["owned_files"] = owned_files
+            transport = ProductionToolTransport(request=request, workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            bad_values = (None, "../escape", "/absolute", ".git/config", "credentials.json", "src//dup.kt", "folder/")
+            for index, relative_path in enumerate(bad_values):
+                arguments = {"owned_file_id": "OWNED_0001", "content": "blocked"}
+                if relative_path is not None:
+                    arguments["relative_path"] = relative_path
+                with self.subTest(relative_path=relative_path), self.assertRaises(Exception):
+                    transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                        "PRODUCTION_WORKER_TURN", arguments, f"CALL_BAD_{index}"))
+            self.assertEqual(list((root / "journal").glob("*.json")), [])
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+            root = Path(directory); (root / "android-app").symlink_to(Path(outside), target_is_directory=True)
+            request = self.request(root, contracts); request["owned_files"] = owned_files
+            transport = ProductionToolTransport(request=request, workspace_root=root,
+                                                journal_root=root / "journal", security_scan=lambda _: True)
+            with self.assertRaises(Exception):
+                transport.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                    "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "relative_path": "escape.txt",
+                    "content": "blocked"}, "CALL_SYMLINK"))
+            self.assertFalse((Path(outside) / "escape.txt").exists())
+
+    def test_recovery_attempt_retries_only_prior_failed_nonmutating_write(self):
+        owned_files = ["gradle/libs.versions.toml"]
+        contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); journal = root / "journal"
+            first_request = self.request(root, contracts); first_request["owned_files"] = owned_files; first_request["attempt"] = 1
+            first = ProductionToolTransport(request=first_request, workspace_root=root, journal_root=journal,
+                                            security_scan=lambda _: False)
+            with self.assertRaises(Exception):
+                first.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                    "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "blocked"}, "CALL_FIRST"))
+            self.assertFalse((root / "gradle/libs.versions.toml").exists())
+            second_request = self.request(root, contracts); second_request["owned_files"] = owned_files; second_request["attempt"] = 2
+            second = ProductionToolTransport(request=second_request, workspace_root=root, journal_root=journal,
+                                             security_scan=lambda _: True)
+            result = second.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "recovered"}, "CALL_SECOND"))
+            self.assertEqual(result.status, "COMPLETED")
+            self.assertEqual((root / "gradle/libs.versions.toml").read_text(encoding="utf-8"), "recovered")
+            evidence = second.governed_effect_evidence()
+            self.assertEqual(len(evidence), 2)
+            self.assertEqual(sorted(item.mutation_performed for item in evidence), [False, True])
+            with self.assertRaises(Exception):
+                second.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                    "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "duplicate"},
+                    "CALL_DUPLICATE"))
+            self.assertEqual((root / "gradle/libs.versions.toml").read_text(encoding="utf-8"), "recovered")
+
     def test_missing_contract_and_unknown_operation_have_zero_effect(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); target = root / "owned.txt"; target.write_text("initial", encoding="utf-8")
