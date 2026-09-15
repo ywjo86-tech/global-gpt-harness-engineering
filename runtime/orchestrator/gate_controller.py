@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from .canonical_transition import CanonicalTransitionError, validate_canonical_gate_state, validate_governance_descendant
+from .contract_adapter import load_project_mapping
 from .production_approval import ApprovalBindings, evaluate_production_authorization
 from .recovery_contract import is_completion_eligible
 from .production_lifecycle import (
@@ -992,14 +993,25 @@ def run_production_gate_lifecycle(
                            check_id="TRANSITION_ACTIVATION", reason_presence="UNKNOWN")
             raise
         mark_lifecycle("TRANSITION_ACTIVATION", completed=True)
+        mapping = load_project_mapping(project_root)
+        if mapping is None:
+            raise GateControllerError("project declarative mapping is required for canonical transition")
+        if mapping.canonical_sha256 != str(context["plan_sha256"]):
+            raise GateControllerError("canonical transition plan SHA does not match project mapping")
+        canonical_source = mapping.canonical_source
+        if canonical_source.is_symlink() or not canonical_source.is_file():
+            raise GateControllerError("canonical transition source is missing or unsafe")
+        canonical_plan = canonical_source.relative_to(Path(project_root).resolve()).as_posix()
+        ledger_path = mapping.gate_state_ledger_path or mapping.gate_state_path
+        ledger_relative = ledger_path.relative_to(Path(project_root).resolve()).as_posix()
         context = dict(context)
         context["canonical_state_override"] = {
             "state": "GATE1_ACTIVE", "gate_id": str(context["gate_id"]), "active_scope": [str(context["lv_id"])],
-            "selected_source": str(__import__("pathlib").Path(project_root).resolve() / "IMPLEMENTATION_PLAN.md"),
-            "canonical_plan": "IMPLEMENTATION_PLAN.md", "plan_sha256": str(context["plan_sha256"]),
+            "selected_source": str(canonical_source),
+            "canonical_plan": canonical_plan, "plan_sha256": str(context["plan_sha256"]),
             "approval_id": approval["event_id"], "approval_record_hash": approval["record_hash"],
             "checkpoint_commit": transition["current_head"], "owned_files": list(context["owned_file_scope"][context["lv_id"]]),
-            "ledger_path": "docs/GATE_STATE.md", "transition": transition,
+            "ledger_path": ledger_relative, "transition": transition,
         }
         mark_preentry("TRANSITION_ACTIVATION")
     context = dict(context)

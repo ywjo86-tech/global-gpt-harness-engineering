@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Global GPT Harness orchestration runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "production-gate-dry-run", "production-gate-run", "production-adopt-partial", "production-checkpoint-adopt", "production-terminal", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
+    for name in ["inspect", "plan", "run", "collect", "fanin", "approve", "gate", "status", "lv-plan", "lv-package", "lv-preflight", "lv-review", "lv-remediation-package", "lv-remediation-preflight", "lv-remediation-review", "gate-dry-run", "gate-validate", "gate-run", "gate-approve", "project-requirement-contract", "production-gate-dry-run", "production-gate-run", "production-adopt-partial", "production-checkpoint-adopt", "production-terminal", "project-onboard", "production-approval-create", "production-approval-correct", "production-mapping-migrate"]:
         sub = subparsers.add_parser(name)
         if name in {"production-adopt-partial", "production-terminal"}:
             sub.add_argument("--request", required=True)
@@ -96,6 +96,12 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--reason", required=True)
         elif name in {"lv-remediation-preflight", "lv-remediation-review"}:
             sub.add_argument("--run-id", required=True)
+        elif name == "project-requirement-contract":
+            sub.add_argument("--project-root", required=True)
+            sub.add_argument("--gate-id", required=True)
+            sub.add_argument("--lv-id", required=True)
+            sub.add_argument("--harness-root", required=True)
+            sub.add_argument("--mode", default="GATE_BY_GATE")
         elif name == "gate-dry-run":
             sub.add_argument("--project-root", required=True)
             sub.add_argument("--gate-id", required=True)
@@ -624,6 +630,12 @@ def main(argv: list[str] | None = None) -> int:
             if outcome.get("status") == "FAIL":
                 return 9
             return 10
+        if args.command == "project-requirement-contract":
+            from .gate_orchestrator import write_project_requirement_contract
+            _print(write_project_requirement_contract(
+                args.project_root, args.gate_id, args.lv_id, args.harness_root, mode=args.mode
+            ))
+            return 0
         if args.command == "gate-dry-run":
             from .gate_orchestrator import compatibility_dry_run
             outcome = compatibility_dry_run(

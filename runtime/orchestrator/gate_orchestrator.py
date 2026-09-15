@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state
 from .task_contract_compat import (
     analyze_task_stage_gate_contract, compatibility_block_reason, resolve_task_lv_projection,
+    resolve_task_project_requirement_contract,
 )
 from .lv_execution_package import canonical_json_bytes
 from .lv_preview import _declared_owned_files, _gate_section, _tables
@@ -683,6 +684,112 @@ def validate_global_gate_bindings(project_root: str | Path, gate_id: str, *, req
     }
 
 
+def project_lv_execution_state(
+    project_root: str | Path, plan: GatePlan, authorization: GateAuthorization, lv_id: str,
+) -> dict[str, Any]:
+    """Narrow an active Gate authority to one explicitly ordered LV without mutating the Gate ledger."""
+    root, _ = _safe_project(project_root)
+    validate_authorization(plan, authorization)
+    if lv_id not in authorization.approved_lvs:
+        raise GateOrchestrationError("requested LV is outside active Gate authorization")
+    mapping = load_project_mapping(root)
+    if mapping is None:
+        raise GateOrchestrationError("project declarative mapping is required")
+    state = evaluate_canonical_state(mapping)
+    if not isinstance(state.get("state"), str) or not str(state["state"]).endswith("_ACTIVE"):
+        raise GateOrchestrationError("canonical Gate state is not active")
+    if state.get("transition_authorized") is not True or state.get("gate_id") != plan.gate_id:
+        raise GateOrchestrationError("canonical Gate state is not authorized for requested Gate")
+    if state.get("plan_sha256") != plan.canonical_plan_sha256:
+        raise GateOrchestrationError("canonical Gate state plan binding mismatch")
+    selected = state.get("selected_source")
+    try:
+        selected_path = Path(selected).resolve() if isinstance(selected, (str, os.PathLike)) else None
+    except OSError as exc:
+        raise GateOrchestrationError("canonical Gate selected source is invalid") from exc
+    if selected_path != mapping.canonical_source:
+        raise GateOrchestrationError("canonical Gate selected source does not match mapping authority")
+    canonical_relative = mapping.canonical_source.relative_to(root).as_posix()
+    if state.get("canonical_plan") != canonical_relative:
+        raise GateOrchestrationError("canonical Gate plan path does not match mapping authority")
+
+    active_scope = state.get("active_scope")
+    expected_gate_scope = list(authorization.approved_lvs)
+    expected_owned = list(authorization.owned_files_by_lv[lv_id])
+    if active_scope == [lv_id]:
+        if state.get("owned_files") != expected_owned:
+            raise GateOrchestrationError("single-LV canonical state owned scope mismatch")
+        return dict(state)
+    if active_scope != expected_gate_scope:
+        raise GateOrchestrationError("active Gate scope cannot be projected to requested LV")
+    projected = dict(state)
+    projected["active_scope"] = [lv_id]
+    projected["owned_files"] = expected_owned
+    return projected
+
+
+def build_project_requirement_contract(
+    project_root: str | Path, gate_id: str, lv_id: str, *, mode: str = GATE_BY_GATE,
+) -> dict[str, Any]:
+    """Build a deterministic TASK-scoped requirement contract from canonical plan authority."""
+    root, _ = _safe_project(project_root)
+    plan = load_gate_plan(root, gate_id)
+    authorization = load_approved_authorization(root, gate_id, mode=mode)
+    state = project_lv_execution_state(root, plan, authorization, lv_id)
+    mapping = load_project_mapping(root)
+    if mapping is None or mapping.task_lv_projection_path is None:
+        raise GateOrchestrationError("project requirement contract requires TASK-to-LV projection authority")
+    try:
+        payload = resolve_task_project_requirement_contract(
+            mapping.canonical_source.read_text(encoding="utf-8"),
+            project_id=plan.project_id, canonical_plan_sha256=plan.canonical_plan_sha256,
+            gate_id=gate_id, task_id=lv_id, owned_files=list(state["owned_files"]),
+        )
+    except Exception as exc:
+        raise GateOrchestrationError(f"project requirement contract projection failed: {exc}") from exc
+    requirements = payload.get("requirements", {})
+    if not isinstance(requirements, dict) or not requirements:
+        raise GateOrchestrationError("project requirement contract projection is empty")
+    return payload
+
+
+def write_project_requirement_contract(
+    project_root: str | Path, gate_id: str, lv_id: str, harness_root: str | Path, *, mode: str = GATE_BY_GATE,
+) -> dict[str, Any]:
+    """Seal TASK requirement authority in the Harness artifact namespace, never the source worktree."""
+    root, project_id = _safe_project(project_root)
+    harness = Path(harness_root)
+    if not harness.is_absolute() or not harness.is_dir() or harness.is_symlink() or harness != harness.resolve():
+        raise GateOrchestrationError("Harness root must be an existing absolute non-symlink directory")
+    payload = build_project_requirement_contract(root, gate_id, lv_id, mode=mode)
+    artifact_root = namespace_root(harness, project_id, "artifact")
+    target = artifact_root / f"{gate_id}.{lv_id}.project-requirements.json"
+    sidecar = Path(str(target) + ".sha256")
+    data = canonical_json_bytes(payload)
+    digest = _sha(data)
+    if target.exists() or sidecar.exists():
+        if (target.is_file() and not target.is_symlink() and sidecar.is_file() and not sidecar.is_symlink()
+                and target.read_bytes() == data and sidecar.read_text(encoding="ascii").strip() == digest):
+            return {
+                "status": "ALREADY_EXISTS", "project_id": project_id, "gate_id": gate_id, "lv_id": lv_id,
+                "path": str(target), "sha256": digest, "sidecar": str(sidecar),
+                "requirement_ids": list(payload["requirements"]), "mutation_performed": False,
+            }
+        raise GateOrchestrationError("immutable project requirement contract namespace drift")
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    _atomic_json(target, payload)
+    try:
+        sidecar.write_text(digest + "\n", encoding="ascii")
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return {
+        "status": "CREATED", "project_id": project_id, "gate_id": gate_id, "lv_id": lv_id,
+        "path": str(target), "sha256": digest, "sidecar": str(sidecar),
+        "requirement_ids": list(payload["requirements"]), "mutation_performed": True,
+    }
+
+
 def load_requirement_evidence(path: str | Path, *, requirements_sha256: str) -> dict[str, Mapping[str, Any]]:
     source = Path(path)
     if not source.is_file() or source.is_symlink() or source.stat().st_size > 1024 * 1024:
@@ -723,6 +830,12 @@ def load_project_requirement_contract(path: str | Path, *, project_id: str, gate
         item = requirements[requirement_id]
         if not isinstance(item, dict) or item.get("project_id") != project_id or item.get("gate_id") != gate_id or item.get("lv_id") != lv_id or item.get("plan_sha256") != plan_sha256 or item.get("status") != "PENDING" or item.get("verdict") is not None:
             raise GateOrchestrationError(f"project requirement {requirement_id} binding mismatch")
+        has_semantic = "semantic_metadata" in item or "canonical_plan_sha256" in item
+        if has_semantic:
+            validate_requirement_semantic_binding(
+                item, requirement_id=requirement_id, project_id=project_id, gate_id=gate_id,
+                lv_id=lv_id, canonical_plan_sha256=plan_sha256,
+            )
         result[requirement_id] = item
     return result
 
@@ -1987,6 +2100,9 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                    "canonical_lv_scope": list(auth.approved_lvs),
                    "completed_plan_items": list(state["completed_lvs"]),
                    "remaining_plan_items": [item.lv_id for item in plan.lvs[lv_index + 1:]]}
+        task_mapping = load_project_mapping(root)
+        if task_mapping is not None and getattr(task_mapping, "task_lv_projection_path", None) is not None:
+            context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
         if adapters is None:
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
             production_provider = build_production_canonical_worker_authority_provider(

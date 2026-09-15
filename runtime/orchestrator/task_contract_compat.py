@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import PurePosixPath
 from typing import Any, Mapping
@@ -271,6 +273,93 @@ def resolve_task_lv_projection(
             "capability_contract": {"version": "v1", "mode": "DECLARED_NONE", "requirements": []},
         })
     return resolved
+
+
+def resolve_task_project_requirement_contract(
+    text: str,
+    *,
+    project_id: str,
+    canonical_plan_sha256: str,
+    gate_id: str,
+    task_id: str,
+    owned_files: list[str],
+) -> dict[str, Any]:
+    """Project a TASK's explicit Related Requirements into a deterministic execution contract."""
+    tasks_raw = _section_map(text, _TASK_HEADING)
+    section = tasks_raw.get(task_id)
+    if section is None:
+        raise TaskContractProjectionError(f"project requirement TASK is missing: {task_id}")
+    analysis = analyze_task_stage_gate_contract(text, gate_id)
+    if analysis is None or analysis["blockers"] or task_id not in analysis["requested_gate_tasks"]:
+        raise TaskContractProjectionError(f"project requirement TASK is outside executable Gate authority: {gate_id}/{task_id}")
+
+    related = _field(section, "Related Requirements")
+    if not related:
+        raise TaskContractProjectionError(f"TASK Related Requirements are missing: {task_id}")
+    if "~" in related:
+        raise TaskContractProjectionError(f"TASK Related Requirements must use explicit IDs: {task_id}")
+    requirement_ids = re.findall(r"\b(?:REQ|NFR|SEC|OPS)-\d{3}\b", related)
+    if not requirement_ids or len(requirement_ids) != len(set(requirement_ids)):
+        raise TaskContractProjectionError(f"TASK Related Requirements are missing or duplicated: {task_id}")
+
+    definitions: dict[str, dict[str, str]] = {}
+    row_pattern = re.compile(r"(?m)^\|\s*((?:REQ|NFR|SEC|OPS)-\d{3})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$")
+    for match in row_pattern.finditer(text):
+        requirement_id = match.group(1)
+        value = {
+            "requirement_text": match.group(2).strip(),
+            "acceptance_criteria": match.group(3).strip(),
+            "priority": match.group(4).strip(),
+        }
+        if requirement_id in definitions and definitions[requirement_id] != value:
+            raise TaskContractProjectionError(f"duplicate requirement definition: {requirement_id}")
+        definitions[requirement_id] = value
+
+    completion = _field(section, "Completion Condition")
+    validation_ids = _ids(_field(section, "Validation"), "TEST-")
+    purpose = _field(section, "Purpose")
+    if not completion or not validation_ids or not purpose:
+        raise TaskContractProjectionError(f"TASK execution requirement fields are incomplete: {task_id}")
+    safe_owned = [_safe_owned_path(value) for value in owned_files]
+    if not safe_owned or len(safe_owned) != len(set(safe_owned)):
+        raise TaskContractProjectionError(f"TASK execution owned scope is missing or duplicated: {task_id}")
+
+    requirements: dict[str, dict[str, Any]] = {}
+    for requirement_id in requirement_ids:
+        definition = definitions.get(requirement_id)
+        if definition is None:
+            raise TaskContractProjectionError(f"Related Requirement definition is missing: {requirement_id}")
+        semantic_metadata = {
+            "requirement_id": requirement_id,
+            **definition,
+            "task_id": task_id,
+            "task_purpose": purpose,
+            "task_completion_condition": completion,
+            "validation_ids": list(validation_ids),
+            "owned_files": list(safe_owned),
+        }
+        semantic_sha256 = hashlib.sha256(
+            json.dumps(semantic_metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        requirements[requirement_id] = {
+            "project_id": project_id,
+            "gate_id": gate_id,
+            "lv_id": task_id,
+            "plan_sha256": canonical_plan_sha256,
+            "canonical_plan_sha256": canonical_plan_sha256,
+            "requirement_id": requirement_id,
+            "status": "PENDING",
+            "verdict": None,
+            "semantic_metadata": semantic_metadata,
+            "semantic_sha256": semantic_sha256,
+            "owned_files": list(safe_owned),
+            "validation_ids": list(validation_ids),
+            "required_evidence_types": ["implementation", "test", "review"],
+        }
+    return {
+        "schema_version": "orchestration.project-requirement-contract.v1",
+        "requirements": requirements,
+    }
 
 
 def compatibility_block_reason(analysis: dict[str, Any]) -> str:
