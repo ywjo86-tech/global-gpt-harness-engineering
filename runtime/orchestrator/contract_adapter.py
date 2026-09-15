@@ -594,29 +594,143 @@ def _find_gate_zero_checkpoint(
     return None
 
 
+def _evaluate_first_gate_activation(mapping: ContractMapping, gate_text: str) -> dict[str, Any] | None:
+    if "FIRST_GATE_ACTIVE" not in gate_text:
+        return None
+    root = mapping.project_root
+    activation_path = root / "docs" / "harness" / "first-gate.activation.json"
+    if not activation_path.is_file() or activation_path.is_symlink():
+        raise ContractMappingError("first Gate activation is missing or unsafe")
+    activation_raw = activation_path.read_bytes()
+    activation_relative = activation_path.relative_to(root).as_posix()
+    if _committed_blob(root, "HEAD", activation_relative) != activation_raw:
+        raise ContractMappingError("first Gate activation is not committed at HEAD")
+    try:
+        activation = json.loads(activation_raw.decode("utf-8"), object_pairs_hook=_json_no_duplicate_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractMappingError("first Gate activation is malformed") from exc
+    expected_fields = {
+        "schema_version", "project_id", "gate_id", "plan_sha256", "approval_id",
+        "approval_record_hash", "branch", "head", "lv_order", "owned_files",
+        "state", "system_transition",
+    }
+    if not isinstance(activation, dict) or set(activation) != expected_fields:
+        raise ContractMappingError("first Gate activation schema mismatch")
+    if (
+        activation.get("schema_version") != "orchestration.first-gate.activation.v1"
+        or activation.get("project_id") != mapping.project_id
+        or activation.get("plan_sha256") != mapping.canonical_sha256
+        or activation.get("state") != "ACTIVE"
+        or activation.get("system_transition") is not True
+        or activation.get("branch") != "main"
+    ):
+        raise ContractMappingError("first Gate activation binding mismatch")
+    if not isinstance(activation.get("gate_id"), str) or not activation["gate_id"]:
+        raise ContractMappingError("first Gate activation gate_id is invalid")
+    if not isinstance(activation.get("approval_id"), str) or not activation["approval_id"]:
+        raise ContractMappingError("first Gate activation approval_id is invalid")
+    if not isinstance(activation.get("approval_record_hash"), str) or not re.fullmatch(r"[0-9a-f]{64}", activation["approval_record_hash"]):
+        raise ContractMappingError("first Gate activation approval record hash is invalid")
+    if not isinstance(activation.get("head"), str) or not re.fullmatch(r"[0-9a-f]{40,64}", activation["head"]):
+        raise ContractMappingError("first Gate activation baseline head is invalid")
+    lv_order = activation.get("lv_order")
+    owned_files = activation.get("owned_files")
+    if not isinstance(lv_order, list) or not lv_order or len(set(lv_order)) != len(lv_order) or any(not isinstance(item, str) or not item for item in lv_order):
+        raise ContractMappingError("first Gate activation LV order is invalid")
+    if not isinstance(owned_files, list):
+        raise ContractMappingError("first Gate activation owned_files is invalid")
+    for index, item in enumerate(owned_files):
+        _validate_ledger_relative_path(item, f"first_gate_activation.owned_files[{index}]")
+
+    ledger = _ledger_payload(gate_text)
+    canonical_relative = mapping.canonical_source.relative_to(root).as_posix()
+    if (
+        ledger.get("schema_version") != 1
+        or ledger.get("project_id") != mapping.project_id
+        or ledger.get("gate_id") != activation["gate_id"]
+        or ledger.get("gate_state") != "GATE1_ACTIVE"
+        or ledger.get("canonical_plan") != canonical_relative
+        or ledger.get("plan_sha256") != mapping.canonical_sha256
+        or ledger.get("approval_id") != activation["approval_id"]
+        or ledger.get("active_scope") != lv_order
+        or ledger.get("owned_files") != owned_files
+    ):
+        raise ContractMappingError("first Gate activation ledger binding mismatch")
+
+    approval_raw = mapping.business_approval_path.read_bytes() if mapping.business_approval_path.is_file() else b""
+    approval_relative = mapping.business_approval_path.relative_to(root).as_posix()
+    if not approval_raw or mapping.business_approval_path.is_symlink() or _committed_blob(root, "HEAD", approval_relative) != approval_raw:
+        raise ContractMappingError("first Gate approval log is missing, unsafe, or not committed at HEAD")
+    try:
+        approval_validation = validate_approval_state(
+            approval_raw.decode("utf-8"),
+            {mapping.approved_source_sha256, mapping.canonical_sha256, *mapping.historical_plan_sha256},
+        )
+    except UnicodeDecodeError as exc:
+        raise ContractMappingError("first Gate approval log is not valid UTF-8") from exc
+    if not approval_validation["schema_valid"]:
+        raise ContractMappingError("first Gate approval log validation failed: " + "; ".join(approval_validation["errors"]))
+    matches = [event for event in approval_validation["events"] if event.get("approval_id") == activation["approval_id"]]
+    if len(matches) != 1:
+        raise ContractMappingError("first Gate approval event is missing or duplicated")
+    approval = matches[0]
+    if (
+        approval.get("target_type") != "GATE"
+        or approval.get("target_id") != activation["gate_id"]
+        or approval.get("approval_type") != "START_GATE"
+        or approval.get("approval_event_type") not in {"APPROVED", "RENEWED"}
+        or approval.get("plan_sha256") != mapping.canonical_sha256
+        or approval.get("approved_hash") != activation["approval_record_hash"]
+        or approval.get("record_hash") != ledger.get("approval_record_hash")
+        or approval.get("approval_scope", {}).get("lv3_ids") != lv_order
+        or approval.get("approval_scope", {}).get("owned_files") != owned_files
+    ):
+        raise ContractMappingError("first Gate approval event binding mismatch")
+
+    gate_relative = mapping.gate_state_path.relative_to(root).as_posix()
+    gate_raw = mapping.gate_state_path.read_bytes()
+    if _committed_blob(root, "HEAD", gate_relative) != gate_raw:
+        raise ContractMappingError("first Gate state ledger is not committed at HEAD")
+    activation_commit = _find_ledger_activation_commit(root, activation_relative, activation_raw)
+    if activation_commit is None:
+        raise ContractMappingError("first Gate activation has no first-parent activation commit")
+    activation_commit_id, activation_committed_at = activation_commit
+    parent = _git_output(root, "rev-parse", f"{activation_commit_id}^")
+    if parent is None or parent.decode("ascii").strip() != activation["head"]:
+        raise ContractMappingError("first Gate activation baseline parent mismatch")
+    changed = _git_output(root, "diff-tree", "--no-commit-id", "--name-only", "-r", activation_commit_id)
+    expected_changed = {gate_relative, approval_relative, activation_relative}
+    if changed is None or set(changed.decode("utf-8").splitlines()) != expected_changed:
+        raise ContractMappingError("first Gate activation commit scope mismatch")
+
+    return {
+        "state": "GATE1_ACTIVE",
+        "selected_source": mapping.canonical_source,
+        "checkpoint_commit": activation["head"],
+        "transition_authorized": True,
+        "gate_1_started": True,
+        "gate_id": activation["gate_id"],
+        "approval_id": activation["approval_id"],
+        "approval_record_hash": ledger["approval_record_hash"],
+        "canonical_plan": canonical_relative,
+        "plan_sha256": mapping.canonical_sha256,
+        "active_scope": list(lv_order),
+        "owned_files": list(owned_files),
+        "activation_commit": activation_commit_id,
+        "activation_committed_at": activation_committed_at,
+        "ledger_path": gate_relative,
+    }
+
 def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
     source_errors = validate_mapping_sources(mapping)
     if source_errors:
         raise ContractMappingError("; ".join(source_errors))
 
-    root = mapping.canonical_source.parent
+    root = mapping.project_root
     gate_text = mapping.gate_state_path.read_text(encoding="utf-8") if mapping.gate_state_path.is_file() else ""
-    activation_path = root / "docs" / "harness" / "first-gate.activation.json"
-    if activation_path.is_file() and "FIRST_GATE_ACTIVE" in gate_text:
-        try:
-            activation = json.loads(activation_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise ContractMappingError("first Gate activation is malformed") from exc
-        required = {"project_id", "gate_id", "plan_sha256", "approval_id", "approval_record_hash", "branch", "head", "lv_order"}
-        if not required.issubset(activation) or activation.get("project_id") != mapping.project_id or activation.get("plan_sha256") != mapping.canonical_sha256:
-            raise ContractMappingError("first Gate activation binding mismatch")
-        return {"state": "GATE1_ACTIVE", "selected_source": mapping.canonical_source,
-                "checkpoint_commit": activation["head"], "transition_authorized": True,
-                "gate_1_started": True, "gate_id": activation["gate_id"],
-                "approval_id": activation["approval_id"], "approval_record_hash": activation["approval_record_hash"],
-                "canonical_plan": mapping.canonical_source.relative_to(root).as_posix(),
-                "plan_sha256": mapping.canonical_sha256, "active_scope": [activation["lv_order"][0]],
-                "owned_files": activation.get("owned_files", []), "activation_commit": activation.get("head"), "activation_committed_at": "bootstrap-activation", "ledger_path": "docs/GATE_STATE.md"}
+    first_gate_state = _evaluate_first_gate_activation(mapping, gate_text)
+    if first_gate_state is not None:
+        return first_gate_state
     approval_text = mapping.business_approval_path.read_text(encoding="utf-8") if mapping.business_approval_path.is_file() else ""
     closure_matches = re.findall(r"Gate closure:\s*`(OPEN|CLOSED)`", gate_text)
     exit_matches = re.findall(r"G0-LV3-8:\s*`(PASS|FAIL)`", gate_text)
