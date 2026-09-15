@@ -1,0 +1,19 @@
+{
+  "adoption_branch": "governance/shared-harness-isolation-v1.1",
+  "approval_captured_at_utc": "2026-09-15T12:59:50.404256+00:00",
+  "approval_scope": [
+    "repository_adoption",
+    "local_governance_commit"
+  ],
+  "approved_by": "USER_OWNER",
+  "approved_candidate_sha256": "f87504c5c742209ed8eb00429ae2abb5f5ec60ae68f8c8c3bba3e45ae6403f64",
+  "branch_base_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+  "document_id": "GCH-GOV-SHARED-HARNESS-ISOLATION",
+  "push_authorized": false,
+  "repository_document_path": "docs/governance/GCH-GOV-SHARED-HARNESS-ISOLATION_v1.1.md",
+  "repository_document_sha256": "9bbee1dcd63e52a14fa827c72bb6f987570afa490c01224b2dc1ba710b07fdc2",
+  "schema_version": "gch.governance.approval-record.v1",
+  "semantic_change_from_approved_candidate": "NONE; metadata/status and repository-adoption record only",
+  "status": "APPROVED_REPOSITORY_ADOPTION_LOCAL",
+  "version": "v1.1"
+}
