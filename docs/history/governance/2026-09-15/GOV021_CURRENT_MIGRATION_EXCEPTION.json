@@ -1,0 +1,114 @@
+{
+  "commits": [
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "2cffc58b4e80c1baf2d7b634b35a96bb94de1cce",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): consume first-gate activation canonically"
+    },
+    {
+      "change_class": "SHARED_HARNESS_STABILIZATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "b9461868e61d330dbb4de8d9f48ff205182a1bd4",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "feat(orchestration): stabilize Family task projection and native validation"
+    },
+    {
+      "change_class": "FINAL_STABLE_BASELINE",
+      "classification_status": "VERIFIED",
+      "commit_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+      "project_id": "GCH-EXEC-BACKEND/UPGRADE-002",
+      "subject": "feat(exec-backend): seal UPGRADE-002 final stable baseline"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "39619572cc9609d47ba861cbb5c75ab00d88b13b",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): stabilize TASK execution entry bridge"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "38f88f93de5286c27b1ac6c6b0470c4bb9d4954e",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): bridge TASK review canonical scope"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "2b13728bf848d8d6b9c3937cecc66747207371a4",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): support bootstrap directory writes"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "88dbd054f841a9873ddb020dd4515916a1f1495b",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): stabilize TASK recovery and Android bootstrap"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "55d001fa4d72c65cee29f03b21de11daad64a804",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): keep Android bootstrap fail closed"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "aaa0fb72b485d0ff110fd1776f9383db57410f61",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): accept directory owned scopes in fixed runner"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "60dde73d37294eae62f2ee4eedbfc6091c9ba3d0",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): adopt materialized partial recovery"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "07ac3a225edc035b6439005da279146e50d812fb",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): isolate recovery write epochs"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "df5e82b83a0b8cbeca3b0f76dda474293bbdb4e1",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): reissue failed recovery gateway request"
+    },
+    {
+      "change_class": "SHARED_HARNESS_REMEDIATION",
+      "classification_status": "VERIFIED",
+      "commit_sha": "73211fb5da2ac893b2f136b067658424f9992c80",
+      "project_id": "FAMILY_AI_ENGLISH_COACH",
+      "subject": "fix(orchestration): epoch recovery reads and lists"
+    }
+  ],
+  "evidence": {
+    "ancestor_chain_release_check_sha256": "5b08ef53c04dc9cf6cfdb669607e8a8c45904896440484f14c0f35b41c88aa0d",
+    "family_stabilization_closure_sha256": "af5f34789325e087814740c22c038167b0290eeeb9dabaf128b8e1f1e7d1a293",
+    "gov021_proposal_sha256": "3b868a8380579b4efac4add53524927bf8899ec415090fa91fac8abd62e78a82"
+  },
+  "family_shared_harness_commit_count": 12,
+  "family_shared_harness_stabilization": "PASS",
+  "local_main_at_verification": "73211fb5da2ac893b2f136b067658424f9992c80",
+  "origin_main_at_verification": "fc015712d94cc46916608ac2a956d1251562b464",
+  "pending_commit_count": 13,
+  "policy_document_id": "GCH-GOV-SHARED-HARNESS-ISOLATION",
+  "policy_version": "v1.1",
+  "preserve_existing_chain_no_rebase_reset": true,
+  "push_authorized": false,
+  "release_preparation": "PASS",
+  "schema_version": "gch.governance.gov021-migration-exception.v1",
+  "unknown_commit_count": 0,
+  "upgrade002_direct_source_drift_after_baseline": false,
+  "upgrade002_stable_baseline_commit_count": 1
+}
