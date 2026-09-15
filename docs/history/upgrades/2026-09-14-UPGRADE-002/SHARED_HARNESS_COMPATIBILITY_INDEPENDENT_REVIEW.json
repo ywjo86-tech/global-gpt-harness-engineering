@@ -1,0 +1,42 @@
+{
+  "schema_version": "gch.execution-backend.shared-harness-independent-review.v1",
+  "captured_at_utc": "2026-09-15T01:51:15.374347+00:00",
+  "verdict": "PASS",
+  "blocker_count": 0,
+  "major_count": 0,
+  "core_classification": "NO_CORE_AUTHORITY_CHANGE_WITH_EXTERNALLY_APPROVED_SHARED_HARNESS_COMPATIBILITY_CHANGE",
+  "checks": {
+    "adoption_record_pass": true,
+    "exact_adopted_hashes_match": true,
+    "status_scope_exact": true,
+    "projection_pass": true,
+    "gate_approval_not_bypassed": true,
+    "full_regression_equivalent_pass": true,
+    "graphify_equivalent_pass": true,
+    "provider_router_authority_preserved": true,
+    "stage_gate_authority_preserved": true,
+    "active_contract_still_old_authority": true,
+    "head_preserved": true
+  },
+  "hash_mismatches": [],
+  "authority_findings": {
+    "provider_router_meaning_changed": false,
+    "stage_gate_meaning_changed": false,
+    "gate_approval_authority_bypassed": false,
+    "task_lv_projection_is_sha_project_plan_bound": true,
+    "project_native_validation_is_profile_sealed_and_fail_closed": true,
+    "directory_scope_semantics_expand_authorized_paths_beyond_declared_directories": false,
+    "worker_review_completion_hard_stops_preserved": true
+  },
+  "transient_test_order_interference": {
+    "observed_once": "test_lv_review.LVReviewTest.test_review_rejects_owned_file_symlink_and_unsafe_result_without_artifacts",
+    "initial_filtered_status": "FAIL_once",
+    "raw_full_status": "PASS",
+    "related_module_suite_status": "PASS",
+    "single_test_status": "PASS",
+    "identical_filtered_rerun_status": "PASS",
+    "classification": "NON_REPRODUCIBLE_TEST_ORDER_INTERFERENCE",
+    "hidden_or_deleted": false
+  },
+  "provider_fallback_used": false
+}

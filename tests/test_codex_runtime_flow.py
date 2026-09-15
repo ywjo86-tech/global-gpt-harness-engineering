@@ -95,6 +95,27 @@ class CodexRuntimeFlowTest(unittest.TestCase):
             self.assertEqual(second["fanin_report"]["final_handoff_readiness"], "ready")
             self.assertTrue((run_root / "fanin" / "fanin_result.json").exists())
 
+    def test_engine_provider_executor_and_stage_gate_do_not_embed_cli_contract(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        forbidden_tokens = (
+            "CODEX_CLI_COMMAND",
+            "codex run",
+            "--prompt-file",
+            "--output-dir",
+            "--output-schema",
+            "--output-last-message",
+        )
+
+        for relative in (
+            "runtime/orchestrator/engine.py",
+            "runtime/orchestrator/provider_executor.py",
+            "runtime/orchestrator/stage_gate.py",
+        ):
+            with self.subTest(file=relative):
+                text = (repo / relative).read_text(encoding="utf-8")
+                for token in forbidden_tokens:
+                    self.assertNotIn(token, text)
+
 
 if __name__ == "__main__":
     unittest.main()

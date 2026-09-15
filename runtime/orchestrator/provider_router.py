@@ -24,7 +24,9 @@ class ProviderRouteDecision:
         return asdict(self)
 
 
-STATE_CHANGING_CAPABILITIES = frozenset({"filesystem_write", "shell", "test", "git"})
+STATE_CHANGING_CAPABILITIES = frozenset(
+    {"filesystem_write", "shell", "test", "git", "implementation", "integration"}
+)
 
 
 def route_provider(mode: str | None, required_capabilities: Iterable[str] | None) -> ProviderRouteDecision:

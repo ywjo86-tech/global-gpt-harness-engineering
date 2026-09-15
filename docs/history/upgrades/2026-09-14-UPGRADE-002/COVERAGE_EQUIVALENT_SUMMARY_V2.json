@@ -1,0 +1,55 @@
+{
+  "schema_version": "gch.execution-backend.coverage-equivalent-summary.v2",
+  "captured_at_utc": "2026-09-15T01:48:55.097634+00:00",
+  "raw_full": {
+    "run": 1250,
+    "failures": 3,
+    "skipped": 10,
+    "failure_class": "KNOWN_STALE_ASSERTIONS_ONLY",
+    "log": "full_regression_raw.log",
+    "sha256": "45cb22dbc210795ab920225d85b6426b14b613c3c77a25a22e8726263449897c"
+  },
+  "filtered_full_rerun": {
+    "run": 1247,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 10,
+    "successful": true,
+    "failure_ids": [],
+    "error_ids": [],
+    "log": "full_filtered_rerun.log",
+    "sha256": "e1d980815021785584e9c516c0a850811c6909ab80a1bcc52b18f0c2775c2843"
+  },
+  "graphify_filtered": {
+    "run": 56,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "successful": true,
+    "log": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/graphify_filtered.log"
+  },
+  "replacement_checks": {
+    "contract_loader_current_phase_inspect": true,
+    "current_phase": "IMPLEMENT",
+    "graphify_current_baseline_guard": true,
+    "graphify_poc_request_nonprotected": true,
+    "graphify_reasons": [
+      "protected_hash_mismatch:runtime/orchestrator/stage_gate.py",
+      "protected_hash_mismatch:runtime/orchestrator/provider_router.py"
+    ]
+  },
+  "graphify_equivalent_total": 58,
+  "full_equivalent_total": 1250,
+  "transient_order_interference": {
+    "observed_once": "test_lv_review.LVReviewTest.test_review_rejects_owned_file_symlink_and_unsafe_result_without_artifacts",
+    "initial_filtered_status": "FAIL_once",
+    "raw_full_status": "PASS",
+    "related_module_suite_status": "PASS",
+    "single_test_status": "PASS",
+    "identical_filtered_rerun_status": "PASS",
+    "classification": "NON_REPRODUCIBLE_TEST_ORDER_INTERFERENCE",
+    "hidden_or_deleted": false
+  },
+  "overall_pass": true,
+  "supersedes": "coverage_equivalent_summary.json"
+}

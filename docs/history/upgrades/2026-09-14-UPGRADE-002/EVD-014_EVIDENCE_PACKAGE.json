@@ -1,0 +1,132 @@
+{
+  "schema_version": "gch.execution-backend.final-evidence-package.v2",
+  "project_id": "GCH-EXEC-BACKEND",
+  "upgrade_sequence": "UPGRADE-002",
+  "task_id": "TASK-014",
+  "evidence_id": "EVD-014",
+  "captured_at_utc": "2026-09-15T01:55:49.368965+00:00",
+  "active_contract_sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a",
+  "semantic_body_sha256": "aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0",
+  "approved_design_sha256": "db4831deba577124a01c6f4fb83bd420e4c0a3ac71ee9331f4be17c4b0ef0492",
+  "design_reapproval_ref": "_workspace/execution-backend-contract/gch-exec-backend-design-correction-20260915/ID-EXEC-BACKEND-1.2_USER_REAPPROVAL.json",
+  "implementation_baseline": "fc015712d94cc46916608ac2a956d1251562b464",
+  "current_head": "fc015712d94cc46916608ac2a956d1251562b464",
+  "branch": "main",
+  "gate_history": {
+    "GATE-001": "GO",
+    "GATE-002": "GO",
+    "GATE-003": "GO",
+    "GATE-004": "GO",
+    "GATE-004_CURRENT_SOURCE_REBIND_V2": "GO",
+    "GATE-005": "GO"
+  },
+  "test_results": {
+    "TEST-017": "PASS",
+    "TEST-018": "PASS"
+  },
+  "question_identity": true,
+  "final_questions_yes": 10,
+  "core_change_classification": "SEMANTICS_PRESERVING_CONTROLLED_CHANGE",
+  "controlled_change_refs": [
+    "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_CONTROLLED_CHANGE.json",
+    "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/GATE004_CURRENT_SOURCE_REBIND_V2.json"
+  ],
+  "provider_router_authority_preserved": true,
+  "stage_gate_authority_preserved": true,
+  "nvidia_to_codex_auto_fallback": false,
+  "protected_product_core_mutation_count": 0,
+  "unexpected_source_drift": [],
+  "evidence": {
+    "EVD-001": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-task015-20260915T003023/preflight.json",
+      "exists": true,
+      "sha256": "6ccef2a835660a24d8bb03bf5628fa5663fb2da1f545ad7f1f479195484239b0"
+    },
+    "EVD-002": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-implement-20260915/gate002_evidence.json",
+      "exists": true,
+      "sha256": "3cb1fab8e1743ff2296b2f5015c136ae1653ba2be326befef5341e2674347fca"
+    },
+    "EVD-003": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-implement-20260915/gate002_evidence.json",
+      "exists": true,
+      "sha256": "3cb1fab8e1743ff2296b2f5015c136ae1653ba2be326befef5341e2674347fca"
+    },
+    "EVD-004": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/task007-rerun/output/result.json",
+      "exists": true,
+      "sha256": "ebcf0b28f50b34f8b8d2a9ac98a7ffb576346f159e6aba5c3af26e1cd225ecb4"
+    },
+    "EVD-005": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/task008-rerun/output/result.json",
+      "exists": true,
+      "sha256": "a417fd4ac8c28652216a6e74c65e76886db14397a54efc76da343a57324f45d3"
+    },
+    "EVD-006": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/task008-fallback-rerun/output/codex_launcher.log",
+      "exists": true,
+      "sha256": "d2b7e21e3416ab3ea87280780c3bd4339d0dd1fca9130dcf744b2b0319d67925"
+    },
+    "EVD-007": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/task009_provider_separation_evidence.json",
+      "exists": true,
+      "sha256": "a1f908e641814e1ceb57f16be0efdb66761b2d53fa560ba705504eb91a8e2a46"
+    },
+    "EVD-008": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/task010-integration/task010_result_flow_evidence.json",
+      "exists": true,
+      "sha256": "0538bea963fb7a9a96de4cae28cc30a8050fa2b2a4b5e6a458445911e5838485"
+    },
+    "EVD-009": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_INDEPENDENT_REVIEW.json",
+      "exists": true,
+      "sha256": "bcb2c66d6937131d61bcdb05bd2debb1e4d081766280c15b41d8668c9440dc4d"
+    },
+    "EVD-010": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/coverage_equivalent_summary_v2.json",
+      "exists": true,
+      "sha256": "bb94e5ddc232e432a23f5caba6d38f29f85cf68cbef3814d790bb706200a946d"
+    },
+    "EVD-011": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/coverage_equivalent_summary_v2.json",
+      "exists": true,
+      "sha256": "bb94e5ddc232e432a23f5caba6d38f29f85cf68cbef3814d790bb706200a946d"
+    },
+    "EVD-012": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_CONTROLLED_CHANGE.json",
+      "exists": true,
+      "sha256": "0c85cf2c43b21b3f945f8101a71b55bb60d274f494456e35ea5bcc31d89fd9ac"
+    },
+    "EVD-013": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-gate004-20260915/task012_test016_evidence.json",
+      "exists": true,
+      "sha256": "6dee04c447c752e9aa5842c1f6e569e6dce49e4c1b5e9dc56fd9d15468fd2a59"
+    },
+    "EVD-014": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/evidence_package.json",
+      "exists": true,
+      "sha256": null,
+      "self_reference": true
+    },
+    "EVD-015": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/final_validation_questions.json",
+      "exists": true,
+      "sha256": "05c34bc66a8ef522910dc7a24f8b00d40f037c1bdf09b8471f6853b559b1f19b"
+    },
+    "EVD-016": {
+      "ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/entry_gate_decision.json",
+      "exists": true,
+      "sha256": "a12acb3eef3eeb390dc799f801feaefec3d3d497e3856614f640bf8b8a682c2a"
+    }
+  },
+  "all_evidence_references_resolve": true,
+  "final_gate_decision": "GO",
+  "blocking_reasons": [],
+  "conditional_go_used": false,
+  "source_binding_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/test018_final_source_binding.json",
+  "test017_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/test017_final_gate_evaluation.json",
+  "questions_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/final_validation_questions.json",
+  "entry_gate_decision_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/entry_gate_decision.json",
+  "contract_activation_ref": "_workspace/execution-backend-contract/gch-exec-backend-contract-activation-20260915/CONTRACT_REPROJECTION_ACTIVATION.json",
+  "self_reference_policy": "EVD-014 is this package; its own SHA is intentionally omitted to avoid circular self-binding."
+}

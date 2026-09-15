@@ -1,0 +1,43 @@
+{
+  "schema_version": "gch.execution-backend.test017-final-gate-evaluation.v2",
+  "captured_at_utc": "2026-09-15T01:55:49.368965+00:00",
+  "status": "PASS",
+  "checks": {
+    "unit_evaluator_suite_8_of_8_pass": true,
+    "exact_q01_q10_identity_active_vs_approved_design": true,
+    "question_count_exact_10": true,
+    "question_ids_exact_order": true,
+    "all_answers_yes": true,
+    "all_question_evidence_resolve": true,
+    "test018_final_pass": true,
+    "entry_gate_evaluator_go": true
+  },
+  "evaluator_result": {
+    "record_type": "ExecutionBackendEntryGateRecord",
+    "contract_version": "IF-109.v1",
+    "decision": "GO",
+    "gate_status": "GO",
+    "mandatory_predicates": {
+      "codex_cli_detected": true,
+      "codex_cli_version_recorded": true,
+      "supported_invocation_verified": true,
+      "launcher_compatibility_pass": true,
+      "read_only_backend_diagnostic_smoke_pass": true,
+      "isolated_state_changing_smoke_pass": true,
+      "codex_to_manual_fallback_pass": true,
+      "provider_separation_smoke_pass": true,
+      "nvidia_to_codex_auto_fallback_absent": true,
+      "provider_router_authority_preserved": true,
+      "full_plan_core_regression_pass": true,
+      "graphify_phase2_regression_pass": true
+    },
+    "final_question_count": 10,
+    "final_questions_yes": true,
+    "core_change_classification": "SEMANTICS_PRESERVING_CONTROLLED_CHANGE",
+    "known_issue_closure_bound": true,
+    "blocking_reasons": []
+  },
+  "question_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/final_validation_questions.json",
+  "input_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/entry_gate_input.json",
+  "test018_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/test018_final_source_binding.json"
+}

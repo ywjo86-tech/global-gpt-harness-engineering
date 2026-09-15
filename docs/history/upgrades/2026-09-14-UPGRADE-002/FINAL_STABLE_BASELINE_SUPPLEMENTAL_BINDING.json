@@ -1,0 +1,148 @@
+{
+  "schema_version": "gch.execution-backend.final-stable-baseline-supplemental-binding.v1",
+  "project_id": "GCH-EXEC-BACKEND",
+  "upgrade_sequence": "UPGRADE-002",
+  "captured_at_utc": "2026-09-15T03:10:50.494415+00:00",
+  "decision": "PASS",
+  "purpose": "Preserve historical GATE-005 GO/Test-018 snapshot while excluding later externally committed Family/shared-Harness changes from the UPGRADE-002 commit.",
+  "historical_gate005_ref": "docs/history/upgrades/2026-09-14-UPGRADE-002/GATE005_FINAL_RECORD_V2.json",
+  "historical_gate005_sha256": "337cd73733b8ad34c233447a3d9f484b6d81f1db6d2543dba288e296361abeb6",
+  "historical_test018_ref": "docs/history/upgrades/2026-09-14-UPGRADE-002/TEST-018_FINAL_SOURCE_BINDING.json",
+  "historical_test018_sha256": "e877ae6c4fcb32d91acc1f7c1610e8d57c84a674563c7a0bc4c57b72c6d266ca",
+  "active_contract_sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a",
+  "parent_head": "b9461868e61d330dbb4de8d9f48ff205182a1bd4",
+  "origin_main_at_seal_precheck": "fc015712d94cc46916608ac2a956d1251562b464",
+  "external_parent_commits": [
+    {
+      "sha": "2cffc58",
+      "subject": "fix(orchestration): consume first-gate activation canonically"
+    },
+    {
+      "sha": "b946186",
+      "subject": "feat(orchestration): stabilize Family task projection and native validation"
+    }
+  ],
+  "direct_upgrade002_binding": [
+    {
+      "path": "docs/harness/execution-backend-contract.md",
+      "test018_sha256": "0b73b1064c734298c842f48ee9aae03fbc7c55c99b2a6bc00caa0a2daada4f5d",
+      "current_sha256": "0b73b1064c734298c842f48ee9aae03fbc7c55c99b2a6bc00caa0a2daada4f5d",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/codex_adapter.py",
+      "test018_sha256": "d16b35c2c67293502b43dce4d6017e9211d2d6a48cbfb3430a08623626424f16",
+      "current_sha256": "d16b35c2c67293502b43dce4d6017e9211d2d6a48cbfb3430a08623626424f16",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/codex_launcher.py",
+      "test018_sha256": "e89db2c49d9bf3bd528a508a918381008d5fd64363293aafe1ed85d1c4f6ba86",
+      "current_sha256": "e89db2c49d9bf3bd528a508a918381008d5fd64363293aafe1ed85d1c4f6ba86",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/engine.py",
+      "test018_sha256": "eb29d86de65de5eb224477c3631ebd05e064dbfacecfb1dce6e5726fa2024c1a",
+      "current_sha256": "eb29d86de65de5eb224477c3631ebd05e064dbfacecfb1dce6e5726fa2024c1a",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/execution_backend_entry_gate.py",
+      "test018_sha256": "f348edb95859714e92db2b98190bea9de24ca651e5cf06ae3fb56629a3763644",
+      "current_sha256": "f348edb95859714e92db2b98190bea9de24ca651e5cf06ae3fb56629a3763644",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/execution_backend_preflight.py",
+      "test018_sha256": "cf4edcce9911fc9b12591e34bb723943eeed90c9fe1d306489c76a6543ad3a5f",
+      "current_sha256": "cf4edcce9911fc9b12591e34bb723943eeed90c9fe1d306489c76a6543ad3a5f",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/provider_executor.py",
+      "test018_sha256": "b11702ee89a4f6a6e10d76df0143de5c9218c8bc8511df52ac2d0494f9d35658",
+      "current_sha256": "b11702ee89a4f6a6e10d76df0143de5c9218c8bc8511df52ac2d0494f9d35658",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/provider_router.py",
+      "test018_sha256": "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7",
+      "current_sha256": "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7",
+      "match": true
+    },
+    {
+      "path": "runtime/orchestrator/stage_gate.py",
+      "test018_sha256": "402be1bc852dc7936c54caba588e13581f544a3ff915acb3582b6059df5a05d6",
+      "current_sha256": "402be1bc852dc7936c54caba588e13581f544a3ff915acb3582b6059df5a05d6",
+      "match": true
+    },
+    {
+      "path": "tests/test_codex_adapter_manual_mode.py",
+      "test018_sha256": "e44ce224adf2a7c490f90fa5a62460399be13707771f0edf238dbfc39ed47223",
+      "current_sha256": "e44ce224adf2a7c490f90fa5a62460399be13707771f0edf238dbfc39ed47223",
+      "match": true
+    },
+    {
+      "path": "tests/test_codex_launcher_contract.py",
+      "test018_sha256": "cd9c2c89344e87dd93472255fb2eb513b878c6c9427b6af63d0dc56ab68b4b49",
+      "current_sha256": "cd9c2c89344e87dd93472255fb2eb513b878c6c9427b6af63d0dc56ab68b4b49",
+      "match": true
+    },
+    {
+      "path": "tests/test_codex_runtime_flow.py",
+      "test018_sha256": "424eba790dd43b59315b605fc3459bac80afe13e010fd858f3dad6d04e6997bb",
+      "current_sha256": "424eba790dd43b59315b605fc3459bac80afe13e010fd858f3dad6d04e6997bb",
+      "match": true
+    },
+    {
+      "path": "tests/test_execution_backend_entry_gate.py",
+      "test018_sha256": "fdce896c177f59b7db56eba5b58598847c7407f7843f8a8cd50e1481c7201130",
+      "current_sha256": "fdce896c177f59b7db56eba5b58598847c7407f7843f8a8cd50e1481c7201130",
+      "match": true
+    },
+    {
+      "path": "tests/test_execution_backend_preflight.py",
+      "test018_sha256": "dd59754e7e26579b3188beb066775eda312c417e71c9de1dc909fe210c895c6e",
+      "current_sha256": "dd59754e7e26579b3188beb066775eda312c417e71c9de1dc909fe210c895c6e",
+      "match": true
+    },
+    {
+      "path": "tests/test_hybrid_runtime_flow.py",
+      "test018_sha256": "a7e1157074ae403ea97a0e8cfb5f90e40ec6d5336bb3defb822efd42e30a7f65",
+      "current_sha256": "a7e1157074ae403ea97a0e8cfb5f90e40ec6d5336bb3defb822efd42e30a7f65",
+      "match": true
+    },
+    {
+      "path": "tests/test_provider_router.py",
+      "test018_sha256": "7171c61685bbcc6bfaf80c7ddbf578d6bc5a64d8f0d31794c141e58d51b667ca",
+      "current_sha256": "7171c61685bbcc6bfaf80c7ddbf578d6bc5a64d8f0d31794c141e58d51b667ca",
+      "match": true
+    }
+  ],
+  "post_gate_external_change": {
+    "path": "runtime/orchestrator/contract_adapter.py",
+    "test018_sha256": "e8b062bdc19d428979185730f66d057f7f0db68c6322698a8721484c801d12ca",
+    "current_sha256": "cd28ab7467349dc9d714b2b8510b30c92af2e49ee7a5d6423f8905abf6bb01a4",
+    "external_commits": [
+      "2cffc58",
+      "b946186"
+    ],
+    "classification": "POST_GATE_EXTERNAL_SHARED_HARNESS_CHANGE",
+    "included_in_upgrade002_commit": false
+  },
+  "checks": {
+    "gate005_historical_go": true,
+    "test017_historical_pass": true,
+    "test018_historical_pass": true,
+    "direct_upgrade002_paths_match_test018": true,
+    "family_commits_touch_zero_direct_upgrade002_paths": true,
+    "only_current_test018_mismatch_is_post_gate_external_contract_adapter": true,
+    "active_contract_matches_approved_r2": true,
+    "active_contract_sha_matches_gate005": true
+  },
+  "gate_rerun_performed": false,
+  "gate_decision_modified": false,
+  "test018_modified": false,
+  "policy": "The UPGRADE-002 Stable Baseline commit binds only UPGRADE-002-owned files to historical TEST-018. Post-Gate external parent commits are retained as parent history but are not attributed to UPGRADE-002 and do not invalidate the historical final Gate when they touch no UPGRADE-002-owned file."
+}

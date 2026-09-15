@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-15 - GCH-EXEC-BACKEND UPGRADE-002 Final Stable Baseline
+
+- Completed Execution Backend Contract Finalization under the approved Full Plan HYBRID contract.
+- Activated final reprojection Contract SHA-256: `b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a`.
+- Final semantic-body SHA-256: `aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0`.
+- Approved design authority: `ID-EXEC-BACKEND-1.2`.
+- GATE-001/002/003/004/005: `GO`; TEST-017/018: `PASS`; final Q01~Q10: `10/10 YES`.
+- Full current regression: `1250/1250 coverage-equivalent PASS / 10 skipped`; Graphify: `58/58 coverage-equivalent PASS`.
+- Shared Harness compatibility changes were adopted as semantics-preserving Controlled Change with Provider Router and Stage Gate authority preserved.
+- NVIDIA→Codex automatic fallback remained absent; protected product/core mutation count remained `0`.
+- Runtime-generated transient outputs are excluded from the Stable Baseline Git commit.
+- Next lifecycle boundary: PHASE 3 actual Full Plan execution under a separate Gate/approval flow.
+
+## 2026-09-15 - GCH-EXEC-BACKEND UPGRADE-002 Contract Activation
+
+- Activated approved Full Plan execution contract for GCH-EXEC-BACKEND.
+- Archived previous canonical contract at `docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_DEVELOPMENT_PLAN.txt`.
+- Previous/archived contract SHA-256: `3231bbdf5fa70798ae9f3ace037448af172ec1d7b26f49d25b4d9258d25dd5f2`.
+- Approved/activated Execution Backend contract SHA-256 at activation: `2e1ca0a9c33f580a23e246aa9ea26bb229b4223e2010969d9f98ef1cf71d28f4`.
+- Runtime Preflight scope is bounded to read-only activation handoff; Full Plan HYBRID execution, contract tasks, workers, smoke, and regression were not started.
+
 ## 2026-09-14 - GCH-GRAPHIFY UPGRADE-001 PHASE 2 Complete
 
 - Completed Graphify Current Repository Intelligence PoC under the approved Full Plan HYBRID contract.

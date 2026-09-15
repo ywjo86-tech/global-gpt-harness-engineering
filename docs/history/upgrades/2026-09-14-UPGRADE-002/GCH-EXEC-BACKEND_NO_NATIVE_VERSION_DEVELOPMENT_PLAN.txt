@@ -1,0 +1,2310 @@
+# FULL PLAN EXECUTION CONTRACT
+
+TARGET_RUNTIME_FILE: docs/DEVELOPMENT_PLAN.txt
+CONTRACT_TYPE: FULL_PLAN_EXECUTION_CONTRACT
+CONTRACT_STATUS: READY_FOR_CODEX
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-14
+APPROVED_CONTRACT_ARTIFACT: GCH-GRAPHIFY_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt
+DIAGNOSED_CONTRACT_BODY_SHA256: a3e15e375ef22d2dedd4c0a6ae689439f61edae53d0e3f39bd38e52120a448d6
+FINAL_CONTRACT_BODY_SHA256: a3e15e375ef22d2dedd4c0a6ae689439f61edae53d0e3f39bd38e52120a448d6
+
+<!-- SEMANTIC_BODY_BEGIN -->
+# EC-00 CONTRACT IDENTITY
+
+PROJECT_NAME: Global GPT Harness Engineering — Graphify Current Repository Intelligence PoC
+PROJECT_ID: GCH-GRAPHIFY
+PROJECT_KEY: GCH-GRAPHIFY
+PROJECT_TYPE: EXISTING
+PROJECT_LIFECYCLE_MODE: UPGRADE
+TARGET_PROJECT_ROOT: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering
+CURRENT_VERSION: N/A — verified repository has no native project version scheme
+TARGET_VERSION: N/A — this plan does not introduce a native project version scheme
+CURRENT_VERSION_FILENAME_TOKEN: NO_NATIVE_VERSION
+TARGET_VERSION_FILENAME_TOKEN: NO_NATIVE_VERSION
+UPGRADE_SEQUENCE: UPGRADE-001
+
+SOURCE_IMPLEMENTATION_DESIGN_ARTIFACT: GCH-GRAPHIFY_APPROVED_IMPLEMENTATION_DESIGN.md
+SOURCE_IMPLEMENTATION_DESIGN_VERSION: ID-GRAPHIFY-0.10
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_VERSION: ID-GRAPHIFY-0.10
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_DATE: 2026-09-14
+SOURCE_IMPLEMENTATION_DESIGN_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_HANDOFF_READINESS: READY
+
+TARGET_REPOSITORY: ywjo86-tech/global-gpt-harness-engineering
+BASELINE_REF: FULL_PLAN_STABLE_BASELINE @ 958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37
+CURRENT_MAIN_HEAD: 25428e9bf1991ee26957bd84c39a3505b47a667a
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE: HYBRID
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER
+PLANNER_PROVIDER_SELECTION: PROHIBITED
+
+NVIDIA_STATE_CHANGING_EXECUTION: PROHIBITED
+NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED
+CODEX_TO_MANUAL_FALLBACK: PRESERVE_EXISTING
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+DYNAMIC_ROUTING_EXPANSION: PROHIBITED
+BENCHMARK_ROUTER: OUT_OF_SCOPE
+COST_OPTIMIZER: OUT_OF_SCOPE
+AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE
+
+FILENAME_VERSION_TOKEN_RULE: authoritative N/A/no-native-version fields serialize as NO_NATIVE_VERSION for filenames only; lifecycle semantics remain unchanged.
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-00 -----
+# ID-00 Document Control
+
+**PROJECT_NAME:** Global GPT Harness Engineering — Graphify Current Repository Intelligence PoC  
+**PROJECT_ID:** GCH-GRAPHIFY  
+**PROJECT_KEY:** GCH-GRAPHIFY  
+**DOCUMENT_TYPE:** APPROVED_IMPLEMENTATION_DESIGN
+
+**DESIGN_VERSION:** ID-GRAPHIFY-0.10  
+**DESIGN_STATUS:** APPROVED  
+**APPROVAL_STATUS:** APPROVED  
+**CREATED_DATE:** 2026-09-14  
+**LAST_UPDATED_DATE:** 2026-09-14
+
+**REVISION_REASON:** Bounded execution-approval revalidation repair: remove stale authority references, repair duplicate Fan-In stable ID, and define filename-safe version serialization without changing approved lifecycle version semantics.
+**PREVIOUS_APPROVED_DESIGN:** ID-GRAPHIFY-0.9 — APPROVED / remains current authority until explicit approval of this successor
+**PREVIOUS_APPROVED_PLAN:** DP-GRAPHIFY-1.2 — HISTORICAL / SUPERSEDED_FOR_EXECUTION_METADATA
+
+**PARENT_AUTHORITY:** Global GPT Harness Engineering Final Approved Master Roadmap V2.2  
+**PARENT_VERSION:** V2.2 FINAL  
+**MASTER_ROADMAP_PHASE:** PHASE 2 — Graphify PoC
+
+**APPROVED_PLAN_VERSION:** DP-GRAPHIFY-1.3  
+**APPROVED_PLAN_APPROVED_VERSION:** DP-GRAPHIFY-1.3  
+**APPROVED_PLAN_APPROVED_DATE:** 2026-09-14  
+**APPROVED_PLAN_SOURCE_REF:** `GCH-GRAPHIFY_APPROVED_DEVELOPMENT_PLAN.md`  
+**APPROVED_PLAN_SHA256:** `8aea9afc7eb35681c5984ff8f5d6ec096aec9967fafc93c8edaab53afd8139d6`
+
+**REQUIREMENTS_BASELINE_VERSION:** RA-GRAPHIFY-0.5  
+**REQUIREMENTS_BASELINE_STATUS:** APPROVED  
+**REQUIREMENTS_BASELINE_APPROVED_DATE:** 2026-09-14  
+**REQUIREMENTS_BASELINE_SOURCE_REF:** `GCH-GRAPHIFY_RA-GRAPHIFY-0.5_REQUIREMENTS_ANALYSIS.md`
+
+## Project Identity / Lifecycle / Version Binding
+
+```text
+PROJECT_NAME: Global GPT Harness Engineering — Graphify Current Repository Intelligence PoC
+PROJECT_ID: GCH-GRAPHIFY
+PROJECT_KEY: GCH-GRAPHIFY
+
+PROJECT_TYPE: EXISTING
+PROJECT_LIFECYCLE_MODE: UPGRADE
+
+TARGET_PROJECT_ROOT: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering
+
+CURRENT_VERSION: N/A — verified repository has no native project version scheme
+TARGET_VERSION: N/A — this plan does not introduce a native project version scheme
+UPGRADE_SEQUENCE: UPGRADE-001
+```
+
+**IDENTITY_LIFECYCLE_CONSISTENCY:** PASS — `PROJECT_TYPE=EXISTING` + `PROJECT_LIFECYCLE_MODE=UPGRADE`  
+**TARGET_PROJECT_ROOT_BINDING:** EXPLICIT / NOT INFERRED FROM TARGET_REPOSITORY  
+**NATIVE_VERSION_SCHEME:** NONE / MUST NOT BE INVENTED
+
+## Filename Serialization Binding
+
+The authoritative lifecycle version fields remain unchanged:
+
+```text
+CURRENT_VERSION: N/A — verified repository has no native project version scheme
+TARGET_VERSION: N/A — this plan does not introduce a native project version scheme
+```
+
+For filenames only, the following lossless serialization mapping is approved by this Implementation Design:
+
+```text
+CURRENT_VERSION_FILENAME_TOKEN: NO_NATIVE_VERSION
+TARGET_VERSION_FILENAME_TOKEN: NO_NATIVE_VERSION
+
+FILENAME_VERSION_TOKEN_RULE:
+  if authoritative version field semantically equals N/A because no native project
+  version scheme exists, serialize that field as the literal token NO_NATIVE_VERSION
+  when constructing filenames only.
+```
+
+Constraints:
+- this mapping does not create a native version scheme;
+- it does not change `CURRENT_VERSION` or `TARGET_VERSION`;
+- it is not used for requirement, lifecycle, upgrade, repository, or runtime semantic comparison;
+- reverse interpretation is deterministic: `NO_NATIVE_VERSION` → authoritative `N/A / no native version scheme`;
+- `/`, path separators, whitespace-sensitive prose, or descriptive lifecycle text are never inserted directly into artifact filenames.
+
+## Full Plan HYBRID Binding
+
+```text
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE: HYBRID
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER
+PLANNER_PROVIDER_SELECTION: PROHIBITED
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+```
+
+Provider-selection semantics:
+- Implementation tasks declare only provider-neutral `Required Capabilities`.
+- No task assigns `Provider: NVIDIA`, `Provider: Codex`, or another concrete provider.
+- state-changing capabilities override read-only eligibility.
+- NVIDIA state-changing execution is prohibited.
+- NVIDIA → Codex automatic fallback is prohibited.
+- existing Codex → manual fallback semantics are preserved.
+- no additional provider, benchmark router, cost optimizer, or automatic multi-model routing expansion is introduced.
+
+## Repository / Baseline Binding
+
+**TARGET_REPOSITORY:** `ywjo86-tech/global-gpt-harness-engineering`  
+**TARGET_PROJECT_ROOT:** `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+**HISTORICAL_PLANNING_REF:** `task-orch-03-worker-authority @ ee522523aae573a12194331a9f843f62db6994f3`  
+**FULL_PLAN_STABLE_BASELINE_REF:** `958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37`  
+**CURRENT_SOURCE_BASELINE_REF:** `main-code-baseline @ 958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37`  
+**CURRENT_MAIN_HEAD:** `main @ 25428e9bf1991ee26957bd84c39a3505b47a667a`  
+**SOURCE_DRIFT_STATUS:** DETECTED_FROM_HISTORICAL_PLANNING_REF / REVALIDATED_AT_STABLE_BASELINE  
+**CURRENT_SOURCE_BASELINE:** REVERIFIED  
+**FULL_PLAN_STABLE_BASELINE:** VERIFIED / APPROVED / SEALED  
+**GRAPHIFY_POC_ENTRY:** CLOSED
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-00 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-02 -----
+# ID-02 Approved Development Plan Binding
+
+## Current Authority Order
+
+1. Explicit Current User Decision
+2. Global GPT Harness Engineering Final Approved Master Roadmap V2.2
+3. `RA-GRAPHIFY-0.5 — APPROVED`
+4. `DP-GRAPHIFY-1.3 — APPROVED`
+5. Verified Current Repository / Project State
+6. Verified Supporting Evidence
+7. Clearly Labeled Assumptions
+
+**AUTHORITATIVE_PLAN:** `DP-GRAPHIFY-1.3 — APPROVED`  
+**AUTHORITATIVE_PLAN_ARTIFACT:** `GCH-GRAPHIFY_APPROVED_DEVELOPMENT_PLAN.md`  
+**REQUIREMENTS_AUTHORITY:** `RA-GRAPHIFY-0.5 — APPROVED`  
+**PARENT_AUTHORITY:** Global GPT Harness Engineering Final Approved Master Roadmap V2.2
+
+## Mandatory Inherited Bindings
+
+| Field | Authoritative Value |
+|---|---|
+| PROJECT_NAME | Global GPT Harness Engineering — Graphify Current Repository Intelligence PoC |
+| PROJECT_ID | GCH-GRAPHIFY |
+| PROJECT_KEY | GCH-GRAPHIFY |
+| PROJECT_TYPE | EXISTING |
+| PROJECT_LIFECYCLE_MODE | UPGRADE |
+| TARGET_PROJECT_ROOT | `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering` |
+| CURRENT_VERSION | `N/A — verified repository has no native project version scheme` |
+| TARGET_VERSION | `N/A — this plan does not introduce a native project version scheme` |
+| UPGRADE_SEQUENCE | UPGRADE-001 |
+| TARGET_REPOSITORY | `ywjo86-tech/global-gpt-harness-engineering` |
+| FULL_PLAN_STABLE_BASELINE_REF | `958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37` |
+| EXECUTION_CONTRACT | GLOBAL_GPT_HARNESS_FULL_PLAN |
+| EXECUTION_MODE | HYBRID |
+| PROVIDER_SELECTION_AUTHORITY | PROVIDER_ROUTER |
+| PLANNER_PROVIDER_SELECTION | PROHIBITED |
+| UNAPPROVED_PROVIDER_EXPANSION | PROHIBITED |
+
+## Binding Integrity
+
+```text
+IDENTITY_INFERENCE_USED: NO
+ROOT_INFERENCE_USED: NO
+VERSION_INFERENCE_USED: NO
+PROJECT_TYPE_LIFECYCLE_CONSISTENCY: PASS
+TARGET_REPOSITORY_TARGET_ROOT_CONFLATION: NO
+FULL_PLAN_HYBRID_BINDING: PASS
+```
+
+`DP-GRAPHIFY-1.2` and earlier plans are historical and must not override the successor plan.
+
+## Preserved Planning Boundaries
+
+No approved Graphify WHAT is changed. The 50 approved requirements, Scope, Constraints, Deliverables, `GRAPHIFY_DECISION_CLOSED`, PHASE 3 handoff, Existing Inspection fallback, Backend Independence, Memory Independence, Source-of-Truth precedence and PHASE 6/7/8 isolation are preserved.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-02 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-27 -----
+# ID-27 Full Plan Handoff Readiness
+
+## Implementation-Design Handoff
+
+```text
+HANDOFF_READINESS: READY
+DESIGN_STATUS: APPROVED
+APPROVAL_STATUS: APPROVED
+DIAGNOSIS_STATUS: PASS
+```
+
+This file is the **sole current Approved Implementation Design authority** for the next project:
+
+`프로젝트 실행승인`
+
+The execution-approval workflow may use this artifact as the authoritative input for deterministic `implementation-design-to-full-plan-handoff`.
+
+## Execution-Approval Entry Contract
+
+This Approved Implementation Design exposes without inference:
+
+- complete Project Identity / Lifecycle / Version binding;
+- exact Target Project Root;
+- filename-safe version serialization tokens;
+- Full Plan HYBRID contract/mode/router authority;
+- 21/21 provider-neutral Required Capabilities;
+- unique Fan-In stable IDs;
+- 50/50 requirement traceability;
+- 20/20 Success Criteria coverage;
+- current source and Stable Baseline bindings;
+- Graphify safety/install permission boundaries;
+- dependency, validation, security, evidence, fan-out/fan-in, gate and recovery design.
+
+Execution Approval remains responsible for:
+- Full Plan Execution Contract Draft;
+- independent contract diagnosis;
+- explicit final execution approval;
+- post-diagnosis semantic-integrity check;
+- approved contract artifact and external full-file SHA-256 binding;
+- Codex execution handoff only after all gates pass.
+
+## Runtime Entry State
+
+```text
+FULL_PLAN_STABLE_BASELINE = VERIFIED
+CURRENT_SOURCE_BASELINE = REVERIFIED
+GRAPHIFY_VERSION = NOT_YET_QUALIFIED_AND_PINNED
+DANGEROUS_WORK_INSTALL_APPROVAL = NOT_GRANTED
+GRAPHIFY_POC_ENTRY = CLOSED
+READY_FOR_GRAPHIFY_INSTALLATION = NO
+```
+
+Implementation Design approval does not alter those runtime entry conditions.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-27 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-28 -----
+# ID-28 Final Baseline Declaration
+
+```text
+DESIGN_VERSION: ID-GRAPHIFY-0.10
+DESIGN_STATUS: APPROVED
+APPROVAL_STATUS: APPROVED
+USER_APPROVAL: GRANTED
+USER_APPROVED_DATE: 2026-09-14
+
+PROJECT_NAME: Global GPT Harness Engineering — Graphify Current Repository Intelligence PoC
+PROJECT_ID: GCH-GRAPHIFY
+PROJECT_KEY: GCH-GRAPHIFY
+PROJECT_TYPE: EXISTING
+PROJECT_LIFECYCLE_MODE: UPGRADE
+TARGET_PROJECT_ROOT: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering
+
+CURRENT_VERSION: N/A — verified repository has no native project version scheme
+TARGET_VERSION: N/A — this plan does not introduce a native project version scheme
+CURRENT_VERSION_FILENAME_TOKEN: NO_NATIVE_VERSION
+TARGET_VERSION_FILENAME_TOKEN: NO_NATIVE_VERSION
+FILENAME_VERSION_TOKEN_RULE: filename-only serialization; does not alter lifecycle semantics
+
+UPGRADE_SEQUENCE: UPGRADE-001
+
+PARENT_AUTHORITY: Master Roadmap V2.2 FINAL / APPROVED
+AUTHORITATIVE_REQUIREMENTS: RA-GRAPHIFY-0.5 — APPROVED
+AUTHORITATIVE_PLAN: DP-GRAPHIFY-1.3 — APPROVED
+MASTER_PHASE: PHASE 2 — Graphify PoC
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE: HYBRID
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER
+PLANNER_PROVIDER_SELECTION: PROHIBITED
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+
+TARGET_REPOSITORY: ywjo86-tech/global-gpt-harness-engineering
+FULL_PLAN_STABLE_BASELINE_REF: 958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37
+CURRENT_MAIN_HEAD: 25428e9bf1991ee26957bd84c39a3505b47a667a
+
+FULL_PLAN_STABLE_BASELINE: VERIFIED / APPROVED / SEALED
+CURRENT_SOURCE_BASELINE: REVERIFIED
+PLAN_REVISION_REQUIRED: NO
+
+AUTHORITY_REFERENCE_CURRENCY: PASS
+STABLE_FANIN_ID_UNIQUENESS: PASS
+FILENAME_VERSION_SERIALIZATION: PASS
+NATIVE_VERSION_SEMANTICS_PRESERVED: PASS
+
+TOTAL_REQUIREMENT_COVERAGE: 50/50
+SUCCESS_CRITERIA_COVERAGE: 20/20
+ACTIVE_TASK_COUNT: 21
+TASK_REQUIRED_CAPABILITY_COVERAGE: 21/21
+PROVIDER_HARDCODING: 0
+UNAPPROVED_ROUTING_EXPANSION: 0
+
+DIAGNOSIS_STATUS: PASS
+DIAGNOSIS_VERSION: ID-GRAPHIFY-0.10-DIAG-01
+DIAGNOSIS_READINESS: COMPLETE
+BLOCKER_COUNT: 0
+UNRESOLVED_MAJOR_COUNT: 0
+UNRESOLVED_MINOR_COUNT: 0
+
+GRAPHIFY_VERSION: NOT_YET_QUALIFIED_AND_PINNED
+DANGEROUS_WORK_INSTALL_APPROVAL: NOT_GRANTED
+GRAPHIFY_POC_ENTRY: CLOSED
+READY_FOR_GRAPHIFY_INSTALLATION: NO
+
+HANDOFF_READINESS: READY
+NEXT_PROJECT: 프로젝트 실행승인
+NEXT_MASTER_PHASE_AFTER_GRAPHIFY: PHASE 3 — Execution Backend Contract Finalization
+```
+
+This Approved Implementation Design does not authorize code implementation, package installation, PoC execution, test execution, deployment, merge, Git push, Codex execution or runtime evidence generation.
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-28 -----
+
+# EC-01 SCOPE
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-01 -----
+# ID-01 Executive Summary
+
+## Purpose
+
+본 successor revision은 승인된 `DP-GRAPHIFY-1.3`을 유일한 current Planning Authority로 상속한다.
+
+이번 revision은 기존 `ID-GRAPHIFY-0.8`의 Graphify 기술설계 의미를 변경하지 않는다. 변경 범위는 다음 두 가지로 제한한다.
+
+1. 승인 계획에 새로 authoritative하게 고정된 Project Identity / Lifecycle / Version / Full Plan HYBRID binding을 그대로 상속한다.
+2. Full Plan Execution Contract가 deterministic routing을 수행할 수 있도록 모든 active implementation TASK에 provider-neutral `Required Capabilities`를 명시한다.
+
+## Preserved Technical Design
+
+다음은 ID-GRAPHIFY-0.8에서 그대로 유지한다.
+
+- Graphify = optional Current Repository Intelligence Provider
+- Existing Repository Inspection fallback
+- `read_only_inspector.inspect_read_only()` source binding
+- Backend Independence
+- Project Memory Independence
+- Source-of-Truth precedence
+- local-first / code-only first PoC
+- exact version qualification before install
+- Dangerous Work install approval
+- Controlled Stable Baseline
+- `GRAPHIFY_DECISION_CLOSED`
+- PHASE 3 handoff
+- PHASE 6/7/8 isolation
+- Full Plan core authority/lifecycle/provider-router preservation
+- 50/50 approved requirement coverage
+
+## Successor-Plan Delta
+
+`DP-GRAPHIFY-1.3` additionally binds:
+
+- `PROJECT_KEY=GCH-GRAPHIFY`
+- `PROJECT_TYPE=EXISTING`
+- `PROJECT_LIFECYCLE_MODE=UPGRADE`
+- exact `TARGET_PROJECT_ROOT`
+- no-native-version semantics for CURRENT/TARGET_VERSION
+- `UPGRADE_SEQUENCE=UPGRADE-001`
+- Full Plan HYBRID execution metadata
+- `SC-020` for HYBRID binding preservation and no task-level provider selection
+
+These values are inherited, not inferred.
+
+## Current Entry State
+
+```text
+FULL_PLAN_STABLE_BASELINE = VERIFIED / APPROVED / SEALED
+CURRENT_SOURCE_BASELINE = REVERIFIED
+
+GRAPHIFY_VERSION = NOT_YET_QUALIFIED_AND_PINNED
+DANGEROUS_WORK_INSTALL_APPROVAL = NOT_GRANTED
+GRAPHIFY_POC_ENTRY = CLOSED
+READY_FOR_GRAPHIFY_INSTALLATION = NO
+```
+
+Implementation Design approval does not authorize installation or PoC execution.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-01 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-05 -----
+# ID-05 Approved Scope and Constraints
+
+## IN SCOPE
+
+- PHASE 2 Graphify Current Repository Intelligence PoC
+- predecessor `FULL_PLAN_STABLE_BASELINE` Entry Verification
+- package/version qualification
+- isolated environment
+- Repository Structure / Symbol / Dependency / Reference / Change Impact
+- path / neighbor
+- Accuracy / Performance / Freshness
+- false/missing edge / inferred/ambiguous relation
+- fallback / workspace mutation
+- local MCP applicability
+- Execution Backend Independence
+- Project Memory Independence
+- forbidden Memory dependency verification
+- Source of Truth precedence verification
+- AI Office Context Assembly responsibility boundary verification
+- GO / CONDITIONAL GO / NO-GO
+- PHASE 3 Handoff
+
+## OUT OF SCOPE / FORBIDDEN
+
+- PHASE 1 구현/안정화
+- PHASE 3 Contract 구현
+- PHASE 4 Full MCP
+- PHASE 5 AI Office
+- PHASE 6 Jarvis + Memory
+- Memory Adapter implementation
+- Obsidian Persistence
+- Notion Projection
+- Memory Capture/Summarization/Index/Retrieval
+- Context Compression
+- Memory Injection
+- New Session Continuity
+- Graphify → Obsidian direct integration
+- Graphify → Notion direct integration
+- Graphify runtime dependency on Memory Adapter
+- Graphify-owned Project Context Assembly
+- Graphify output overriding Current Repository / Approved Baseline
+- PHASE 7: Additional Providers / Dynamic or capability-, complexity-, token-, cost-, latency-aware routing / Provider Health Monitoring / Provider or Model Benchmark / Provider Scoring / Controlled Automatic Fallback / Budget Control / Provider-specific Runtime Policy
+- PHASE 8: Instruction Registry / Telemetry / Classification / Ablation / Evaluation / Reconstruction / Provider-specific Instruction Delta / Instruction Change Governance / Continuous Instruction Optimization / Self-maintaining Governance Runtime
+- shared HTTP MCP / external semantic ingestion
+- auto-installer / automatic Git Hook / automatic controlled-file mutation
+
+## Source of Truth Precedence
+
+```text
+1. Current Repository / Approved Baseline
+2. Current AI Office Run State
+3. Obsidian AI Memory
+4. Notion Human View
+```
+
+PHASE 2는 이 순위를 **검증**할 수 있으나 AI Office Context Assembly를 구현하지 않는다.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-05 -----
+
+# EC-02 REQUIREMENTS / ACCEPTANCE / SUCCESS / DELIVERABLES
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-04 -----
+# ID-04 Approved Requirements
+
+## Current Authoritative Requirement Set
+
+`RA-GRAPHIFY-0.5 — APPROVED` is the current authoritative requirements baseline. DP-GRAPHIFY-1.3 embeds the complete 50-requirement set used by this design.
+
+- Functional: `REQ-001 ~ REQ-016`
+- Non-Functional: `NFR-001 ~ NFR-012`
+- Security: `SEC-001 ~ SEC-006`
+- Operational: `OPS-001 ~ OPS-016`
+- Total: 50 requirements
+
+## Exact Authoritative Requirements and Acceptance Conditions
+
+| ID | Authoritative Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| REQ-001 | Harness는 Graphify를 `Repository Intelligence Provider` 후보로 취급해야 한다. | Governance/Orchestration Authority와 분리된다. | MUST |
+| REQ-002 | PoC는 repository structure, dependency, path, neighbor 및 change-impact 탐색을 평가해야 한다. | 실제 Harness scenario 비교 결과가 존재한다. | MUST |
+| REQ-003 | Graphify 결과는 investigation scope 축소 및 후보 source 탐색에 사용해야 한다. | Graphify 단독으로 Gate/Completion/Release 판정을 하지 않는다. | MUST |
+| REQ-004 | 주요 판단에 사용되는 inferred/ambiguous relation은 원본 source로 재검증해야 한다. | 주요 결론에 source validation이 존재한다. | MUST |
+| REQ-005 | find-skills와 Graphify 역할을 분리해야 한다. | find-skills=Capability Discovery, Graphify=Repository Intelligence로 정의된다. | MUST |
+| REQ-006 | Production 편입 전에 독립 PoC Gate를 통과해야 한다. | GO / CONDITIONAL GO / NO-GO 기록이 존재한다. | MUST |
+| REQ-007 | PoC는 Graphify Codex auto-installer에 의존하지 않아야 한다. | Harness-managed files가 자동 변경되지 않는다. | MUST |
+| REQ-008 | Graphify unavailable 시 기존 repository inspection으로 fallback해야 한다. | Graphify 장애 시 Harness investigation이 계속된다. | MUST |
+| REQ-009 | graph freshness를 판단할 수 있어야 한다. | Graph와 source revision의 관계를 검증할 수 있다. | MUST |
+| REQ-010 | 실제 Harness 또는 승인된 representative repo에서 기존 방식과 독립 비교해야 한다. | 실제 비교 결과가 존재한다. | MUST |
+| REQ-011 | Graphify PoC는 Full Plan Orchestration Stable Baseline 확정 이후에만 시작해야 한다. | Full Plan Stable Baseline 증거 없이 Graphify package installation 또는 PoC activation이 발생하지 않는다. | MUST |
+| REQ-012 | Graphify PoC의 GO/NO-GO 결정은 AI Office Harness Upgrade 구현 시작 전에 완료해야 한다. | Graphify decision record가 AI Office implementation entry보다 먼저 존재한다. | MUST |
+| REQ-013 | 후속 AI Office는 Graphify PoC 결과에 따라 Graphify Provider 또는 Existing Repository Inspection 경로를 선택할 수 있어야 한다. | Graphify hard dependency가 발생하지 않는다. | MUST |
+| REQ-014 | Graphify 프로젝트는 `FULL_PLAN_STABLE_BASELINE`을 선행 입력으로 소비해야 하며, Full Plan Stable Baseline 생성 책임을 Graphify 범위에 포함해서는 안 된다. | Graphify Plan에 Full Plan 구현 또는 Stable Baseline 생성 작업이 없다. | MUST |
+| REQ-015 | Graphify GO / CONDITIONAL GO / NO-GO 결과는 Master Roadmap의 다음 단계인 `Execution Backend Contract Finalization`에 공식 전달해야 한다. | 다음 공식 Handoff 대상이 PHASE 3 — Execution Backend Contract Finalization이다. | MUST |
+| REQ-016 | Graphify는 `Current Repository Intelligence Provider` 역할로 제한해야 한다. | Project Memory capture/store/retrieve/projection, Human View, Run State 책임이 Graphify scope에 포함되지 않는다. | MUST |
+| NFR-001 | Graphify 추가로 기존 Harness lifecycle 및 stage-gate semantics가 변경되어서는 안 된다. | Graphify 유무와 approval/authority semantics가 독립적이다. | MUST |
+| NFR-002 | Graphify dependency는 Harness core와 느슨하게 결합되어야 한다. | Graphify 제거 시 Harness core가 정상 동작한다. | MUST |
+| NFR-003 | Code-only PoC는 local-first extraction을 우선해야 한다. | 외부 LLM 없이 기본 PoC가 가능하다. | MUST |
+| NFR-004 | Graph query의 실효성을 기존 탐색과 비교할 수 있어야 한다. | 동일 task set 기준 결과가 존재한다. | SHOULD |
+| NFR-005 | Graphify-specific 정책은 provider boundary에 국한되어야 한다. | vendor 변경이 Harness 전체 규칙으로 확산되지 않는다. | SHOULD |
+| NFR-006 | Graph confidence/freshness 상태를 식별할 수 있어야 한다. | stale/inferred 상태를 판단할 수 있다. | MUST |
+| NFR-007 | AI Office는 Graphify를 mandatory hard dependency로 가져서는 안 된다. | Graphify disabled/NO-GO 상태에서도 후속 Core가 동작한다. | MUST |
+| NFR-008 | Graphify Repository Intelligence Provider는 Codex Backend, Full MCP Backend 또는 특정 Execution Backend 구현에 종속되어서는 안 된다. | 특정 Execution Backend의 존재 여부와 독립적으로 PoC 판단 가능하다. | MUST |
+| NFR-009 | Graphify 하위 Development Plan은 승인된 Master Roadmap PHASE 2 범위를 확대해서는 안 된다. | PHASE 2 범위 외 기능이 계획에 포함되지 않는다. | MUST |
+| NFR-010 | Graphify는 Project Continuity Memory와 독립적으로 동작해야 한다. | Memory Adapter / Obsidian / Notion이 없는 환경에서도 Graphify PoC와 Repository Intelligence 기능을 평가할 수 있다. | MUST |
+| NFR-011 | Repository Intelligence와 Project Memory의 결합 책임은 Graphify가 아니라 AI Office Context Assembly에 있어야 한다. | Graphify가 Memory Retrieval, Merge, Injection 또는 Project Context Assembly를 수행하지 않는다. | MUST |
+| NFR-012 | 현재 Repository 상태와 Approved Baseline은 과거 Project Memory보다 우선해야 한다. | Repository/Baseline과 Memory 충돌 시 Current Repository / Approved Baseline을 authoritative fact로 사용한다. | MUST |
+| SEC-001 | 최초 PoC는 local-first code-only 모드로 수행한다. | source code가 외부 semantic backend로 전송되지 않는다. | MUST |
+| SEC-002 | secrets/credentials/environment files를 graph corpus에서 제외한다. | exclusion policy가 테스트된다. | MUST |
+| SEC-003 | Graphify package installation은 Dangerous Work 정책을 따른다. | 설치 전 별도 위험 작업 승인이 존재한다. | MUST |
+| SEC-004 | 최초 PoC에서는 shared HTTP server를 사용하지 않는다. | local stdio 또는 equivalent local-only mode를 사용한다. | MUST |
+| SEC-005 | Graphify version을 exact pin한다. | 승인된 version record가 존재한다. | MUST |
+| SEC-006 | `AGENTS.md`, `.gitignore`, `.codex` 변경은 기존 Harness 승인 정책을 우회하지 못한다. | 기존 Caution/Dangerous Work policy를 유지한다. | MUST |
+| OPS-001 | Graphify PoC는 isolated branch/worktree 또는 disposable environment에서 수행한다. | 실패 시 production Harness에 잔여 변경이 없다. | MUST |
+| OPS-002 | 최초 PoC에서는 automatic Git Hook을 설치하지 않는다. | hook state가 유지된다. | MUST |
+| OPS-003 | Graphify generated artifact의 Git policy를 production 채택 전에 결정한다. | commit/ignore/local-only 정책이 승인된다. | MUST |
+| OPS-004 | stale graph 방지 절차가 있어야 한다. | refresh/freshness rule이 존재한다. | MUST |
+| OPS-005 | Graphify 실패 시 Existing Repository Inspection으로 fallback한다. | 장애 테스트가 PASS한다. | MUST |
+| OPS-006 | Graphify upgrade는 qualification gate를 거친다. | automatic upgrade가 수행되지 않는다. | MUST |
+| OPS-007 | PoC는 false edge, missing edge, stale state, mutation 및 운영 비용도 평가한다. | 부정적 evidence가 결과에 포함된다. | MUST |
+| OPS-008 | Graphify PoC 전 current Harness baseline을 재검증한다. | branch/commit/source state가 기록된다. | MUST |
+| OPS-009 | Graphify PoC Entry Gate는 Full Plan Stable Baseline을 요구한다. | predecessor baseline evidence 확인 후에만 Entry가 열린다. | MUST |
+| OPS-010 | Master Roadmap 실행 순서 `FULL_PLAN_STABLE → GRAPHIFY_POC → 후속 Master Phases`를 유지한다. | Graphify가 PHASE 1을 선행하거나 PHASE 3을 건너뛰지 않는다. | MUST |
+| OPS-011 | Full Plan freeze 이후 Graphify PoC 전에 material source drift가 발생하면 Stable Baseline을 재검증한다. | `SOURCE_DRIFT_DETECTED` 후 재검증 없이는 PoC를 시작하지 않는다. | MUST |
+| OPS-012 | Master Roadmap Phase Order를 보존한다. | Graphify 다음 공식 Phase가 Execution Backend Contract Finalization이다. | MUST |
+| OPS-013 | Full Plan Stable Baseline 변경은 Controlled Change 절차를 따른다. | Change Request → Impact Analysis → Controlled Change → Regression Test → Baseline Reconfirmation을 따른다. | MUST |
+| OPS-014 | Graphify PHASE 2 및 후보 production architecture에서는 `Graphify → Obsidian`, `Graphify → Notion` 직접 Dependency를 만들지 않는다. | 직접 호출·저장·동기화 경로가 존재하지 않는다. | MUST |
+| OPS-015 | Project Continuity Memory는 Master PHASE 6 책임이며 Graphify PHASE 2에서 Memory Adapter, Obsidian Persistence, Notion Projection, Memory Retrieval, Context Injection을 구현하지 않는다. | Graphify Development Plan 및 Implementation Design에 PHASE 6 Memory implementation task가 존재하지 않는다. | MUST |
+| OPS-016 | Repository Intelligence와 Project Memory 또는 Human View 정보가 충돌할 경우 Master Roadmap V2.2 Source of Truth 우선순위를 유지한다. | Graphify Decision Evidence가 lower-priority Memory source 때문에 current repository fact를 변경하지 않는다. | MUST |
+
+## Binding Result
+
+```text
+RA_BINDING_VIA_APPROVED_PLAN: YES
+FULL_REQUIREMENT_TEXT_BINDING: COMPLETE / DP-GRAPHIFY-1.3 EMBEDDED
+FULL_REQUIREMENT_TRACEABILITY: COMPLETE
+REQUIREMENT_ID_RENUMBERING: NONE
+SUCCESS_CRITERIA_COUNT: 20
+PLAN_REVISION_REQUIRED: NO
+```
+
+NFR-004 and NFR-005 are SHOULD requirements; they remain explicitly designed and validated rather than being dropped from the PoC.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-04 -----
+
+# EC-03 ARCHITECTURE / COMPONENTS / CHANGE TARGETS
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-06 -----
+# ID-06 Architecture Design
+
+## Target Architecture
+
+```text
+PHASE 1 OUTPUT
+FULL_PLAN_STABLE_BASELINE
+        │ read-only predecessor evidence
+        v
+┌─────────────────────────────────────────────┐
+│ PHASE 2 ENTRY VERIFICATION                  │
+│ predecessor/source/version/permission/guard │
+└───────────────────┬─────────────────────────┘
+                    │ OPEN
+                    v
+┌───────────────────────────────────────────────────────────┐
+│ CURRENT REPOSITORY INTELLIGENCE POC                       │
+│                                                           │
+│ Existing Repository Inspection ←→ Common Provider Contract│
+│ Graphify Candidate Provider                               │
+│            │                                              │
+│            ├─ Canonical Source Verification               │
+│            ├─ Freshness / Error Validation                │
+│            ├─ Backend Independence Verification           │
+│            ├─ Memory Independence Verification            │
+│            ├─ Source Precedence Verification              │
+│            └─ Context Assembly Boundary Verification      │
+└───────────────────┬───────────────────────────────────────┘
+                    v
+          GO | CONDITIONAL_GO | NO_GO
+                    v
+          PHASE 3 HANDOFF PACKAGE
+```
+
+Explicitly **outside** the Graphify runtime dependency graph:
+
+```text
+Project Continuity Memory
+├─ Memory Adapter
+├─ Obsidian
+└─ Notion
+
+AI Office Context Assembly
+= Repository Intelligence + Project Memory + Current Run State
+```
+
+## Architecture Decisions
+
+| ID | Decision | Status | Current binding |
+|---|---|---|---|
+| ARC-001 | Graphify는 sidecar optional Repository Intelligence Provider이며 authority가 아니다 | ACTIVE | preserved |
+| ARC-002 | PHASE 2는 external Stable Baseline evidence를 read-only 소비한다 | ACTIVE | REQ-014 |
+| ARC-003 | auto-installer/hook 없이 exact-pinned package만 별도 승인 후 사용한다 | ACTIVE | preserved |
+| ARC-004 | critical relation은 canonical source/freshness verification을 통과해야 한다 | ACTIVE | preserved |
+| ARC-005 | Graphify와 Existing Inspection은 동일 contract/scenario로 비교한다 | ACTIVE | preserved |
+| ARC-006 | first PoC는 code-only/local-first + local-only transport | ACTIVE | preserved |
+| ARC-007 | sealed deterministic decision policy | ACTIVE | preserved |
+| ARC-008 | direct AI Office handoff architecture | RETIRED | superseded |
+| ARC-009 | find-skills와 Graphify 역할 분리 | ACTIVE | preserved |
+| ARC-010 | PoC artifacts disposable/local-only; production policy 별도 | ACTIVE | preserved |
+| ARC-011 | official next handoff = PHASE 3 | ACTIVE | REQ-015 |
+| ARC-012 | Repository Intelligence와 Execution Backend contract 분리 | ACTIVE | NFR-008 |
+| ARC-013 | Full Plan Core change requires external Controlled Change | ACTIVE | OPS-013 |
+| ARC-014 | PHASE 2 scope firewall | ACTIVE | NFR-009 |
+| ARC-015 | Graphify contract는 **Current Repository Intelligence** 기능만 노출한다 | NEW | REQ-016 |
+| ARC-016 | Graphify provider/runtime에서 Memory Adapter/Obsidian/Notion direct dependency를 금지한다 | NEW | NFR-010, OPS-014 |
+| ARC-017 | source conflict 시 Current Repository/Approved Baseline이 lower-priority memory/view보다 우선한다 | NEW | NFR-012, OPS-016 |
+| ARC-018 | Memory Merge/Injection/Project Context Assembly는 AI Office 책임이며 Graphify에서 구현하지 않는다 | NEW | NFR-011 |
+| ARC-019 | Project Continuity Memory는 PHASE 6 책임이며 PHASE 2는 memory functionality를 선행 구현하지 않는다 | NEW | OPS-015 |
+| ARC-020 | GO / CONDITIONAL GO / NO-GO Decision Record 확정 후 공통 terminal state를 `GRAPHIFY_DECISION_CLOSED`로 설정한다 | NEW | V2.2 ID-RV-002 |
+| ARC-021 | PHASE 7 Provider Runtime Expansion과 PHASE 8 Instruction Lifecycle Governance를 PHASE 2 구현 graph에서 배제한다 | NEW | V2.2 ID-RV-004/005 |
+| ARC-022 | Existing Repository Inspection comparison baseline은 stable-source `read_only_inspector.inspect_read_only()`에 바인딩한다 | NEW | REQ-008/010, NFR-004 |
+| ARC-023 | Graphify PHASE 2는 execution `provider_router.py`를 수정하거나 Graphify를 execution provider로 등록하지 않는다 | NEW | NFR-008/009, V2.2 PHASE 7 isolation |
+
+## V2.2 Exit-State Invariant
+
+```text
+GO | CONDITIONAL_GO | NO_GO
+        ↓
+Decision Record Finalized
+        ↓
+GRAPHIFY_DECISION_CLOSED
+        ↓
+PHASE 3 Handoff
+```
+
+`GRAPHIFY_DECISION_CLOSED` is a lifecycle closure state, not a synonym for GO.
+
+## Full Plan HYBRID Design Contract
+
+This is an inherited planning binding, not a new Graphify architecture decision.
+
+```text
+EXECUTION_CONTRACT = GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE = HYBRID
+PROVIDER_SELECTION_AUTHORITY = PROVIDER_ROUTER
+PLANNER_PROVIDER_SELECTION = PROHIBITED
+UNAPPROVED_PROVIDER_EXPANSION = PROHIBITED
+```
+
+All TASK capability declarations below are provider-neutral. The design does not assign concrete providers.
+
+## Architecture Invariant
+
+Memory independence를 검증하기 위해 PHASE 2가 실제 Obsidian/Notion/Memory Adapter와 연결되어서는 안 된다. Likewise PHASE 7 provider-runtime expansion and PHASE 8 instruction-governance runtime capabilities must not be implemented or configured by PHASE 2. 검증은 static dependency scan, contract inspection, configuration inspection 및 synthetic conflict fixture로 수행하도록 설계한다.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-06 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-07 -----
+# ID-07 Component Design
+
+| ID | Component | Responsibility | Status / Change |
+|---|---|---|---|
+| CMP-101 | Stable Baseline Qualifier | old Graphify-owned stable baseline qualification | RETIRED |
+| CMP-102 | PoC Entry Gate | predecessor/source/version/permission/controlled-baseline checks | REVISED |
+| CMP-103 | Version Qualifier | exact version/source/hash/security/upgrade qualification | ACTIVE |
+| CMP-104 | Disposable Workspace Manager | isolated snapshot/env/output/mutation guard | ACTIVE |
+| CMP-105 | Provider Contract | Graphify/fallback common request/result schema | ACTIVE |
+| CMP-106 | Graphify Adapter | local code-only extraction/query/normalization | ACTIVE |
+| CMP-107 | Existing Inspection Adapter | wraps stable-source `read_only_inspector.inspect_read_only()` and normalizes read-only output | REVISED / SOURCE-BOUND |
+| CMP-108 | Canonical Source Verifier | source-truth/confidence/freshness verdict | ACTIVE |
+| CMP-109 | Comparative Scenario Runner | identical scenarios + metrics/negative evidence | ACTIVE |
+| CMP-110 | Decision Evaluator | deterministic GO/CONDITIONAL_GO/NO_GO | ACTIVE |
+| CMP-111 | AI Office Handoff Packager | old direct AI Office handoff | RETIRED |
+| CMP-112 | Provider Boundary Policy | find-skills vs Graphify responsibility | ACTIVE |
+| CMP-113 | Predecessor Baseline Evidence Verifier | validates externally produced PHASE 1 baseline evidence without creating it | NEW |
+| CMP-114 | PHASE 3 Handoff Packager | decision/evidence/provider/fallback constraints for Execution Backend Contract Finalization | NEW |
+| CMP-115 | Backend Independence Verifier | proves provider layer does not import/require Codex or Full MCP contracts | NEW |
+| CMP-116 | Controlled Baseline Guard | detects/blocks Full Plan Core mutation and emits escalation requirement | ACTIVE |
+| CMP-117 | Current Repository Intelligence Boundary Guard | limits provider contract to current-repository intelligence functions | NEW |
+| CMP-118 | Memory Independence Verifier | blocks Memory Adapter/Obsidian/Notion runtime/config/import dependencies | NEW |
+| CMP-119 | Source Precedence Verifier | proves repository/baseline wins over conflicting lower-priority fixtures | NEW |
+| CMP-120 | Context Assembly Boundary Guard | rejects memory capture/retrieval/merge/injection/context-assembly ownership | NEW |
+| CMP-121 | Master Phase Boundary Firewall | rejects PHASE 1 ownership and PHASE 3+ implementation inside PHASE 2 | NEW |
+| CMP-122 | Decision Closure Finalizer | validates finalized provider decision and emits `GRAPHIFY_DECISION_CLOSED` without changing outcome | NEW |
+| CMP-123 | Reserved Phase Isolation Verifier | rejects PHASE 7 provider-runtime and PHASE 8 instruction-governance capabilities in PHASE 2 | NEW |
+| CMP-001~006 | Existing Orchestrator Authority Components | governance/approval/completion/worker/stage-gate authority | PRESERVE |
+
+
+### CMP-107 — Existing Inspection Adapter
+
+**Current source binding:** `runtime/orchestrator/read_only_inspector.py::inspect_read_only`.
+
+The adapter must:
+- invoke or semantically wrap the stable-source read-only inspector;
+- preserve `write_operations_performed=False`;
+- retain fail-closed validation behavior;
+- normalize only Repository Intelligence comparison fields into `ProviderResult`;
+- never translate static business/gate evidence into runtime authorization;
+- never call or modify `runtime/orchestrator/provider_router.py`.
+
+This binding resolves the prior unknown Existing Repository Inspection path.
+
+### CMP-113 — Predecessor Baseline Evidence Verifier
+
+**Inputs:** PHASE 1 stable baseline ref/SHA, predecessor evidence references, stage-gate/regression completion evidence supplied by PHASE 1.  
+**Output:** `PredecessorBaselineEvidenceRecord` with `verified=true|false`, immutable ref and evidence references.  
+**Prohibition:** it cannot create, repair, complete, qualify or reconfirm the Full Plan baseline on behalf of PHASE 1. Missing evidence returns false and keeps entry closed.
+
+### CMP-102 — PoC Entry Gate
+
+Inputs: predecessor evidence record, current-source revalidation, version qualification, Dangerous Work install approval, controlled-baseline guard state.  
+Any missing/ambiguous condition returns `ENTRY_CLOSED`. Existing Full Plan stage gates remain external authority; CMP-102 does not reproduce them.
+
+### CMP-115 — Backend Independence Verifier
+
+Runs the provider contract against a test matrix where execution-backend identifiers are absent, Codex-labeled and Full-MCP-labeled. Repository Intelligence outputs/contracts must remain semantically identical except non-material environment metadata. Direct import/reference to backend-specific runtime interfaces from `poc/graphify` is prohibited.
+
+### CMP-116 — Controlled Baseline Guard
+
+Baseline hash/ref and protected Full Plan Core paths are treated as immutable PHASE 2 inputs. If a required Graphify change would modify Full Plan Core, the guard produces `CONTROLLED_CHANGE_REQUIRED` and closes the PoC path until the external sequence completes:
+
+```text
+Change Request
+→ Impact Analysis
+→ Controlled Change
+→ Regression Test
+→ Baseline Reconfirmation
+```
+
+### CMP-114 — PHASE 3 Handoff Packager
+
+Packages only:
+- Graphify decision and conditions
+- recommended Repository Intelligence provider mode
+- Existing Inspection fallback contract
+- canonical verification rules
+- backend-independence evidence
+- generated-artifact policy status/prerequisite
+- unresolved limitations
+- evidence index
+- explicit `NEXT_MASTER_PHASE=PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION`
+
+It must not design or implement the Execution Backend Contract, Full MCP, AI Office or Jarvis.
+
+
+### CMP-117 — Current Repository Intelligence Boundary Guard
+
+Valid provider capabilities are limited to repository structure, symbol/dependency/reference/path/neighbor/change-impact, freshness/confidence and related investigation support. Memory persistence, project continuity and workflow/context assembly APIs are invalid capabilities.
+
+### CMP-118 — Memory Independence Verifier
+
+Performs static and configuration-level verification only. It must detect and fail on:
+- imports/packages/runtime handles for Memory Adapter
+- Obsidian vault/path/API dependency
+- Notion API/database dependency
+- Graphify configuration requiring any memory system
+- Graphify output routing directly to Obsidian/Notion
+
+It must not connect to those systems as part of PHASE 2.
+
+### CMP-119 — Source Precedence Verifier
+
+Uses canonical repository/baseline evidence plus synthetic lower-priority conflicting statements to prove that repository/baseline evidence controls the verdict. This is a verification fixture, not a Memory Adapter implementation.
+
+### CMP-120 — Context Assembly Boundary Guard
+
+Rejects code/config/contracts that implement Memory Capture, Retrieval, Merge, Injection, Context Compression, Notion Projection or Project Context Assembly inside `poc/graphify`.
+
+### CMP-121 — Master Phase Boundary Firewall
+
+Validates that PHASE 2 contains only Graphify PoC responsibilities. It rejects Full Plan implementation/stabilization ownership and any implementation of Execution Backend Contract, Full MCP, AI Office, Jarvis or PHASE 6 Project Continuity Memory.
+
+
+### CMP-122 — Decision Closure Finalizer
+
+Consumes an immutable `DecisionRecord` whose outcome is exactly one of `GO | CONDITIONAL_GO | NO_GO`. It verifies required decision evidence and independent-review references, then emits `GraphifyDecisionClosureRecord` with `state=GRAPHIFY_DECISION_CLOSED`. It cannot rewrite the provider decision.
+
+### CMP-123 — Reserved Phase Isolation Verifier
+
+Inspects PHASE 2 contracts/configuration/change targets for prohibited PHASE 7 and PHASE 8 capability signatures. Any detected provider-router expansion, provider benchmarking/scoring/automatic fallback/budget policy, or instruction telemetry/optimization/governance runtime capability fails isolation.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-07 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-10 -----
+# ID-10 Change Targets
+
+## Verified Preserve / Sentinel Targets
+
+| Target ID | Path / Module | Action |
+|---|---|---|
+| CT-001 | `runtime/orchestrator/stage_gate.py` | PRESERVE |
+| CT-002 | `runtime/orchestrator/completion_contract.py` | PRESERVE |
+| CT-003 | `runtime/orchestrator/execution_contract.py` | PRESERVE |
+| CT-004 | `runtime/orchestrator/worker_authority.py` | PRESERVE |
+| CT-005 | `tests/test_worker_authority.py` | PRESERVE / REGRESSION TARGET |
+| CT-006 | `AGENTS.md` | PRESERVE / MUTATION SENTINEL |
+| CT-007 | `.codex/` | PRESERVE / MUTATION SENTINEL |
+| CT-008 | `.gitignore` | PRESERVE / MUTATION SENTINEL |
+| CT-009 | `runtime/orchestrator/provider_router.py` | PRESERVE / DO NOT REGISTER GRAPHIFY / PHASE 7 SENTINEL |
+| CT-010 | `runtime/orchestrator/read_only_inspector.py` | PRESERVE / EXISTING-INSPECTION SOURCE |
+| CT-011 | `tests/test_read_only_inspect.py` | PRESERVE / REGRESSION TARGET |
+| CT-012 | `runtime/orchestrator/completion_authority.py` | PRESERVE / AUTHORITY SENTINEL |
+
+## Proposed CREATE / REVISE Targets
+
+| Target ID | Path / Module | Action | Related Task |
+|---|---|---|---|
+| CT-101 | `poc/graphify/README.md` | CREATE | TASK-003~017 |
+| CT-102 | `poc/graphify/config/version_lock.json` | CREATE | TASK-003 |
+| CT-103 | `poc/graphify/config/scenarios.yaml` | CREATE | TASK-007 |
+| CT-104 | `poc/graphify/config/decision_policy.yaml` | CREATE | TASK-008/010 |
+| CT-105 | `poc/graphify/contracts.py` | CREATE | TASK-006 |
+| CT-106 | `poc/graphify/entry_gate.py` | CREATE | TASK-004/013 |
+| CT-107 | `poc/graphify/environment.py` | CREATE | TASK-005/016 |
+| CT-108 | `poc/graphify/graphify_adapter.py` | CREATE | TASK-006 |
+| CT-109 | `poc/graphify/baseline_adapter.py` | CREATE | TASK-006 |
+| CT-110 | `poc/graphify/canonical_verifier.py` | CREATE | TASK-007 |
+| CT-111 | `poc/graphify/comparator.py` | CREATE | TASK-008 |
+| CT-112 | `poc/graphify/decision.py` | CREATE | TASK-010/015/017 |
+| CT-113 | `poc/graphify/handoff.py` | CREATE | TASK-014 |
+| CT-114 | `tests/test_graphify_entry_gate.py` | CREATE | TASK-004/013 |
+| CT-115 | `tests/test_graphify_environment.py` | CREATE | TASK-005 |
+| CT-116 | `tests/test_graphify_adapter_contract.py` | CREATE | TASK-006/015 |
+| CT-117 | `tests/test_graphify_canonical_verifier.py` | CREATE | TASK-007 |
+| CT-118 | `tests/test_graphify_comparator.py` | CREATE | TASK-008 |
+| CT-119 | `tests/test_graphify_fallback.py` | CREATE | TASK-009 |
+| CT-120 | `tests/test_graphify_decision.py` | CREATE | TASK-010 |
+| CT-121 | `tests/test_graphify_handoff.py` | CREATE | TASK-014 |
+| CT-122 | `poc/graphify/config/provider_boundary.yaml` | CREATE | TASK-006/015 |
+| CT-123 | `tests/test_graphify_policy_boundaries.py` | CREATE | TASK-006/017 |
+| CT-124 | `tests/test_graphify_security_exclusion.py` | CREATE | TASK-005/007 |
+| CT-125 | `poc/graphify/backend_independence.py` | CREATE | TASK-015 |
+| CT-126 | `tests/test_graphify_backend_independence.py` | CREATE | TASK-015 |
+| CT-127 | `poc/graphify/baseline_guard.py` | CREATE | TASK-016 |
+| CT-128 | `tests/test_graphify_baseline_guard.py` | CREATE | TASK-016 |
+| CT-129 | `poc/graphify/phase_boundary.py` | CREATE | TASK-017 |
+| CT-130 | `tests/test_graphify_phase_boundary.py` | CREATE | TASK-017 |
+| CT-131 | `poc/graphify/current_repository_boundary.py` | CREATE | TASK-018 |
+| CT-132 | `poc/graphify/memory_independence.py` | CREATE | TASK-019 |
+| CT-133 | `poc/graphify/source_precedence.py` | CREATE | TASK-020 |
+| CT-134 | `poc/graphify/context_assembly_boundary.py` | CREATE | TASK-021 |
+| CT-135 | `tests/test_graphify_current_repository_boundary.py` | CREATE | TASK-018 |
+| CT-136 | `tests/test_graphify_memory_independence.py` | CREATE | TASK-019 |
+| CT-137 | `tests/test_graphify_source_precedence.py` | CREATE | TASK-020 |
+| CT-138 | `tests/test_graphify_context_assembly_boundary.py` | CREATE | TASK-021 |
+| CT-139 | `poc/graphify/decision_closure.py` | CREATE | TASK-022 |
+| CT-140 | `poc/graphify/reserved_phase_isolation.py` | CREATE | TASK-023 |
+| CT-141 | `tests/test_graphify_decision_closure.py` | CREATE | TASK-022 |
+| CT-142 | `tests/test_graphify_reserved_phase_isolation.py` | CREATE | TASK-023 |
+
+## Previously Unverified Targets — Resolved at Stable Baseline
+
+| Target ID | Resolved Target / State | Status | Design Use |
+|---|---|---|---|
+| CT-201 | `runtime/orchestrator/read_only_inspector.py::inspect_read_only()` | VERIFIED | Existing Inspection Adapter source |
+| CT-202 | `docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_COMPLETION_20260914.md` + final manifest + gate/regression report + approval JSON | VERIFIED | predecessor baseline evidence |
+| CT-203 | `.codex/hooks.json` | VERIFIED ABSENT | expected-absent mutation sentinel |
+
+## Runtime Artifact Targets
+
+All runtime outputs remain outside canonical source under a disposable root:
+
+```text
+<temporary-root>/gch-graphify-poc/<run_id>/
+  records/predecessor_baseline_verification.json
+  records/source_reverification.json
+  records/version_qualification.json
+  records/backend_independence.json
+  records/current_repository_intelligence_boundary.json
+  records/memory_independence.json
+  records/source_precedence.json
+  records/context_assembly_boundary.json
+  records/reserved_phase_isolation.json
+  records/graphify_decision_closure.json
+  records/controlled_change_status.json
+  records/mutation_manifest.before.json
+  records/mutation_manifest.after.json
+  workspace/source-snapshot/
+  workspace/graphify-output/
+  results/scenarios/*.json
+  results/comparative_report.json
+  results/decision_record.json
+  results/graphify_decision_closure.json
+  results/phase3_handoff.json
+```
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-10 -----
+
+# EC-04 INTERFACES / EXECUTION FLOW
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-08 -----
+# ID-08 Interface Design
+
+| ID | Interface | Source | Target | Purpose | Status |
+|---|---|---|---|---|---|
+| IF-101 | `BaselineQualificationRecord` | old CMP-101 | old entry flow | old Graphify-owned baseline qualification | RETIRED |
+| IF-102 | `VersionQualificationRecord` | CMP-103 | CMP-102/104 | exact package identity | ACTIVE |
+| IF-103 | `ProviderQueryRequest` | CMP-109 | CMP-106/107 | common comparison input bound to same source snapshot/ref | REVISED |
+| IF-104 | `ProviderResult` | CMP-106/107 | CMP-108/109 | normalized output including provider_id/source_ref/write_performed/freshness fields | REVISED |
+| IF-105 | `CanonicalVerificationResult` | CMP-108 | CMP-109/110 | source-truth/confidence/freshness verdict | ACTIVE |
+| IF-106 | `ComparativePoCReport` | CMP-109 | CMP-110 | metrics/negative evidence | ACTIVE |
+| IF-107 | `DecisionRecord` | CMP-110 | CMP-114 | GO/CONDITIONAL_GO/NO_GO | REVISED TARGET |
+| IF-108 | `AIOfficeHandoffPackage` | old CMP-111 | AI Office | direct AI Office handoff | RETIRED |
+| IF-109 | local Graphify MCP stdio | CMP-106 | local PoC client | local-only query evaluation | ACTIVE |
+| IF-110 | `ProviderBoundaryPolicy` | CMP-112 | provider components | capability/provider role confinement | ACTIVE |
+| IF-111 | `PredecessorBaselineEvidenceRecord` | CMP-113 | CMP-102/116 | PHASE 1 evidence consumption | NEW |
+| IF-112 | `BackendIndependenceResult` | CMP-115 | CMP-110/114 | backend-agnostic proof | NEW |
+| IF-113 | `Phase3HandoffPackage` | CMP-114 | Master PHASE 3 | official handoff | NEW |
+| IF-114 | `ControlledChangeEscalationRecord` | CMP-116 | external controlled-change owner | stop/escalate baseline-core change | NEW |
+| IF-115 | `PhaseBoundaryCheck` | CMP-121 | CMP-110/114 | prevent PHASE 1/3+ ownership creep | ACTIVE |
+| IF-116 | `CurrentRepositoryIntelligenceBoundaryResult` | CMP-117 | CMP-110/114 | role-scope proof | NEW |
+| IF-117 | `MemoryIndependenceResult` | CMP-118 | CMP-110/114 | forbidden dependency proof | NEW |
+| IF-118 | `SourcePrecedenceResult` | CMP-119 | CMP-110/114 | conflict precedence proof | NEW |
+| IF-119 | `ContextAssemblyBoundaryResult` | CMP-120 | CMP-110/114 | context-assembly separation proof | NEW |
+| IF-120 | `GraphifyDecisionClosureRecord` | CMP-122 | CMP-114 | common terminal PHASE 2 closure state | NEW |
+| IF-121 | `ReservedPhaseIsolationResult` | CMP-123 | CMP-110/114/122 | PHASE 7/8 isolation proof | NEW |
+
+### IF-107 — DecisionRecord required fields
+
+- decision: GO | CONDITIONAL_GO | NO_GO
+- predecessor_stable_baseline_ref
+- source_reverification_ref
+- graphify_version_qualified
+- policy_version/digest
+- safety_gate_results
+- comparative_metric_summary
+- canonical_verification_summary
+- backend_independence_result_ref
+- current_repository_intelligence_boundary_ref
+- memory_independence_result_ref
+- source_precedence_result_ref
+- context_assembly_boundary_result_ref
+- conditions[]
+- fallback_status
+- evidence_refs[]
+- decision_finalized: true|false
+- closure_state: `GRAPHIFY_DECISION_CLOSED` only after TASK-022 succeeds
+- next_master_phase: `PHASE_3_EXECUTION_BACKEND_CONTRACT_FINALIZATION`
+
+### IF-113 — Phase3HandoffPackage required fields
+
+- decision_record_ref
+- graphify_decision_closure_ref
+- recommended_repository_intelligence_provider
+- fallback_provider
+- mandatory canonical-verification rule
+- backend_independence_result_ref
+- memory_independence_result_ref
+- source_precedence_result_ref
+- context_assembly_boundary_result_ref
+- explicit forbidden dependencies: Obsidian / Notion / Memory Adapter
+- source-of-truth precedence assertion
+- permitted use-cases / restrictions
+- production policy prerequisites
+- unresolved limitations
+- evidence index
+- master_phase_order assertion
+- explicit non-authority statement for Graphify
+- explicit no-implementation statement for PHASE 3/4/5/6/7/8
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-08 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-09 -----
+# ID-09 Data / Control / State Flow
+
+## Data Flow
+
+1. PHASE 1 `FULL_PLAN_STABLE_BASELINE` evidence is read-only verified.
+2. Current source/version/install approval/controlled-baseline prerequisites are checked.
+3. Entry OPEN 후 disposable source snapshot을 만든다.
+4. 동일 scenario를 Graphify와 Existing Inspection에 전달한다.
+5. canonical/freshness/error/fallback evidence를 생성한다.
+6. Backend Independence, Current Repository Intelligence boundary, Memory Independence, Source Precedence and Context Assembly separation을 검증한다.
+7. PHASE 7 / PHASE 8 reserved-capability isolation을 검증한다.
+8. regression/independent review 후 Decision Evaluator가 `GO | CONDITIONAL_GO | NO_GO` 중 하나를 확정한다.
+9. Decision Closure Finalizer가 decision을 변경하지 않고 `GRAPHIFY_DECISION_CLOSED`를 기록한다.
+10. PHASE 3 Handoff Package를 생성한다.
+
+## Control Flow
+
+```text
+FULL_PLAN_STABLE_BASELINE VERIFIED
+        ↓
+ENTRY / SOURCE / VERSION / PERMISSION GUARDS
+        ↓
+ISOLATED CURRENT-REPOSITORY INTELLIGENCE POC
+        ↓
+CANONICAL / FRESHNESS / FALLBACK
+        ↓
+BACKEND / MEMORY / SOURCE-OF-TRUTH / CONTEXT BOUNDARIES
+        ↓
+PHASE 7 / PHASE 8 ISOLATION
+        ↓
+REGRESSION + INDEPENDENT REVIEW
+        ↓
+GO | CONDITIONAL_GO | NO_GO
+        ↓
+Decision Record Finalized
+        ↓
+GRAPHIFY_DECISION_CLOSED
+        ↓
+PHASE 3 HANDOFF
+```
+
+## State Transitions
+
+| Current State | Event | Next State | Failure / Route |
+|---|---|---|---|
+| `ENTRY_CLOSED` | predecessor evidence verified | `PREDECESSOR_VERIFIED` | remain CLOSED |
+| `PREDECESSOR_VERIFIED` | source/version/permission pass | `ENTRY_OPEN` | drift/CLOSED |
+| `ENTRY_OPEN` | disposable env sealed | `ENV_READY` | `BLOCKED_ENV` |
+| `ENV_READY` | providers ready | `PROVIDERS_READY` | fallback path |
+| `PROVIDERS_READY` | comparative/canonical/freshness complete | `COMPARISON_COMPLETE` | `POC_INCOMPLETE` |
+| `COMPARISON_COMPLETE` | backend/memory/source/context + reserved-phase isolation pass | `BOUNDARIES_VERIFIED` | `BOUNDARY_VIOLATION` |
+| `BOUNDARIES_VERIFIED` | regression/review pass | `REVIEW_READY` | regression fail |
+| `REVIEW_READY` | sealed provider decision | `DECISION_RECORDED` | decision blocked |
+| `DECISION_RECORDED` | closure validation pass | `GRAPHIFY_DECISION_CLOSED` | closure blocked |
+| `GRAPHIFY_DECISION_CLOSED` | PHASE 3 package complete | `PHASE3_HANDOFF_READY` | handoff incomplete |
+| any state | Full Plan Core change required | `CONTROLLED_CHANGE_REQUIRED` | external route |
+
+`GRAPHIFY_DECISION_CLOSED` is reachable from GO, CONDITIONAL_GO and NO_GO alike.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-09 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-20 -----
+# ID-20 Full Plan Execution Structure
+
+This section defines handoff-ready execution structure only.
+
+```text
+MASTER ROADMAP V2.2
+        ↓
+MASTER PHASE 1
+FULL_PLAN_STABLE_BASELINE = VERIFIED
+        ↓
+TASK-013 predecessor evidence verification
+        ↓
+TASK-002 source reverify
+        ↓
+TASK-003 version qualification
+        ↓
+TASK-016 controlled-baseline guard
+        ↓
+GATE-002 install/entry prerequisites
+        ↓
+TASK-005~009 Current Repository Intelligence PoC
+        ↓
+TASK-015 Backend Independence
+TASK-017 PHASE 2 Scope Firewall
+TASK-018 Current Repository Intelligence Role Boundary
+TASK-019 Project Memory Independence
+TASK-020 Source Precedence
+TASK-021 Context Assembly Responsibility Separation
+TASK-023 PHASE 7 / PHASE 8 Reserved-Phase Isolation
+        ↓
+GATE-008 Memory / Source-of-Truth Boundary
+        ↓
+TASK-012 regression / independent review
+        ↓
+TASK-010 Provider Decision
+        ↓
+GATE-004
+        ↓
+TASK-022 Finalize Decision Closure
+        ↓
+GATE-009
+        ↓
+GRAPHIFY_DECISION_CLOSED
+        ↓
+TASK-014 PHASE 3 Handoff
+        ↓
+GATE-006
+        ↓
+MASTER PHASE 3 — Execution Backend Contract Finalization
+```
+
+`GO`, `CONDITIONAL_GO`, and `NO_GO` are provider-decision values. `GRAPHIFY_DECISION_CLOSED` is the common PHASE 2 lifecycle exit state and does not imply GO.
+
+PHASE 7 and PHASE 8 remain reserved post-mainline phases and are not implementation targets of PHASE 2.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-20 -----
+
+# EC-05 IMPLEMENTATION TASKS
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-11 -----
+# ID-11 Implementation Tasks
+
+## Retired Tasks
+
+### TASK-001 — RETIRED: Qualify Full Plan Stable Baseline
+Retired because `REQ-014` and DP-GRAPHIFY-1.1 move baseline creation/qualification to Master PHASE 1. This ID is not reused.
+
+### TASK-011 — RETIRED: Implement AI Office Handoff Packager
+Retired because direct Graphify → AI Office handoff is no longer permitted. This ID is not reused.
+
+## TASK-013 — Verify PHASE 1 Predecessor Baseline Evidence
+
+**Purpose:** externally produced `FULL_PLAN_STABLE_BASELINE` evidence를 read-only로 확인한다.  
+**Related Requirements:** REQ-011, REQ-014, OPS-008, OPS-009  
+**Dependencies:** EXTERNAL — PHASE 1 baseline publication  
+**Change Targets:** CT-106, CT-114, CT-202  
+**Inputs:** baseline ref/SHA + PHASE 1 evidence refs  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** DEL-001 / `PredecessorBaselineEvidenceRecord`  
+**Validation:** TEST-020  
+**Ownership Boundary:** evidence verification only  
+**Preserved / Forbidden:** Full Plan implementation, stabilization, qualification, remediation 금지  
+**Completion Condition:** evidence complete → verified; otherwise Entry CLOSED
+
+## TASK-002 — Reverify Current Source and Detect Drift
+
+**Purpose:** PoC 직전 current source와 predecessor stable baseline의 identity/drift를 확인한다.  
+**Related Requirements:** OPS-008, OPS-011, SC-001/014  
+**Dependencies:** TASK-013  
+**Change Targets:** CT-001~012, CT-201~203  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, git  
+**Expected Output:** `CURRENT_SOURCE_BASELINE=REVERIFIED` with drift-impact record, or unresolved `SOURCE_DRIFT_DETECTED`  
+**Validation:** TEST-002  
+**Ownership Boundary:** read-only source identity/drift verification  
+**Forbidden:** drift를 silently accept하거나 PHASE 2가 baseline을 직접 고치는 행위
+
+## TASK-003 — Qualify and Pin Graphify PoC Version
+
+**Purpose:** exact package/version/source/hash/security/compatibility record를 만든다.  
+**Related Requirements:** SEC-005, OPS-006, SC-010  
+**Dependencies:** TASK-002; installation excluded  
+**Change Targets:** CT-102  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** `VersionQualificationRecord`  
+**Validation:** TEST-003/019  
+**Forbidden:** floating/latest install, automatic upgrade, auto-installer  
+**Completion Condition:** exact candidate가 execution entry 직전에 다시 qualification됨
+
+## TASK-016 — Implement Controlled Stable Baseline Protection
+
+**Purpose:** PHASE 2가 Full Plan Core를 직접 변경하지 못하도록 보호하고 변경 필요 시 external controlled-change route를 강제한다.  
+**Related Requirements:** REQ-014, SEC-006, OPS-011, OPS-013, SC-002/014  
+**Dependencies:** TASK-013/002  
+**Change Targets:** CT-001~008, CT-127/128  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** baseline guard + `ControlledChangeEscalationRecord` schema  
+**Validation:** TEST-023  
+**Ownership Boundary:** detection/block/escalation only  
+**Forbidden:** PHASE 2가 Change Request 이후 controlled change를 자체 수행하는 것  
+**Completion Condition:** protected core mutation/change-need is fail-closed and external route is explicit
+
+## TASK-004 — Implement PoC Entry Gate
+
+**Purpose:** predecessor/source/version/install-approval/controlled-baseline 조건을 fail-closed enforce한다.  
+**Related Requirements:** REQ-011/014, SEC-003, OPS-009~011/013  
+**Dependencies:** TASK-013/002/003/016 + external Dangerous Work install approval  
+**Change Targets:** CT-106/114  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Validation:** TEST-004/020/023  
+**Completion Condition:** 모든 필수조건 true일 때만 OPEN
+
+## TASK-005 — Implement Isolated Environment and Mutation Guard
+
+**Purpose:** Graphify execution/output을 canonical checkout에서 분리한다.  
+**Related Requirements:** REQ-007, NFR-003, SEC-001/002/004/006, OPS-001/002  
+**Dependencies:** TASK-004 for actual run  
+**Change Targets:** CT-107/115, CT-006~008, CT-203  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, shell, git, implementation, test  
+**Validation:** TEST-005/017  
+**Forbidden:** user-global/project skill install, Git Hook, shared HTTP, protected-file automatic mutation
+
+## TASK-006 — Implement Provider Contract and Both Adapters
+
+**Purpose:** Graphify와 Existing Inspection을 동일 Repository Intelligence contract에 연결한다.  
+**Related Requirements:** REQ-001/003/005/008/013, NFR-001/002/005/007, OPS-005  
+**Dependencies:** TASK-005 + CT-201 verification  
+**Change Targets:** CT-105/108/109/116/122/123/201  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test  
+**Validation:** TEST-006/007/016  
+**Ownership Boundary:** Repository Intelligence only; execution backend interface 금지
+
+## TASK-007 — Define Canonical Scenario Corpus and Source Verifier
+
+**Purpose:** accuracy/confidence/freshness ground truth를 provider-independent하게 정의한다.  
+**Related Requirements:** REQ-002/004/009/010, NFR-006, SEC-002, OPS-004/007  
+**Dependencies:** TASK-002; provider schema freeze 후 TASK-006과 parallel-safe  
+**Change Targets:** CT-103/110/117/124  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Validation:** TEST-008/009/017
+
+## TASK-008 — Implement Comparative Runner and Sealed Metrics Policy
+
+**Purpose:** 두 provider를 같은 조건에서 비교하고 negative evidence까지 보존한다.  
+**Related Requirements:** REQ-002/010, NFR-004, OPS-007  
+**Dependencies:** TASK-006/007  
+**Change Targets:** CT-104/111/118  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test  
+**Validation:** TEST-010
+
+## TASK-009 — Implement Stale/Fallback/Failure Validation
+
+**Purpose:** stale/unavailable/error에서도 silent failure 없이 Existing Inspection fallback을 보장한다.  
+**Related Requirements:** REQ-008/009/013, NFR-006/007, OPS-004/005/007/011  
+**Dependencies:** TASK-006~008  
+**Change Targets:** CT-119  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, integration, test  
+**Validation:** TEST-009/011
+
+## TASK-015 — Validate Execution Backend Independence
+
+**Purpose:** Repository Intelligence layer가 Codex/Full MCP backend와 독립임을 구조적·contract 수준에서 검증한다.  
+**Related Requirements:** NFR-008, SC-008  
+**Dependencies:** TASK-006; provider contract frozen  
+**Change Targets:** CT-116/122/125/126  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** `BackendIndependenceResult`  
+**Validation:** TEST-021  
+**Forbidden:** backend-specific import, required backend session/runtime handle, backend-specific decision semantics
+
+## TASK-017 — Enforce Master PHASE 2 Scope Boundary
+
+**Purpose:** PHASE 1 책임 재흡수 및 PHASE 3+ 구현 선행을 방지한다.  
+**Related Requirements:** NFR-009, OPS-010/012, SC-015  
+**Dependencies:** TASK-013 and design contracts  
+**Change Targets:** CT-101/123/129/130  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** CMP-121 / `PhaseBoundaryCheck`  
+**Validation:** TEST-024
+
+
+## TASK-018 — Enforce Current Repository Intelligence Role Boundary
+
+**Purpose:** Graphify contract를 Current Repository Intelligence 기능으로만 제한한다.  
+**Related Requirements:** REQ-016  
+**Dependencies:** TASK-006 provider contract frozen  
+**Change Targets:** CT-105/122/131/135  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** `CurrentRepositoryIntelligenceBoundaryResult`  
+**Validation:** TEST-025  
+**Forbidden:** Memory persistence, continuity, workflow/governance, execution/runtime-state APIs
+
+## TASK-019 — Validate Project Memory Independence and Forbidden Dependencies
+
+**Purpose:** Graphify runtime/config/package graph에서 Memory Adapter/Obsidian/Notion 직접 dependency가 없음을 검증한다.  
+**Related Requirements:** NFR-010, OPS-014  
+**Dependencies:** TASK-006/018  
+**Change Targets:** CT-132/136 plus provider/config targets  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** `MemoryIndependenceResult`  
+**Validation:** TEST-026  
+**Forbidden:** actual Obsidian/Notion/Memory Adapter connection in PHASE 2
+
+## TASK-020 — Validate Source of Truth Precedence
+
+**Purpose:** conflicting lower-priority memory/view fixture가 있어도 Current Repository/Approved Baseline이 authoritative verdict를 유지함을 검증한다.  
+**Related Requirements:** NFR-012, OPS-016  
+**Dependencies:** TASK-007 canonical corpus + TASK-018  
+**Change Targets:** CT-133/137  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** `SourcePrecedenceResult`  
+**Validation:** TEST-027  
+**Boundary:** synthetic fixture only; Memory Adapter implementation prohibited
+
+## TASK-021 — Enforce Context Assembly Responsibility Separation
+
+**Purpose:** Memory Capture/Retrieval/Merge/Injection/Context Assembly가 Graphify PHASE 2 구현으로 유입되지 않도록 차단한다.  
+**Related Requirements:** NFR-011, OPS-015  
+**Dependencies:** TASK-018/019  
+**Change Targets:** CT-134/138  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Expected Output:** `ContextAssemblyBoundaryResult`  
+**Validation:** TEST-028  
+**Forbidden:** AI Office Context Assembly implementation in PHASE 2
+
+
+## TASK-022 — Finalize Graphify Decision Closure
+
+**Purpose:** finalized GO / CONDITIONAL GO / NO-GO Decision Record를 공통 PHASE 2 terminal state `GRAPHIFY_DECISION_CLOSED`로 닫는다.  
+**Related Requirements:** REQ-006, REQ-015, OPS-010, OPS-012  
+**Related Revalidation:** ID-RV-002, ID-RV-010  
+**Dependencies:** TASK-010 + TASK-012 + TASK-023  
+**Change Targets:** CT-139/141  
+**Inputs:** immutable DecisionRecord, independent review evidence, regression evidence  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, implementation, test  
+**Expected Output:** `GraphifyDecisionClosureRecord(state=GRAPHIFY_DECISION_CLOSED)`  
+**Validation:** TEST-029  
+**Ownership Boundary:** lifecycle closure only  
+**Forbidden:** changing GO/CONDITIONAL_GO/NO-GO outcome during closure  
+**Completion Condition:** exactly one finalized decision outcome and closure state recorded
+
+## TASK-023 — Validate PHASE 7 / PHASE 8 Reserved-Phase Isolation
+
+**Purpose:** V2.2가 예약한 PHASE 7 Provider Runtime Expansion 및 PHASE 8 Instruction Governance 기능이 PHASE 2 설계/구현 target에 유입되지 않았음을 검증한다.  
+**Related Requirements:** NFR-009, OPS-010, OPS-012  
+**Related Revalidation:** ID-RV-004, ID-RV-005  
+**Dependencies:** TASK-017 and frozen PHASE 2 scope  
+**Change Targets:** CT-129/130/140/142  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, implementation, test  
+**Expected Output:** `ReservedPhaseIsolationResult`  
+**Validation:** TEST-030  
+**Forbidden Areas:** provider routing/scoring/benchmark/auto-fallback/budget runtime; instruction registry/telemetry/ablation/evaluation/reconstruction/continuous optimization/governance runtime  
+**Completion Condition:** PHASE 7/8 capability signatures absent from PHASE 2 ownership and change targets
+
+## TASK-012 — Run Targeted/Program Regression and Independent PoC Review
+
+**Purpose:** PoC implementation이 core authority/governance 및 optionality를 손상시키지 않았음을 후속 실행 단계에서 검증하도록 정의한다.  
+**Related Requirements:** NFR-001/002/007/008/009/010/011/012, SEC-006, OPS-005/013/014/015/016  
+**Dependencies:** TASK-005~009/015~021/023  
+**Change Targets:** CT-001~012  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, shell, git, test, integration  
+**Validation:** TEST-013/015/019/021/023~028/030  
+**Forbidden:** failed regression waiver, Full Plan Core 직접 remediation
+
+## TASK-010 — Implement Decision Evaluator
+
+**Purpose:** completed comparative/safety/backend/memory/source-precedence/context-boundary/regression evidence를 GO / CONDITIONAL_GO / NO_GO로 deterministic하게 변환한다.  
+**Related Requirements:** REQ-006/012/013/016, NFR-010/011/012, OPS-014/015/016, SC-011/012/016~019  
+**Dependencies:** TASK-008/009/012/015/017~021/023  
+**Change Targets:** CT-112/120  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, test  
+**Validation:** TEST-012  
+**Completion Condition:** same sealed inputs/policy → same decision; NO_GO is valid outcome
+
+## TASK-014 — Implement PHASE 3 Handoff Packager
+
+**Purpose:** Graphify Decision을 Master PHASE 3 Execution Backend Contract Finalization으로 정확히 인계한다.  
+**Related Requirements:** REQ-012/013/015/016, NFR-007/009/010/011/012, OPS-003/010/012/014/015/016, SC-012/013/015~019  
+**Dependencies:** TASK-022  
+**Change Targets:** CT-113/121  
+**Required Capabilities:** reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test  
+**Expected Output:** DEL-005 / `Phase3HandoffPackage`  
+**Validation:** TEST-018/022/024~030  
+**Forbidden:** Execution Backend Contract, Full MCP, AI Office, Jarvis 구현 또는 direct AI Office handoff
+
+
+## Active Task Required Capability Coverage
+
+| Task | Required Capabilities | Provider Binding |
+|---|---|---|
+| TASK-013 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-002 | reasoning, read_only, evidence_analysis, git | provider-neutral |
+| TASK-003 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-016 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-004 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-005 | reasoning, read_only, evidence_analysis, filesystem_write, shell, git, implementation, test | provider-neutral |
+| TASK-006 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test | provider-neutral |
+| TASK-007 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-008 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test | provider-neutral |
+| TASK-009 | reasoning, read_only, evidence_analysis, filesystem_write, integration, test | provider-neutral |
+| TASK-015 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-017 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-018 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-019 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-020 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-021 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-022 | reasoning, read_only, evidence_analysis, implementation, test | provider-neutral |
+| TASK-023 | reasoning, read_only, evidence_analysis, implementation, test | provider-neutral |
+| TASK-012 | reasoning, read_only, evidence_analysis, shell, git, test, integration | provider-neutral |
+| TASK-010 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | provider-neutral |
+| TASK-014 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test | provider-neutral |
+
+```text
+ACTIVE_TASK_COUNT: 21
+TASKS_WITH_REQUIRED_CAPABILITIES: 21/21
+MISSING_REQUIRED_CAPABILITIES: 0
+PROVIDER_HARDCODING: 0
+```
+
+Routing interpretation is delegated to `PROVIDER_ROUTER`; this table does not select a provider.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-11 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-12 -----
+# ID-12 Task Dependencies
+
+| Task | Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-013 | EXTERNAL | PHASE 1 stable baseline publication | predecessor evidence |
+| TASK-002 | SEQUENTIAL | TASK-013 | drift check after predecessor identity |
+| TASK-003 | SEQUENTIAL | TASK-002 | version qualification near PoC entry |
+| TASK-016 | SEQUENTIAL | TASK-013/002 | baseline protection before entry |
+| TASK-004 | FAN_IN | TASK-013/002/003/016 + install approval | entry prerequisites |
+| TASK-005 | SEQUENTIAL | TASK-004 | actual environment/run only after OPEN |
+| TASK-006 | SEQUENTIAL | TASK-005 + CT-201 | providers |
+| TASK-007 | PARALLEL_SAFE | TASK-002 + frozen IF-103/104 | independent truth authoring |
+| TASK-008 | FAN_IN | TASK-006/007 | comparison |
+| TASK-009 | SEQUENTIAL | TASK-008 | stale/failure/fallback |
+| TASK-015 | PARALLEL_SAFE | TASK-006 | backend-independence verification |
+| TASK-017 | PARALLEL_SAFE | TASK-013 + frozen scope policy | phase-boundary validation |
+| TASK-018 | PARALLEL_SAFE | TASK-006 frozen provider contract | current-repository role boundary |
+| TASK-019 | PARALLEL_SAFE | TASK-006/018 | memory dependency scan |
+| TASK-020 | PARALLEL_SAFE | TASK-007/018 | source-precedence fixture verification |
+| TASK-021 | PARALLEL_SAFE | TASK-018/019 | context-assembly boundary |
+| TASK-023 | PARALLEL_SAFE | TASK-017 + frozen PHASE 2 scope | PHASE 7/8 isolation |
+| TASK-022 | FAN_IN | TASK-010/012/023 | decision closure |
+| TASK-012 | FAN_IN | TASK-005~009/015~021/023 | regression/review |
+| TASK-010 | FAN_IN | TASK-008/009/012/015/017~021/023 | final decision |
+| TASK-014 | SEQUENTIAL | TASK-022 | official PHASE 3 handoff |
+
+Retired TASK-001/TASK-011은 dependency graph에 참여하지 않는다.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-12 -----
+
+# EC-06 VALIDATION
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-13 -----
+# ID-13 Validation / Test Design
+
+## Validation Strategy
+
+Validation axes are: predecessor-entry integrity, isolation/security, comparative intelligence quality, freshness/fallback, backend independence, current-repository role confinement, memory independence, source precedence, context-assembly separation, core regression, controlled-baseline protection, and Master phase boundary.
+
+## Test Contracts
+
+| ID | Level | Target | Related Requirements | Pass Condition |
+|---|---|---|---|---|
+| TEST-001 | — | old Stable Baseline qualification | — | RETIRED; PHASE 2 must not run it |
+| TEST-002 | L3 | source ref/drift | OPS-008/011 | historical drift recorded; stable code ref/current docs head identified; no unresolved WHAT-impact drift before entry |
+| TEST-003 | L2 | version lock/upgrade | SEC-005, OPS-006 | exact identity; version change requires requalification |
+| TEST-004 | L2 | Entry Gate | REQ-011/014, SEC-003, OPS-009~013 | every missing prerequisite => CLOSED |
+| TEST-005 | L3 | isolation/mutation guard | REQ-007, SEC-006, OPS-001/002 | canonical/protected files/hooks unchanged |
+| TEST-006 | L2 | provider normalization/optionality | REQ-001/003/008, NFR-002/007 | Graphify and Existing Inspection independently callable; baseline path binds `inspect_read_only`; baseline reports no writes |
+| TEST-007 | L3 | local code-only Graphify/MCP | REQ-002, NFR-003, SEC-001/004 | no external semantic backend/shared HTTP |
+| TEST-008 | L3 | canonical edge/source verification | REQ-004, NFR-006, OPS-007 | inferred/ambiguous critical claims require canonical verification |
+| TEST-009 | L3 | freshness/staleness | REQ-009, OPS-004/011 | source revision mismatch detected before use |
+| TEST-010 | L3 | comparative metrics | REQ-002/010, NFR-004, OPS-007 | same real-Harness scenarios/budgets + raw refs |
+| TEST-011 | L3 | failure/fallback | REQ-008/013, NFR-007, OPS-005 | Graphify failure does not stop Existing Inspection or Master Roadmap continuation |
+| TEST-012 | L2/L3 | Decision policy | REQ-006/012/013 | deterministic terminal decision with hard-safety precedence |
+| TEST-013 | L6 | core semantics regression | NFR-001/002, SEC-006 | authority/lifecycle/completion/worker and execution-provider routing semantics unchanged enabled/disabled |
+| TEST-014 | — | old AI Office handoff | — | RETIRED |
+| TEST-015 | L5 | comparative PoC/negative evidence | REQ-006, OPS-007 | negative evidence retained; no safety bypass |
+| TEST-016 | L2/L3 | capability/provider boundary | REQ-005, NFR-005 | find-skills vs Graphify responsibility separated |
+| TEST-017 | L3 | secret/corpus exclusion | SEC-002 | secret/credential/environment fixtures excluded |
+| TEST-018 | L2/L3 | generated-artifact production prerequisite | OPS-003 | production adoption blocked until policy decision exists |
+| TEST-019 | L2/L6 | upgrade/disable regression | OPS-006, NFR-002/007 | version change requalifies; removal leaves core/fallback functional |
+| TEST-020 | L3 | predecessor baseline evidence consumption | REQ-011/014, OPS-008/009 | verifies external evidence only; no baseline creation/repair code path |
+| TEST-021 | L3 | backend independence matrix | NFR-008 | provider behavior works without Codex/Full MCP and has no direct backend dependency |
+| TEST-022 | L3 | PHASE 3 handoff | REQ-015, OPS-012 | next phase exactly PHASE 3; no direct AI Office handoff |
+| TEST-023 | L3 | controlled baseline protection | OPS-013, REQ-014 | core change request closes PoC and emits controlled-change escalation |
+| TEST-024 | L2/L3 | PHASE 2 scope firewall | NFR-009, OPS-010/012 | PHASE 1 ownership and PHASE 3+ implementation are rejected |
+| TEST-025 | L2/L3 | Current Repository Intelligence role boundary | REQ-016 | provider exposes repository intelligence only; memory/workflow/backend/state capabilities rejected |
+| TEST-026 | L2/L3 | Memory independence / forbidden dependencies | NFR-010, OPS-014 | no Memory Adapter/Obsidian/Notion import/config/runtime/direct-output dependency |
+| TEST-027 | L3 | Source of Truth precedence | NFR-012, OPS-016 | conflicting lower-priority fixture cannot override repository/baseline verdict |
+| TEST-028 | L2/L3 | Context Assembly responsibility separation | NFR-011, OPS-015 | no memory capture/retrieval/merge/injection/context-assembly implementation in PHASE 2 |
+| TEST-029 | L2/L3 | V2.2 Graphify decision closure | REQ-006/015, OPS-010/012, ID-RV-002 | all three decision outcomes finalize to `GRAPHIFY_DECISION_CLOSED` without outcome mutation; PHASE 3 handoff blocked before closure |
+| TEST-030 | L2/L3 | PHASE 7/8 reserved-phase isolation | NFR-009, OPS-010/012, ID-RV-004/005 | no provider-runtime expansion/instruction-governance capability appears; `runtime/orchestrator/provider_router.py` remains unmodified |
+
+No implementation/runtime tests are executed in this design project; these are execution-phase contracts.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-13 -----
+
+# EC-07 SECURITY
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-14 -----
+# ID-14 Security Design
+
+| ID | Approved SEC Requirement | Security Design Rule | Task | Validation |
+|---|---|---|---|---|
+| SEC-D-001 | SEC-001 | code-only/local-first; no external semantic backend | TASK-005/006 | TEST-007 |
+| SEC-D-002 | SEC-002 | corpus allowlist/exclusion for secrets/credentials/environment files | TASK-005/007 | TEST-017 |
+| SEC-D-003 | SEC-003 | install impossible without separate Dangerous Work approval | TASK-004 | TEST-004 |
+| SEC-D-004 | SEC-004 | stdio/equivalent local-only only; shared HTTP prohibited | TASK-006 | TEST-007 |
+| SEC-D-005 | SEC-005 | exact package/source/hash/extras seal; version change requalifies | TASK-003 | TEST-003/019 |
+| SEC-D-006 | SEC-006 | AGENTS/.gitignore/.codex/protected core mutation sentinels + existing approval policy | TASK-005/016 | TEST-005/023 |
+
+Additional boundary rule: a security/compatibility issue that requires Full Plan Core modification cannot be silently fixed inside PHASE 2; it triggers `CONTROLLED_CHANGE_REQUIRED`.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-14 -----
+
+# EC-08 PERMISSIONS / CAPABILITIES
+
+PROVIDER_ROUTING_AUTHORITY:
+- task_required_capabilities_are_provider_neutral: CONFIRMED
+- provider_selection_authority: PROVIDER_ROUTER
+- task_level_provider_hardcoding: PROHIBITED
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-15 -----
+# ID-15 Permission / Capability Design
+
+## Allowed Within Approved Scope
+
+| ID | Action | Boundary |
+|---|---|---|
+| PERM-001 | read current repo/source/tests/docs/baseline evidence | read-only verification |
+| PERM-002 | later execution may create PoC-only modules/config/tests | `poc/graphify` + approved tests only |
+| PERM-003 | create disposable snapshot/env after entry conditions | isolated root |
+| PERM-004 | run code-only Graphify/local stdio after install approval | PoC only |
+| PERM-005 | run Existing Inspection comparison/fallback | PoC only |
+| PERM-006 | create Decision/PHASE 3 handoff evidence | no PHASE 3 implementation |
+| PERM-007 | use synthetic lower-priority conflict fixtures for precedence tests | verification-only; no memory runtime dependency |
+
+## Separate Approval Required
+
+| ID | Action | Approval |
+|---|---|---|
+| PERM-101 | install exact-qualified Graphify package/extras | Dangerous Work user approval |
+| PERM-102 | any additional package/dependency mutation | separate applicable approval |
+| PERM-103 | controlled Full Plan Core change | external Controlled Change + applicable approval; outside PHASE 2 |
+
+## Prohibited
+
+- PHASE 2 Full Plan baseline creation/stabilization
+- direct Full Plan Core feature modification
+- `graphify install`/Codex auto-installer
+- automatic Git Hook
+- automatic AGENTS.md/.gitignore/.codex mutation
+- shared HTTP MCP
+- external semantic ingestion
+- Execution Backend Contract implementation
+- Full MCP implementation
+- AI Office/Jarvis implementation
+- direct Graphify → AI Office phase skip
+- Graphify → Obsidian direct dependency
+- Graphify → Notion direct dependency
+- Graphify runtime dependency on Memory Adapter
+- Memory Capture / Retrieval / Merge / Injection / Context Compression / Notion Projection / Project Context Assembly
+- lower-priority Memory/View overriding Current Repository / Approved Baseline
+- merge/push/deploy/Codex execution in this design project
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-15 -----
+
+# EC-09 EVIDENCE
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-16 -----
+# ID-16 Evidence Requirements
+
+| ID | Purpose | Requirement | Expected Proof |
+|---|---|---|---|
+| EVD-001 | predecessor stable baseline evidence | REQ-011/014, OPS-009 | external PHASE 1 immutable ref + evidence refs + verification result; not generated by PHASE 2 |
+| EVD-002 | current source revalidation | OPS-008/011 | current ref, stable ref comparison, drift disposition |
+| EVD-003 | version/upgrade qualification | SEC-005, OPS-006 | exact package/version/source/hash/extras/security record |
+| EVD-004 | workspace mutation proof | REQ-007, SEC-006, OPS-001/002 | before/after manifests; protected files/hooks unchanged |
+| EVD-005 | local/code-only proof | NFR-003, SEC-001/004 | no external semantic backend/shared HTTP |
+| EVD-006 | canonical truth set | REQ-004/009 | source/test/git refs + graph/source revision identity |
+| EVD-007 | comparative results | REQ-002/010, NFR-004 | identical scenario/budget metrics/raw refs |
+| EVD-008 | negative/freshness evidence | NFR-006, OPS-004/007 | false/missing/stale/inferred/ambiguous retained |
+| EVD-009 | fallback continuity | REQ-008/013, OPS-005 | Existing Inspection succeeds under Graphify failure |
+| EVD-010 | decision integrity | REQ-006/012 | sealed policy + deterministic Decision Record |
+| EVD-011 | core semantics regression | NFR-001/002, SEC-006 | authority/core unaffected; disable/remove safe |
+| EVD-012 | old AI Office handoff evidence | historical | RETIRED |
+| EVD-013 | capability/provider boundary | REQ-005, NFR-005 | role separation and vendor confinement |
+| EVD-014 | secret exclusion | SEC-002 | excluded corpus manifest |
+| EVD-015 | generated-artifact production policy | OPS-003 | approved policy record before production adoption |
+| EVD-016 | PHASE 3 handoff completeness | REQ-015, OPS-012 | correct next phase + decision/fallback/evidence/restrictions |
+| EVD-017 | backend independence | NFR-008 | dependency scan/contract matrix proving no Codex/Full-MCP requirement |
+| EVD-018 | controlled baseline protection | OPS-013 | change request trigger + external sequence + reconfirmation requirement |
+| EVD-019 | phase-boundary protection | NFR-009, OPS-010/012 | no PHASE 1 or PHASE 3+ implementation ownership in PHASE 2 |
+| EVD-020 | current repository intelligence role boundary | REQ-016 | provider capability/contract inventory proves repository-intelligence-only role |
+| EVD-021 | project memory independence | NFR-010, OPS-014 | dependency/config scan shows no Memory Adapter/Obsidian/Notion dependency |
+| EVD-022 | source precedence | NFR-012, OPS-016 | canonical repository/baseline verdict wins conflict fixture |
+| EVD-023 | context assembly responsibility separation | NFR-011, OPS-015 | static/contract scan proves no memory merge/injection/context assembly ownership |
+| EVD-024 | Graphify decision closure | V2.2 ID-RV-002 | finalized decision ref + `GRAPHIFY_DECISION_CLOSED` state + immutable outcome digest |
+| EVD-025 | PHASE 7/8 isolation | V2.2 ID-RV-004/005 | reserved-capability scan/report shows no PHASE 7/8 ownership in PHASE 2 |
+
+This design specifies evidence requirements only; it does not generate runtime evidence.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-16 -----
+
+# EC-10 FAN-OUT / FAN-IN
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-17 -----
+# ID-17 Fan-Out / Fan-In Design
+
+**FAN_OUT:** ALLOWED only after contracts/boundaries freeze.
+
+| Work Unit | Tasks | Ownership Boundary | Parallel Safety |
+|---|---|---|---|
+| FW-001 | TASK-006 | provider contract/adapters | no truth-set ownership |
+| FW-002 | TASK-007 | canonical scenarios/verifier | no provider implementation |
+| FW-003 | TASK-015 | backend-independence verifier | read provider contracts only |
+| FW-004 | TASK-017 | phase-boundary policy | no provider logic changes |
+| FW-005 | TASK-018 | provider role boundary | frozen provider contract |
+| FW-006 | TASK-019 | memory-independence verification | static/config only; no memory connection |
+| FW-007 | TASK-020 | source-precedence verification | synthetic fixtures only |
+| FW-008 | TASK-021 | context-assembly boundary | no memory implementation |
+| FW-009 | TASK-023 | PHASE 7/8 reserved-phase isolation | frozen scope inventory only |
+
+| Fan-In | Inputs | Required Validation |
+|---|---|---|
+| FI-001 | TASK-006 + TASK-007 | TEST-006/008 |
+| FI-002 | TASK-008 + TASK-009 + TASK-015 + TASK-017~021 + TASK-023 | TEST-010/011/021/024~028/030 |
+| FI-003 | FI-002 + TASK-012 | regression/review complete before TASK-010 |
+| FI-004 | TASK-010 + TASK-012 + TASK-023 | TEST-029 | decision closure before PHASE 3 handoff |
+| FI-005 | TASK-010 | TEST-012 before TASK-014 |
+
+No parallelization is allowed across predecessor-entry, package-install approval, or controlled-baseline change paths.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-17 -----
+
+# EC-11 GATES / REVIEW
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-18 -----
+# ID-18 Gate Design
+
+## GATE-001 — PHASE 1 Predecessor Baseline Evidence Verification Gate
+
+**Purpose:** PHASE 2가 stable baseline을 생성하지 않고 valid predecessor evidence만 소비하도록 보장  
+**Required Task:** TASK-013  
+**Validation:** TEST-020  
+**Evidence:** EVD-001  
+**GO:** externally produced `FULL_PLAN_STABLE_BASELINE` ref/evidence complete and verified  
+**CONDITIONAL_GO:** not used  
+**NO_GO:** missing/ambiguous predecessor evidence  
+**Bypass:** prohibited
+
+### Current Predecessor Evidence Snapshot
+
+External PHASE 1 evidence now satisfies the design-time predecessor evidence requirement:
+
+```text
+FULL_PLAN_STABLE_BASELINE = VERIFIED / APPROVED / SEALED
+BASELINE_REF = 958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37
+```
+
+This is source/evidence verification, not execution of GATE-001 by this design project.
+
+## GATE-002 — Graphify Installation / PoC Entry Gate
+
+**Required:** GATE-001 GO + current source reverified + exact version qualified/pinned + controlled-baseline guard clear + separate Dangerous Work install approval  
+**GO:** all true  
+**NO_GO:** any false/missing or source drift unresolved  
+**Bypass:** prohibited
+
+### Current Entry-Prerequisite Snapshot
+
+| Prerequisite | Current Status |
+|---|---|
+| FULL_PLAN_STABLE_BASELINE | VERIFIED |
+| CURRENT_SOURCE_BASELINE | REVERIFIED |
+| GRAPHIFY_VERSION | NOT YET QUALIFIED/PINNED |
+| Controlled Baseline Guard | design defined; execution-time check pending |
+| Dangerous Work install approval | NOT GRANTED |
+
+Therefore `GRAPHIFY_POC_ENTRY` remains `CLOSED`. This table is not a runtime Gate execution.
+
+## GATE-003 — Comparative Evidence Readiness Gate
+
+**Required:** isolation/security/provider/canonical/freshness/fallback/backend-independence/current-repository-role/memory-independence/source-precedence/context-boundary evidence  
+**GO:** complete with no unresolved safety/correctness/backend-coupling/memory-coupling/source-precedence/context-boundary issue  
+**CONDITIONAL_GO:** only non-material evidence gap that cannot affect decision, explicitly recorded  
+**NO_GO:** safety/correctness/fallback/backend-independence/memory-independence/source-precedence/context-boundary evidence failure
+
+## GATE-004 — Graphify Provider Decision Gate
+
+**Required:** TASK-010 + independent review/regression + TEST-012/013/015/019/021/024~028  
+**GO:** hard safety pass, no critical correctness regression, backend/memory independence pass, source precedence/context boundary pass, fallback pass, material-benefit policy satisfied  
+**CONDITIONAL_GO:** safety/backend/fallback pass and benefit only in explicit bounded use cases  
+**NO_GO:** hard safety, fallback, regression, backend/memory independence, source precedence/context boundary, silent-stale or material-benefit failure  
+**Bypass:** prohibited
+
+## GATE-005 — Production Graph Artifact Policy Gate
+
+Downstream production-adoption gate only. Before production adoption, an approved `commit | ignore | local-only` policy record must exist. Exact application remains deferred and is not executed by PHASE 2.
+
+## GATE-006 — PHASE 3 Handoff Readiness Gate
+
+**Required:** GATE-009 GO + Decision Closure Record + EVD-016/017/019~025 + TEST-022/024~030  
+**GO:** `GRAPHIFY_DECISION_CLOSED` verified; next phase exactly PHASE 3; provider/fallback/canonical/backend/memory/source-precedence/context-boundary/reserved-phase constraints complete  
+**NO_GO:** direct AI Office/PHASE 4+ routing, missing fallback/memory-independence/source-precedence/context-boundary evidence, or embedded PHASE 3 implementation design
+
+## GATE-007 — Controlled Stable Baseline Protection Gate
+
+**Trigger:** PHASE 2 discovers a need to modify Full Plan Core/baseline  
+**GO for PHASE 2 continuation:** only after external Change Request → Impact Analysis → Controlled Change → Regression → Baseline Reconfirmation completes and GATE-001/002 are re-evaluated  
+**NO_GO:** attempting direct core change or continuing with unreconfirmed baseline  
+**Bypass:** prohibited
+
+
+## GATE-008 — Memory / Source-of-Truth Boundary Gate
+
+**Required:** TASK-018~021 + TEST-025~028 + EVD-020~023  
+**GO:** Graphify is repository-intelligence-only; Memory Adapter/Obsidian/Notion direct dependency absent; repository/baseline precedence passes; context assembly absent  
+**CONDITIONAL_GO:** not used for forbidden dependency or precedence violations  
+**NO_GO:** any direct memory dependency, context-assembly ownership, or lower-priority override behavior  
+**Bypass:** prohibited
+
+
+## GATE-009 — V2.2 Graphify Decision Closure Gate
+
+**Required:** finalized `DecisionRecord` with exactly one outcome (`GO | CONDITIONAL_GO | NO_GO`) + independent review/regression refs + EVD-024 + TEST-029  
+**GO:** `GraphifyDecisionClosureRecord.state = GRAPHIFY_DECISION_CLOSED`, decision outcome digest unchanged, next phase = PHASE 3  
+**CONDITIONAL_GO:** not used; closure is deterministic lifecycle finalization  
+**NO_GO:** missing/ambiguous decision, outcome mutation during closure, PHASE 3 handoff attempted before closure  
+**Bypass:** prohibited
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-18 -----
+
+# EC-12 RECOVERY
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-19 -----
+# ID-19 Recovery Design
+
+| ID | Trigger | Recovery Flow | Prohibited Bypass |
+|---|---|---|---|
+| RCV-001 | source drift | close entry → diagnose → if baseline/core affected route controlled change → source/baseline revalidation → GATE-001/002 | silent drift acceptance |
+| RCV-002 | package/version/install failure | diagnose → qualify exact alternative within scope → focused validation → GATE-002 | floating/latest/unofficial install |
+| RCV-003 | workspace mutation | stop → capture diff → restore disposable/canonical state → tighten isolation → focused validation + regression | accepting mutation |
+| RCV-004 | false/missing/stale/ambiguous critical result | diagnose provider/freshness → adjust PHASE 2 adapter/rule only → focused validation → GATE-003/004 | Graphify confidence as truth |
+| RCV-005 | Graphify unavailable | diagnose → verify Existing Inspection fallback → Decision may be NO_GO → continue to PHASE 3 handoff | blocking Master Roadmap solely on Graphify |
+| RCV-006 | core regression | stop → identify PoC-owned cause; if Full Plan Core change needed route RCV-009 → focused + regression → same gate | benefit overriding regression |
+| RCV-007 | backend coupling detected | remove backend-specific dependency within provider boundary → TEST-021 → review → GATE-003/004 | accepting Codex/Full-MCP hard dependency |
+| RCV-008 | phase boundary violation | remove PHASE 1/3+ work from PHASE 2 → TEST-024 → GATE-006 | scope creep |
+| RCV-009 | Full Plan Core change required | `CONTROLLED_CHANGE_REQUIRED` → external Change Request → Impact Analysis → Controlled Change → Regression → Baseline Reconfirmation → GATE-001/002 | PHASE 2 direct core modification |
+| RCV-010 | Memory/Obsidian/Notion dependency detected | stop → remove dependency → TEST-026/028 → regression → GATE-008 | accepting direct memory coupling |
+| RCV-011 | Source precedence violation | stop → isolate faulty decision/adapter logic → canonical fixture revalidation → TEST-027 → GATE-008/004 | allowing stale memory/view to override repository |
+| RCV-012 | Context Assembly functionality detected | stop → remove from PHASE 2 → route responsibility to later AI Office phase → TEST-028 → GATE-008 | implementing future-phase memory/context behavior |
+| RCV-013 | decision closure invalid/ambiguous | stop → restore immutable finalized DecisionRecord → TEST-029 → GATE-009 → GATE-006 | handoff before closure or outcome mutation |
+| RCV-014 | PHASE 7/8 capability contamination | stop → remove reserved-phase work from PHASE 2 → TEST-030 → independent review → GATE-006 | implementing provider-runtime expansion or instruction-governance runtime |
+
+All recoveries follow: Failure → Diagnose → Remediate/External Route → Focused Validation → Regression → Independent Review → Same Gate Re-evaluation.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-19 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-26 -----
+# ID-26 Post-Approval Change Control
+
+Technical HOW-only change:
+
+```text
+Implementation Design Revision
+→ Independent Diagnosis
+→ User Design Re-approval
+```
+
+Requirement / Scope / Constraint / Success Criterion / Deliverable change:
+
+```text
+PLAN_REVISION_REQUIRED
+→ Development Plan / Requirements revision as applicable
+→ approval
+→ Implementation Design revision
+→ diagnosis
+→ user re-approval
+```
+
+Full Plan Stable Baseline change during PHASE 2 additionally follows OPS-013 controlled-change sequence and re-evaluates GATE-001/002.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-26 -----
+
+# EC-13 TRACEABILITY
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-21 -----
+# ID-21 Design Traceability
+
+## Traceability Status
+
+The current authoritative `RA-GRAPHIFY-0.5` requirements baseline is bound through the approved DP-GRAPHIFY-1.3 authority and reconciled.
+
+```text
+REQ_COVERAGE: 16/16
+NFR_COVERAGE: 12/12
+SEC_COVERAGE: 6/6
+OPS_COVERAGE: 16/16
+TOTAL_REQUIREMENT_COVERAGE: 50/50
+MUST_COVERAGE: COMPLETE
+SHOULD_COVERAGE: COMPLETE
+ACCEPTANCE_CONDITION_BINDING: COMPLETE
+```
+
+## Full Requirement → Design Traceability
+
+| Requirement | Acceptance Condition | Success Criterion | Architecture | Component | Task | Validation | Evidence | Gate | Deliverable |
+|---|---|---|---|---|---|---|---|---|---|---|
+| REQ-001 | Governance/Orchestration Authority와 분리된다. | SC-009 | ARC-001 | CMP-105/106/107 | TASK-006 | TEST-006 | EVD-011/013 | GATE-003/004 | DEL-003/004 |
+| REQ-002 | 실제 Harness scenario 비교 결과가 존재한다. | SC-003/004 | ARC-005 | CMP-109 | TASK-007/008 | TEST-010 | EVD-007 | GATE-003 | DEL-003 |
+| REQ-003 | Graphify 단독으로 Gate/Completion/Release 판정을 하지 않는다. | SC-007/009 | ARC-001/004 | CMP-105/108 | TASK-006/007 | TEST-006/008 | EVD-006/013 | GATE-003 | DEL-003 |
+| REQ-004 | 주요 결론에 source validation이 존재한다. | SC-005/007 | ARC-004 | CMP-108 | TASK-007 | TEST-008 | EVD-006/008 | GATE-003 | DEL-003 |
+| REQ-005 | find-skills=Capability Discovery, Graphify=Repository Intelligence로 정의된다. | SC-015 | ARC-009 | CMP-112 | TASK-006 | TEST-016 | EVD-013 | GATE-003 | DEL-003 |
+| REQ-006 | GO / CONDITIONAL GO / NO-GO 기록이 존재한다. | SC-011 | ARC-007 | CMP-110 | TASK-010 | TEST-012/015 | EVD-010 | GATE-004 | DEL-004 |
+| REQ-007 | Harness-managed files가 자동 변경되지 않는다. | SC-010 | ARC-003/006 | CMP-104 | TASK-005 | TEST-005 | EVD-004 | GATE-002/003 | DEL-002/003 |
+| REQ-008 | Graphify 장애 시 Harness investigation이 계속된다. | SC-006/012 | ARC-001/005 | CMP-107 | TASK-006/009 | TEST-011 | EVD-009 | GATE-003/004 | DEL-003/004 |
+| REQ-009 | Graph와 source revision의 관계를 검증할 수 있다. | SC-005 | ARC-004 | CMP-108 | TASK-007/009 | TEST-009 | EVD-006/008 | GATE-003 | DEL-003 |
+| REQ-010 | 실제 비교 결과가 존재한다. | SC-003/004 | ARC-005 | CMP-109 | TASK-008 | TEST-010 | EVD-007 | GATE-003 | DEL-003 |
+| REQ-011 | Full Plan Stable Baseline 증거 없이 Graphify package installation 또는 PoC activation이 발생하지 않는다. | SC-001 | ARC-002 | CMP-113/102 | TASK-013/004 | TEST-020/004 | EVD-001 | GATE-001/002 | DEL-001 |
+| REQ-012 | Graphify decision record가 AI Office implementation entry보다 먼저 존재한다. | SC-011/013 | ARC-007/011 | CMP-110/114 | TASK-010/014 | TEST-012/022 | EVD-010/016 | GATE-004/006 | DEL-004/005 |
+| REQ-013 | Graphify hard dependency가 발생하지 않는다. | SC-006/012 | ARC-001/011 | CMP-107/114 | TASK-009/014 | TEST-011/022 | EVD-009/016 | GATE-004/006 | DEL-004/005 |
+| REQ-014 | Graphify Plan에 Full Plan 구현 또는 Stable Baseline 생성 작업이 없다. | SC-001/002/014 | ARC-002/013 | CMP-113/116 | TASK-013/016 | TEST-020/023 | EVD-001/018 | GATE-001/007 | DEL-001 |
+| REQ-015 | 다음 공식 Handoff 대상이 PHASE 3 — Execution Backend Contract Finalization이다. | SC-013 | ARC-011 | CMP-114 | TASK-014 | TEST-022 | EVD-016 | GATE-006 | DEL-005 |
+| REQ-016 | Project Memory capture/store/retrieve/projection, Human View, Run State 책임이 Graphify scope에 포함되지 않는다. | SC-016/019 | ARC-015/019 | CMP-117/120 | TASK-018/021 | TEST-025/028 | EVD-020/023 | GATE-008 | DEL-003/004/005 |
+| NFR-001 | Graphify 유무와 approval/authority semantics가 독립적이다. | SC-009 | ARC-001 | CMP-001~006/105 | TASK-006/012 | TEST-013 | EVD-011 | GATE-004 | DEL-004 |
+| NFR-002 | Graphify 제거 시 Harness core가 정상 동작한다. | SC-006/009 | ARC-001 | CMP-105/107 | TASK-006/012 | TEST-006/019 | EVD-009/011 | GATE-004 | DEL-004 |
+| NFR-003 | 외부 LLM 없이 기본 PoC가 가능하다. | SC-010 | ARC-006 | CMP-104/106 | TASK-005/006 | TEST-007 | EVD-005 | GATE-002/003 | DEL-002/003 |
+| NFR-004 | 동일 task set 기준 결과가 존재한다. | SC-003 | ARC-005 | CMP-109 | TASK-008 | TEST-010 | EVD-007 | GATE-003 | DEL-003 |
+| NFR-005 | vendor 변경이 Harness 전체 규칙으로 확산되지 않는다. | SC-015 | ARC-009 | CMP-112 | TASK-006 | TEST-016 | EVD-013 | GATE-003 | DEL-003 |
+| NFR-006 | stale/inferred 상태를 판단할 수 있다. | SC-005 | ARC-004 | CMP-108 | TASK-007/009 | TEST-008/009 | EVD-008 | GATE-003 | DEL-003 |
+| NFR-007 | Graphify disabled/NO-GO 상태에서도 후속 Core가 동작한다. | SC-006/012 | ARC-001/011 | CMP-107/114 | TASK-009/014 | TEST-011/019 | EVD-009/016 | GATE-004/006 | DEL-004/005 |
+| NFR-008 | 특정 Execution Backend의 존재 여부와 독립적으로 PoC 판단 가능하다. | SC-008 | ARC-012 | CMP-115 | TASK-015 | TEST-021 | EVD-017 | GATE-003/004/006 | DEL-003/004/005 |
+| NFR-009 | PHASE 2 범위 외 기능이 계획에 포함되지 않는다. | SC-002/015 | ARC-014 | CMP-121 | TASK-017 | TEST-024 | EVD-019 | GATE-004/006 | DEL-004/005 |
+| NFR-010 | Memory Adapter / Obsidian / Notion이 없는 환경에서도 Graphify PoC와 Repository Intelligence 기능을 평가할 수 있다. | SC-016/017 | ARC-016 | CMP-118 | TASK-019 | TEST-026 | EVD-021 | GATE-008/004 | DEL-003/004/005 |
+| NFR-011 | Graphify가 Memory Retrieval, Merge, Injection 또는 Project Context Assembly를 수행하지 않는다. | SC-019 | ARC-018/019 | CMP-120 | TASK-021 | TEST-028 | EVD-023 | GATE-008/006 | DEL-003/005 |
+| NFR-012 | Repository/Baseline과 Memory 충돌 시 Current Repository / Approved Baseline을 authoritative fact로 사용한다. | SC-007/018 | ARC-017 | CMP-119 | TASK-020 | TEST-027 | EVD-022 | GATE-008/004/006 | DEL-003/004/005 |
+| SEC-001 | source code가 외부 semantic backend로 전송되지 않는다. | SC-010 | ARC-006 | CMP-104/106 | TASK-005/006 | TEST-007 | EVD-005 | GATE-002/003 | DEL-002/003 |
+| SEC-002 | exclusion policy가 테스트된다. | SC-010 | ARC-006 | CMP-104/108 | TASK-005/007 | TEST-017 | EVD-014 | GATE-002/003 | DEL-002/003 |
+| SEC-003 | 설치 전 별도 위험 작업 승인이 존재한다. | SC-010 | ARC-003 | CMP-102 | TASK-004 | TEST-004 | EVD-003/004 | GATE-002 | DEL-002 |
+| SEC-004 | local stdio 또는 equivalent local-only mode를 사용한다. | SC-010 | ARC-006 | CMP-106 | TASK-006 | TEST-007 | EVD-005 | GATE-002/003 | DEL-002/003 |
+| SEC-005 | 승인된 version record가 존재한다. | SC-010 | ARC-003 | CMP-103 | TASK-003 | TEST-003/019 | EVD-003 | GATE-002 | DEL-002 |
+| SEC-006 | 기존 Caution/Dangerous Work policy를 유지한다. | SC-009/010/014 | ARC-003/013 | CMP-104/116 | TASK-005/016 | TEST-005/023 | EVD-004/018 | GATE-002/007 | DEL-002 |
+| OPS-001 | 실패 시 production Harness에 잔여 변경이 없다. | SC-010 | ARC-006 | CMP-104 | TASK-005 | TEST-005 | EVD-004 | GATE-002/003 | DEL-002/003 |
+| OPS-002 | hook state가 유지된다. | SC-010 | ARC-003/006 | CMP-104 | TASK-005 | TEST-005 | EVD-004 | GATE-002 | DEL-002 |
+| OPS-003 | commit/ignore/local-only 정책이 승인된다. | SC-015 | ARC-010/011 | CMP-114 | TASK-014 | TEST-018 | EVD-015 | GATE-005/006 | DEL-005 |
+| OPS-004 | refresh/freshness rule이 존재한다. | SC-005 | ARC-004 | CMP-108 | TASK-007/009 | TEST-009 | EVD-008 | GATE-003 | DEL-003 |
+| OPS-005 | 장애 테스트가 PASS한다. | SC-006/012 | ARC-001 | CMP-107 | TASK-009 | TEST-011 | EVD-009 | GATE-004 | DEL-003/004 |
+| OPS-006 | automatic upgrade가 수행되지 않는다. | SC-010 | ARC-003 | CMP-103 | TASK-003 | TEST-003/019 | EVD-003 | GATE-002 | DEL-002 |
+| OPS-007 | 부정적 evidence가 결과에 포함된다. | SC-003/005 | ARC-004/005 | CMP-108/109 | TASK-007/008/009 | TEST-008/009/010/015 | EVD-008 | GATE-003 | DEL-003 |
+| OPS-008 | branch/commit/source state가 기록된다. | SC-001 | ARC-002 | CMP-113/102 | TASK-002/013 | TEST-002/020 | EVD-002 | GATE-001/002 | DEL-001 |
+| OPS-009 | predecessor baseline evidence 확인 후에만 Entry가 열린다. | SC-001 | ARC-002 | CMP-113/102 | TASK-013/004 | TEST-020/004 | EVD-001 | GATE-001/002 | DEL-001 |
+| OPS-010 | Graphify가 PHASE 1을 선행하거나 PHASE 3을 건너뛰지 않는다. | SC-002/012/015 | ARC-011/014 | CMP-121/114 | TASK-017/014 | TEST-024/022 | EVD-019/016 | GATE-006 | DEL-005 |
+| OPS-011 | `SOURCE_DRIFT_DETECTED` 후 재검증 없이는 PoC를 시작하지 않는다. | SC-001/014 | ARC-013 | CMP-116 | TASK-002/016 | TEST-002/023 | EVD-002/018 | GATE-002/007 | DEL-001/002 |
+| OPS-012 | Graphify 다음 공식 Phase가 Execution Backend Contract Finalization이다. | SC-013/015 | ARC-011/014 | CMP-114/121 | TASK-014/017 | TEST-022/024 | EVD-016/019 | GATE-006 | DEL-005 |
+| OPS-013 | Change Request → Impact Analysis → Controlled Change → Regression Test → Baseline Reconfirmation을 따른다. | SC-002/014 | ARC-013 | CMP-116 | TASK-016 | TEST-023 | EVD-018 | GATE-007 | DEL-001/002 |
+| OPS-014 | 직접 호출·저장·동기화 경로가 존재하지 않는다. | SC-017 | ARC-016 | CMP-118 | TASK-019 | TEST-026 | EVD-021 | GATE-008 | DEL-003/004 |
+| OPS-015 | Graphify Development Plan 및 Implementation Design에 PHASE 6 Memory implementation task가 존재하지 않는다. | SC-016/019 | ARC-019 | CMP-120 | TASK-021 | TEST-028 | EVD-023 | GATE-008/006 | DEL-003/005 |
+| OPS-016 | Graphify Decision Evidence가 lower-priority Memory source 때문에 current repository fact를 변경하지 않는다. | SC-007/018 | ARC-017 | CMP-119 | TASK-020 | TEST-027 | EVD-022 | GATE-008/004 | DEL-003/004 |
+
+## V2.2 Revalidation Traceability
+
+| Revalidation ID | Design Coverage | Validation | Evidence / Gate | Result |
+|---|---|---|---|---|
+| ID-RV-001 Parent Authority Update | ID-00/02/28 → V2.2 | documentary consistency check | diagnosis | PASS |
+| ID-RV-002 PHASE 2 Exit Gate | ARC-020, CMP-122, TASK-022 | TEST-029 | EVD-024, GATE-009 | PASS |
+| ID-RV-003 Upstream Entry Dependency | ARC-002, CMP-113/102, TASK-013/004 | TEST-020/004 | EVD-001, GATE-001/002; baseline ref now verified | PASS |
+| ID-RV-004 PHASE 7 Isolation | ARC-021, CMP-123, TASK-023 | TEST-030 | EVD-025, GATE-006 | PASS |
+| ID-RV-005 PHASE 8 Isolation | ARC-021, CMP-123, TASK-023 | TEST-030 | EVD-025, GATE-006 | PASS |
+| ID-RV-006 Requirement Traceability | ID-04/21 | 50/50 traceability review | diagnosis | PASS |
+| ID-RV-007 Memory Boundary | ARC-016/018/019, TASK-019/021 | TEST-026/028 | EVD-021/023, GATE-008 | PASS |
+| ID-RV-008 Backend Independence | ARC-012, CMP-115, TASK-015 | TEST-021 | EVD-017 | PASS |
+| ID-RV-009 Source of Truth | ARC-017, CMP-119, TASK-020 | TEST-027 | EVD-022, GATE-008 | PASS |
+| ID-RV-010 PHASE 3 Handoff | ARC-011/020, TASK-022/014 | TEST-029/022 | EVD-024/016, GATE-009/006 | PASS |
+
+## Success Criteria Coverage
+
+All `SC-001 ~ SC-020` are covered. SC-001~019 retain the existing technical traceability; SC-020 is an approved Planning/Execution-Contract binding validated at Implementation Design diagnosis.
+
+- SC-016: Graphify is not Project Memory → REQ-016 / NFR-010 / OPS-015
+- SC-017: no Graphify→Obsidian/Notion direct dependency → NFR-010 / OPS-014
+- SC-018: repository/baseline precedence → NFR-012 / OPS-016
+- SC-019: Context Assembly is not Graphify responsibility → REQ-016 / NFR-011 / OPS-015
+- SC-020: Full Plan HYBRID bindings preserved and no task-level provider assignment → ID-00/02 Full Plan HYBRID Binding + 21/21 TASK Required Capabilities + CT-009 provider-router preservation + independent design diagnosis
+
+## Deliverable Coverage
+
+- DEL-001 — Entry Gate Verification Record: predecessor/source/baseline requirements
+- DEL-002 — Safety & Environment Qualification Record: install/isolation/security/version requirements
+- DEL-003 — Comparative PoC Report: intelligence quality/freshness/fallback/backend-memory-boundary evidence
+- DEL-004 — GO / CONDITIONAL GO / NO-GO Decision Record: deterministic provider decision with hard boundaries
+- DEL-005 — PHASE 3 Handoff Package: provider/fallback/backend/memory/source-precedence/context-boundary constraints
+
+**TRACEABILITY_RESULT:** COMPLETE / PASS
+
+**SUCCESS_CRITERIA_COVERAGE:** 20/20
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-21 -----
+
+# EC-14 PROJECTION INTEGRITY
+
+NO_SEMANTIC_EXPANSION: CONFIRMED
+NO_SEMANTIC_LOSS: CONFIRMED
+NO_UNAUTHORIZED_SCOPE_CHANGE: CONFIRMED
+PROJECT_IDENTITY_INTEGRITY: PASS
+VERSION_IDENTITY_INTEGRITY: PASS
+FILENAME_VERSION_SERIALIZATION_INTEGRITY: PASS
+REQUIRED_CAPABILITY_INTEGRITY: PASS — 21/21 active tasks
+HYBRID_POLICY_INTEGRITY: PASS
+SOURCE_DRIFT_STATUS: DETECTED_FROM_HISTORICAL_PLANNING_REF / REVALIDATED_AT_STABLE_BASELINE
+UNRESOLVED_SOURCE_DRIFT: NO
+CURRENT_SOURCE_COMPATIBILITY: PASS
+
+requirements_coverage: 50/50
+success_criteria_coverage: 20/20 (including compact slash/range references preserved verbatim)
+tasks_coverage: 21/21 active tasks + retired task semantics preserved
+required_capabilities_coverage: 21/21 active tasks
+validations_coverage: TEST-001~TEST-030 semantics preserved
+security_coverage: SEC-D-001~SEC-D-006 preserved
+permissions_coverage: PERM-001~PERM-007, PERM-101~PERM-103 preserved
+evidence_coverage: EVD-001~EVD-025 preserved
+fan_out_coverage: FW-001~FW-009 preserved
+fan_in_coverage: FI-001~FI-005 preserved with unique stable IDs
+gates_coverage: GATE-001~GATE-009 preserved
+recovery_coverage: RCV-001~RCV-014 preserved
+traceability_coverage: source ID-21 preserved verbatim
+
+SOURCE_SECTION_PROJECTION: ID-00~ID-28 each included exactly once as an exact source section projection.
+HANDOFF_RESULT: READY_FOR_CONTRACT_DIAGNOSIS
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-03 -----
+# ID-03 Current State Verification
+
+## Stable Baseline Evidence
+
+GitHub `main` contains the final PHASE 1 records:
+
+- `docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_20260914.json`
+- `docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_COMPLETION_20260914.md`
+- `docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_MANIFEST_20260914.json`
+- `docs/harness/FULL_PLAN_STABLE_BASELINE_GATE_REGRESSION_REPORT_20260914.md`
+
+The records bind the completed baseline to:
+
+`958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37`
+
+and state:
+
+- Implementation COMPLETE
+- Final baseline completion VERIFIED COMPLETE
+- final approval APPROVED / SEALED
+- blocking defects 0
+- focused Full Plan regression 233 PASS
+- named Full Plan contract tests 24/24 PASS
+- canonical full repository regression 1,141 OK
+- clean-clone full repository regression 1,141 OK
+- synthetic Full Plan runtime PASS
+
+Current `main` head is:
+
+`25428e9bf1991ee26957bd84c39a3505b47a667a`
+
+The head is the baseline code plus the final approval-document seal commit. No post-baseline runtime-code change is introduced by that seal commit.
+
+## Historical Planning Ref Drift
+
+Historical design verification used:
+
+`task-orch-03-worker-authority @ ee522523aae573a12194331a9f843f62db6994f3`
+
+The completed mainline Full Plan implementation materially diverged from that planning ref. This is expected PHASE 1 implementation progress but must not be silently treated as `SOURCE_DRIFT_STATUS: CLEAR`.
+
+```text
+SOURCE_DRIFT_STATUS = DETECTED_FROM_HISTORICAL_PLANNING_REF
+CURRENT_SOURCE_REVALIDATION = COMPLETED
+UNRESOLVED_SOURCE_DRIFT = NO
+PLAN_REVISION_REQUIRED = NO
+```
+
+The drift changes current module/path reality but does not change approved Graphify requirements, scope, constraints, success criteria or deliverables.
+
+## Verified Current Repository Inspection
+
+The stable baseline contains:
+
+`runtime/orchestrator/read_only_inspector.py`
+
+with canonical callable:
+
+`inspect_read_only(project_root, *, role=...)`
+
+Properties verified from source:
+
+- inspection mode is `read_only_no_write`
+- `write_operations_performed = False`
+- static project contract / approval / gate evidence is inspected
+- runtime/sandbox authorization is not inferred from static business/gate evidence
+- invalid mapping/evidence fails closed
+
+The repository runtime README documents the corresponding official behavior as `inspect --read-only`.
+
+Therefore old `CT-201 PATH_TO_VERIFY` is resolved.
+
+## Verified Existing Execution Routing Boundary
+
+`runtime/orchestrator/provider_router.py` is an **Execution Backend provider router** for Codex/NVIDIA/local/manual modes. Stable baseline semantics include:
+
+- read-only HYBRID work → NVIDIA
+- state-changing HYBRID work → Codex
+- NVIDIA mode rejects non-read-only work
+- no NVIDIA → Codex automatic fallback
+
+Graphify is Repository Intelligence, not an Execution Backend provider. PHASE 2 must not add Graphify to this router.
+
+## Verified Core Authority / Lifecycle Targets
+
+The following stable-baseline files exist and remain preserve/regression targets:
+
+- `runtime/orchestrator/stage_gate.py`
+- `runtime/orchestrator/completion_contract.py`
+- `runtime/orchestrator/execution_contract.py`
+- `runtime/orchestrator/completion_authority.py`
+- `runtime/orchestrator/worker_authority.py`
+- `tests/test_worker_authority.py`
+- `tests/test_read_only_inspect.py`
+- `AGENTS.md`
+- `.gitignore`
+- `.codex/`
+
+The stage gate still normalizes `GO | CONDITIONAL GO | NO-GO | PENDING` and produces only the governed stage-gate decision surface.
+
+## Controlled-File / Hook State
+
+At stable baseline:
+
+```text
+.codex/
+├─ agents/
+└─ skills/
+```
+
+`.codex/hooks.json` does not exist.
+
+Therefore old `CT-203 PATH_TO_VERIFY` is resolved as:
+
+`EXPECTED_ABSENT / MUST_REMAIN_ABSENT DURING FIRST POC`.
+
+`.gitignore` explicitly excludes `.env`, `.env.*`, key/pem and secret patterns, and local runtime/workspace output. The PoC security exclusion design remains compatible with current repository policy.
+
+## Graphify Source Presence
+
+No `poc/` root exists at the stable baseline and repository search finds no existing Graphify implementation source.
+
+Therefore all planned `poc/graphify/**` and `tests/test_graphify_*.py` implementation targets are **CREATE**, not REVISE.
+
+## Current Execution State
+
+```text
+FULL_PLAN_STABLE_BASELINE = VERIFIED
+CURRENT_SOURCE_BASELINE = REVERIFIED
+GRAPHIFY_VERSION = NOT_YET_QUALIFIED_AND_PINNED
+DANGEROUS_WORK_INSTALL_APPROVAL = NOT_GRANTED
+GRAPHIFY_POC_ENTRY = CLOSED
+GRAPHIFY_INSTALLATION = NOT_ALLOWED
+```
+
+This section records source verification only; it does not execute a Graphify gate or authorize installation.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-03 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-22 -----
+# ID-22 Plan Boundary Check
+
+| Boundary | Result | Handling |
+|---|---|---|
+| Parent Authority | PASS | Master Roadmap V2.2 FINAL / APPROVED |
+| Requirements Authority | PASS | RA-GRAPHIFY-0.5 current / approved |
+| Development Plan Authority | PASS | DP-GRAPHIFY-1.3 current / approved |
+| Requirement traceability | PASS | 50/50 preserved |
+| Upstream Entry Dependency | PASS | requirement preserved; predecessor baseline now VERIFIED |
+| V2.2 Exit State | PASS | Decision finalization → `GRAPHIFY_DECISION_CLOSED` |
+| Current Repository Intelligence boundary | PASS | ARC-015/TASK-018 |
+| Backend Independence | PASS | ARC-012/TASK-015 |
+| Project Memory Independence | PASS | ARC-016/TASK-019 |
+| Source precedence | PASS | ARC-017/TASK-020 |
+| Context Assembly separation | PASS | ARC-018/019/TASK-021 |
+| PHASE 1 ownership | PASS | predecessor evidence only |
+| PHASE 3 handoff | PASS | closure required before TASK-014/GATE-006 |
+| PHASE 6 Memory boundary | PASS | no memory implementation |
+| PHASE 7 Provider Runtime Expansion isolation | PASS | ARC-021/CMP-123/TASK-023/TEST-030 |
+| PHASE 8 Instruction Governance isolation | PASS | ARC-021/CMP-123/TASK-023/TEST-030 |
+| Controlled Stable Baseline | PASS | external controlled-change route preserved |
+| Current Source Baseline | PASS | stable code ref `958d335c...` reverified |
+| Historical Source Drift | PASS / RESOLVED | detected from `ee522...`; no approved-WHAT impact |
+| Existing Inspection Path | PASS | CT-201 resolved to `read_only_inspector.inspect_read_only` |
+| `.codex/hooks.json` state | PASS | verified absent; expected-absent sentinel |
+| Project Identity Binding | PASS | PROJECT_NAME/ID/KEY inherited verbatim from DP-1.3 |
+| Lifecycle Binding | PASS | EXISTING + UPGRADE + UPGRADE-001 |
+| Target Project Root | PASS | explicit `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering` |
+| Native Version Binding | PASS | CURRENT/TARGET_VERSION explicitly N/A; no version invented |
+| Full Plan HYBRID Binding | PASS | contract/mode/router authority inherited verbatim |
+| Active Task Capability Coverage | PASS | 21/21 provider-neutral Required Capabilities |
+| Provider Hardcoding | PASS | 0 concrete task-level provider assignments |
+| Authority Reference Currency | PASS | RA-GRAPHIFY-0.5 / DP-GRAPHIFY-1.3 only as current authorities |
+| Stable Fan-In ID Uniqueness | PASS | FI-001~FI-005 unique; FI-004/FI-005 semantics preserved separately |
+| Filename Version Serialization | PASS | `NO_NATIVE_VERSION` token is filename-only; lifecycle values unchanged |
+| Unapproved Provider Expansion | PASS | none |
+| Unapproved WHAT change | NONE | bounded execution-metadata/capability revision only |
+
+**PLAN_REVISION_REQUIRED:** NO.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-22 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-23 -----
+# ID-23 Design Assumptions / Open Issues
+
+## Verified / Inherited Facts
+
+- `DP-GRAPHIFY-1.3` is APPROVED and is the sole current Development Plan authority.
+- `RA-GRAPHIFY-0.5` is the current APPROVED requirements baseline.
+- `PROJECT_KEY = GCH-GRAPHIFY`.
+- `PROJECT_TYPE = EXISTING`.
+- `PROJECT_LIFECYCLE_MODE = UPGRADE`.
+- `TARGET_PROJECT_ROOT = /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`.
+- repository has no native project version scheme.
+- authoritative `CURRENT_VERSION` and `TARGET_VERSION` remain explicitly N/A by Planning authority.
+- filename-only serialization token for both version fields is `NO_NATIVE_VERSION`.
+- `UPGRADE_SEQUENCE = UPGRADE-001`.
+- Full Plan HYBRID binding is authoritative and explicit.
+- `FULL_PLAN_STABLE_BASELINE_REF = 958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37`.
+- `CURRENT_MAIN_HEAD = 25428e9bf1991ee26957bd84c39a3505b47a667a`.
+- `CURRENT_SOURCE_BASELINE = REVERIFIED`.
+- Existing Repository Inspection is bound to `runtime/orchestrator/read_only_inspector.py::inspect_read_only()`.
+- `.codex/hooks.json` is absent at the stable baseline.
+- no `poc/graphify` implementation exists at the stable baseline; Graphify targets are CREATE.
+- Execution provider routing remains owned by `runtime/orchestrator/provider_router.py`.
+- 21/21 active tasks have provider-neutral Required Capabilities.
+- Fan-In IDs are unique through `FI-005`.
+
+## Technical Assumptions
+
+- ASM-D-001: `poc/graphify/` remains the approved non-core PoC namespace.
+- ASM-D-002: Existing Inspection adapter wraps read-only inspection semantics without modifying core inspector behavior.
+- ASM-D-003: Required Capability declarations describe execution needs only; concrete provider selection remains exclusively with `PROVIDER_ROUTER`.
+- ASM-D-004: `NO_NATIVE_VERSION` is a filename serialization token only and must never be treated as a native project version.
+- ASM-D-005: Decision threshold mechanics remain HOW-level and unchanged.
+
+## Open / Deferred
+
+- production graph artifact Git policy remains deferred.
+- exact Graphify package version is resolved at execution qualification, not invented in design.
+- Dangerous Work install approval remains an external permission prerequisite.
+
+## Resolved Execution-Approval Revalidation Findings
+
+- BLOCKER-001 stale authority references: RESOLVED.
+- BLOCKER-002 duplicate `FI-004`: RESOLVED by preserving the first as `FI-004` and assigning `FI-005` to the second existing semantic.
+- BLOCKER-003 filename-unsafe version prose: RESOLVED by filename-only `NO_NATIVE_VERSION` serialization mapping.
+
+## Design Blocker
+
+N/A.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-23 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-24 -----
+# ID-24 Implementation Design Diagnosis
+
+Independent diagnosis is recorded separately in `GCH-GRAPHIFY_ID-GRAPHIFY-0.10-DIAG-01_IMPLEMENTATION_DESIGN_DIAGNOSIS.md`.
+
+```text
+DIAGNOSIS_STATUS: PASS
+DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL
+
+PLAN_AUTHORITY: DP-GRAPHIFY-1.3
+REQUIREMENTS_AUTHORITY: RA-GRAPHIFY-0.5
+
+AUTHORITY_REFERENCE_CURRENCY: PASS
+STABLE_FANIN_ID_UNIQUENESS: PASS
+FILENAME_VERSION_SERIALIZATION: PASS
+NATIVE_VERSION_SEMANTICS_PRESERVED: PASS
+
+PROJECT_IDENTITY_INTEGRITY: PASS
+LIFECYCLE_VERSION_INTEGRITY: PASS
+TARGET_PROJECT_ROOT_BINDING: PASS
+FULL_PLAN_HYBRID_BINDING: PASS
+
+ACTIVE_TASK_COUNT: 21
+TASK_REQUIRED_CAPABILITY_COVERAGE: 21/21
+PROVIDER_HARDCODING: 0
+UNAPPROVED_ROUTING_EXPANSION: 0
+
+REQUIREMENT_TRACEABILITY: 50/50
+SUCCESS_CRITERIA_COVERAGE: 20/20
+
+SOURCE_BINDING: PASS
+PHASE_2_SCOPE_INTEGRITY: PASS
+GRAPHIFY_DECISION_CLOSED_ALIGNMENT: PASS
+PHASE_3_HANDOFF: PASS
+PHASE_6_7_8_ISOLATION: PASS
+
+PLAN_REVISION_REQUIRED: NO
+BLOCKER_COUNT: 0
+UNRESOLVED_MAJOR_COUNT: 0
+UNRESOLVED_MINOR_COUNT: 0
+READY_FOR_USER_APPROVAL: YES
+```
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-24 -----
+
+----- BEGIN APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-25 -----
+# ID-25 User Approval
+
+The successor Implementation Design `ID-GRAPHIFY-0.10` is **explicitly user-approved**.
+
+```text
+DESIGN_VERSION: ID-GRAPHIFY-0.10
+DESIGN_STATUS: APPROVED
+APPROVAL_STATUS: APPROVED
+USER_APPROVAL: GRANTED
+USER_APPROVED_DATE: 2026-09-14
+
+DIAGNOSIS_STATUS: PASS
+DIAGNOSIS_VERSION: ID-GRAPHIFY-0.10-DIAG-01
+BLOCKER_COUNT: 0
+UNRESOLVED_MAJOR_COUNT: 0
+UNRESOLVED_MINOR_COUNT: 0
+```
+
+This approval supersedes `ID-GRAPHIFY-0.9` as the sole current Implementation Design authority.
+
+The approval confirms:
+- current authorities are `RA-GRAPHIFY-0.5` and `DP-GRAPHIFY-1.3`;
+- Project Identity / Lifecycle / Version binding remains intact;
+- Full Plan HYBRID binding remains intact;
+- provider-neutral Required Capabilities remain complete for all 21 active TASKs;
+- duplicate Fan-In stable ID was resolved without semantic loss;
+- filename-only `NO_NATIVE_VERSION` serialization is approved while native version semantics remain unchanged;
+- 50/50 requirement traceability and 20/20 Success Criteria coverage remain intact.
+
+This approval does **not** authorize:
+- Graphify package installation;
+- Graphify PoC execution;
+- repository code implementation;
+- runtime test execution;
+- deployment;
+- merge or Git push;
+- Codex execution;
+- runtime evidence generation.
+
+Those actions remain subject to downstream Execution Approval and explicit permission gates.
+
+---
+----- END APPROVED IMPLEMENTATION DESIGN SOURCE SECTION ID-25 -----
+
+<!-- SEMANTIC_BODY_END -->
+
+# EC-15 CONTRACT DIAGNOSIS RESULT
+
+DIAGNOSIS_DECISION: PASS
+DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL
+BLOCKER_COUNT: 0
+MAJOR_COUNT: 0
+MINOR_COUNT: 0
+DIAGNOSED_CONTRACT_BODY_SHA256: a3e15e375ef22d2dedd4c0a6ae689439f61edae53d0e3f39bd38e52120a448d6
+
+PASS means:
+`CONTRACT_STATUS: DIAGNOSED_PASS`
+
+PASS does not mean user approval and does not authorize READY_FOR_CODEX.
+
+# EC-16 FINAL EXECUTION APPROVAL
+
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-14
+USER_APPROVAL_EVIDENCE: Explicit user final execution approval message `승인` in this execution-approval conversation on 2026-09-14 (Asia/Seoul).
+ACTIVATION_APPROVAL_SCOPE: UPGRADE activation only — verify existing canonical contract and project identity; archive current docs/DEVELOPMENT_PLAN.txt to the approved versioned history path; verify archive and approved-artifact hashes; atomically replace docs/DEVELOPMENT_PLAN.txt with the exact approved contract bytes; verify active hash; record bounded activation; rollback to archived contract on activation failure; then run existing Runtime Preflight. This is not blanket approval for later Dangerous Work.
+
+After APPROVED, only lifecycle metadata may change.
+
+FINAL_CONTRACT_BODY_SHA256: a3e15e375ef22d2dedd4c0a6ae689439f61edae53d0e3f39bd38e52120a448d6
+
+Required:
+`FINAL_CONTRACT_BODY_SHA256 == DIAGNOSED_CONTRACT_BODY_SHA256`
+
+If mismatch:
+`POST_DIAGNOSIS_MUTATION_DETECTED`
+
+Successful promotion:
+`CONTRACT_STATUS: READY_FOR_CODEX`
+
+# EC-17 EXTERNAL HANDOFF REFERENCES
+
+APPROVED_CONTRACT_ARTIFACT: GCH-GRAPHIFY_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt
+CODEX_EXECUTION_INSTRUCTION_ARTIFACT: GCH-GRAPHIFY_NO_NATIVE_VERSION_CODEX_EXECUTION_INSTRUCTION.md
+EXECUTION_APPROVAL_RESULT_ARTIFACT: GCH-GRAPHIFY_NO_NATIVE_VERSION_EXECUTION_APPROVAL_RESULT.md
+TARGET_CANONICAL_PATH: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering/docs/DEVELOPMENT_PLAN.txt
+
+FULL_FILE_SHA256_BINDING: EXTERNAL
+
+`APPROVED_CONTRACT_SHA256` is calculated only after the approved contract artifact is finalized and is stored externally in the Codex Execution Instruction and Execution Approval Result. It is not embedded into this file.
+
+Contract readiness requires:
+- diagnosis PASS
+- explicit final execution approval
+- semantic body integrity PASS
+- approved full-file artifact with external hash binding
+- Codex instruction/hash binding
+- Project Identity/root/version/lifecycle binding

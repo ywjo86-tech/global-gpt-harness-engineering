@@ -1,0 +1,43 @@
+{
+  "schema_version": "gch.execution-backend.entry-gate-decision.v2",
+  "project_id": "GCH-EXEC-BACKEND",
+  "upgrade_sequence": "UPGRADE-002",
+  "task_id": "TASK-014",
+  "gate_id": "GATE-005",
+  "evidence_id": "EVD-016",
+  "captured_at_utc": "2026-09-15T01:55:49.368965+00:00",
+  "record_type": "ExecutionBackendEntryGateRecord",
+  "contract_version": "IF-109.v1",
+  "decision": "GO",
+  "gate_status": "GO",
+  "mandatory_predicates": {
+    "codex_cli_detected": true,
+    "codex_cli_version_recorded": true,
+    "supported_invocation_verified": true,
+    "launcher_compatibility_pass": true,
+    "read_only_backend_diagnostic_smoke_pass": true,
+    "isolated_state_changing_smoke_pass": true,
+    "codex_to_manual_fallback_pass": true,
+    "provider_separation_smoke_pass": true,
+    "nvidia_to_codex_auto_fallback_absent": true,
+    "provider_router_authority_preserved": true,
+    "full_plan_core_regression_pass": true,
+    "graphify_phase2_regression_pass": true
+  },
+  "final_question_count": 10,
+  "final_questions_yes": true,
+  "core_change_classification": "SEMANTICS_PRESERVING_CONTROLLED_CHANGE",
+  "known_issue_closure_bound": true,
+  "blocking_reasons": [],
+  "test_results": {
+    "TEST-017": "PASS",
+    "TEST-018": "PASS"
+  },
+  "exact_question_text_identity": true,
+  "question_yes_count": 10,
+  "conditional_go_used": false,
+  "gate_bypass_used": false,
+  "active_contract_sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a",
+  "controlled_change_classification": "SEMANTICS_PRESERVING_CONTROLLED_CHANGE",
+  "source_input_ref": "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/entry_gate_input.json"
+}

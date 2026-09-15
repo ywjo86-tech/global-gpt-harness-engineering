@@ -1,0 +1,19 @@
+{
+  "schema_version": "gch.execution-backend.contract-reprojection-activation.v1",
+  "captured_at_utc": "2026-09-15T01:52:57.970692+00:00",
+  "status": "ACTIVATED",
+  "previous_contract_sha256": "2e1ca0a9c33f580a23e246aa9ea26bb229b4223e2010969d9f98ef1cf71d28f4",
+  "approved_contract_ref": "docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT_R2.txt",
+  "approved_contract_sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a",
+  "active_contract_sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a",
+  "semantic_body_sha256": "aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0",
+  "diagnosed_body_sha256": "aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0",
+  "semantic_binding_pass": true,
+  "active_equals_approved_artifact": true,
+  "user_approval_evidence": "위험 확인 후 승인",
+  "design_authority_sha256": "db4831deba577124a01c6f4fb83bd420e4c0a3ac71ee9331f4be17c4b0ef0492",
+  "gate004_rebind_v2_ref": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/GATE004_CURRENT_SOURCE_REBIND_V2.json",
+  "preactivation_test018_ref": "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/TEST018_PREACTIVATION_SOURCE_BINDING_V2.json",
+  "git_mutation": false,
+  "package_change": false
+}

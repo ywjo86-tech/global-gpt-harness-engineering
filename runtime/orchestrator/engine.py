@@ -338,7 +338,13 @@ class OrchestrationEngine:
         if normalized_mode in {CODEX_CLI, NVIDIA, HYBRID}:
             for task in runnable:
                 if normalized_mode == CODEX_CLI:
-                    result = run_task_prompt(task.task_prompt_path, task.output_dir, normalized_mode)
+                    result = run_task_prompt(
+                        task.task_prompt_path,
+                        task.output_dir,
+                        normalized_mode,
+                        project_root=self.project_root,
+                        required_capabilities=task.required_capabilities,
+                    )
                 else:
                     result = execute_provider_task(
                         task,

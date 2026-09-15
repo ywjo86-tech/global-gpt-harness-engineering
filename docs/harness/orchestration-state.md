@@ -1,5 +1,45 @@
 # Orchestration State
 
+> Updated: `2026-09-15`
+> Scope: GCH-EXEC-BACKEND UPGRADE-002 FINAL STABLE BASELINE closure
+
+## Current Execution Binding
+
+Current phase: UPGRADE-002_FINAL_GATE_CLOSED_GO
+
+- Active project: `GCH-EXEC-BACKEND`
+- Active lifecycle: `UPGRADE-002`
+- Current phase: `UPGRADE-002_FINAL_GATE_CLOSED_GO`
+- Active contract: `docs/DEVELOPMENT_PLAN.txt`
+- Contract SHA-256: `b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a`
+- Semantic body SHA-256: `aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0`
+- Design authority: `ID-EXEC-BACKEND-1.2 APPROVED`
+- GATE-001: `GO`
+- GATE-002: `GO`
+- GATE-003: `GO`
+- GATE-004 current-source rebind V2: `GO`
+- TEST-017: `PASS`
+- TEST-018: `PASS`
+- Final Q01~Q10: `10/10 YES`
+- GATE-005: `GO`
+- Final lifecycle state: `UPGRADE-002_FINAL_GATE_CLOSED_GO`
+- Provider Router authority: `PRESERVED`
+- Stage Gate authority: `PRESERVED`
+- NVIDIA→Codex automatic fallback: `ABSENT`
+- Protected product/core mutation: `0`
+- Next boundary: `PHASE 3 actual Full Plan execution`, requiring its own normal Gate/approval flow.
+- Runtime binding note: this final binding supersedes all earlier current-state blocks below; historical evidence remains preserved.
+
+## Current Safety / Git Boundary
+
+- This state document is part of the authorized `UPGRADE-002 FINAL STABLE BASELINE` Git recording.
+- No package install/upgrade/downgrade is authorized or performed by baseline sealing.
+- No git reset/rebase/clean or force push is authorized.
+- Runtime-generated transient outputs remain excluded from the Stable Baseline commit.
+- The baseline Git commit SHA is the external Git identity of this exact closure and is reported after commit creation.
+
+## Historical State Preserved Below
+
 > Updated: `2026-09-14`
 >
 > Scope: GCH-GRAPHIFY UPGRADE-001 PHASE 2 final closure and PHASE 3 handoff

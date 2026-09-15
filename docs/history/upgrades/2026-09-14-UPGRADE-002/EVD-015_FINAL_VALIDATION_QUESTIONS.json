@@ -1,0 +1,121 @@
+{
+  "schema_version": "gch.execution-backend.final-validation-questions.v2",
+  "project_id": "GCH-EXEC-BACKEND",
+  "upgrade_sequence": "UPGRADE-002",
+  "task_id": "TASK-014",
+  "test_id": "TEST-017",
+  "evidence_id": "EVD-015",
+  "captured_at_utc": "2026-09-15T01:55:49.368965+00:00",
+  "source_contract_ref": "docs/DEVELOPMENT_PLAN.txt",
+  "source_contract_sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a",
+  "source_design_ref": "_workspace/execution-backend-contract/gch-exec-backend-design-correction-20260915/GCH-EXEC-BACKEND_ID-EXEC-BACKEND-1.2-CANDIDATE_IMPLEMENTATION_DESIGN.md",
+  "source_design_sha256": "db4831deba577124a01c6f4fb83bd420e4c0a3ac71ee9331f4be17c4b0ef0492",
+  "exact_text_identity": true,
+  "expected_question_count": 10,
+  "question_count": 10,
+  "yes_count": 10,
+  "all_yes": true,
+  "questions": [
+    {
+      "question_id": "Q01",
+      "question_text": "현재 설치된 Codex CLI를 실제 기준으로 검증하는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-task015-20260915T003023/preflight.json",
+        "_workspace/execution-backend-contract/gch-exec-backend-implement-20260915/gate002_evidence.json",
+        "_workspace/execution-backend-contract/gch-exec-backend-contract-activation-20260915/CONTRACT_REPROJECTION_ACTIVATION.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q02",
+      "question_text": "Full Plan launcher와 CLI 호환성을 실제 Worker 실행으로 검증하는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/gate003_final_evidence.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q03",
+      "question_text": "동일 오류가 다음 프로젝트 시작 시 Gate에서 사전 차단되는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-implement-20260915/gate002_evidence.json",
+        "tests/test_execution_backend_entry_gate.py"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q04",
+      "question_text": "Codex CLI 변경이 상위 Orchestration 계층 변경으로 전파되지 않는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_INDEPENDENT_REVIEW.json",
+        "tests/test_codex_runtime_flow.py"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q05",
+      "question_text": "Provider Router authority가 유지되는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_INDEPENDENT_REVIEW.json",
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/GATE004_CURRENT_SOURCE_REBIND_V2.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q06",
+      "question_text": "NVIDIA→Codex automatic fallback 금지가 유지되는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/gate003_final_evidence.json",
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_INDEPENDENT_REVIEW.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q07",
+      "question_text": "Codex→manual fallback semantics가 유지되는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-smoke-20260915/gate003_final_evidence.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q08",
+      "question_text": "Full Plan Core 변경이 필요하면 Controlled Change 절차로 분리되는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/SHARED_HARNESS_COMPATIBILITY_CONTROLLED_CHANGE.json",
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/GATE004_CURRENT_SOURCE_REBIND_V2.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q09",
+      "question_text": "Backend 수정 후 기존 Full Plan 및 Graphify regression을 수행하는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/coverage_equivalent_summary_v2.json",
+        "_workspace/execution-backend-contract/gch-exec-backend-task-lv-projection-reconciliation-20260915/GATE004_CURRENT_SOURCE_REBIND_V2.json"
+      ],
+      "evidence_resolve": true
+    },
+    {
+      "question_id": "Q10",
+      "question_text": "위 조건이 모두 PASS해야 PHASE 3 본 실행으로 진입하는가?",
+      "answer": "YES",
+      "evidence_references": [
+        "docs/DEVELOPMENT_PLAN.txt",
+        "tests/test_execution_backend_entry_gate.py",
+        "_workspace/execution-backend-contract/gch-exec-backend-gate005-20260915-r2/test018_final_source_binding.json"
+      ],
+      "evidence_resolve": true
+    }
+  ],
+  "status": "PASS"
+}

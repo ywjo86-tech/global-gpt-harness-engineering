@@ -24,7 +24,13 @@ def execute_provider_task(
     elif decision.provider == MANUAL_PROVIDER:
         payload = create_manual_task(task.task_prompt_path, task.output_dir)
     elif decision.provider == CODEX_PROVIDER:
-        payload = run_task_prompt(task.task_prompt_path, task.output_dir, CODEX_CLI if mode != MANUAL else MANUAL)
+        payload = run_task_prompt(
+            task.task_prompt_path,
+            task.output_dir,
+            CODEX_CLI if mode != MANUAL else MANUAL,
+            project_root=project_root,
+            required_capabilities=task.required_capabilities,
+        )
     elif decision.provider == NVIDIA_PROVIDER:
         payload = run_nvidia_reasoning_task(
             prompt=task.input,

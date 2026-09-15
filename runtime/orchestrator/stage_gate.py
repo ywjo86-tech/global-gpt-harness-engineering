@@ -158,7 +158,13 @@ def run_stage_gate(
         return payload
 
     if normalized_mode == CODEX_CLI:
-        result = run_task_prompt(prompt_path, Path(prompt_run_root) / "gate", normalized_mode)
+        result = run_task_prompt(
+            prompt_path,
+            Path(prompt_run_root) / "gate",
+            normalized_mode,
+            project_root=project_root,
+            required_capabilities=("read_only", "evidence_analysis"),
+        )
         payload_path = Path(result["output_dir"]) / "result.json"
         if payload_path.exists():
             payload = json.loads(payload_path.read_text(encoding="utf-8"))

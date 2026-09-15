@@ -34,6 +34,25 @@ class HybridRuntimeFlowTest(unittest.TestCase):
             self.assertEqual(write_result["provider"], "codex")
             nvidia.assert_called_once()
             codex.assert_called_once()
+            codex.assert_called_with(
+                _task(["reasoning", "filesystem_write"]).task_prompt_path,
+                _task(["reasoning", "filesystem_write"]).output_dir,
+                "codex-cli",
+                project_root=".",
+                required_capabilities=["reasoning", "filesystem_write"],
+            )
+
+    def test_hybrid_routes_read_only_plus_integration_to_codex(self) -> None:
+        with patch("runtime.orchestrator.provider_executor.run_nvidia_reasoning_task") as nvidia, patch(
+            "runtime.orchestrator.provider_executor.run_task_prompt",
+            return_value={"status": "manual_fallback", "mode": "manual"},
+        ) as codex:
+            result = execute_provider_task(_task(["reasoning", "read_only", "integration"]), mode="hybrid", project_root=".", local_worker=lambda task: {})
+
+            self.assertEqual(result["provider"], "codex")
+            self.assertEqual(result["route_reason"], "hybrid_state_changing_to_codex")
+            nvidia.assert_not_called()
+            codex.assert_called_once()
 
 
 if __name__ == "__main__":
