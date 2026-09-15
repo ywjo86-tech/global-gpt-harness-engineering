@@ -45,6 +45,8 @@ class ContractMapping:
     gate_approval_ids: dict[str, str] | None = None
     interpreter_policy_id: str | None = None
     historical_plan_sha256: tuple[str, ...] = ()
+    task_lv_projection_path: Path | None = None
+    task_lv_projection_sha256: str | None = None
 
     def summary(self, project_root: Path, selected_source: Path | None = None) -> dict[str, Any]:
         def relative(path: Path) -> str:
@@ -70,6 +72,8 @@ class ContractMapping:
             },
             **({"gate_state_ledger": relative(self.gate_state_ledger_path)} if self.gate_state_ledger_path else {}),
             **({"historical_plan_sha256": list(self.historical_plan_sha256)} if self.historical_plan_sha256 else {}),
+            **({"task_lv_authority_projection": {"path": relative(self.task_lv_projection_path), "sha256": self.task_lv_projection_sha256}}
+               if self.task_lv_projection_path is not None and self.task_lv_projection_sha256 is not None else {}),
         }
 
 
@@ -170,6 +174,12 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         raise ContractMappingError("canonical_transition.gate_approval_ids must be an object of strings")
     if transition_approval_id is not None and (not isinstance(transition_approval_id, str) or not transition_approval_id):
         raise ContractMappingError("canonical_transition.gate_1_approval_id must be null or a non-empty string")
+    projection_value = payload.get("task_lv_authority_projection")
+    task_lv_projection_path = None
+    task_lv_projection_sha256 = None
+    if projection_value is not None:
+        task_lv_projection_path, task_lv_projection_sha256 = _source(payload, "task_lv_authority_projection", root)
+
     migrations = payload.get("plan_sha_migrations", [])
     if not isinstance(migrations, list) or any(
         not isinstance(item, dict) or set(item) != {"from", "to"}
@@ -194,15 +204,20 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         gate_approval_ids=dict(gate_approval_ids),
         interpreter_policy_id=payload.get("interpreter_policy_id"),
         historical_plan_sha256=tuple(item["from"] for item in migrations),
+        task_lv_projection_path=task_lv_projection_path,
+        task_lv_projection_sha256=task_lv_projection_sha256,
     )
 
 
 def validate_mapping_sources(mapping: ContractMapping) -> list[str]:
     errors: list[str] = []
-    for label, path, expected in (
+    sources = [
         ("canonical implementation source", mapping.canonical_source, mapping.canonical_sha256),
         ("approved source reference", mapping.approved_source, mapping.approved_source_sha256),
-    ):
+    ]
+    if mapping.task_lv_projection_path is not None and mapping.task_lv_projection_sha256 is not None:
+        sources.append(("TASK-to-LV authority projection", mapping.task_lv_projection_path, mapping.task_lv_projection_sha256))
+    for label, path, expected in sources:
         if not path.is_file():
             errors.append(f"{label} is missing")
         elif sha256_file(path) != expected:
@@ -592,6 +607,7 @@ def _find_gate_zero_checkpoint(
         if count >= 1 and len(events) == count and events[-1].get("record_hash") == record_head:
             return commit, count, record_head, events
     return None
+
 
 
 def _evaluate_first_gate_activation(mapping: ContractMapping, gate_text: str) -> dict[str, Any] | None:

@@ -18,6 +18,10 @@ from .persisted_artifact import publish as publish_persisted, validate as valida
 from .resume_store import ResumeStore, RunBinding, ResumeStoreError
 
 
+def _within_owned_scope(path: str, scopes: Sequence[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
+
+
 class GateControllerError(ValueError):
     """Fail-closed error raised at an orchestration lifecycle boundary."""
 
@@ -361,7 +365,7 @@ def verify_same_run_governed_descendant(
                     or handoff_event.get("stage_payload", {}).get("status") != "SEALED"):
                 continue
             changed = wp.get("changed_files")
-            if not isinstance(changed, list) or not changed or not set(changed).issubset(set(owned)):
+            if not isinstance(changed, list) or not changed or any(not _within_owned_scope(path, owned) for path in changed):
                 continue
             committed = subprocess.run(
                 ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", current],

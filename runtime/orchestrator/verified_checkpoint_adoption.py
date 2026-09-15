@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .production_approval import load_v2_event_log
+from .validation_toolchain import ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution
 
 
 ADOPTION_MODE = "VERIFIED_CHECKPOINT_ADOPTION"
@@ -43,10 +44,11 @@ def _safe_paths(values: object, *, label: str) -> list[str]:
     for item in values:
         if not isinstance(item, str) or not item or "\\" in item:
             raise VerifiedCheckpointAdoptionError(f"{label} is unsafe")
-        path = PurePosixPath(item)
-        if path.is_absolute() or ".." in path.parts or path.as_posix() != item:
+        normalized = item.rstrip("/")
+        path = PurePosixPath(normalized) if normalized else PurePosixPath(".")
+        if not normalized or path.is_absolute() or ".." in path.parts or path.as_posix() != normalized:
             raise VerifiedCheckpointAdoptionError(f"{label} is unsafe")
-        result.append(item)
+        result.append(normalized + "/" if item.endswith("/") else normalized)
     if len(result) != len(set(result)):
         raise VerifiedCheckpointAdoptionError(f"{label} contains duplicates")
     return result
@@ -113,22 +115,43 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
     if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, current_head], check=False).returncode != 0:
         raise VerifiedCheckpointAdoptionError("approved checkpoint is not an ancestor of HEAD")
     changed = sorted(filter(None, _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines()))
-    if changed != sorted(owned):
+    directory_scope = any(item.endswith("/") for item in owned)
+    if directory_scope:
+        if not changed or any(
+            not any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in owned)
+            for path in changed
+        ):
+            raise VerifiedCheckpointAdoptionError("checkpoint changed-file scope is outside approval")
+    elif changed != sorted(owned):
         raise VerifiedCheckpointAdoptionError("checkpoint changed-file scope does not exactly match approval")
     later = set(filter(None, _git(root, "diff", "--name-only", f"{checkpoint}..{current_head}").splitlines()))
     if later.intersection(owned):
         raise VerifiedCheckpointAdoptionError("approved checkpoint owned files changed after checkpoint")
     if _git(root, "status", "--porcelain=v1", "-uall"):
         raise VerifiedCheckpointAdoptionError("project worktree is not clean")
-    python = root / ".venv" / "bin" / "python"
-    tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
-    if not python.is_file() or not tests:
-        raise VerifiedCheckpointAdoptionError("registered project test toolchain is unavailable")
+    try:
+        validation_plan = resolve_validation_commands(root, owned, allow_deferred=False)
+        toolchain_contract = manifest.get("validation_toolchain")
+        expected_profiles = (toolchain_contract.get("profile_ids", [])
+                             if isinstance(toolchain_contract, dict) else [])
+        if expected_profiles:
+            validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
+    except ValidationToolchainError as exc:
+        raise VerifiedCheckpointAdoptionError(f"registered project test toolchain is unavailable: {exc}") from exc
+
+    def execute_group(group):
+        def runner(command_root, command):
+            normalized=list(command)
+            if normalized and normalized[0] == ".venv/bin/python":
+                normalized[0]=str(command_root / ".venv" / "bin" / "python")
+            return _command(command_root, normalized)
+        return run_command_group(root, group, runner)
+
     commands = {
         "checkpoint_provenance": _command(root, ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint]),
-        "focused_test": _command(root, [str(python), "-m", "pytest", "-q", *tests]),
-        "full_regression": _command(root, [str(python), "-m", "pytest", "-q"]),
-        "compile_import": _command(root, [str(python), "-m", "compileall", "-q", *owned]),
+        "focused_test": execute_group(validation_plan.focused),
+        "full_regression": execute_group(validation_plan.full),
+        "compile_import": execute_group(validation_plan.compile),
         "git_diff_check": _command(root, ["git", "diff", "--check"]),
     }
     if any(value["exit_code"] != 0 or value["timeout"] for value in commands.values()):

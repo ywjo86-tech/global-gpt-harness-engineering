@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import os
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Any, Mapping
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from .read_only_inspector import inspect_read_only
+from .task_contract_compat import resolve_task_lv_projection
 
 
 class LVPreviewValidationError(ValueError):
@@ -212,12 +214,41 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
     owned = canonical_state.get("owned_files")
     if not isinstance(owned, list):
         raise LVPreviewValidationError("approved owned files are missing")
-    definition = parse_lv_definition(
-        mapping.canonical_source.read_text(encoding="utf-8"),
-        gate_id,
-        lv_id,
-        owned,
-    )
+    if getattr(mapping, "task_lv_projection_path", None) is not None:
+        projection_path = mapping.task_lv_projection_path
+        projection_sha = getattr(mapping, "task_lv_projection_sha256", None)
+        if (projection_sha is None or projection_path.is_symlink() or not projection_path.is_file()
+                or sha256_file(projection_path) != projection_sha):
+            raise LVPreviewValidationError("TASK-to-LV authority projection is missing or SHA-mismatched")
+        try:
+            projection = json.loads(projection_path.read_text(encoding="utf-8"))
+            projected = resolve_task_lv_projection(
+                mapping.canonical_source.read_text(encoding="utf-8"), projection,
+                project_id=root.name, canonical_plan_sha256=mapping.canonical_sha256, gate_id=gate_id,
+            )
+        except Exception as exc:
+            raise LVPreviewValidationError(f"TASK-to-LV authority projection validation failed: {exc}") from exc
+        matches = [item for item in projected if item["lv_id"] == lv_id]
+        if len(matches) != 1:
+            raise LVPreviewValidationError(f"projected TASK must resolve exactly once: {lv_id}")
+        item = matches[0]
+        approved = _approved_owned_files(owned)
+        if item["owned_files"] != approved:
+            raise LVPreviewValidationError(
+                f"projected TASK owned files do not match approved owned files: projected={item['owned_files']}, approved={approved}"
+            )
+        definition = LVDefinition(
+            gate_id=gate_id, lv_id=lv_id, purpose=item["purpose"],
+            dependencies=list(item["dependencies"]), completion_criteria=list(item["completion_criteria"]),
+            execution=item["execution"], owned_files=approved,
+        )
+    else:
+        definition = parse_lv_definition(
+            mapping.canonical_source.read_text(encoding="utf-8"),
+            gate_id,
+            lv_id,
+            owned,
+        )
     return {
         "inspection_mode": "read_only_preview_no_write",
         "write_operations_performed": False,

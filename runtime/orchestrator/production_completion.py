@@ -48,6 +48,10 @@ def _git(root: Path, *args: str) -> str:
         raise ProductCompletionError("git evidence verification failed")
     return result.stdout.strip()
 
+def _within_scope(path: str, scopes: list[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
+
+
 def _safe_paths(values: object) -> list[str]:
     if not isinstance(values, list) or any(not isinstance(v, str) or not v or PurePosixPath(v).is_absolute() or ".." in PurePosixPath(v).parts for v in values):
         raise ProductCompletionError("path evidence is invalid")
@@ -113,7 +117,7 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
                 if ancestor.returncode != 0: reasons.append("CHECKPOINT_NOT_ANCESTOR")
                 else:
                     later = set(_git(root, "diff", "--name-only", f"{checkpoint}..{head}").splitlines())
-                    if later.intersection(set(owned)): reasons.append("PRIOR_LV_SCOPE_INVALIDATED")
+                    if any(_within_scope(path, owned) for path in later): reasons.append("PRIOR_LV_SCOPE_INVALIDATED")
             else:
                 if terminal_head and head != checkpoint: reasons.append("CHECKPOINT_NOT_HEAD")
                 if evidence.get("current_head") != checkpoint: reasons.append("CHECKPOINT_BINDING_MISMATCH")
@@ -122,7 +126,7 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
                 if ancestor.returncode != 0: reasons.append("CHECKPOINT_NOT_ANCESTOR")
                 else:
                     later = set(_git(root, "diff", "--name-only", f"{checkpoint}..{head}").splitlines())
-                    if later.intersection(set(owned)): reasons.append("PRIOR_LV_SCOPE_INVALIDATED")
+                    if any(_within_scope(path, owned) for path in later): reasons.append("PRIOR_LV_SCOPE_INVALIDATED")
             if not set(changed).issubset(files): reasons.append("CHECKPOINT_FILES_MISSING")
             if _git(root, "status", "--porcelain=v1"): reasons.append("WORKTREE_NOT_CLEAN")
         except ProductCompletionError:

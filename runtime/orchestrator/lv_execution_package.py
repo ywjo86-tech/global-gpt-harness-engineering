@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
+from .validation_toolchain import ValidationToolchainError, resolve_validation_commands
 from .tool_authorization import (
     DEC007_CONTRACT_IDS, DEC007_DECISION_REF, ToolAuthorizationContract,
     activate_contract, build_dec007_approved_contracts, owned_scope_digest,
@@ -198,30 +199,44 @@ def _worker_prompt(manifest: dict[str, Any]) -> str:
     if not isinstance(owned_files, list) or len(set(owned_files)) != len(owned_files):
         raise LVExecutionPackageError("manual worker prompt owned files are missing or malformed")
     for item in owned_files:
-        if (
-            not isinstance(item, str)
-            or not item
-            or Path(item).is_absolute()
-            or "\\" in item
-            or PurePosixPath(item).as_posix() != item
-            or ".." in PurePosixPath(item).parts
-        ):
+        if not isinstance(item, str) or not item or Path(item).is_absolute() or "\\" in item:
             raise LVExecutionPackageError("manual worker prompt owned files are missing or malformed")
-    focused_tests = [
-        item
-        for item in owned_files
-        if item.startswith("tests/") and PurePosixPath(item).name.startswith("test_") and item.endswith(".py")
-    ]
-    if owned_files and not focused_tests:
-        raise LVExecutionPackageError("manual worker prompt has no owned focused test")
+        normalized = item.rstrip("/")
+        pure = PurePosixPath(normalized) if normalized else PurePosixPath(".")
+        if not normalized or pure.as_posix() != normalized or ".." in pure.parts:
+            raise LVExecutionPackageError("manual worker prompt owned files are missing or malformed")
+    toolchain = manifest.get("validation_toolchain")
+    if toolchain is None:
+        focused_tests = [
+            item for item in owned_files
+            if item.startswith("tests/") and PurePosixPath(item).name.startswith("test_") and item.endswith(".py")
+        ]
+        if owned_files and not focused_tests:
+            raise LVExecutionPackageError("manual worker prompt has no owned focused test or project-native validation contract")
+        toolchain = {
+            "profile_ids": ["PYTHON_PYTEST"] if focused_tests else [],
+            "focused": [[".venv/bin/python", "-m", "pytest", "-q", *focused_tests]] if focused_tests else [],
+            "full": [[".venv/bin/python", "-m", "pytest", "-q"]] if focused_tests else [],
+            "compile": [], "deferred": False,
+        }
+    required_toolchain = {"profile_ids", "focused", "full", "compile", "deferred"}
+    if not isinstance(toolchain, dict) or set(toolchain) != required_toolchain:
+        raise LVExecutionPackageError("manual worker validation toolchain contract is malformed")
+    if not isinstance(toolchain["deferred"], bool) or not isinstance(toolchain["profile_ids"], list):
+        raise LVExecutionPackageError("manual worker validation toolchain contract is malformed")
+    for field in ("focused", "full", "compile"):
+        groups = toolchain[field]
+        if not isinstance(groups, list) or any(not isinstance(cmd, list) or not cmd or any(not isinstance(x, str) or not x for x in cmd) for cmd in groups):
+            raise LVExecutionPackageError("manual worker validation toolchain command is malformed")
     owned = "\n".join(f"- {item}" for item in owned_files) or "- none"
     checks = "\n".join(f"- {item}" for item in completion_checks)
-    focused_command = (
-        shlex.join([".venv/bin/python", "-m", "pytest", "-q", *focused_tests])
-        if focused_tests
-        else "No focused owned-file test declared for this LV"
+    deferred_text = "Deferred until post-worker project-native manifests/toolchain entrypoints exist"
+    focused_command = " ; ".join(shlex.join(cmd) for cmd in toolchain["focused"]) or (
+        "No focused owned-file test declared for this LV" if not owned_files else deferred_text if toolchain["deferred"] else "No focused validation command applicable"
     )
-    full_command = ".venv/bin/python -m pytest -q"
+    full_command = " ; ".join(shlex.join(cmd) for cmd in toolchain["full"]) or (deferred_text if toolchain["deferred"] else "No full validation command applicable")
+    compile_command = " ; ".join(shlex.join(cmd) for cmd in toolchain["compile"]) or (deferred_text if toolchain["deferred"] else "No build/compile validation command applicable")
+    profile_text = ", ".join(toolchain["profile_ids"]) or "none"
     return (
         "# Manual LV Worker Package\n\n"
         f"Run ID: {manifest['run_id']}\n"
@@ -257,8 +272,11 @@ def _worker_prompt(manifest: dict[str, Any]) -> str:
         "- Do not access or print secrets, credentials, or environment variable values.\n"
         "- Worker self-PASS is not final Business/Gate approval.\n\n"
         "## Required validation\n"
-        f"- Focused test: `{focused_command}`\n"
+        f"- Validation profiles: {profile_text}\n"
+        f"- Focused validation: `{focused_command}`\n"
         f"- Full regression: `{full_command}`\n"
+        f"- Build/compile validation: `{compile_command}`\n"
+        "- Deferred means the worker must materialize the project-native manifest/wrapper inside owned scope; Harness resolves and independently runs it after the worker.\n"
         "- Run static, secret, and owned-file boundary checks required by the package contract.\n\n"
         "## Required result\n"
         f"Return JSON matching {WORKER_RESULT_SCHEMA_VERSION}; include the exact run/package/gate/LV identity, source before/after evidence, file arrays, tests, commands, violations, and structured error.\n"
@@ -282,6 +300,10 @@ def _manifest_payload(
     mapping = load_project_mapping(root)
     policy_id = getattr(mapping, "interpreter_policy_id", None) or "PROJECT_VENV_READ_ONLY"
     source_head = source_snapshot["source_head"]
+    try:
+        validation_toolchain = resolve_validation_commands(root, list(preview["approved_owned_files"]), allow_deferred=True).to_dict()
+    except ValidationToolchainError as exc:
+        raise LVExecutionPackageError(f"project-native validation contract is invalid: {exc}") from exc
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "run_id": run_id,
@@ -314,6 +336,7 @@ def _manifest_payload(
         },
         "dependencies": list(selected["dependencies"]),
         "completion_checks": list(selected["completion_criteria"]),
+        "validation_toolchain": validation_toolchain,
         "execution_mode": "manual",
         "business_scope_mutation_policy": "owned_files_only",
         "execution_authorization_required": True,

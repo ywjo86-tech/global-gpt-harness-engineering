@@ -365,12 +365,18 @@ class GateOrchestratorTests(unittest.TestCase):
         self.assertEqual(result["selected"], ["project-specialist", "global-project-orchestrator"])
         self.assertFalse(result["substring_matching_used"]); self.assertFalse(result["global_creation_authorized"])
 
-    def test_onboarding_fixture_fails_closed_until_contract_complete(self) -> None:
+    def test_onboarding_fixture_fails_closed_until_contract_and_mapping_complete(self) -> None:
         result = onboarding_dry_run(self.root, "fixture")
         self.assertTrue(result["fail_closed"]); self.assertFalse(result["mutation_performed"])
         for relative in ["AGENTS.md","docs/DEVELOPMENT_PLAN.txt","CHANGELOG.txt","logs/app.log"]:
             path=self.root/relative; path.parent.mkdir(parents=True,exist_ok=True); path.write_text("fixture")
-        result = onboarding_dry_run(self.root, "fixture"); self.assertFalse(result["fail_closed"]); self.assertTrue(result["mapping_ready"])
+        result = onboarding_dry_run(self.root, "fixture")
+        self.assertTrue(result["contract_files_ready"]); self.assertFalse(result["mapping_registered"])
+        self.assertFalse(result["mapping_ready"]); self.assertTrue(result["fail_closed"])
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping):
+            result = onboarding_dry_run(self.root, "fixture")
+        self.assertTrue(result["mapping_registered"]); self.assertTrue(result["mapping_ready"])
+        self.assertFalse(result["fail_closed"])
 
     def test_compatibility_dry_run_is_read_only(self) -> None:
         with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping):

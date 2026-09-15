@@ -19,6 +19,9 @@ from typing import Any, Callable, Mapping
 from .lv_execution_package import canonical_json_bytes
 from .schemas import WorkerRequest
 from .tool_authorization import build_contract_candidate
+from .validation_toolchain import (
+    ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
+)
 from .production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, LOCAL_CHILD, GatewayError,
     HostExecutionGateway, UnixSocketGatewayTransport, build_gateway_request,
@@ -2104,10 +2107,11 @@ def _safe_scope(values: object) -> list[str]:
     for value in values:
         if not isinstance(value, str) or not value or "\\" in value:
             raise ProductionWorkerError("production worker owned scope is unsafe")
-        path = PurePosixPath(value)
-        if path.is_absolute() or ".." in path.parts or path.as_posix() != value:
+        normalized = value.rstrip("/")
+        path = PurePosixPath(normalized) if normalized else PurePosixPath(".")
+        if not normalized or path.is_absolute() or ".." in path.parts or path.as_posix() != normalized:
             raise ProductionWorkerError("production worker owned scope is unsafe")
-        result.append(value)
+        result.append(normalized + "/" if value.endswith("/") else normalized)
     return result
 
 
@@ -2288,7 +2292,7 @@ def _independent_verification_provenance(commands: Mapping[str, Any]) -> dict[st
     }
 
 
-def _focused_execution_metadata(result: Mapping[str, Any] | None = None) -> dict[str, str]:
+def _focused_execution_metadata(result: Mapping[str, Any] | None = None, profiles: Sequence[str] = ()) -> dict[str, str]:
     """Describe the production focused callsite without command, path, env, or output."""
     if not isinstance(result, Mapping):
         exit_class = "UNKNOWN"
@@ -2302,12 +2306,14 @@ def _focused_execution_metadata(result: Mapping[str, Any] | None = None) -> dict
         exit_class = "NONZERO"
     else:
         exit_class = "UNKNOWN"
+    profile_set = tuple(profiles)
+    python_only = profile_set in {(), ("PYTHON_PYTEST",)}
     return {
         "focused_runner_source": "PROJECT_REGISTERED_TOOLCHAIN",
-        "focused_runner_kind": "PROJECT_PYTHON_MODULE",
-        "focused_command_builder_id": "PROJECT_PYTHON_MODULE_PYTEST_V1",
-        "focused_argv_shape_id": "RUNNER_QUIET_SCOPED_TARGETS",
-        "focused_test_scope_source_id": "OWNED_TEST_FILE_PROJECTION",
+        "focused_runner_kind": "PROJECT_PYTHON_MODULE" if python_only else "PROJECT_NATIVE_MULTI_TOOLCHAIN",
+        "focused_command_builder_id": "PROJECT_PYTHON_MODULE_PYTEST_V1" if python_only else "PROJECT_NATIVE_MANIFEST_V1",
+        "focused_argv_shape_id": "RUNNER_QUIET_SCOPED_TARGETS" if python_only else "MANIFEST_DECLARED_COMMAND_GROUP",
+        "focused_test_scope_source_id": "OWNED_TEST_FILE_PROJECTION" if python_only else "OWNED_SCOPE_TOOLCHAIN_PROJECTION",
         "focused_cwd_source_id": "WORKER_PROJECT_ROOT",
         "focused_env_projection_id": "INHERITED_PROCESS_ENV",
         "focused_process_launcher_id": "SUBPROCESS_RUN",
@@ -2888,32 +2894,50 @@ def execute_production_worker(request: WorkerRequest, *,
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     if hardcoded_findings and not secret_handling_allowed:
         raise ProductionWorkerError("OWNED_DIFF_HARDCODED_CREDENTIAL: production worker security validation failed")
-    tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
-    if not tests and not verification_only:
-        raise ProductionWorkerError("production worker focused test scope is missing")
-    python = root / ".venv" / "bin" / "python"
-    if not python.is_file():
-        raise ProductionWorkerError("registered project interpreter is unavailable")
-    process_evidence.update(_focused_execution_metadata())
-    process_path.write_bytes(canonical_json_bytes(process_evidence))
+    try:
+        validation_plan = resolve_validation_commands(root, owned, allow_deferred=False)
+        sealed_toolchain = request.extra_context.get("validation_toolchain", {})
+        expected_profiles = sealed_toolchain.get("profile_ids", []) if isinstance(sealed_toolchain, Mapping) else []
+        if expected_profiles:
+            validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
+    except ValidationToolchainError as exc:
+        raise ProductionWorkerError(f"project-native validation toolchain is unavailable: {exc}") from exc
+
+    def run_validation_group(commands_to_run: Sequence[Sequence[str]]) -> dict[str, Any]:
+        def execute(command_root: Path, command: list[str]) -> Mapping[str, Any]:
+            normalized = list(command)
+            if normalized and normalized[0] == ".venv/bin/python":
+                normalized[0] = str(command_root / ".venv" / "bin" / "python")
+            return _command(command_root, normalized, classify_collection=_is_test_runner(normalized))
+        return run_command_group(root, commands_to_run, execute)
+
     commands = {
         "worker": {"command": argv, "exit_code": worker_exit, "timeout": timed_out,
                    "stdout_sha256": hashlib.sha256(stdout).hexdigest(), "stderr_sha256": hashlib.sha256(stderr).hexdigest()},
-        "focused_test": (
-            _command(root, [str(python), "-m", "pytest", "-q", *tests], classify_collection=True)
-            if tests else _skipped_command("focused-test-not-applicable")
-        ),
-        "full_regression": _command(root, [str(python), "-m", "pytest", "-q"]),
-        "compile_import": (
-            _command(root, [str(python), "-m", "compileall", "-q", *owned])
-            if owned else _skipped_command("compile-owned-scope-not-applicable")
-        ),
+        "focused_test": run_validation_group(validation_plan.focused),
+        "full_regression": run_validation_group(validation_plan.full),
+        "compile_import": run_validation_group(validation_plan.compile),
         "git_diff_check": _command(root, ["git", "diff", "--check"] if head == baseline else ["git", "diff", "--check", f"{baseline}..{head}"]),
     }
-    process_evidence.update(_focused_execution_metadata(commands.get("focused_test")))
-    process_evidence.update(_bounded_collection_diagnostics(
-        root, python, python, tests, commands["focused_test"],
-    ))
+    process_evidence.update(_focused_execution_metadata(commands.get("focused_test"), validation_plan.profile_ids))
+    if validation_plan.profile_ids == ("PYTHON_PYTEST",):
+        tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
+        python = root / ".venv" / "bin" / "python"
+        process_evidence.update(_bounded_collection_diagnostics(
+            root, python, python, tests, commands["focused_test"],
+        ))
+    else:
+        process_evidence.update({
+            "runner_environment_identity": "PROJECT_NATIVE",
+            "cwd_binding_match": "YES",
+            "project_root_import_path_present": "NOT_APPLICABLE",
+            "test_targets_resolvable": "YES",
+            "pytest_config_load_status": "NOT_APPLICABLE",
+            "plugin_load_status": "NOT_APPLICABLE",
+            "collection_failure_phase": "NOT_APPLICABLE",
+            "import_failure_family": "NOT_APPLICABLE",
+            "dependency_presence_class": "NOT_APPLICABLE",
+        })
     process_evidence.update(_independent_verification_metadata(commands, len(request.task.validation_criteria)))
     process_evidence["independent_verification_steps"] = _independent_verification_steps(commands)
     process_evidence.update(_independent_verification_provenance(commands))

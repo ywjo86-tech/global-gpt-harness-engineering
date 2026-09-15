@@ -48,6 +48,9 @@ def validate_interpreter_policy(policy: dict[str, Any], *, project_id: str, regi
     return InterpreterPolicy(policy["policy_id"], project_id, str(path), str(allowed), policy["executable_sha256"], tuple(policy["required_capabilities"]), tuple(policy["permissions"]))
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping
+from .validation_toolchain import (
+    ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
+)
 from .lv_execution_package import (
     LVExecutionPackageError,
     _index_fingerprint,
@@ -697,7 +700,8 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
         "result_path_expected": str(context["result_path"]),
         "result_path_absent": True,
         "review_attempt_absent": True,
-        "python_interpreter_reference": ".venv/bin/python",
+        "python_interpreter_reference": (str(context["interpreter"])
+            if manifest.get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else ".venv/bin/python"),
         **context["interpreter_fingerprint"],
         "runtime_authorization": "not_granted_by_preflight",
         "business_approval_reused": False,
@@ -823,7 +827,8 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
         "gate_ledger_commit":manifest["gate_ledger_commit"], "gate_ledger_blob_oid":manifest["gate_ledger_blob_oid"],
         "gate_ledger_sha256":manifest["gate_ledger_sha256"], "owned_files":manifest["owned_files"],
         "result_path_expected":str(result_path), "result_path_absent":True, "review_attempt_absent":True,
-        "python_interpreter_reference":".venv/bin/python", **context["interpreter_fingerprint"],
+        "python_interpreter_reference":(str(context["interpreter"])
+            if manifest.get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else ".venv/bin/python"), **context["interpreter_fingerprint"],
         "runtime_authorization":"not_granted_by_preflight", "business_approval_reused":False,
         "publication":{"policy_version":"gate-to-lv-preflight.v1","source_schema":source.get("schema_version"),
                        "source_relative_id":str(source_file.relative_to(package_root.parent.parent.parent.parent)),
@@ -1553,7 +1558,29 @@ def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
 
 
 def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest",
-               allow_test_only: bool = False) -> tuple[list[dict[str, Any]], str | None]:
+               allow_test_only: bool = False, expected_profiles: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    expected_profiles = list(expected_profiles or [])
+    native_requested = bool(expected_profiles and expected_profiles != ["PYTHON_PYTEST"])
+    if native_requested:
+        try:
+            plan = resolve_validation_commands(root, owned_files, allow_deferred=False)
+            validate_profile_resolution(expected_profiles, plan.profile_ids)
+        except ValidationToolchainError as exc:
+            return [], f"project-native validation toolchain unavailable: {exc}"
+
+        def runner_fn(command_root: Path, argv: list[str]) -> Mapping[str, Any]:
+            result = _run_command(argv, command_root, 300)
+            return {key: value for key, value in result.items() if key not in {"stdout", "stderr", "argv"}}
+
+        groups = [plan.focused, plan.full, plan.compile]
+        results: list[dict[str, Any]] = []
+        for commands in groups:
+            result = run_command_group(root, commands, runner_fn)
+            results.append(result)
+            if result.get("timeout") or result.get("exit_code") != 0:
+                return results, f"independent project-native validation failed (exit={result.get('exit_code')})"
+        return results, None
+
     test_targets = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     import_targets = [
         path.removesuffix(".py").replace("/", ".")
@@ -1566,8 +1593,7 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
             [str(interpreter), "-B", "-m", test_runner, "-q"]
             if test_runner == "pytest"
             else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"],
-            root,
-            180,
+            root, 180,
         )
         skipped = {"command": ["not-applicable"], "exit_code": 0, "timeout": False}
         return [skipped, full, skipped], None
@@ -1577,22 +1603,13 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
         target = root / relative
         if not target.is_file() or target.is_symlink():
             return [], "owned Python test target is missing or unsafe"
-    # Select the project-declared standard-library runner for generic
-    # projects; pytest is an explicit legacy capability, never an implicit
-    # fallback.  unittest discovery has deterministic zero-test semantics.
     test_runner = runner if runner in {"pytest", "unittest"} else "pytest"
     commands = [
         ([str(interpreter), "-B", "-m", test_runner, "-q", *test_targets] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 60),
         ([str(interpreter), "-B", "-m", test_runner, "-q"] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 180),
     ]
     if import_targets:
-        commands.append(([
-            str(interpreter),
-            "-B",
-            "-c",
-            "import importlib,sys; [importlib.import_module(name) for name in sys.argv[1:]]",
-            *import_targets,
-        ], 30))
+        commands.append(([str(interpreter), "-B", "-c", "import importlib,sys; [importlib.import_module(name) for name in sys.argv[1:]]", *import_targets], 30))
     results: list[dict[str, Any]] = []
     for argv, timeout in commands:
         result = _run_command(argv, root, timeout)
@@ -1640,6 +1657,10 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     if any(path.is_symlink() or (not path.is_file() and path.name not in ignored) for path in entries):
         raise LVReviewError("immutable input directory contains an unsafe entry")
     return {path.name: _file_snapshot(path) for path in entries if path.name not in ignored}
+
+
+def _path_within_owned_scope(path: str, scopes: list[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
 
 
 def _owned_content_snapshot(root: Path, owned_files: list[str]) -> list[dict[str, Any]]:
@@ -2157,7 +2178,13 @@ def _seal_review(context: dict[str, Any], report: dict[str, Any], worker_hash: s
         if report.get("verdict") == "PASS":
             raise LVReviewError("PASS requires complete owned-content evidence")
     else:
-        final_snapshot = _owned_content_snapshot(context["project_root"], list(context["manifest"]["owned_files"]))
+        after_evidence = owned_content.get("after")
+        if not isinstance(after_evidence, list):
+            raise LVReviewError("owned-content after snapshot is malformed")
+        final_paths = [item.get("path") for item in after_evidence if isinstance(item, dict) and isinstance(item.get("path"), str)]
+        if len(final_paths) != len(after_evidence):
+            raise LVReviewError("owned-content after snapshot paths are malformed")
+        final_snapshot = _owned_content_snapshot(context["project_root"], final_paths)
         expected_stable = owned_content.get("before") == owned_content.get("after")
         if owned_content["stable"] != expected_stable or (not expected_stable and report.get("verdict") == "PASS"):
             raise LVReviewError("owned-content stability result is invalid")
@@ -2296,9 +2323,19 @@ def review_run(
             contract=prior_review_contract,
             prior_attempt_contract=prior_attempt_contract,
         )
-        owned_content_before = _owned_content_snapshot(
-            context["project_root"], list(context["manifest"]["owned_files"])
-        )
+        unsafe_changed = [path for path in actual["changed_files"] if (context["project_root"] / path).is_symlink()]
+        if unsafe_changed:
+            raise LVReviewError("owned changed path is a symlink")
+        content_targets = [
+            path for path in actual["changed_files"]
+            if (context["project_root"] / path).is_file() and not (context["project_root"] / path).is_symlink()
+        ]
+        if not content_targets and not is_production:
+            content_targets = [
+                path for path in context["manifest"]["owned_files"]
+                if not path.endswith("/") and (context["project_root"] / path).is_file()
+            ]
+        owned_content_before = _owned_content_snapshot(context["project_root"], content_targets)
         if is_production:
             worker_changed = _set_from_result(payload, "changed_files")
             if worker_changed != set(actual["changed_files"]):
@@ -2351,7 +2388,7 @@ def review_run(
                 if (adopted.returncode != 0
                         or payload.get("current_head") != current_identity["head"]
                         or payload.get("current_tree") != current_identity["tree"]
-                        or later.intersection(set(context["manifest"]["owned_files"]))):
+                        or any(_path_within_owned_scope(path, list(context["manifest"]["owned_files"])) for path in later)):
                     violations.append("checkpoint adoption identity does not match current Git state")
             elif (payload.get("current_head") != payload.get("checkpoint_commit")
                     or payload.get("current_head") != current_identity["head"]
@@ -2363,10 +2400,11 @@ def review_run(
         for field in worker_sets:
             if worker_sets[field] != actual_sets[field]:
                 violations.append(f"worker/{field} does not match actual Git state")
-        owned = set(context["manifest"]["owned_files"])
-        if set(actual["changed_files"]) - owned:
+        owned_scopes = list(context["manifest"]["owned_files"])
+        outside_owned = [path for path in actual["changed_files"] if not _path_within_owned_scope(path, owned_scopes)]
+        if outside_owned:
             violations.append("actual change is outside owned files")
-        independent_checks.append(_check("owned_file_boundary", not bool(set(actual["changed_files"]) - owned), "actual changes are limited to owned files" if not set(actual["changed_files"]) - owned else "out-of-scope paths detected"))
+        independent_checks.append(_check("owned_file_boundary", not outside_owned, "actual changes are limited to owned files" if not outside_owned else "out-of-scope paths detected"))
         staged_absent = not bool(_git(context["project_root"], "diff", "--cached", "--name-only").strip())
         independent_checks.append(_check("staged_changes_absent", staged_absent, "no staged changes" if staged_absent else "staged changes detected"))
         if not staged_absent:
@@ -2377,24 +2415,27 @@ def review_run(
             path = context["project_root"] / path_text
             if path.is_symlink() or (path.exists() and not path.is_file()):
                 violations.append(f"unsafe changed path: {path_text}")
+        toolchain_contract = context["manifest"].get("validation_toolchain")
+        expected_profiles = (list(toolchain_contract.get("profile_ids", []))
+                             if isinstance(toolchain_contract, Mapping) else [])
+        native_validation = bool(expected_profiles and expected_profiles != ["PYTHON_PYTEST"])
         owned_test_files = [
-            path
-            for path in context["manifest"]["owned_files"]
+            path for path in context["manifest"]["owned_files"]
             if path.startswith("tests/") and path.endswith(".py")
         ]
         verification_only = is_production and payload.get("completion_mode") == "VERIFICATION_ONLY"
-        if (not verification_only and not owned_test_files) or any(
+        if not native_validation and ((not verification_only and not owned_test_files) or any(
             not (context["project_root"] / path).is_file()
             or (context["project_root"] / path).is_symlink()
             for path in owned_test_files
-        ):
+        )):
             return {
                 "status": "BLOCKED",
                 "run_id": run_id,
                 "reason": "owned Python test target is missing or unsafe",
                 "hard_stop": True,
             }
-        independent_checks.extend(_scan_owned_files(context["project_root"], list(context["manifest"]["owned_files"])))
+        independent_checks.extend(_scan_owned_files(context["project_root"], content_targets))
         diff_check = _run_command(["git", "diff", "--check"], context["project_root"], 30)
         diff_passed = not diff_check["timeout"] and diff_check["exit_code"] == 0
         independent_checks.append(_check("git_diff_check", diff_passed, "git diff --check passed" if diff_passed else "git diff --check failed", exit_code=diff_check["exit_code"]))
@@ -2406,6 +2447,7 @@ def review_run(
             list(context["manifest"]["owned_files"]),
             runner="unittest" if context["manifest"].get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else "pytest",
             allow_test_only=verification_only,
+            expected_profiles=expected_profiles,
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
@@ -2450,9 +2492,7 @@ def review_run(
         package_unchanged = _directory_snapshot(context["package_root"]) == package_snapshot
         preflight_unchanged = _directory_snapshot(evidence_root) == preflight_snapshot
         worker_unchanged = _file_snapshot(context["result_path"]) == worker_snapshot
-        owned_content_after = _owned_content_snapshot(
-            context["project_root"], list(context["manifest"]["owned_files"])
-        )
+        owned_content_after = _owned_content_snapshot(context["project_root"], content_targets)
         owned_content_stable = owned_content_after == owned_content_before
         independent_checks.append(_check(
             "owned_content_unchanged",

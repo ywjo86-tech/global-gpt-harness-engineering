@@ -96,6 +96,10 @@ def _effect_evidence(values: object) -> tuple[GovernedEffectEvidence, ...]:
     return tuple(result)
 
 
+def _within_owned_scope(path: str, scopes: Sequence[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
+
+
 def _changed_files(
     worker_payload: Mapping[str, Any],
     *,
@@ -113,8 +117,7 @@ def _changed_files(
             reason_taxonomy="POST_WORKER_CHANGED_FILES_INVALID",
         )
     changed = tuple(sorted(set(item.strip() for item in raw)))
-    approved = set(owned_scope)
-    if any(item not in approved for item in changed):
+    if any(not _within_owned_scope(item, owned_scope) for item in changed):
         raise PostWorkerAuthorityBridgeError(
             "worker changed-file evidence exceeds sealed owned scope",
             reason_taxonomy="POST_WORKER_CHANGED_FILES_OUT_OF_SCOPE",

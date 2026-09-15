@@ -151,6 +151,10 @@ def _status_paths(root: Path) -> tuple[list[str], list[str]]:
     return sorted(set(paths)), sorted(set(staged))
 
 
+def _within_owned_scope(path: str, scopes: list[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
+
+
 def _snapshot(root: Path, owned: list[str]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for relative in owned:
@@ -293,9 +297,10 @@ def _assert_baseline(root: Path, manifest: dict[str, Any], *, require_before: bo
     owned = list(manifest["owned_files"])
     if staged:
         raise LVRemediationError("staged changes are forbidden during remediation evidence")
-    if not set(paths).issubset(set(owned)):
+    if any(not _within_owned_scope(path, owned) for path in paths):
         raise LVRemediationError("non-owned source drift")
-    if require_before and _snapshot(root, owned) != manifest["before_owned_content"]:
+    before_paths = [item.get("path") for item in manifest.get("before_owned_content", []) if isinstance(item, dict)]
+    if require_before and (_snapshot(root, before_paths) != manifest["before_owned_content"]):
         raise LVRemediationError("owned content no longer matches remediation before snapshot")
 
 
@@ -315,7 +320,6 @@ def create_remediation_package(parent_run_id: str, run_id: str, reason_code: str
     evidence = report.get("owned_content_evidence", {})
     if not isinstance(owned, list) or not owned or evidence.get("stable") is not True:
         raise LVRemediationError("parent owned-content binding is incomplete")
-    before = _snapshot(root, owned)
     parent_final = evidence.get("final")
     if not isinstance(parent_final, list):
         raise LVRemediationError("parent final owned-content snapshot is missing")
@@ -323,11 +327,13 @@ def create_remediation_package(parent_run_id: str, run_id: str, reason_code: str
         {"path": item.get("path"), "sha256": item.get("sha256"), "size": item.get("size")}
         for item in parent_final if isinstance(item, dict)
     ]
+    parent_paths = [item.get("path") for item in normalized_parent if isinstance(item.get("path"), str)]
+    before = _snapshot(root, parent_paths)
     if before != normalized_parent or len(normalized_parent) != len(parent_final):
         raise LVRemediationError("current owned content does not match parent final snapshot")
     identity = _git_identity(root)
     paths, staged = _status_paths(root)
-    if staged or not set(paths).issubset(set(owned)):
+    if staged or any(not _within_owned_scope(path, owned) for path in paths):
         raise LVRemediationError("remediation baseline contains staged or non-owned changes")
     parent_package = _harness_root() / "_workspace" / "orchestration-runs" / parent_run_id
     parent_preflight = _harness_root() / "_workspace" / "orchestration-preflights" / parent_run_id
@@ -548,11 +554,26 @@ def _validate_remediation_interpreter(root: Path, manifest: dict[str, Any] | Non
 
 
 def _run_checks(root: Path, owned: list[str], manifest: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], bool]:
-    checks = _scan_owned_files(root, owned)
+    status_paths, _ = _status_paths(root)
+    content_paths = [item.get("path") for item in (manifest or {}).get("before_owned_content", []) if isinstance(item, dict) and isinstance(item.get("path"), str)]
+    content_paths.extend(path for path in status_paths if path not in content_paths and (root / path).is_file() and not (root / path).is_symlink())
+    checks = _scan_owned_files(root, content_paths)
     interpreter = root / ".venv" / "bin" / "python"
+    expected_profiles: list[str] = []
+    if manifest is not None:
+        try:
+            parent_manifest = _json(_harness_root() / "_workspace" / "orchestration-runs" / manifest["parent_run_id"] / "package.manifest.json")
+            toolchain = parent_manifest.get("validation_toolchain")
+            if isinstance(toolchain, dict) and isinstance(toolchain.get("profile_ids"), list):
+                expected_profiles = list(toolchain["profile_ids"])
+        except Exception:
+            expected_profiles = []
     try:
-        _validate_remediation_interpreter(root, manifest)
-        test_results, test_error = _run_tests(root, interpreter, owned)
+        if not expected_profiles or expected_profiles == ["PYTHON_PYTEST"]:
+            _validate_remediation_interpreter(root, manifest)
+        else:
+            interpreter = Path("/usr/bin/python3")
+        test_results, test_error = _run_tests(root, interpreter, owned, expected_profiles=expected_profiles)
     except Exception as exc:
         test_results, test_error = [], str(exc)
     for index, result in enumerate(test_results):
@@ -565,7 +586,7 @@ def _run_checks(root: Path, owned: list[str], manifest: dict[str, Any] | None = 
         checks.append({"check": "owned_tests", "status": "FAIL", "summary": test_error[:240]})
     diff_ok = True
     diff_codes: list[int] = []
-    for relative in owned:
+    for relative in content_paths:
         diff = subprocess.run(
             ["git", "-C", str(root), "diff", "--no-index", "--check", "/dev/null", relative],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, timeout=60,
@@ -586,9 +607,11 @@ def review_remediation(run_id: str) -> dict[str, Any]:
         root = _project_root_for(str(manifest["project_id"]))
         _assert_baseline(root, manifest, require_before=False)
         actual, staged = _status_paths(root)
-        if staged or not set(actual).issubset(set(manifest["owned_files"])):
+        if staged or any(not _within_owned_scope(path, list(manifest["owned_files"])) for path in actual):
             raise LVRemediationError("remediation review found staged or non-owned changes")
-        after_before = _snapshot(root, manifest["owned_files"])
+        content_paths = [item["path"] for item in manifest["before_owned_content"]]
+        content_paths.extend(path for path in actual if path not in content_paths and (root / path).is_file() and not (root / path).is_symlink())
+        after_before = _snapshot(root, content_paths)
         before_by_path = {item["path"]: item for item in manifest["before_owned_content"]}
         remediated = sorted(item["path"] for item in after_before if item != before_by_path.get(item["path"]))
         if not remediated:
@@ -605,7 +628,7 @@ def review_remediation(run_id: str) -> dict[str, Any]:
         preflight_hashes = _dir_hashes(preflight)
         checks, passed = _run_checks(root, manifest["owned_files"], manifest)
         _assert_baseline(root, manifest, require_before=False)
-        after_after = _snapshot(root, manifest["owned_files"])
+        after_after = _snapshot(root, content_paths)
         stable = after_before == after_after
         passed &= stable and _dir_hashes(package) == package_hashes and _dir_hashes(preflight) == preflight_hashes and result_path.read_bytes() == worker_bytes
         verdict = "PASS" if passed else "FAIL"

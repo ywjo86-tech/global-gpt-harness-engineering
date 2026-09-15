@@ -137,6 +137,19 @@ class LVExecutionPackageTest(unittest.TestCase):
         ):
             self.assertIn(text, first)
 
+    def test_prompt_accepts_safe_directory_scopes_for_project_native_validation(self) -> None:
+        manifest = self._prompt_manifest()
+        manifest["lv_id"] = "TASK-001"
+        manifest["owned_files"] = ["settings.gradle.kts", "android-app/", "backend/"]
+        manifest["validation_toolchain"] = {
+            "profile_ids": ["ANDROID_GRADLE_WRAPPER", "NODE_PACKAGE_MANIFEST"],
+            "focused": [], "full": [], "compile": [], "deferred": True,
+        }
+        prompt = _worker_prompt(manifest)
+        self.assertIn("ANDROID_GRADLE_WRAPPER, NODE_PACKAGE_MANIFEST", prompt)
+        self.assertIn("android-app/", prompt); self.assertIn("backend/", prompt)
+        self.assertNotIn("pytest", prompt.lower())
+
     def test_prompt_allows_empty_owned_scope_for_exit_review(self) -> None:
         manifest = self._prompt_manifest()
         manifest["lv_id"] = "G1-LV3-7"

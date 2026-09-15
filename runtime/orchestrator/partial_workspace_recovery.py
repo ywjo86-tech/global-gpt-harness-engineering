@@ -13,6 +13,10 @@ from .lifecycle_binding import canonical_bytes, validate_binding
 from .production_lifecycle import consume, produce
 
 
+
+def _within_owned_scope(path: str, scopes: Sequence[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
+
 class PartialRecoveryError(ValueError): pass
 
 
@@ -105,7 +109,7 @@ class PartialRecoveryMachine:
         actual_start = process_probe(recorded_pid)
         if actual_start == recorded_start:
             self.advance("LIVE_BOUND_WORKER", {"pid":recorded_pid}); return "LIVE_BOUND_WORKER"
-        outside = sorted(set(diff) - set(owned_scope))
+        outside = sorted(path for path in diff if not _within_owned_scope(path, owned_scope))
         if outside:
             self.advance("INVALID_OR_AMBIGUOUS_PARTIAL", {"outside_owned_scope":outside}); return "INVALID_OR_AMBIGUOUS_PARTIAL"
         # Missing heartbeat is never consulted. Only absence or a start-time
@@ -114,7 +118,7 @@ class PartialRecoveryMachine:
         return "TERMINATED_ADOPTABLE_PARTIAL"
 
     def adopt(self, diff: Mapping[str,str], owned_scope: Sequence[str]) -> dict[str,Any]:
-        if set(diff) - set(owned_scope): raise PartialRecoveryError("owned scope exceeded")
+        if any(not _within_owned_scope(path, owned_scope) for path in diff): raise PartialRecoveryError("owned scope exceeded")
         if self.state == "ADOPTION_VALIDATED": return self.events()[-1]
         if self.state != "TERMINATED_ADOPTABLE_PARTIAL": raise PartialRecoveryError("terminated partial required")
         return self.advance("ADOPTION_VALIDATED", {"owned_diff":dict(sorted(diff.items()))})

@@ -7,13 +7,16 @@ import re
 import stat
 import tempfile
 import subprocess
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, MutableMapping, Sequence
 from types import SimpleNamespace
 
 from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state
+from .task_contract_compat import (
+    analyze_task_stage_gate_contract, compatibility_block_reason, resolve_task_lv_projection,
+)
 from .lv_execution_package import canonical_json_bytes
 from .lv_preview import _declared_owned_files, _gate_section, _tables
 from .lv_execution_package import create_lv_execution_package
@@ -191,6 +194,7 @@ class GateLV:
     execution: str
     tests: list[str]
     capability_contract: Mapping[str, Any] | None = None
+    required_capabilities: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]: return asdict(self)
 
@@ -262,7 +266,34 @@ def load_gate_plan(project_root: str | Path, gate_id: str) -> GatePlan:
     plan = mapping.canonical_source
     if sha256_file(plan) != mapping.canonical_sha256:
         raise GateOrchestrationError("canonical plan SHA mismatch")
-    section = _gate_section(plan.read_text(encoding="utf-8"), gate_id)
+    plan_text = plan.read_text(encoding="utf-8")
+    if getattr(mapping, "task_lv_projection_path", None) is not None:
+        projection_path = mapping.task_lv_projection_path
+        projection_sha = getattr(mapping, "task_lv_projection_sha256", None)
+        if (projection_sha is None or projection_path.is_symlink() or not projection_path.is_file()
+                or sha256_file(projection_path) != projection_sha):
+            raise GateOrchestrationError("TASK-to-LV authority projection is missing or SHA-mismatched")
+        try:
+            projection = json.loads(projection_path.read_text(encoding="utf-8"))
+            resolved = resolve_task_lv_projection(
+                plan_text, projection, project_id=project_id,
+                canonical_plan_sha256=mapping.canonical_sha256, gate_id=gate_id,
+            )
+        except Exception as exc:
+            raise GateOrchestrationError(f"TASK-to-LV authority projection validation failed: {exc}") from exc
+        lvs = [
+            GateLV(
+                gate_id, item["lv_id"], order, item["purpose"], item["dependencies"],
+                item["owned_files"], item["completion_criteria"], item["execution"], item["tests"],
+                item["capability_contract"], item["required_capabilities"],
+            )
+            for order, item in enumerate(resolved, 1)
+        ]
+        if not lvs:
+            raise GateOrchestrationError("TASK-to-LV authority projection resolved an empty Gate")
+        return GatePlan(project_id, str(root), gate_id, plan.relative_to(root).as_posix(), mapping.canonical_sha256, lvs)
+
+    section = _gate_section(plan_text, gate_id)
     summaries: dict[str, dict[str, str]] = {}; details: dict[str, dict[str, str]] = {}
     capability_rows: dict[str, list[dict[str, str]]] = {}
     for headers, rows in _tables(section):
@@ -576,6 +607,30 @@ def compatibility_dry_run(
         ledger = initial_ledger(plan); validate_ledger(plan, ledger)
         return {"status": "COMPATIBLE", "project_id": project_id, "gate_id": gate_id, "plan_sha256": plan.canonical_plan_sha256, "lv_order": authorization.lv_order, "mutation_performed": False, "default_mode": GATE_BY_GATE, "full_plan_requested": mode == FULL_PLAN, "full_plan_eligible": authorization.mode == FULL_PLAN, "full_plan_active": False}
     except Exception as exc:
+        task_analysis = None
+        legacy_reason = str(exc)
+        task_shape_failure = (
+            "canonical plan must contain exactly one section" in legacy_reason
+            or "canonical Gate LV tables are incomplete or inconsistent" in legacy_reason
+        )
+        try:
+            mapping = load_project_mapping(root)
+            if task_shape_failure and mapping is not None and mapping.canonical_source.is_file():
+                task_analysis = analyze_task_stage_gate_contract(
+                    mapping.canonical_source.read_text(encoding="utf-8"), gate_id
+                )
+        except Exception:
+            task_analysis = None
+        if task_analysis is not None:
+            return {
+                "status": "BLOCKED", "project_id": project_id, "gate_id": gate_id,
+                "reason": compatibility_block_reason(task_analysis),
+                "legacy_gate_parser_reason": str(exc),
+                "contract_shape": "TASK_STAGE_GATE", "task_contract_analysis": task_analysis,
+                "mutation_performed": False, "default_mode": GATE_BY_GATE,
+                "full_plan_requested": mode == FULL_PLAN, "full_plan_eligible": False,
+                "full_plan_active": False,
+            }
         return {"status": "BLOCKED", "project_id": project_id, "gate_id": gate_id, "reason": str(exc), "mutation_performed": False, "default_mode": GATE_BY_GATE, "full_plan_requested": mode == FULL_PLAN, "full_plan_eligible": False, "full_plan_active": False}
 
 
@@ -583,7 +638,22 @@ def onboarding_dry_run(project_root: str | Path, alias: str) -> dict[str, Any]:
     root, project_id = _safe_project(project_root)
     required = [root / "AGENTS.md", root / "docs/DEVELOPMENT_PLAN.txt", root / "CHANGELOG.txt", root / "logs/app.log"]
     missing = [path.relative_to(root).as_posix() for path in required if not path.is_file()]
-    return {"schema_version": "orchestration.project.onboarding.v1", "project_id": project_id, "path": str(root), "alias": alias, "mapping_ready": not missing, "missing_contracts": missing, "namespaces": ["approval", "state", "artifact", "run", "secret"], "mutation_performed": False, "fail_closed": bool(missing)}
+    mapping_error = None
+    try:
+        mapping_registered = load_project_mapping(root) is not None
+    except Exception as exc:
+        mapping_registered = False
+        mapping_error = str(exc)
+    contract_files_ready = not missing
+    mapping_ready = contract_files_ready and mapping_registered
+    return {
+        "schema_version": "orchestration.project.onboarding.v1", "project_id": project_id,
+        "path": str(root), "alias": alias, "contract_files_ready": contract_files_ready,
+        "mapping_registered": mapping_registered, "mapping_ready": mapping_ready,
+        "mapping_error": mapping_error, "missing_contracts": missing,
+        "namespaces": ["approval", "state", "artifact", "run", "secret"],
+        "mutation_performed": False, "fail_closed": not mapping_ready,
+    }
 
 
 def validate_global_gate_bindings(project_root: str | Path, gate_id: str, *, requirements_sha256: str,
@@ -1074,6 +1144,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 task = TaskSlice(thread_id=lv_id, assigned_agent="implementation_agent", input=selected.purpose,
                                  expected_output="truthful recovery worker result", validation_criteria=list(selected.completion_criteria),
                                  editable_scope=list(selected.owned_files), forbidden_scope=[], merge_point="GATE_EXIT",
+                                 required_capabilities=list(selected.required_capabilities),
                                  run_id=run_id, run_root=str(attempt_root), output_dir=str(attempt_root),
                                  result_path=str(result), worker_request_path=str(request_path))
                 from .canonical_paths import canonical_lv_path
@@ -1354,6 +1425,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             input=str(manifest.get("task", {}).get("purpose", "sealed LV worker")),
             expected_output="truthful worker result", validation_criteria=list(manifest.get("completion_checks", [])),
             editable_scope=list(manifest.get("owned_files", [])), forbidden_scope=[], merge_point="GATE_EXIT",
+            required_capabilities=list(next(item for item in plan.lvs if item.lv_id == lv_id).required_capabilities),
             run_id=run_id, run_root=str(package_root), task_prompt_path=str(package_root / "worker_prompt.md"),
             output_dir=str(package_root), result_path=str(result), worker_request_path=str(package_root / "worker.request.json"),
         )
@@ -1391,6 +1463,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     "tool_authorization_projection_sha256": manifest.get("tool_authorization_projection_sha256", ""),
                     "working_semantic_contract_version": manifest.get("working_semantic_contract_version"),
                     "working_development_plan_version": manifest.get("working_development_plan_version"),
+                    "validation_toolchain": dict(manifest.get("validation_toolchain", {})),
                     "gate_id": plan.gate_id, "lv_id": lv_id,
                     "approval_event_id": getattr(auth, "authorization_id", ""),
                     **canonical_extra,
