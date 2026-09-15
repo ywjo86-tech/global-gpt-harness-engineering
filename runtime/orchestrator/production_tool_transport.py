@@ -219,20 +219,13 @@ class ProductionToolTransport:
             return build(f"{self.request.get('run_id')}|{envelope.provider_call_id}|{envelope.operation_class_id}")
 
         base_seed = f"{self.request.get('run_id')}|{envelope.operation_class_id}|{scope_ref}"
-        identity = build(base_seed)
         attempt = self.request.get("attempt", 1)
-        if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt <= 1:
-            return identity
-        evidence = {item.effect_id: item for item in self.governed_effect_evidence()}
-        prior = evidence.get(identity.effect_id)
-        if prior is None or prior.mutation_performed or prior.security_passed:
-            return identity
-        target, _scope, _directory_probe = self._target(
-            envelope.arguments.get("owned_file_id"), envelope.arguments.get("relative_path"), require_file=True
-        )
-        if target.exists():
-            return identity
-        return build(f"{base_seed}|recovery-attempt|{attempt}")
+        # A recovery attempt is a new exactly-once mutation epoch.  This lets
+        # an explicit successor attempt correct an incomplete prior write while
+        # preserving duplicate-call blocking inside the same attempt.
+        if isinstance(attempt, int) and not isinstance(attempt, bool) and attempt > 1:
+            return build(f"{base_seed}|recovery-attempt|{attempt}")
+        return build(base_seed)
 
     def _scope_ref(self, envelope: ToolRequestEnvelope) -> str:
         if envelope.operation_class_id not in {_READ, _WRITE}:

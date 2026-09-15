@@ -215,6 +215,29 @@ class ProductionToolTransportTests(unittest.TestCase):
                     "CALL_DUPLICATE"))
             self.assertEqual((root / "gradle/libs.versions.toml").read_text(encoding="utf-8"), "recovered")
 
+    def test_recovery_attempt_can_correct_prior_successful_partial_write_once(self):
+        owned_files = ["gradle/libs.versions.toml"]
+        contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); journal = root / "journal"
+            first_request = self.request(root, contracts); first_request["owned_files"] = owned_files; first_request["attempt"] = 1
+            first = ProductionToolTransport(request=first_request, workspace_root=root, journal_root=journal,
+                                            security_scan=lambda _: True)
+            first_result = first.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "partial"}, "CALL_FIRST"))
+            self.assertEqual(first_result.status, "COMPLETED")
+            second_request = self.request(root, contracts); second_request["owned_files"] = owned_files; second_request["attempt"] = 2
+            second = ProductionToolTransport(request=second_request, workspace_root=root, journal_root=journal,
+                                             security_scan=lambda _: True)
+            corrected = second.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "corrected"}, "CALL_SECOND"))
+            self.assertEqual(corrected.status, "COMPLETED")
+            self.assertEqual((root / "gradle/libs.versions.toml").read_text(encoding="utf-8"), "corrected")
+            with self.assertRaises(Exception):
+                second.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_WRITE", "TASK-4A-08",
+                    "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001", "content": "duplicate"}, "CALL_DUPLICATE"))
+            self.assertEqual(len(second.governed_effect_evidence()), 2)
+
     def test_missing_contract_and_unknown_operation_have_zero_effect(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); target = root / "owned.txt"; target.write_text("initial", encoding="utf-8")

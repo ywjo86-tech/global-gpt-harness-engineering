@@ -2669,11 +2669,15 @@ def execute_production_worker(request: WorkerRequest, *,
             raise ProductionWorkerError("pre-result partial recovery ID is missing")
         if request.extra_context.get("recovery_source_kind") != "PRE_RESULT_PARTIAL_SOURCE":
             raise ProductionWorkerError("pre-result partial recovery source binding is invalid")
-    materialized_partial_recovery = (
-        pre_result_partial_recovery
-        and bool(pending_paths)
-        and all((root / scope.rstrip("/")).exists() for scope in owned)
-    )
+    materialized_partial_recovery = False
+    if (pre_result_partial_recovery and pending_paths
+            and all((root / scope.rstrip("/")).exists() for scope in owned)):
+        try:
+            resolve_validation_commands(root, owned, allow_deferred=False)
+        except ValidationToolchainError:
+            materialized_partial_recovery = False
+        else:
+            materialized_partial_recovery = True
     cancel_path = output / "cancel.request"
     if adoption:
         stdout = stderr = b""
