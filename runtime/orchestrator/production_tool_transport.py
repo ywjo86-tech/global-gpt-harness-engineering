@@ -215,16 +215,23 @@ class ProductionToolTransport:
                 owned_scope_digest(list(self.request.get("owned_files", []))),
             )
 
+        attempt = self.request.get("attempt", 1)
+        recovery_epoch = (
+            f"|recovery-attempt|{attempt}"
+            if isinstance(attempt, int) and not isinstance(attempt, bool) and attempt > 1
+            else ""
+        )
         if envelope.operation_class_id != _WRITE:
-            return build(f"{self.request.get('run_id')}|{envelope.provider_call_id}|{envelope.operation_class_id}")
+            return build(
+                f"{self.request.get('run_id')}|{envelope.provider_call_id}|{envelope.operation_class_id}{recovery_epoch}"
+            )
 
         base_seed = f"{self.request.get('run_id')}|{envelope.operation_class_id}|{scope_ref}"
-        attempt = self.request.get("attempt", 1)
         # A recovery attempt is a new exactly-once mutation epoch.  This lets
         # an explicit successor attempt correct an incomplete prior write while
         # preserving duplicate-call blocking inside the same attempt.
-        if isinstance(attempt, int) and not isinstance(attempt, bool) and attempt > 1:
-            return build(f"{base_seed}|recovery-attempt|{attempt}")
+        if recovery_epoch:
+            return build(f"{base_seed}{recovery_epoch}")
         return build(base_seed)
 
     def _scope_ref(self, envelope: ToolRequestEnvelope) -> str:

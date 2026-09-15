@@ -187,6 +187,29 @@ class ProductionToolTransportTests(unittest.TestCase):
                     "content": "blocked"}, "CALL_SYMLINK"))
             self.assertFalse((Path(outside) / "escape.txt").exists())
 
+    def test_recovery_attempt_reissues_read_and_list_in_new_epoch(self):
+        owned_files = ["owned.txt"]
+        contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); journal = root / "journal"
+            (root / "owned.txt").write_text("value\n", encoding="utf-8")
+            first_request = self.request(root, contracts); first_request["owned_files"] = owned_files; first_request["attempt"] = 1
+            first = ProductionToolTransport(request=first_request, workspace_root=root, journal_root=journal,
+                                            security_scan=lambda _: True)
+            self.assertEqual(first.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_LIST", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {}, "CALL_LIST")).status, "COMPLETED")
+            self.assertEqual(first.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_READ", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001"}, "CALL_READ")).status, "COMPLETED")
+            second_request = self.request(root, contracts); second_request["owned_files"] = owned_files; second_request["attempt"] = 2
+            second = ProductionToolTransport(request=second_request, workspace_root=root, journal_root=journal,
+                                             security_scan=lambda _: True)
+            self.assertEqual(second.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_LIST", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {}, "CALL_LIST")).status, "COMPLETED")
+            read = second.handle(ToolRequestEnvelope("PROJECT_OWNED_FILE_READ", "TASK-4A-08",
+                "PRODUCTION_WORKER_TURN", {"owned_file_id": "OWNED_0001"}, "CALL_READ"))
+            self.assertEqual(read.status, "COMPLETED")
+            self.assertEqual(read.bounded_payload["content"], "value\n")
+
     def test_recovery_attempt_retries_only_prior_failed_nonmutating_write(self):
         owned_files = ["gradle/libs.versions.toml"]
         contracts = [active_for_owned_files(item, owned_files) for item in production_operations()]
