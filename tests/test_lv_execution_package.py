@@ -142,11 +142,11 @@ class LVExecutionPackageTest(unittest.TestCase):
         manifest["lv_id"] = "TASK-001"
         manifest["owned_files"] = ["settings.gradle.kts", "android-app/", "backend/"]
         manifest["validation_toolchain"] = {
-            "profile_ids": ["ANDROID_GRADLE_WRAPPER", "NODE_PACKAGE_MANIFEST"],
+            "profile_ids": ["ANDROID_GRADLE_BOOTSTRAP", "NODE_PACKAGE_MANIFEST"],
             "focused": [], "full": [], "compile": [], "deferred": True,
         }
         prompt = _worker_prompt(manifest)
-        self.assertIn("ANDROID_GRADLE_WRAPPER, NODE_PACKAGE_MANIFEST", prompt)
+        self.assertIn("ANDROID_GRADLE_BOOTSTRAP, NODE_PACKAGE_MANIFEST", prompt)
         self.assertIn("android-app/", prompt); self.assertIn("backend/", prompt)
         self.assertNotIn("pytest", prompt.lower())
 

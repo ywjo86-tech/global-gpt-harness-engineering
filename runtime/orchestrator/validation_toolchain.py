@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
@@ -38,6 +40,62 @@ def _scope_flags(owned_files: Sequence[str]) -> tuple[bool, bool, bool]:
     node = any(path.startswith("backend/") or path == "backend/" for path in owned_files)
     python = any(path.endswith(".py") or path.startswith("tests/") for path in owned_files)
     return android, node, python
+
+
+def _safe_regular_file(root: Path, path: Path) -> bool:
+    if not path.is_file() or path.is_symlink():
+        return False
+    current = path.parent
+    while current != root:
+        if current.is_symlink():
+            return False
+        if root not in current.parents and current != root:
+            return False
+        current = current.parent
+    return True
+
+
+def _nested_wrapper_pinned(root: Path) -> bool:
+    jar = root / "android-app" / "gradle" / "wrapper" / "gradle-wrapper.jar"
+    props = root / "android-app" / "gradle" / "wrapper" / "gradle-wrapper.properties"
+    if not _safe_regular_file(root, jar) or not _safe_regular_file(root, props):
+        return False
+    try:
+        values = {}
+        for raw in props.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+    except (OSError, UnicodeError):
+        return False
+    url = values.get("distributionUrl", "")
+    digest = values.get("distributionSha256Sum", "")
+    return bool(re.search(r"/gradle-[0-9]+(?:\.[0-9]+)+(?:-[A-Za-z0-9.-]+)?-bin\.zip$", url)) and bool(re.fullmatch(r"[0-9a-f]{64}", digest))
+
+
+def _android_runner(root: Path) -> tuple[str, tuple[str, ...]]:
+    root_wrapper = root / "gradlew"
+    if _safe_regular_file(root, root_wrapper):
+        return "ANDROID_GRADLE_WRAPPER", ("./gradlew",)
+    nested_wrapper = root / "android-app" / "gradlew"
+    if _safe_regular_file(root, nested_wrapper) and _nested_wrapper_pinned(root):
+        # The wrapper lives inside the approved android-app/ scope while the
+        # canonical Gradle project root remains the repository root. Invoking
+        # through sh avoids requiring executable-bit mutation from the bounded
+        # text-write transport.
+        return "ANDROID_GRADLE_WRAPPER", ("sh", "android-app/gradlew", "-p", ".")
+    system_gradle = shutil.which("gradle")
+    if system_gradle:
+        resolved = Path(system_gradle).resolve()
+        try:
+            inside_workspace = resolved.is_relative_to(root)
+        except AttributeError:
+            inside_workspace = root == resolved or root in resolved.parents
+        if resolved.is_file() and not inside_workspace:
+            return "ANDROID_GRADLE_SYSTEM_BOOTSTRAP", (str(resolved), "--no-daemon")
+    raise ValidationToolchainError("Android owned scope requires a complete pinned Gradle wrapper or trusted system Gradle bootstrap")
 
 
 def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
@@ -81,17 +139,19 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
     deferred = False
 
     if android:
-        wrapper = root / "gradlew"
-        if wrapper.is_file() and not wrapper.is_symlink():
-            profiles.append("ANDROID_GRADLE_WRAPPER")
-            focused.append(("./gradlew", "check"))
-            full.append(("./gradlew", "check"))
-            compile_commands.append(("./gradlew", "assembleDebug"))
-        elif allow_deferred:
-            profiles.append("ANDROID_GRADLE_WRAPPER")
-            deferred = True
+        try:
+            android_profile, gradle_prefix = _android_runner(root)
+        except ValidationToolchainError:
+            if allow_deferred:
+                profiles.append("ANDROID_GRADLE_BOOTSTRAP")
+                deferred = True
+            else:
+                raise
         else:
-            raise ValidationToolchainError("Android owned scope requires a project Gradle wrapper")
+            profiles.append(android_profile)
+            focused.append((*gradle_prefix, "check"))
+            full.append((*gradle_prefix, "check"))
+            compile_commands.append((*gradle_prefix, "assembleDebug"))
 
     if node:
         try:
@@ -132,7 +192,11 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
         if not owned_files:
             return ValidationCommandSet((), (), (), (), False)
         manifest_scopes: list[str] = []
-        if (root / "gradlew").is_file() and not (root / "gradlew").is_symlink():
+        try:
+            _android_runner(root)
+        except ValidationToolchainError:
+            pass
+        else:
             manifest_scopes.append("android-app/")
         if (root / "backend" / "package.json").is_file() and not (root / "backend" / "package.json").is_symlink():
             manifest_scopes.append("backend/")
@@ -187,6 +251,8 @@ def validate_profile_resolution(expected: Sequence[str], actual: Sequence[str]) 
     actual_set = set(actual)
     if "ANDROID_GRADLE_WRAPPER" in expected_set and "ANDROID_GRADLE_WRAPPER" not in actual_set:
         raise ValidationToolchainError("Android validation profile did not resolve")
+    if "ANDROID_GRADLE_BOOTSTRAP" in expected_set and not ({"ANDROID_GRADLE_WRAPPER", "ANDROID_GRADLE_SYSTEM_BOOTSTRAP"} & actual_set):
+        raise ValidationToolchainError("Android bootstrap validation profile did not resolve")
     if "PYTHON_PYTEST" in expected_set and "PYTHON_PYTEST" not in actual_set:
         raise ValidationToolchainError("Python validation profile did not resolve")
     if "NODE_PACKAGE_MANIFEST" in expected_set and not any(item.startswith("NODE_") for item in actual_set):
@@ -196,6 +262,9 @@ def validate_profile_resolution(expected: Sequence[str], actual: Sequence[str]) 
         raise ValidationToolchainError("Node validation profile changed after sealing")
     if "PROJECT_NATIVE_UNRESOLVED" not in expected_set:
         allowed = set(expected_set)
+        if "ANDROID_GRADLE_BOOTSTRAP" in allowed:
+            allowed.remove("ANDROID_GRADLE_BOOTSTRAP")
+            allowed.update(item for item in actual_set if item in {"ANDROID_GRADLE_WRAPPER", "ANDROID_GRADLE_SYSTEM_BOOTSTRAP"})
         if "NODE_PACKAGE_MANIFEST" in allowed:
             allowed.remove("NODE_PACKAGE_MANIFEST")
             allowed.update(item for item in actual_set if item.startswith("NODE_"))

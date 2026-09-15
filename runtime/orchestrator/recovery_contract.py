@@ -1,6 +1,6 @@
 """Append-only recovery records for rejected partial production attempts."""
 from __future__ import annotations
-import hashlib, json, os, re, tempfile
+import hashlib, json, os, re, subprocess, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -123,11 +123,14 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
                           missing_bindings: list[str], recovery_attempt: int, approval_event_id: str,
                           plan_sha256: str, branch: str, baseline_head: str, current_head: str,
                           active_transition_sha256: str, source_shas: Mapping[str, str], predecessor: str | None,
-                          supersedes: str, hard_stop: bool = True, recovery_id: str | None = None) -> dict[str, Any]:
+                          supersedes: str, hard_stop: bool = True, recovery_id: str | None = None,
+                          source_binding_kind: str = "ACTIVE_TRANSITION") -> dict[str, Any]:
     if rejected_attempt <= 0 or recovery_attempt != rejected_attempt + 1 or not hard_stop:
         raise RecoveryError("invalid recovery attempt or hard-stop binding")
-    if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes)) or not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, branch, supersedes)):
+    if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes, source_binding_kind)) or not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, branch, supersedes, source_binding_kind)):
         raise RecoveryError("recovery binding is incomplete")
+    if source_binding_kind not in {"ACTIVE_TRANSITION", "PRE_RESULT_PARTIAL_SOURCE"}:
+        raise RecoveryError("unsupported recovery source binding kind")
     for path, digest in {**rejected_artifacts, **source_shas}.items():
         p = Path(path)
         if p.is_absolute() or ".." in p.parts or not isinstance(digest, str) or not _SHA.fullmatch(digest):
@@ -135,7 +138,7 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
     recovery_id = recovery_id or f"{run_id}-recovery-{recovery_attempt:02d}"
     if not _ID.fullmatch(recovery_id):
         raise RecoveryError("recovery ID is invalid")
-    payload = {"schema_version":"orchestration.production-recovery.v1","recovery_id":recovery_id,"project_id":project_id,"gate_id":gate_id,"lv_id":lv_id,"run_id":run_id,"rejected_attempt":rejected_attempt,"rejected_artifacts":dict(rejected_artifacts),"rejection_reason_code":reason_code,"missing_bindings":list(missing_bindings),"recovery_attempt":recovery_attempt,"approval_event_id":approval_event_id,"plan_sha256":plan_sha256,"branch":branch,"baseline_head":baseline_head,"current_head":current_head,"active_transition_sha256":active_transition_sha256,"source_shas":dict(source_shas),"predecessor":predecessor,"supersedes":supersedes,"created_at":datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),"hard_stop":True}
+    payload = {"schema_version":"orchestration.production-recovery.v1","recovery_id":recovery_id,"project_id":project_id,"gate_id":gate_id,"lv_id":lv_id,"run_id":run_id,"rejected_attempt":rejected_attempt,"rejected_artifacts":dict(rejected_artifacts),"rejection_reason_code":reason_code,"missing_bindings":list(missing_bindings),"recovery_attempt":recovery_attempt,"approval_event_id":approval_event_id,"plan_sha256":plan_sha256,"branch":branch,"baseline_head":baseline_head,"current_head":current_head,"active_transition_sha256":active_transition_sha256,"source_binding_kind":source_binding_kind,"source_shas":dict(source_shas),"predecessor":predecessor,"supersedes":supersedes,"created_at":datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),"hard_stop":True}
     payload["record_hash"] = hashlib.sha256(_bytes(payload)).hexdigest()
     root = Path(harness_root).resolve()/"_workspace"/"global-gate"/project_id/"recovery"
     root.mkdir(parents=True, exist_ok=True); target=root/(payload["recovery_id"]+".json")
@@ -312,6 +315,215 @@ def prepare_partial_recovery(harness_root: str | Path, *, manifest_path: str | P
     return {"classification": classification, "recovery": record, "checkpoint": checkpoint,
             "next_attempt": next_attempt, "completion_evidence": [], "hard_stop": True}
 
+def _within_owned_scope(path: str, scopes: list[str]) -> bool:
+    return any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in scopes)
+
+
+def prepare_pre_result_partial_recovery(
+    harness_root: str | Path, *, project_root: str | Path,
+    package_manifest_path: str | Path, preflight_path: str | Path,
+    worker_request_path: str | Path, process_path: str | Path,
+    approval_event_id: str, branch: str, baseline_head: str,
+) -> dict[str, Any]:
+    """Seal a broker-failed pre-result partial workspace into attempt-N+1 recovery.
+
+    This path is intentionally narrower than legacy partial recovery: the first
+    attempt must have a sealed PACKAGE/PREFLIGHT/worker request, a terminal
+    nonzero executor process, no worker.result, and a nonempty Git diff wholly
+    contained by the sealed owned scope.  The source artifact binds both the
+    failed broker effects and the exact current partial file bytes.
+    """
+    root = Path(harness_root).resolve()
+    project = Path(project_root).resolve()
+    if not project.is_dir() or project.is_symlink():
+        raise RecoveryError("pre-result partial project root is unsafe")
+    paths = [Path(value) for value in (
+        package_manifest_path, preflight_path, worker_request_path, process_path,
+    )]
+    for path in paths:
+        resolved = path.resolve()
+        if not path.is_file() or path.is_symlink() or root not in resolved.parents:
+            raise RecoveryError("unsafe pre-result partial source artifact")
+    try:
+        manifest, preflight, request, process = [
+            json.loads(path.read_text(encoding="utf-8")) for path in paths
+        ]
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RecoveryError("malformed pre-result partial source artifact") from exc
+    if not all(isinstance(value, dict) for value in (manifest, preflight, request, process)):
+        raise RecoveryError("pre-result partial source artifact must be an object")
+
+    expected = {key: manifest.get(key) for key in ("project_id", "gate_id", "lv_id", "run_id")}
+    if not all(isinstance(value, str) and value for value in expected.values()):
+        raise RecoveryError("pre-result partial manifest binding is incomplete")
+    extra = request.get("extra_context")
+    contract = request.get("contract_summary")
+    if not isinstance(extra, dict) or not isinstance(contract, dict):
+        raise RecoveryError("pre-result partial worker request binding is missing")
+    if any(preflight.get(key) != value for key, value in expected.items()):
+        raise RecoveryError("pre-result partial preflight binding mismatch")
+    if any(contract.get(key) != value for key, value in expected.items() if key != "run_id"):
+        raise RecoveryError("pre-result partial worker contract binding mismatch")
+    if any(extra.get(key) != expected[key] for key in ("gate_id", "lv_id", "run_id")):
+        raise RecoveryError("pre-result partial worker request identity mismatch")
+    if extra.get("approval_event_id") != approval_event_id:
+        raise RecoveryError("pre-result partial approval binding mismatch")
+    rejected_attempt = extra.get("attempt")
+    if not isinstance(rejected_attempt, int) or isinstance(rejected_attempt, bool) or rejected_attempt <= 0:
+        raise RecoveryError("pre-result partial worker attempt is invalid")
+
+    package_sidecar = paths[0].with_suffix(".sha256")
+    preflight_sidecar = paths[1].with_suffix(".sha256")
+    if not package_sidecar.is_file() or package_sidecar.is_symlink() or not preflight_sidecar.is_file() or preflight_sidecar.is_symlink():
+        raise RecoveryError("pre-result partial source sidecar is missing or unsafe")
+    package_sha = hashlib.sha256(paths[0].read_bytes()).hexdigest()
+    preflight_sha = hashlib.sha256(paths[1].read_bytes()).hexdigest()
+    if package_sidecar.read_text(encoding="ascii").strip() != package_sha:
+        raise RecoveryError("pre-result partial package sidecar mismatch")
+    if preflight_sidecar.read_text(encoding="ascii").strip() != preflight_sha:
+        raise RecoveryError("pre-result partial preflight sidecar mismatch")
+    if preflight.get("package_manifest_sha256") != package_sha or extra.get("package_manifest_sha256") != package_sha:
+        raise RecoveryError("pre-result partial package lineage mismatch")
+    if extra.get("preflight_evidence_sha256") != preflight_sha:
+        raise RecoveryError("pre-result partial preflight lineage mismatch")
+    plan_sha = manifest.get("canonical_plan_sha256")
+    if not isinstance(plan_sha, str) or not _SHA.fullmatch(plan_sha) or contract.get("canonical_plan_sha256") != plan_sha:
+        raise RecoveryError("pre-result partial plan binding mismatch")
+    source_head = manifest.get("source_head")
+    if not isinstance(source_head, str) or not source_head:
+        raise RecoveryError("pre-result partial source HEAD is missing")
+    current_head = subprocess.run(
+        ["git", "-C", str(project), "rev-parse", "HEAD"], capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if current_head != source_head:
+        raise RecoveryError("pre-result partial HEAD drifted from sealed source")
+    if process.get("termination") not in {"EXITED", "TIMED_OUT", "CANCELLED"} or process.get("exit_code") in {None, 0}:
+        raise RecoveryError("pre-result partial executor failure is not terminal")
+    if not isinstance(process.get("broker_block"), dict):
+        raise RecoveryError("pre-result partial broker failure evidence is missing")
+    package_root = paths[0].parent
+    if (package_root / "worker.result.json").exists() or (package_root / "worker.result.json").is_symlink():
+        raise RecoveryError("pre-result partial recovery requires absent worker result")
+
+    owned = manifest.get("owned_files")
+    if not isinstance(owned, list) or not owned or any(not isinstance(item, str) or not item for item in owned):
+        raise RecoveryError("pre-result partial owned scope is malformed")
+    status = subprocess.run(
+        ["git", "-C", str(project), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    changed = [line[3:] for line in status if len(line) > 3]
+    if not changed or any(not _within_owned_scope(path, owned) for path in changed):
+        raise RecoveryError("pre-result partial workspace is not a nonempty owned subset")
+    owned_diff: dict[str, str] = {}
+    for relative in sorted(changed):
+        target = project / relative
+        if target.is_symlink() or not target.is_file():
+            raise RecoveryError("pre-result partial owned diff is not a regular file")
+        owned_diff[relative] = hashlib.sha256(target.read_bytes()).hexdigest()
+
+    effects = process.get("governed_effect_evidence")
+    if not isinstance(effects, list) or not effects:
+        raise RecoveryError("pre-result partial governed effect evidence is missing")
+    effect_projection = []
+    effect_artifacts: dict[str, str] = {}
+    journal_root = root / "_workspace" / "host-gateway-ledger" / expected["project_id"] / expected["run_id"] / "tool-effects"
+    for effect in effects:
+        if not isinstance(effect, dict) or effect.get("operation") != "PROJECT_OWNED_FILE_WRITE":
+            raise RecoveryError("pre-result partial governed effect evidence is malformed")
+        scope_ref = effect.get("scope_ref")
+        effect_id = effect.get("effect_id")
+        if not isinstance(scope_ref, str) or not _within_owned_scope(scope_ref, owned) or not isinstance(effect_id, str) or not effect_id:
+            raise RecoveryError("pre-result partial governed effect scope is invalid")
+        for suffix in ("intent.json", "receipt.json"):
+            artifact = journal_root / f"{effect_id}.{suffix}"
+            if not artifact.is_file() or artifact.is_symlink():
+                raise RecoveryError("pre-result partial tool-effect journal is incomplete")
+            rel = artifact.resolve().relative_to(root).as_posix()
+            effect_artifacts[rel] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        effect_projection.append({
+            "effect_id": effect_id, "scope_ref": scope_ref,
+            "mutation_performed": effect.get("mutation_performed") is True,
+            "security_passed": effect.get("security_passed") is True,
+        })
+    if not any(item["mutation_performed"] and item["security_passed"] for item in effect_projection):
+        raise RecoveryError("pre-result partial workspace lacks a completed governed mutation")
+    if not any(not item["mutation_performed"] for item in effect_projection):
+        raise RecoveryError("pre-result partial failure lacks a non-mutating failed effect")
+
+    relative_sources = [path.resolve().relative_to(root).as_posix() for path in paths]
+    source_shas = {
+        rel: hashlib.sha256(path.read_bytes()).hexdigest()
+        for rel, path in zip(relative_sources, paths)
+    }
+    source_shas.update(effect_artifacts)
+    source = {
+        "schema_version": "orchestration.pre-result-partial-source.v1",
+        **expected,
+        "attempt": rejected_attempt,
+        "canonical_plan_sha256": plan_sha,
+        "approval_event_id": approval_event_id,
+        "branch": branch,
+        "baseline_head": baseline_head,
+        "source_head": source_head,
+        "current_head": current_head,
+        "owned_files": list(owned),
+        "owned_diff": owned_diff,
+        "package_manifest_sha256": package_sha,
+        "preflight_evidence_sha256": preflight_sha,
+        "worker_request_sha256": source_shas[relative_sources[2]],
+        "executor_process_sha256": source_shas[relative_sources[3]],
+        "governed_write_effects": sorted(effect_projection, key=lambda item: item["effect_id"]),
+        "tool_effect_artifacts": dict(sorted(effect_artifacts.items())),
+        "failure": {
+            "termination": process.get("termination"), "exit_code": process.get("exit_code"),
+            "broker_block": dict(process["broker_block"]),
+        },
+        "hard_stop": True,
+    }
+    source["source_payload_sha256"] = hashlib.sha256(_bytes(source)).hexdigest()
+    source_path = package_root / "pre-result-partial-source.json"
+    _write_once(source_path, source)
+    source_rel = source_path.resolve().relative_to(root).as_posix()
+    source_file_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    source_shas[source_rel] = source_file_sha
+
+    next_attempt = rejected_attempt + 1
+    recovery_id = f"{expected['run_id']}-recovery-{next_attempt:02d}"
+    record = write_recovery_record(
+        root, project_id=expected["project_id"], gate_id=expected["gate_id"],
+        lv_id=expected["lv_id"], run_id=expected["run_id"],
+        rejected_attempt=rejected_attempt,
+        rejected_artifacts={source_rel: source_file_sha},
+        reason_code="REJECTED_PRE_RESULT_PARTIAL", missing_bindings=["worker.result"],
+        recovery_attempt=next_attempt, approval_event_id=approval_event_id,
+        plan_sha256=plan_sha, branch=branch, baseline_head=baseline_head,
+        current_head=current_head, active_transition_sha256=source_file_sha,
+        source_shas=source_shas, predecessor=None, supersedes=source_file_sha,
+        hard_stop=True, recovery_id=recovery_id,
+        source_binding_kind="PRE_RESULT_PARTIAL_SOURCE",
+    )
+    checkpoint = {
+        "schema_version": "orchestration.production-recovery-checkpoint.v1",
+        "project_id": expected["project_id"], "gate_id": expected["gate_id"],
+        "lv_id": expected["lv_id"], "run_id": expected["run_id"],
+        "recovery_id": record["recovery_id"], "rejected_attempt": rejected_attempt,
+        "next_attempt": next_attempt, "recovery_record_hash": record["record_hash"],
+        "completion_evidence": [], "status": "REJECTED_PRE_RESULT_PARTIAL",
+        "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE", "hard_stop": True,
+    }
+    checkpoint["checkpoint_sha256"] = hashlib.sha256(_bytes(checkpoint)).hexdigest()
+    recovery_root = root / "_workspace" / "global-gate" / expected["project_id"] / "recovery"
+    checkpoint_path = recovery_root / f"{record['recovery_id']}.checkpoint.json"
+    _write_once(checkpoint_path, checkpoint)
+    return {
+        "classification": {"status": "REJECTED_PRE_RESULT_PARTIAL", "completion_eligible": False,
+                           "missing_bindings": ["worker.result"]},
+        "recovery": record, "checkpoint": checkpoint, "next_attempt": next_attempt,
+        "source": source, "source_path": str(source_path), "completion_evidence": [], "hard_stop": True,
+    }
+
+
 def prepare_completion_recovery(harness_root: str | Path, *, prior_record_path: str | Path,
                                 rejection_path: str | Path) -> dict[str, Any]:
     """Advance exactly one attempt from an append-only completion rejection."""
@@ -331,7 +543,7 @@ def prepare_completion_recovery(harness_root: str | Path, *, prior_record_path: 
         missing_bindings=list(rejected.get("reasons",[])),recovery_attempt=next_attempt,approval_event_id=prior["approval_event_id"],
         plan_sha256=prior["plan_sha256"],branch=prior["branch"],baseline_head=prior["baseline_head"],current_head=prior["current_head"],
         active_transition_sha256=prior["active_transition_sha256"],source_shas={relative:digest},predecessor=prior["record_hash"],
-        supersedes=rejected["record_hash"],hard_stop=True)
+        supersedes=rejected["record_hash"],hard_stop=True, source_binding_kind=prior.get("source_binding_kind", "ACTIVE_TRANSITION"))
     checkpoint={"schema_version":"orchestration.production-recovery-checkpoint.v1","project_id":prior["project_id"],"gate_id":prior["gate_id"],
         "lv_id":prior["lv_id"],"run_id":prior["run_id"],"recovery_id":record["recovery_id"],"rejected_attempt":rejected_attempt,
         "next_attempt":next_attempt,"recovery_record_hash":record["record_hash"],"completion_evidence":[],"status":"REJECTED_COMPLETION_UNPROVEN","hard_stop":True}
@@ -379,7 +591,9 @@ def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: 
     binding = canonical_recovery_binding(record, checkpoint)
     package = {"schema_version":"orchestration.recovery-package.v1", **binding,
                "branch":record.get("branch"), "baseline_head":record.get("baseline_head"),
-               "current_head":record.get("current_head")}
+               "current_head":record.get("current_head"),
+               "recovery_reason_code":record.get("rejection_reason_code"),
+               "recovery_source_kind":record.get("source_binding_kind", "ACTIVE_TRANSITION")}
     package["package_sha256"] = hashlib.sha256(_bytes(package)).hexdigest()
     package_path = attempt_root / "package.json"
     if package_path.exists():

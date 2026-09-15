@@ -1283,6 +1283,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                                    "preflight_evidence_sha256":recovery_preflight["preflight_sha256"],
                                    "attempt":attempt,"gate_id":plan.gate_id,"lv_id":lv_id,
                                    "approval_event_id":recovery_package["approval_event_id"],
+                                   "pre_result_partial_recovery": recovery_package.get("recovery_reason_code") == "REJECTED_PRE_RESULT_PARTIAL",
+                                   "recovery_id": recovery_package.get("recovery_id"),
+                                   "recovery_source_kind": recovery_package.get("recovery_source_kind"),
                                    "source_snapshot":{"source_head":str(context.get("head", ""))},
                                    **canonical_extra})
                 request_path.write_bytes(canonical_json_bytes(request.to_dict()))

@@ -1,6 +1,6 @@
 import json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, write_provenance_rejection, classify_partial_attempt, prepare_partial_recovery, prepare_completion_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, write_provenance_rejection, classify_partial_attempt, prepare_partial_recovery, prepare_pre_result_partial_recovery, prepare_completion_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
 from runtime.orchestrator.production_completion import write_completion_rejection
 
 class RecoveryContractTests(unittest.TestCase):
@@ -150,6 +150,64 @@ class RecoveryContractTests(unittest.TestCase):
             kw=dict(project_id='p',gate_id='g',lv_id='l',run_id='r',rejected_attempt=1,rejected_artifacts={'a.json':'a'*64},reason_code='REJECTED_UNBOUND_LEGACY',missing_bindings=['project_id'],recovery_attempt=2,approval_event_id='e',plan_sha256='b'*64,branch='main',baseline_head='c'*40,current_head='d'*40,active_transition_sha256='f'*64,source_shas={'a.json':'a'*64},predecessor=None,supersedes='old')
             first=write_recovery_record(d,**kw); second=write_recovery_record(d,**kw)
             self.assertEqual(first,second); self.assertEqual(first['hard_stop'],True)
+    def test_pre_result_partial_recovery_seals_owned_diff_and_attempt_two(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); project = root / "project"; project.mkdir()
+            import subprocess, hashlib
+            subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.name", "Fixture"], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.email", "fixture@example.invalid"], check=True)
+            (project / "README.md").write_text("base\n")
+            subprocess.run(["git", "-C", project, "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", project, "commit", "-qm", "base"], check=True)
+            head = subprocess.check_output(["git", "-C", project, "rev-parse", "HEAD"], text=True).strip()
+            (project / "settings.gradle.kts").write_text("rootProject.name=\"Fixture\"\n")
+            run_id = "run-pre-result"; package_root = root / "_workspace" / "orchestration-runs" / run_id / "TASK-001"
+            package_root.mkdir(parents=True)
+            manifest = {"schema_version":"orchestration.lv_execution_package.v1","project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,"canonical_plan_sha256":"a"*64,"source_head":head,"owned_files":["settings.gradle.kts","gradle/libs.versions.toml","android-app/","backend/"]}
+            manifest_path = package_root / "package.manifest.json"; manifest_path.write_text(json.dumps(manifest,sort_keys=True,separators=(",",":")))
+            package_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest(); (package_root/"package.manifest.sha256").write_text(package_sha)
+            preflight = {"schema_version":"orchestration.lv_preflight.evidence.v1","project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,"package_manifest_sha256":package_sha}
+            preflight_path = package_root / "preflight" / "preflight.evidence.json"; preflight_path.parent.mkdir(); preflight_path.write_text(json.dumps(preflight,sort_keys=True,separators=(",",":")))
+            preflight_sha = hashlib.sha256(preflight_path.read_bytes()).hexdigest(); (preflight_path.parent/"preflight.evidence.sha256").write_text(preflight_sha)
+            request = {"contract_summary":{"project_id":"p","gate_id":"g","lv_id":"TASK-001","canonical_plan_sha256":"a"*64},"extra_context":{"run_id":run_id,"gate_id":"g","lv_id":"TASK-001","attempt":1,"approval_event_id":"APR-1","package_manifest_sha256":package_sha,"preflight_evidence_sha256":preflight_sha}}
+            request_path = package_root / "worker.request.json"; request_path.write_text(json.dumps(request,sort_keys=True,separators=(",",":")))
+            effects = []
+            journal = root / "_workspace" / "host-gateway-ledger" / "p" / run_id / "tool-effects"; journal.mkdir(parents=True)
+            for effect_id, scope, mutated, security in (("TE-success","settings.gradle.kts",True,True),("TE-failed","gradle/libs.versions.toml",False,False)):
+                effects.append({"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":effect_id,"scope_ref":scope,"mutation_performed":mutated,"security_passed":security})
+                (journal/f"{effect_id}.intent.json").write_text(json.dumps({"effect_id":effect_id,"scope_ref":scope}))
+                (journal/f"{effect_id}.receipt.json").write_text(json.dumps({"effect_id":effect_id,"status":"ok" if mutated else "failed"}))
+            process = {"termination":"EXITED","exit_code":1,"broker_block":{"error_class":"ToolAuthorizationError","operation_class_id":"PROJECT_OWNED_FILE_WRITE","stage":"HANDLE"},"governed_effect_evidence":effects}
+            process_path = package_root / "executor.process.json"; process_path.write_text(json.dumps(process,sort_keys=True,separators=(",",":")))
+            kwargs = dict(project_root=project, package_manifest_path=manifest_path, preflight_path=preflight_path, worker_request_path=request_path, process_path=process_path, approval_event_id="APR-1", branch="main", baseline_head="b"*40)
+            first = prepare_pre_result_partial_recovery(root, **kwargs); second = prepare_pre_result_partial_recovery(root, **kwargs)
+            self.assertEqual(first, second); self.assertEqual(first["next_attempt"], 2)
+            self.assertEqual(first["classification"]["status"], "REJECTED_PRE_RESULT_PARTIAL")
+            self.assertEqual(first["recovery"]["source_binding_kind"], "PRE_RESULT_PARTIAL_SOURCE")
+            self.assertEqual(first["source"]["owned_diff"].keys(), {"settings.gradle.kts"})
+            self.assertEqual(first["checkpoint"]["next_attempt"], 2)
+            self.assertFalse((package_root / "worker.result.json").exists())
+
+    def test_pre_result_partial_recovery_rejects_outside_owned_diff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); project = root / "project"; project.mkdir()
+            import subprocess, hashlib
+            subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.name", "Fixture"], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.email", "fixture@example.invalid"], check=True)
+            (project / "README.md").write_text("base\n"); subprocess.run(["git", "-C", project, "add", "README.md"], check=True); subprocess.run(["git", "-C", project, "commit", "-qm", "base"], check=True)
+            head = subprocess.check_output(["git", "-C", project, "rev-parse", "HEAD"], text=True).strip(); (project / "outside.txt").write_text("bad")
+            run_id="r"; package_root=root/"_workspace/orchestration-runs"/run_id/"TASK-001"; package_root.mkdir(parents=True)
+            manifest={"project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,"canonical_plan_sha256":"a"*64,"source_head":head,"owned_files":["settings.gradle.kts"]}
+            mp=package_root/"package.manifest.json"; mp.write_text(json.dumps(manifest)); ps=hashlib.sha256(mp.read_bytes()).hexdigest(); (package_root/"package.manifest.sha256").write_text(ps)
+            pf={"project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,"package_manifest_sha256":ps}; pp=package_root/"preflight/preflight.evidence.json"; pp.parent.mkdir(); pp.write_text(json.dumps(pf)); pfs=hashlib.sha256(pp.read_bytes()).hexdigest(); (pp.parent/"preflight.evidence.sha256").write_text(pfs)
+            req={"contract_summary":{"project_id":"p","gate_id":"g","lv_id":"TASK-001","canonical_plan_sha256":"a"*64},"extra_context":{"run_id":run_id,"gate_id":"g","lv_id":"TASK-001","attempt":1,"approval_event_id":"APR-1","package_manifest_sha256":ps,"preflight_evidence_sha256":pfs}}; rp=package_root/"worker.request.json"; rp.write_text(json.dumps(req))
+            journal=root/"_workspace/host-gateway-ledger/p/r/tool-effects"; journal.mkdir(parents=True); (journal/"TE-x.intent.json").write_text("{}"); (journal/"TE-x.receipt.json").write_text("{}")
+            proc={"termination":"EXITED","exit_code":1,"broker_block":{},"governed_effect_evidence":[{"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":"TE-x","scope_ref":"settings.gradle.kts","mutation_performed":True,"security_passed":True},{"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":"TE-y","scope_ref":"settings.gradle.kts","mutation_performed":False,"security_passed":False}]}; (journal/"TE-y.intent.json").write_text("{}"); (journal/"TE-y.receipt.json").write_text("{}"); xp=package_root/"executor.process.json"; xp.write_text(json.dumps(proc))
+            with self.assertRaisesRegex(RecoveryError,"owned subset"):
+                prepare_pre_result_partial_recovery(root,project_root=project,package_manifest_path=mp,preflight_path=pp,worker_request_path=rp,process_path=xp,approval_event_id="APR-1",branch="main",baseline_head="b"*40)
+
     def test_completion_rejection_advances_to_attempt_three_and_replays(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)

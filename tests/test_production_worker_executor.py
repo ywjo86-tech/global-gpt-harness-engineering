@@ -1488,6 +1488,36 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             "package_manifest_sha256":"b"*64,"execution_backend":"LOCAL_CHILD","allow_local_child_production":True,
                            "source_snapshot":{"source_head":base}})
 
+    def test_pre_result_partial_recovery_invokes_worker_instead_of_adopt_only_short_circuit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); request = self._fixture(root)
+            (root / "app").mkdir(); (root / "app/x.py").write_text("x=1\n")
+            request.extra_context.update({
+                "attempt": 2, "pre_result_partial_recovery": True,
+                "recovery_id": "r-recovery-02",
+                "recovery_source_kind": "PRE_RESULT_PARTIAL_SOURCE",
+            })
+            calls = []
+            def runner(*args, **kwargs):
+                calls.append(1); (root / "tests").mkdir(); (root / "tests/test_x.py").write_text("def test_x(): assert True\n")
+                return subprocess.CompletedProcess(args[0], 0, b"ok", b"")
+            ok=lambda root,argv,timeout=900,**kwargs:{"command":argv,"exit_code":0,"timeout":False,"stdout_sha256":"c"*64,"stderr_sha256":"d"*64}
+            with patch("runtime.orchestrator.production_worker_executor._command", side_effect=ok):
+                result=execute_production_worker(request,executor=runner)
+            self.assertEqual(calls, [1])
+            self.assertEqual(result["attempt"], 2)
+            self.assertIn("app/x.py", result["changed_files"]); self.assertIn("tests/test_x.py", result["changed_files"])
+            prompt=(root/"out/executor.prompt.txt").read_text()
+            self.assertIn("sealed pre-result partial attempt", prompt)
+            self.assertIn("relative_path", prompt)
+
+    def test_pre_result_partial_recovery_requires_attempt_two_and_recovery_binding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); request=self._fixture(root); (root/"app").mkdir(); (root/"app/x.py").write_text("x=1\n")
+            request.extra_context.update({"attempt":1,"pre_result_partial_recovery":True,"recovery_id":"r-recovery-02","recovery_source_kind":"PRE_RESULT_PARTIAL_SOURCE"})
+            with self.assertRaisesRegex(ProductionWorkerError,"binding is invalid"):
+                execute_production_worker(request,executor=lambda *a,**k:self.fail("worker must not run"))
+
     def test_manifest_is_actual_not_test_double(self):
         value=production_executor_manifest()
         self.assertEqual(value["asset_id"],EXECUTOR_ID); self.assertTrue(value["production"]); self.assertFalse(value["test_double"])

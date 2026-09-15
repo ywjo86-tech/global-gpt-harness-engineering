@@ -2479,16 +2479,23 @@ def _prompt(request: WorkerRequest, baseline: str, owned: list[str]) -> str:
         f"Task effect requirement: {effect_requirement}. Approved change-target count: {target_count}. "
         "For MUTATION_REQUIRED, a governed WRITE is required unless the target state is independently verified.\n"
     )
+    recovery_contract = ""
+    if request.extra_context.get("pre_result_partial_recovery") is True:
+        recovery_contract = (
+            "Recovery mode: this is a sealed pre-result partial attempt. Inspect existing owned files first; "
+            "preserve already-correct partial content and do not rewrite a completed target merely to repeat a prior effect. "
+            "Continue only missing or incomplete owned targets.\n"
+        )
     return f"""Execute this sealed production LV implementation in the current repository.
 Project/Gate/LV/run/attempt: {request.contract_summary.get('project_id')} / {request.contract_summary.get('gate_id')} / {request.contract_summary.get('lv_id')} / {request.extra_context.get('run_id')} / {request.extra_context.get('attempt')}
 Baseline HEAD: {baseline}
 Plan SHA-256: {request.contract_summary.get('canonical_plan_sha256')}
 Task: {request.task.input}
-{mutation_contract}Owned files (do not modify anything else):
+{mutation_contract}{recovery_contract}Owned files (do not modify anything else):
 {scope}
 Completion criteria:
 {criteria}
-Use PROJECT_OWNED_FILE_LIST to map owned_file_id values to approved relative paths before any write. If MUTATION_REQUIRED is active and an approved owned file is missing or incomplete, do not stop after listing the scope or ask for additional context: create the minimal target-state content through governed WRITE, limited to the mapped owned_file_id values and existing parent directories. When this LV is an API client boundary before a later field-mapping LV, do not invent external response fields; implement only the bounded client/security behavior required by the criteria, such as configured origin, timeout, network error, JSON decoding, redirect rejection, and raw JSON response handling. Use the existing project interpreter/environment. Do not use network, packages, secrets, system changes, Git mutation, approval/state changes, review, remediation, or the next Gate. Implement only the canonical Stage task within editable owned files, then return the minimal implementation completion report and exit immediately. Do not run focused/full regression or Harness validation; the deterministic Harness validator owns those checks. Do not manufacture orchestration artifacts; the controller collects evidence independently.{bounded}
+Use PROJECT_OWNED_FILE_LIST to map owned_file_id values to approved relative paths before any write. For an approved directory scope, supply a safe relative_path beneath that directory for child-file READ/WRITE operations. If MUTATION_REQUIRED is active and an approved owned file is missing or incomplete, do not stop after listing the scope or ask for additional context: create the minimal target-state content through governed WRITE, limited to the mapped owned_file_id values; the governed transport may create missing in-scope parent directories. When this LV is an API client boundary before a later field-mapping LV, do not invent external response fields; implement only the bounded client/security behavior required by the criteria, such as configured origin, timeout, network error, JSON decoding, redirect rejection, and raw JSON response handling. Use the existing project interpreter/environment. Do not use network, packages, secrets, system changes, Git mutation, approval/state changes, review, remediation, or the next Gate. Implement only the canonical Stage task within editable owned files, then return the minimal implementation completion report and exit immediately. Do not run focused/full regression or Harness validation; the deterministic Harness validator owns those checks. Do not manufacture orchestration artifacts; the controller collects evidence independently.{bounded}
 """
 
 
@@ -2654,6 +2661,14 @@ def execute_production_worker(request: WorkerRequest, *,
     pending_paths = [line[3:] for line in baseline_status.splitlines() if len(line) > 3]
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
+    pre_result_partial_recovery = request.extra_context.get("pre_result_partial_recovery") is True
+    if pre_result_partial_recovery:
+        if int(request.extra_context.get("attempt", 0)) <= 1 or not pending_paths:
+            raise ProductionWorkerError("pre-result partial recovery binding is invalid")
+        if not isinstance(request.extra_context.get("recovery_id"), str) or not request.extra_context.get("recovery_id"):
+            raise ProductionWorkerError("pre-result partial recovery ID is missing")
+        if request.extra_context.get("recovery_source_kind") != "PRE_RESULT_PARTIAL_SOURCE":
+            raise ProductionWorkerError("pre-result partial recovery source binding is invalid")
     cancel_path = output / "cancel.request"
     if adoption:
         stdout = stderr = b""
@@ -2662,7 +2677,7 @@ def execute_production_worker(request: WorkerRequest, *,
                             "started_at":None,"ended_at":None,"termination":"ADOPTED_CHECKPOINT","requested_signal":None,
                             "exit_code":0,"signal":None,"stdout_sha256":hashlib.sha256(b"").hexdigest(),
                             "stderr_sha256":hashlib.sha256(b"").hexdigest(),"secret_like_output_detected":False,"hard_stop":True}
-    elif pending_paths:
+    elif pending_paths and not pre_result_partial_recovery:
         stdout = stderr = b""
         worker_exit = 0; timed_out = False
         process_evidence = {"schema_version":"orchestration.production-worker-process.v1","pid":None,"process_group_id":None,
