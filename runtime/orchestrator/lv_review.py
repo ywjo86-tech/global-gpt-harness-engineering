@@ -47,7 +47,8 @@ def validate_interpreter_policy(policy: dict[str, Any], *, project_id: str, regi
         raise LVReviewError("interpreter policy fingerprint drift")
     return InterpreterPolicy(policy["policy_id"], project_id, str(path), str(allowed), policy["executable_sha256"], tuple(policy["required_capabilities"]), tuple(policy["permissions"]))
 
-from .contract_adapter import evaluate_canonical_state, load_project_mapping
+from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
+from .task_contract_compat import resolve_task_lv_projection, TaskContractProjectionError
 from .validation_toolchain import (
     ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
 )
@@ -492,12 +493,63 @@ def _validate_external_interpreter(interpreter: Path) -> dict[str, str | bool]:
             "python_namespace_fingerprint": "external", "python_mount_fingerprint": "external"}
 
 
+def _project_task_execution_binding(
+    root: Path, mapping: Any, state: Mapping[str, Any], manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project a Gate-wide TASK authority to one SHA-bound execution LV.
+
+    Legacy single-LV canonical state is returned unchanged. TASK-shaped projects
+    may narrow only through their approved TASK-to-LV projection; manifest claims
+    alone never grant authority.
+    """
+    active_scope = state.get("active_scope")
+    if isinstance(active_scope, list) and len(active_scope) == 1:
+        return dict(state)
+    projection_path = getattr(mapping, "task_lv_projection_path", None)
+    projection_sha = getattr(mapping, "task_lv_projection_sha256", None)
+    canonical_source = getattr(mapping, "canonical_source", None)
+    canonical_sha = getattr(mapping, "canonical_sha256", None)
+    if not isinstance(projection_path, Path) or not isinstance(canonical_source, Path):
+        return dict(state)
+    if (projection_path.is_symlink() or not projection_path.is_file()
+            or canonical_source.is_symlink() or not canonical_source.is_file()):
+        raise LVReviewError("canonical binding mismatch: active_scope")
+    if not isinstance(projection_sha, str) or sha256_file(projection_path) != projection_sha:
+        raise LVReviewError("canonical binding mismatch: task_projection")
+    if not isinstance(canonical_sha, str) or sha256_file(canonical_source) != canonical_sha:
+        raise LVReviewError("canonical binding mismatch: canonical_plan_sha256")
+    try:
+        projection = json.loads(projection_path.read_text(encoding="utf-8"))
+        resolved = resolve_task_lv_projection(
+            canonical_source.read_text(encoding="utf-8"), projection,
+            project_id=str(mapping.project_id), canonical_plan_sha256=canonical_sha,
+            gate_id=str(manifest.get("gate_id", "")),
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, TaskContractProjectionError) as exc:
+        raise LVReviewError("canonical binding mismatch: task_projection") from exc
+    expected_gate_scope = [str(item["lv_id"]) for item in resolved]
+    if active_scope != expected_gate_scope or state.get("gate_id") != manifest.get("gate_id"):
+        raise LVReviewError("canonical binding mismatch: active_scope")
+    manifest_scope = manifest.get("active_scope")
+    lv_id = manifest.get("lv_id")
+    if manifest_scope != [lv_id] or not isinstance(lv_id, str):
+        raise LVReviewError("canonical binding mismatch: active_scope")
+    selected = next((item for item in resolved if item["lv_id"] == lv_id), None)
+    if selected is None or manifest.get("owned_files") != selected["owned_files"]:
+        raise LVReviewError("canonical binding mismatch: owned_files")
+    projected = dict(state)
+    projected["active_scope"] = [lv_id]
+    projected["owned_files"] = list(selected["owned_files"])
+    return projected
+
+
 def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVReviewError("project contract mapping is required")
     state = evaluate_canonical_state(mapping)
     ledger = _ledger_binding(root, mapping, state)
+    state = _project_task_execution_binding(root, mapping, state, manifest)
     transition = manifest.get("production_transition")
     if isinstance(transition, dict) and state.get("state") == "GATE1_RESUME_READY":
         required = {"schema_version", "project_id", "gate_id", "lv_id", "run_id", "approval_event_id", "plan_sha256", "branch", "baseline_head", "current_head", "predecessor_completion_digest", "owned_file_scope", "completion_conditions", "transition_type", "created_at", "record_hash"}
