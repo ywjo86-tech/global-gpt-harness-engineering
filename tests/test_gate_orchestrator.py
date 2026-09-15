@@ -56,6 +56,22 @@ class GateOrchestratorTests(unittest.TestCase):
             selected = _find_exact_resume_namespace(root, expected)
             self.assertIsNotNone(selected)
             self.assertEqual(selected[0].name, "G1-LV3-1")
+    def test_recovery_gateway_retry_id_reissues_only_failed_subexecution(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _recovery_gateway_retry_id
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertIsNone(_recovery_gateway_retry_id(root, "recovery-03"))
+            process = root / "executor.process.json"
+            process.write_text(json.dumps({"exit_code": 1, "execution_request_id": "exec-old"}))
+            first = _recovery_gateway_retry_id(root, "recovery-03")
+            self.assertTrue(first.startswith("exec-retry-"))
+            self.assertEqual(first, _recovery_gateway_retry_id(root, "recovery-03"))
+            process.write_text(json.dumps({"exit_code": 1, "execution_request_id": first}))
+            second = _recovery_gateway_retry_id(root, "recovery-03")
+            self.assertNotEqual(first, second)
+            process.write_text(json.dumps({"exit_code": 0, "execution_request_id": second}))
+            self.assertIsNone(_recovery_gateway_retry_id(root, "recovery-03"))
+
     def test_capability_crash_failpoint_is_disabled_by_default_and_explicit_only(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _test_only_crash_after_capability_stage
         from runtime.orchestrator.operational_capability import InjectedCrash

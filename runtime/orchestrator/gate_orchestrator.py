@@ -1140,6 +1140,35 @@ def resolve_canonical_owned_scope(
     return canonical, status
 
 
+def _recovery_gateway_retry_id(attempt_root: Path, recovery_id: str) -> str | None:
+    """Issue a fresh Host Gateway request only after a durable failed sub-execution.
+
+    The recovery attempt remains unchanged. A successful prior sub-execution is never
+    replayed here; only a recorded nonzero executor exit is eligible for a new request.
+    """
+    process_path = attempt_root / "executor.process.json"
+    if not process_path.exists():
+        return None
+    if process_path.is_symlink() or not process_path.is_file():
+        raise GateControllerError("recovery executor process evidence is unsafe")
+    try:
+        process = json.loads(process_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GateControllerError("recovery executor process evidence is malformed") from exc
+    if not isinstance(process, dict):
+        raise GateControllerError("recovery executor process evidence is malformed")
+    exit_code = process.get("exit_code")
+    if exit_code == 0:
+        return None
+    if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+        raise GateControllerError("recovery executor failure state is ambiguous")
+    previous = process.get("execution_request_id")
+    if not isinstance(previous, str) or not previous:
+        raise GateControllerError("recovery executor request identity is missing")
+    seed = f"{recovery_id}|{previous}".encode("utf-8")
+    return "exec-retry-" + hashlib.sha256(seed).hexdigest()[:32]
+
+
 def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
@@ -1273,6 +1302,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     recovery_preflight=recovery_preflight, context=context,
                     plan=plan, lv_id=lv_id, run_id=run_id,
                 )
+                retry_execution_request_id = _recovery_gateway_retry_id(
+                    attempt_root, str(recovery_package.get("recovery_id") or recovery_id)
+                )
                 request = WorkerRequest(project_root=str(root), task=task,
                     contract_summary={"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,
                                       "canonical_plan_sha256":plan.canonical_plan_sha256},
@@ -1287,6 +1319,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                                    "recovery_id": recovery_package.get("recovery_id"),
                                    "recovery_source_kind": recovery_package.get("recovery_source_kind"),
                                    "source_snapshot":{"source_head":str(context.get("head", ""))},
+                                   **({"execution_request_id": retry_execution_request_id} if retry_execution_request_id else {}),
                                    **canonical_extra})
                 request_path.write_bytes(canonical_json_bytes(request.to_dict()))
                 action = seal_action_manifest(requirements_sha256=str(context["requirements_sha256"]),
