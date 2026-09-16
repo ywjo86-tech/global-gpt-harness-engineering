@@ -1,0 +1,63 @@
+{
+  "attempt": 1,
+  "blocker_count": 0,
+  "decision": "GO",
+  "evaluated_at_utc": "2026-09-16T15:39:09Z",
+  "evidence_digests": {
+    "EVD-001": "ca54b662fe16c0f831f47d111988f356a0774a318f9511193656e64b74b7c925",
+    "EVD-002": "cd7310e86099d7173ec96be3287a423d325a0252aed910f9af8f450f1198b7d6",
+    "EVD-003": "94838233ee77fbf4d62d3458532b6e3d3584908ea99607c30ef93b516e6258e7",
+    "EVD-004": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+    "EVD-005": "e536cbd6fbcec414dbdd0292435fe4a4396a69ab8872706d66b4453b7d854897",
+    "EVD-006": "4fca7fbcbbbdbb6866a7962fa46426736b8a2ca16e91471472b26f08984e9972",
+    "EVD-007": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+    "EVD-008": "25b1ef7c8c2ebcd1792d7d8b4f2f49a23f16e73bb3e9841b5345a8e65a669980",
+    "EVD-009": "9ad71a46238416e9c3ac8d0de322fba7c48fa7ebff7713e8a023d4bd6c0714b0",
+    "EVD-010": "4b72099e52a42a0a727991537a418f767c4767de80968d17071068bff0ac3e0e",
+    "EVD-011": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+    "EVD-012": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+    "EVD-013": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+    "EVD-016": "ee9a0197005f5d603b40ef70c50c093e02da4ce735e0e8e24f634cb98b443982"
+  },
+  "gate_id": "GATE-003",
+  "major_count": 0,
+  "official_acceptance_results": {
+    "Security": "PASS"
+  },
+  "prerequisite_gate_states": {
+    "GATE-001": "GO",
+    "GATE-002": "GO"
+  },
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "cfbe9df7d758186f7db50f0b28cad65352636cd947f361b6b8b8db8f20dfd1cc",
+  "required_evidence": [
+    "EVD-001",
+    "EVD-002",
+    "EVD-003",
+    "EVD-004",
+    "EVD-005",
+    "EVD-006",
+    "EVD-007",
+    "EVD-008",
+    "EVD-009",
+    "EVD-010",
+    "EVD-011",
+    "EVD-012",
+    "EVD-013",
+    "EVD-016"
+  ],
+  "review_digest": "f39ff5399affd7a48298a04e05b746e344fcfc414566c2a4bb1ca13330ac1e40",
+  "review_ref": "attempts/1/reviews/GATE-003.json",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.gate-decision.v2",
+  "selection_index_digest": "db3d0b84f9ced8b8814ffa827e4b7b0b9acc60919dd4bb66a06fd9b734c5faed",
+  "selection_index_ref": "attempts/1/indexes/GATE-003.json",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task012-e1b6ddd486df9bff2c584208e49620a7cb831fef32006c8f807a634b",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "8816ae866bd201f99bc8154a20aed43f1880e64c4482e37e4fc28147776ba12e"
+  }
+}

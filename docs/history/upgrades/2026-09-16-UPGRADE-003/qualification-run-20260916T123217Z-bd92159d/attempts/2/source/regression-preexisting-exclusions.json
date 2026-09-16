@@ -1,0 +1,63 @@
+{
+  "accepted_failure_ids": [
+    "test_contract_loader.ContractLoaderTest.test_cli_passes_explicit_engine_host_role_to_read_only_inspector",
+    "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_actual_repository_guard_is_clear",
+    "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_poc_only_change_request_remains_clear"
+  ],
+  "canonical_baseline": {
+    "errors": [],
+    "failures": [
+      "test_contract_loader.ContractLoaderTest.test_cli_passes_explicit_engine_host_role_to_read_only_inspector",
+      "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_actual_repository_guard_is_clear",
+      "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_poc_only_change_request_remains_clear"
+    ],
+    "raw_log_sha256": "1e7a5ade9ab8024d833392fcfb6cbd8665bace36841c9df39661a64720fe6614",
+    "runtime_seconds": 48.356,
+    "skipped": 10,
+    "tests_run": 1278
+  },
+  "canonical_head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "classification": {
+    "test_contract_loader.ContractLoaderTest.test_cli_passes_explicit_engine_host_role_to_read_only_inspector": "pre-existing stale engine-host current_phase assertion reproduced on canonical main",
+    "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_actual_repository_guard_is_clear": "pre-existing Graphify baseline 958d hash guard mismatch reproduced on canonical main",
+    "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_poc_only_change_request_remains_clear": "pre-existing Graphify baseline 958d hash guard mismatch reproduced on canonical main"
+  },
+  "contract_rule": "only documented pre-existing exclusions/skips accepted",
+  "exact_command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_*.py",
+    "-q"
+  ],
+  "full_mcp_changed_exclusion_sources": false,
+  "full_mcp_worktree": {
+    "errors": [],
+    "failures": [
+      "test_contract_loader.ContractLoaderTest.test_cli_passes_explicit_engine_host_role_to_read_only_inspector",
+      "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_actual_repository_guard_is_clear",
+      "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_poc_only_change_request_remains_clear"
+    ],
+    "raw_log_sha256": "3944141d69bd61da97c61cc2a5f69ec55fa6817c401acd3295ce19b61a929a02",
+    "runtime_seconds": 47.049,
+    "skipped": 15,
+    "tests_run": 1342
+  },
+  "manifest_digest": "979a4ac4935c3d4a48eaa6385706e219feb69d3499de7161afc412408207464b",
+  "new_failure_ids": [],
+  "schema_version": "gch.full-mcp.regression-exclusions.v1",
+  "worktree_baseline_evidence_projection": [
+    {
+      "path": "_workspace/post-release-followup-20260914/ubuntu_operational_closure_20260914.json",
+      "sha256": "ccea826630bbfdabfbf2c094c1d3fec92592b59d1a7b2ad0f709c877be5150b4"
+    },
+    {
+      "path": "_workspace/full-plan-preop-diagnostic-20260914/diagnostic_result.json",
+      "sha256": "945fd8833e516d0de5e48ef54bd659bce700ee7d54c4a9ac6a0a0f7325f06075"
+    }
+  ]
+}

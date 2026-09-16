@@ -1,0 +1,53 @@
+{
+  "attempt": 2,
+  "blocker_count": 0,
+  "decision": "GO",
+  "evaluated_at_utc": "2026-09-16T16:01:54Z",
+  "evidence_digests": {
+    "EVD-004": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+    "EVD-007": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+    "EVD-011": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+    "EVD-012": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+    "EVD-013": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+    "EVD-014": "2c74e9108c5b73fb84ee63b3aff8f0fe714e296414f3dce6f6c2a72df932f566",
+    "EVD-016": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc"
+  },
+  "gate_id": "GATE-004",
+  "major_count": 0,
+  "official_acceptance_results": {
+    "Audit": "PASS",
+    "Contract-only Handoff Compatibility": "PASS",
+    "Failure Handling": "PASS",
+    "Structured Observability Compatibility": "PASS"
+  },
+  "prerequisite_gate_states": {
+    "GATE-001": "GO",
+    "GATE-002": "GO",
+    "GATE-003": "GO"
+  },
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "4e7bd2d08ec8f9a56d23c5b6b4294198caceb6f2e7889cd579fdba49d04d7949",
+  "required_evidence": [
+    "EVD-004",
+    "EVD-007",
+    "EVD-011",
+    "EVD-012",
+    "EVD-013",
+    "EVD-016",
+    "EVD-014"
+  ],
+  "review_digest": "62b7448d0c5b867ba5747c60a8394a90266ccdbabbd5841985922a187551dc96",
+  "review_ref": "attempts/2/reviews/GATE-004.json",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.gate-decision.v2",
+  "selection_index_digest": "3a51f1d2b4b1873d8839a4b71b8c001816811f2ec1f2bf08e75e83b38996dfc5",
+  "selection_index_ref": "attempts/2/indexes/GATE-004.json",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task012-a2-724bd9eeb5bfcb1b541362a4a288740338db8c006a026ad6b7a5a5cb",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "45ef14a3108a067fdf4fe6d5765e12a2b09910cf8f8e70b4abbd1a20d6e9fbde"
+  }
+}

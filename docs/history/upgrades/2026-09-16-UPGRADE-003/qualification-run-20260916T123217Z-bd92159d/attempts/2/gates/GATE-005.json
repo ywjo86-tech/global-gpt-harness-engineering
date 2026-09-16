@@ -1,0 +1,60 @@
+{
+  "attempt": 2,
+  "blocker_count": 0,
+  "decision": "GO",
+  "evaluated_at_utc": "2026-09-16T16:22:23Z",
+  "evidence_digests": {
+    "EVD-013": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+    "EVD-015": "a4020da09899c0bd66c5187713cb063975a77ea05a5da7a8f443d24d46da2bb3",
+    "EVD-016": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+    "EVD-017": "3ef214c983fddd8e64d9b8b84fc3a65f3de83a6dcbefdf227b3421a3f68b99ca",
+    "EVD-018": "7b86b277ff7eab4b97122b49a91bdf7da914ece6f9c1f742947d6ad7669771f1",
+    "EVD-021": "f0c9e5360e407ffce0208117c931fbd2b393bedc5976e3049dc6da3360b3bfe7"
+  },
+  "gate_id": "GATE-005",
+  "major_count": 0,
+  "official_acceptance_results": {
+    "Audit": "PASS",
+    "Contract Conformance": "PASS",
+    "Contract-only Handoff Compatibility": "PASS",
+    "E2E Execution": "PASS",
+    "Failure Handling": "PASS",
+    "Filesystem": "PASS",
+    "Git": "PASS",
+    "Restore": "PASS",
+    "Security": "PASS",
+    "Shell": "PASS",
+    "Structured Observability Compatibility": "PASS",
+    "Test / Build": "PASS"
+  },
+  "prerequisite_gate_states": {
+    "GATE-001": "GO",
+    "GATE-002": "GO",
+    "GATE-003": "GO",
+    "GATE-004": "GO"
+  },
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "ce9efad5f168efcec88038c308142b32e2f0feb2b5905d79171b0e033f768c25",
+  "required_evidence": [
+    "EVD-013",
+    "EVD-016",
+    "EVD-015",
+    "EVD-017",
+    "EVD-018",
+    "EVD-021"
+  ],
+  "review_digest": "a2039c4947c24d99d0c1d8ff4d66247790aa6dac227c65e2ed29fbb03bbf05a6",
+  "review_ref": "attempts/2/reviews/GATE-005.json",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.gate-decision.v2",
+  "selection_index_digest": "c0b4fdc0a3671c70e8e07078dd9072596e2129fe0f0ca01d7f4a5356e017988e",
+  "selection_index_ref": "attempts/2/indexes/GATE-005.json",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task013-a2-86579cb72f32f123256857b6e839f052e6eb50db26cd06a066528e43",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "16a38db9dd016d696964a09c4bf5d52ea406578c47f5b4b709e226f359269534"
+  }
+}

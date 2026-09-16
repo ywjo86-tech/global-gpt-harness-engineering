@@ -1,0 +1,43 @@
+{
+  "schema_version": "post-release-followup.ubuntu-operational-closure.v1",
+  "recorded_at_utc": "2026-09-14T03:41:47+00:00",
+  "environment": {
+    "host": "jarvis-server",
+    "os_id": "ubuntu",
+    "os_version_id": "24.04",
+    "os_pretty_name": "Ubuntu 24.04.4 LTS",
+    "kernel": "7.0.0-31-generic",
+    "architecture": "x86_64"
+  },
+  "git": {
+    "branch": "main",
+    "local_head": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+    "origin_main": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+    "ahead": 0,
+    "behind": 0,
+    "synchronized": true
+  },
+  "validation": {
+    "latest_full_regression": "1141 tests OK, skipped=10",
+    "clean_clone_full_regression": "1141 tests OK, skipped=15",
+    "linux_installer_runtime_smoke": "PASS",
+    "engine_host_read_only_inspect": "PASS",
+    "engine_host_current_phase": "G-4B-RELEASE-HANDOFF",
+    "engine_host_required_contract_files_valid": true,
+    "runtime_mutation_authorized": false
+  },
+  "platform_scope": {
+    "ubuntu_operational_adoption": "COMPLETE",
+    "linux_runtime_validation": "COMPLETE",
+    "windows_powershell_runtime_smoke": "OPTIONAL_CROSS_PLATFORM_COMPATIBILITY_CHECK",
+    "windows_check_is_blocker": false
+  },
+  "evidence_links": {
+    "implementation_evidence_path": "_workspace/post-release-followup-20260914/implementation_evidence.json",
+    "implementation_evidence_sha256": "cfa8efeadca55b5dd1741d45cd75f71f6fb92805dc799d5a11c02484e99c8007",
+    "post_release_followup_head": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37"
+  },
+  "decision": "UBUNTU_OPERATIONAL_ADOPTION_CLOSED",
+  "remaining_blockers": [],
+  "commit_push_release_deploy_actions_performed_by_this_closure": false
+}

@@ -1,0 +1,14 @@
+{
+  "baseline_content_sha256": "f34848ca92665c342abd5816c9e3eda0e82180671195362bcd0080544a3bc2ac",
+  "expected_final_content_sha256": "f34848ca92665c342abd5816c9e3eda0e82180671195362bcd0080544a3bc2ac",
+  "fixture_digest": "a936870d12eee55a1a67be3117ec88120d8d8394b3d18129696d27d815251370",
+  "lifecycle": [
+    "READ",
+    "CHANGE",
+    "EXECUTE_TEST",
+    "VALIDATE",
+    "RESTORE"
+  ],
+  "restore_ref": "HEAD",
+  "schema_version": "gch.full-mcp.e2e-fixture.v1"
+}

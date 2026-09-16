@@ -1,0 +1,59 @@
+{
+  "assertion_summary_digest": "c599fa2cad75572a1752e0a1855e29299ae3d881273297a688e844f178db5f65",
+  "attempt": 1,
+  "audit_digest": "db7f507d38146604055f7bb804897313058ca28225af32a72a0a1a7196e5a39e",
+  "audit_ref": "events/execution-events.jsonl#TEST-004:TASK-003",
+  "consumer_task_id": "TASK-003",
+  "ended_at_utc": "2026-09-16T14:08:11Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-003",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "94112c7af74b5871f8f49ce766356f7f0bd189c8ba211c570ce3b09e376c691f",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "622257f4c05316abdebe4275480af727426635aa2f10ebbbe5d0372bd1333bb4",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "74485f55eeec222ef81caa373abda5e96f18baf156804f8ef6f76f11ab13c15c",
+        "kind": "active_authorization_contract_fixture",
+        "relative_path_or_authority_ref": "attempts/1/fixtures/TASK-003-active-authorization-contracts.json"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      }
+    ],
+    "snapshot_digest": "a1951c5bf71555551989c4848ffcc5c936b0af16fba9b68a75eaea21896ff13a",
+    "source_set_name": "FOUNDATION_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T14:08:11Z",
+  "test_contract_digest": "af015fa7ddc9b38ab098d5816b3f867af574606c1f367746af9eb8d60178a8cc",
+  "test_id": "TEST-004",
+  "verdict": "PASS"
+}

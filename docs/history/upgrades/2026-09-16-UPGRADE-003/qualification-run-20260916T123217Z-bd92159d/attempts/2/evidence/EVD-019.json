@@ -1,0 +1,56 @@
+{
+  "artifact_refs": [
+    {
+      "digest": "d0c09eae28501b914faecf5be242e6c785497f96156c9133e9f3bb4eb17c9333",
+      "kind": "pre_final_index",
+      "relative_path_or_authority_ref": "attempts/2/indexes/PREFINAL.json",
+      "source_attempt": 2
+    },
+    {
+      "digest": "fadff6447a1253c84321bbea191c08ba4f2d0df9372e179abb819a0d79ab9ccd",
+      "kind": "official_exit",
+      "relative_path_or_authority_ref": "attempts/2/gates/official-exit-gates.json",
+      "source_attempt": 2
+    }
+  ],
+  "attempt": 2,
+  "collected_at_utc": "2026-09-16T22:40:11Z",
+  "evidence_id": "EVD-019",
+  "origin_gate_id": "GATE-006",
+  "producer_task_id": "TASK-014",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "ad7f8b353f4608fe41f597dc931494a8fe171f363814a6560c00b87b371f8c50",
+  "requirement_refs": [
+    "NFR-005",
+    "NFR-006",
+    "OPS-006",
+    "OPS-007",
+    "OPS-008"
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.evidence.v2",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task014-a2-a5ae6fc44e4edf7349d599d4a645a9e81265920656feaa3a1e0d3375",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "d72a0734158e5e7826968601c08ca6cb59c9987e6d59071ec99c951deb222912"
+  },
+  "task_refs": [
+    "TASK-014"
+  ],
+  "test_refs": [
+    "TEST-028"
+  ],
+  "validation_result_refs": [
+    {
+      "consumer_task_id": "TASK-014",
+      "relative_path": "attempts/2/validation-results/TEST-028/TASK-014.json",
+      "result_digest": "fe83a2d4a439b97b03bff5d9dcb2e6dfe847e55a184ffb152e321f76a7e0c129",
+      "source_attempt": 2,
+      "test_id": "TEST-028"
+    }
+  ],
+  "verdict": "PASS"
+}

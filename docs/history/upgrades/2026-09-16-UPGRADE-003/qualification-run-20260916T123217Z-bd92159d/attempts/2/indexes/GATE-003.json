@@ -1,0 +1,142 @@
+{
+  "attempt": 2,
+  "evidence_entries": [
+    {
+      "evidence_id": "EVD-001",
+      "origin_gate_id": "GATE-001",
+      "record_digest": "ca54b662fe16c0f831f47d111988f356a0774a318f9511193656e64b74b7c925",
+      "relative_path": "attempts/1/evidence/EVD-001.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-002",
+      "origin_gate_id": "GATE-001",
+      "record_digest": "cd7310e86099d7173ec96be3287a423d325a0252aed910f9af8f450f1198b7d6",
+      "relative_path": "attempts/1/evidence/EVD-002.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-003",
+      "origin_gate_id": "GATE-001",
+      "record_digest": "94838233ee77fbf4d62d3458532b6e3d3584908ea99607c30ef93b516e6258e7",
+      "relative_path": "attempts/1/evidence/EVD-003.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-004",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+      "relative_path": "attempts/1/evidence/EVD-004.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-005",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "e536cbd6fbcec414dbdd0292435fe4a4396a69ab8872706d66b4453b7d854897",
+      "relative_path": "attempts/1/evidence/EVD-005.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-006",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "4fca7fbcbbbdbb6866a7962fa46426736b8a2ca16e91471472b26f08984e9972",
+      "relative_path": "attempts/1/evidence/EVD-006.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-007",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+      "relative_path": "attempts/1/evidence/EVD-007.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-008",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "25b1ef7c8c2ebcd1792d7d8b4f2f49a23f16e73bb3e9841b5345a8e65a669980",
+      "relative_path": "attempts/1/evidence/EVD-008.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-009",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "482f37f3402cb3b6ff0e72ee5d704006a561bfef296901930014a4f768f2ff14",
+      "relative_path": "attempts/2/evidence/EVD-009.json",
+      "source_attempt": 2,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-010",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "facaee0f137d9e6e97814e5af1269e520c94034903379410b137e97abd11858c",
+      "relative_path": "attempts/2/evidence/EVD-010.json",
+      "source_attempt": 2,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-011",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+      "relative_path": "attempts/1/evidence/EVD-011.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-012",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+      "relative_path": "attempts/1/evidence/EVD-012.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-013",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+      "relative_path": "attempts/1/evidence/EVD-013.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-016",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+      "relative_path": "attempts/2/evidence/EVD-016.json",
+      "source_attempt": 2,
+      "verdict": "PASS"
+    }
+  ],
+  "generated_at_utc": "2026-09-16T15:58:52Z",
+  "index_digest": "926997dffb927c4e6cc7ceb9e05ef538d995659c0219b94bd4aba8b51b3e6211",
+  "index_scope": "GATE-003",
+  "prerequisite_gate_refs": [
+    {
+      "decision": "GO",
+      "gate_id": "GATE-001",
+      "record_digest": "4ce720869c6f7b6b82a06ba83811a9b819b16ca6c04e2ee9c5e95943a778ecdb",
+      "relative_path": "attempts/1/gates/GATE-001.json",
+      "source_attempt": 1
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-002",
+      "record_digest": "0d52354ad9964070d411755f2b9230b8f5b3373179aa54d90a85e71f4946f89e",
+      "relative_path": "attempts/1/gates/GATE-002.json",
+      "source_attempt": 1
+    }
+  ],
+  "project_id": "GH-FULL-MCP-PH4",
+  "review_refs": [],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.selection-index.v1",
+  "workspace_state_digest": "45ef14a3108a067fdf4fe6d5765e12a2b09910cf8f8e70b4abbd1a20d6e9fbde",
+  "workspace_state_ref": "attempts/2/source/workspace-state-task012.json"
+}

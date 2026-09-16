@@ -1,0 +1,63 @@
+{
+  "assertion_summary_digest": "30fdc37613f7e1be2e15946c94ff6201e35dfe46c24bea259f4880af4916c723",
+  "attempt": 1,
+  "audit_digest": "d088215ee4312d9f0e4e4b457af1143a8e551981e1599c1872d67dfe6ccac158",
+  "audit_ref": "events/execution-events.jsonl#TEST-006:TASK-004",
+  "consumer_task_id": "TASK-004",
+  "ended_at_utc": "2026-09-16T14:20:45Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-004",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "7c30a7eaa9a98637138d2059817cb0f237dd0fcfe75384b8cc98128c7355ce2c",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "4eebf06d0b0c4836f8aef3c41a6ed356a6976de2e5bdad3b406c5dfde5260cee",
+  "source_snapshot": {
+    "artifact_inputs": [],
+    "files": [
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/filesystem_service.py",
+        "sha256": "4216260fc799a55fff22819889837c7cbcfabd03f85b8cf82818d5329edaacec"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_filesystem.py",
+        "sha256": "01762720b9cdea6d6d3011f5ac8c3ac0952fa1264b48cdb4c1643263bdb88df1"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      }
+    ],
+    "snapshot_digest": "b184e4eaf3e3b183cfb3b9fbce9175a62c2deeee6e1718b2d5286291fdeffe60",
+    "source_set_name": "FILESYSTEM_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T14:20:45Z",
+  "test_contract_digest": "5a4d2f488b4663272835c6bec39335c290e819429f1cde03754c6bc9ea7b3547",
+  "test_id": "TEST-006",
+  "verdict": "PASS"
+}

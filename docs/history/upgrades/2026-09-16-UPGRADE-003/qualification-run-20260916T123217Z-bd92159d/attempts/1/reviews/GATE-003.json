@@ -1,0 +1,19 @@
+{
+  "attempt": 1,
+  "finding_counts": {
+    "blocker": 0,
+    "major": 0,
+    "minor": 0
+  },
+  "finding_refs": [],
+  "gate_id": "GATE-003",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "f39ff5399affd7a48298a04e05b746e344fcfc414566c2a4bb1ca13330ac1e40",
+  "review_role": "security_independent_review",
+  "reviewed_at_utc": "2026-09-16T15:39:09Z",
+  "reviewer_authority": "independent_qualification_review_authority",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.review.v1",
+  "selection_index_digest": "db3d0b84f9ced8b8814ffa827e4b7b0b9acc60919dd4bb66a06fd9b734c5faed",
+  "selection_index_ref": "attempts/1/indexes/GATE-003.json"
+}

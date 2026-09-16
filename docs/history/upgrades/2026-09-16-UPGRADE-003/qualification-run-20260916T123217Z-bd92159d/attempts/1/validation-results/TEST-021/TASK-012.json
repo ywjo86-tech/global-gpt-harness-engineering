@@ -1,0 +1,94 @@
+{
+  "assertion_summary_digest": "716108655baa02e41b88b9e1e4dbc2e41ef61a19ed061146d6d91b0bf53dc446",
+  "attempt": 1,
+  "audit_digest": "116a3a9f6bb01edd1b886dda045f0212efe7a7ff6d29f60f2de6b4aa0ea1e058",
+  "audit_ref": "events/execution-events.jsonl#TEST-021:TASK-012",
+  "consumer_task_id": "TASK-012",
+  "ended_at_utc": "2026-09-16T15:36:30Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-012",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "80e0154ecb697d8c7df590098185093d7f7abc62691493b7f89c083bbd6a197d",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "88f3882c38c90e99d934efce835e7266a226f6b74801b09fc6fc7630b422ada5",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "7c708356b20cb14e9f820240e2cdec48b51bcd28662cd921a02d2a80cbcd6537",
+        "kind": "invalidation_fixture",
+        "relative_path_or_authority_ref": "attempts/1/source/recovery-invalidation-fixture.json"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/git_service.py",
+        "sha256": "99f6a19f2b9e9de013ba94daa93d5cb23244d3b7a858dd7e88a2fcfcb219a5ce"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/observability.py",
+        "sha256": "583ddc233336097c3065a487a27fbf56ba6529e81209030934c278ab3d2f10e9"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/recovery.py",
+        "sha256": "2010bcdc02066e5dfe3883c18c077b6d071a688ce963dbf11b8730551ca1cbe8"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/recovery_integration.py",
+        "sha256": "f37e976ff77b5be60c10d4e2cc46583079f56e4ce09eab1592777541590d817c"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_git.py",
+        "sha256": "4f2b7ce6a24efbe8f8f23369af4e2ff5b0bbe15ad0957ce0a87189fdc413f92d"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_observability_recovery.py",
+        "sha256": "d1aa3c7d57f4e81e3da0065541e6f924ad9b2b1ffdcb6d1e46bbf1cc7bca51a2"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_recovery_integration.py",
+        "sha256": "daac9ae4f44a7bcf3116d756f4fff6a7685ff6066e1272d94e055da14b156870"
+      }
+    ],
+    "snapshot_digest": "abd3f9e47d279c7b621f1570372d160b6013d2f7bd6bc461259d5e57f90eb995",
+    "source_set_name": "RECOVERY_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T15:36:30Z",
+  "test_contract_digest": "9b43fa5b88f823f0850daa6d2270138801483148a423929bfad21927da2b7092",
+  "test_id": "TEST-021",
+  "verdict": "PASS"
+}

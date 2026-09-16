@@ -1,0 +1,20 @@
+{
+  "authorization_fixture_sha256": "74485f55eeec222ef81caa373abda5e96f18baf156804f8ef6f76f11ab13c15c",
+  "ct039_sha256": "614298db283dcede4a3612ac7d40447a9445c6bfa7da376063ad9356e1a2bf39",
+  "durable_raw_content_allowed": false,
+  "fixture_digest": "67997cc9e9928f4e179885f87b2d44b9f9290ce444a541cd7b2a84840f639fa3",
+  "forbidden_dependencies": [
+    "jarvis",
+    "project_memory",
+    "provider_router"
+  ],
+  "gate002_digest": "0d52354ad9964070d411755f2b9230b8f5b3373179aa54d90a85e71f4946f89e",
+  "protocol_version": "2026-07-28",
+  "required_meta_keys": [
+    "gch/full-mcp/correlation_id",
+    "gch/full-mcp/invocation_context_id",
+    "gch/full-mcp/operation_request_id",
+    "gch/full-mcp/request_digest"
+  ],
+  "schema_version": "gch.full-mcp.security-boundary-fixture.v1"
+}

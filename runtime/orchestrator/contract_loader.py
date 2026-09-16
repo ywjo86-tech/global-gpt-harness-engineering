@@ -61,18 +61,34 @@ def _extract_current_phase(plan_text: str, state_text: str) -> str:
 
 
 def _is_engine_host(root: Path) -> bool:
-    if root.name != "global-gpt-harness-engineering":
-        return False
     try:
-        git_root = subprocess.check_output(
+        git_root = Path(subprocess.check_output(
             ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()).resolve()
+        common_dir_raw = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return False
-    if Path(git_root).resolve() != root:
+    if git_root != root:
         return False
+
+    common_dir = Path(common_dir_raw)
+    if not common_dir.is_absolute():
+        common_dir = (root / common_dir).resolve()
+    else:
+        common_dir = common_dir.resolve()
+    common_owner = common_dir.parent if common_dir.name == ".git" else None
+    identity_names = {root.name}
+    if common_owner is not None:
+        identity_names.add(common_owner.name)
+    if "global-gpt-harness-engineering" not in identity_names:
+        return False
+
     return all((root / anchor).is_file() for anchor in ENGINE_HOST_ANCHORS)
 
 

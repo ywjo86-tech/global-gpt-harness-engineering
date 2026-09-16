@@ -1,0 +1,69 @@
+{
+  "assertion_summary_digest": "b13f0eb75234209a99d5d3f325aceb9f3774e829dc02acc51bbc59eaaec15b81",
+  "attempt": 2,
+  "audit_digest": "6d4793b827208b9699a13573e6c20e34336a6b6ba5b0741a43894415bc95bb15",
+  "audit_ref": "events/execution-events.jsonl#TEST-031:TASK-014:attempt2",
+  "consumer_task_id": "TASK-014",
+  "ended_at_utc": "2026-09-16T22:40:11Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-014",
+  "profile_digest": "b3c3c58d270c4ea6988061ef81b0bf3218e9fb58fb1932795d4c83176f5a9d0b",
+  "profile_id": "VP-FINAL-HANDOFF",
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "8ea377c2d953a8130eaa5186b5d31a7fa398321d871efd678d2a3e3aabe5d5a4",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "2a3c100b031e237decbd65f0e285fc2d6adc8ccc558d6798a222210e75aa7476",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "fe83a2d4a439b97b03bff5d9dcb2e6dfe847e55a184ffb152e321f76a7e0c129",
+        "kind": "test028_result",
+        "relative_path_or_authority_ref": "attempts/2/validation-results/TEST-028/TASK-014.json"
+      },
+      {
+        "digest": "ad7f8b353f4608fe41f597dc931494a8fe171f363814a6560c00b87b371f8c50",
+        "kind": "evd019",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-019.json"
+      },
+      {
+        "digest": "d0c09eae28501b914faecf5be242e6c785497f96156c9133e9f3bb4eb17c9333",
+        "kind": "pre_final_index",
+        "relative_path_or_authority_ref": "attempts/2/indexes/PREFINAL.json"
+      },
+      {
+        "digest": "fadff6447a1253c84321bbea191c08ba4f2d0df9372e179abb819a0d79ab9ccd",
+        "kind": "official_exit",
+        "relative_path_or_authority_ref": "attempts/2/gates/official-exit-gates.json"
+      },
+      {
+        "digest": "7adbcb825e5389bfca678010c29cc72c456f767933d6c9cd107ecb48dd902275",
+        "kind": "phase5_handoff",
+        "relative_path_or_authority_ref": "attempts/2/qualification/phase5-handoff.json"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0600",
+        "path": "docs/harness/full-mcp-runtime.md",
+        "sha256": "c294fdfad5c791fe53252bf8f6188a6f85b6d9b7a9a681c9cbd0c4ac2755a1a8"
+      },
+      {
+        "mode": "0664",
+        "path": "runtime/full_mcp/qualification.py",
+        "sha256": "fcba9fad2ed95e990834034163d77dc83c79eef54c22dde295d79590d0837712"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_final_qualification.py",
+        "sha256": "800205abff7b84e19b941e89181e9fade9ed1b7be50cbc3dae011d91ded90b8e"
+      }
+    ],
+    "snapshot_digest": "eba515fff2ec1a527c7d77b46a4380a513f79544cdbdf60728803ef0cba7498f",
+    "source_set_name": "FINAL_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T22:40:11Z",
+  "test_contract_digest": "e9916f4a0f0a746de885cca2c5f7e7d9261abd240eb7feae571aa827fed07c23",
+  "test_id": "TEST-031",
+  "verdict": "PASS"
+}

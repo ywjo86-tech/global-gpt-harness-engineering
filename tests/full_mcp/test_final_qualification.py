@@ -34,14 +34,20 @@ def _root() -> Path:
 
 
 def _active_pre_final() -> tuple[Path, dict]:
-    base = _root() / "_workspace" / "full-mcp"
+    roots = (
+        _root() / "_workspace" / "full-mcp",
+        _root() / "docs" / "history" / "upgrades" / "2026-09-16-UPGRADE-003",
+    )
     found: list[tuple[Path, dict]] = []
-    for path in sorted(base.glob("*/attempts/*/indexes/PREFINAL.json")):
-        record = _load(path)
-        if record.get("project_id") == PROJECT_ID and record.get("index_scope") == "PREFINAL":
-            found.append((path, record))
+    for base in roots:
+        for path in sorted(base.glob("**/attempts/*/indexes/PREFINAL.json")):
+            record = _load(path)
+            if record.get("project_id") == PROJECT_ID and record.get("index_scope") == "PREFINAL":
+                found.append((path, record))
+        if found:
+            break
     if len(found) != 1:
-        raise AssertionError(f"expected exactly one active PREFINAL index, found={len(found)}")
+        raise AssertionError(f"expected exactly one reproducible PREFINAL index, found={len(found)}")
     return found[0]
 
 

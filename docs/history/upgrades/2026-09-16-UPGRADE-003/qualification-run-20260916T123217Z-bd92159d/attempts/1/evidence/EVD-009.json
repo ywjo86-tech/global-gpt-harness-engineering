@@ -1,0 +1,81 @@
+{
+  "artifact_refs": [
+    {
+      "digest": "67997cc9e9928f4e179885f87b2d44b9f9290ce444a541cd7b2a84840f639fa3",
+      "kind": "security_boundary_fixture",
+      "relative_path_or_authority_ref": "attempts/1/source/security-boundary-fixture.json",
+      "source_attempt": 1
+    }
+  ],
+  "attempt": 1,
+  "collected_at_utc": "2026-09-16T15:36:30Z",
+  "evidence_id": "EVD-009",
+  "origin_gate_id": "GATE-003",
+  "producer_task_id": "TASK-012",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "9ad71a46238416e9c3ac8d0de322fba7c48fa7ebff7713e8a023d4bd6c0714b0",
+  "requirement_refs": [
+    "SEC-001",
+    "SEC-002",
+    "SEC-003",
+    "SEC-004"
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.evidence.v2",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task012-e1b6ddd486df9bff2c584208e49620a7cb831fef32006c8f807a634b",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "8816ae866bd201f99bc8154a20aed43f1880e64c4482e37e4fc28147776ba12e"
+  },
+  "task_refs": [
+    "TASK-012"
+  ],
+  "test_refs": [
+    "TEST-004",
+    "TEST-005",
+    "TEST-010",
+    "TEST-012",
+    "TEST-029"
+  ],
+  "validation_result_refs": [
+    {
+      "consumer_task_id": "TASK-012",
+      "relative_path": "attempts/1/validation-results/TEST-004/TASK-012.json",
+      "result_digest": "d19c6e6e6964566ca0794156a777e545333f6f7414f9dcfdcedff56e6392454f",
+      "source_attempt": 1,
+      "test_id": "TEST-004"
+    },
+    {
+      "consumer_task_id": "TASK-012",
+      "relative_path": "attempts/1/validation-results/TEST-005/TASK-012.json",
+      "result_digest": "64b2678b5875c47b669237870ce6088e0a57a3f291bd63b8f49f5e64330e4a78",
+      "source_attempt": 1,
+      "test_id": "TEST-005"
+    },
+    {
+      "consumer_task_id": "TASK-012",
+      "relative_path": "attempts/1/validation-results/TEST-010/TASK-012.json",
+      "result_digest": "7ae56b0aeb002bf8c09863e24f077067c8c5871b47be5379e07c6dbe99f8aa5d",
+      "source_attempt": 1,
+      "test_id": "TEST-010"
+    },
+    {
+      "consumer_task_id": "TASK-012",
+      "relative_path": "attempts/1/validation-results/TEST-012/TASK-012.json",
+      "result_digest": "e4f0e2a94f395fe7280ebbb65f4af023d6a0e637c994d2f4486daeed0b153750",
+      "source_attempt": 1,
+      "test_id": "TEST-012"
+    },
+    {
+      "consumer_task_id": "TASK-012",
+      "relative_path": "attempts/1/validation-results/TEST-029/TASK-012.json",
+      "result_digest": "46ca0abf7a7914586bccb341d2253350301efdcf5c4a2d406ab32bfe45a83271",
+      "source_attempt": 1,
+      "test_id": "TEST-029"
+    }
+  ],
+  "verdict": "PASS"
+}

@@ -7,14 +7,16 @@ from unittest.mock import patch
 
 from poc.graphify import baseline_guard
 
-BASELINE_REF = "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37"
+HISTORICAL_GRAPHIFY_BASELINE_REF = "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37"
+CURRENT_RECONFIRMED_BASELINE_REF = "fffe93a330d59c8dd91f60abde2bf4c53cd0542e"
 
 
 class GraphifyBaselineGuardTests(unittest.TestCase):
     def test_actual_repository_guard_is_clear(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        record = baseline_guard.verify_controlled_baseline(root, BASELINE_REF)
+        record = baseline_guard.verify_controlled_baseline(root)
 
+        self.assertEqual(record["baseline_ref"], CURRENT_RECONFIRMED_BASELINE_REF)
         self.assertEqual(record["guard_status"], "CLEAR")
         self.assertEqual(record["verification_status"], "VERIFIED")
         self.assertTrue(record["entry_eligible"])
@@ -29,7 +31,7 @@ class GraphifyBaselineGuardTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         record = baseline_guard.verify_controlled_baseline(
             root,
-            BASELINE_REF,
+            CURRENT_RECONFIRMED_BASELINE_REF,
             requested_change_paths=["runtime/orchestrator/stage_gate.py"],
         )
         self.assertEqual(record["guard_status"], "CONTROLLED_CHANGE_REQUIRED")
@@ -45,13 +47,20 @@ class GraphifyBaselineGuardTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         record = baseline_guard.verify_controlled_baseline(
             root,
-            BASELINE_REF,
+            CURRENT_RECONFIRMED_BASELINE_REF,
             requested_change_paths=["poc/graphify/graphify_adapter.py"],
         )
 
         self.assertEqual(record["guard_status"], "CLEAR")
         self.assertTrue(record["entry_eligible"])
         self.assertEqual(record["requested_protected_paths"], [])
+
+    def test_historical_graphify_baseline_records_later_approved_controlled_change(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        record = baseline_guard.verify_controlled_baseline(root, HISTORICAL_GRAPHIFY_BASELINE_REF)
+        self.assertEqual(record["guard_status"], "CONTROLLED_CHANGE_REQUIRED")
+        self.assertIn("protected_hash_mismatch:runtime/orchestrator/stage_gate.py", record["reasons"])
+        self.assertIn("protected_hash_mismatch:runtime/orchestrator/provider_router.py", record["reasons"])
 
     def test_expected_absent_hook_presence_is_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -62,7 +71,7 @@ class GraphifyBaselineGuardTests(unittest.TestCase):
             with patch.object(baseline_guard, "_git_commit_exists", return_value=True):
                 record = baseline_guard.verify_controlled_baseline(
                     root,
-                    BASELINE_REF,
+                    HISTORICAL_GRAPHIFY_BASELINE_REF,
                     protected_paths=(),
                     expected_absent_paths=(".codex/hooks.json",),
                 )

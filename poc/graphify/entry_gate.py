@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 BASELINE_ID = "FULL_PLAN_STABLE_BASELINE"
-DEFAULT_MANIFEST = "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_MANIFEST_20260914.json"
+DEFAULT_MANIFEST = "docs/harness/FULL_PLAN_STABLE_BASELINE_DURABLE_VERIFICATION_MANIFEST_20260917.json"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 

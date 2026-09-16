@@ -1,0 +1,39 @@
+{
+  "attempt": 1,
+  "evidence_entries": [
+    {
+      "evidence_id": "EVD-001",
+      "origin_gate_id": "GATE-001",
+      "record_digest": "ca54b662fe16c0f831f47d111988f356a0774a318f9511193656e64b74b7c925",
+      "relative_path": "attempts/1/evidence/EVD-001.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-002",
+      "origin_gate_id": "GATE-001",
+      "record_digest": "cd7310e86099d7173ec96be3287a423d325a0252aed910f9af8f450f1198b7d6",
+      "relative_path": "attempts/1/evidence/EVD-002.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-003",
+      "origin_gate_id": "GATE-001",
+      "record_digest": "94838233ee77fbf4d62d3458532b6e3d3584908ea99607c30ef93b516e6258e7",
+      "relative_path": "attempts/1/evidence/EVD-003.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    }
+  ],
+  "generated_at_utc": "2026-09-16T12:32:17Z",
+  "index_digest": "01e693a82ee277b824ddda57c73f88b95c35171b6b38c6ad31673df984a13d41",
+  "index_scope": "GATE-001",
+  "prerequisite_gate_refs": [],
+  "project_id": "GH-FULL-MCP-PH4",
+  "review_refs": [],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.selection-index.v1",
+  "workspace_state_digest": "bd0b03b3af017987d62c9659562e2b0a27b8bb07030761933c3158720d21eddb",
+  "workspace_state_ref": "attempts/1/source/workspace-state.json"
+}

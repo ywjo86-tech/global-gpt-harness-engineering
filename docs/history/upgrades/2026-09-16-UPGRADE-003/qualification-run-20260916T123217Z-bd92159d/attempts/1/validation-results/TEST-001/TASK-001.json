@@ -1,0 +1,154 @@
+{
+  "assertion_summary_digest": "778bb63236fdcd4afe58e7e08f0c793fbefeb29c26f925f14c058148dc83db48",
+  "attempt": 1,
+  "audit_digest": "59b6af1b2ca0639178e0a47264bdd0a861f95ee215b6b97db3a76dda50afbcf1",
+  "audit_ref": "events/execution-events.jsonl#TEST-001:TASK-001",
+  "consumer_task_id": "TASK-001",
+  "ended_at_utc": "2026-09-16T12:32:17Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-001",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "0155e989e042d166e26e64df195ecc1a3e9f00d26c2ef398ae85a5acb5de2e08",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "e21ff3727dcfac790cf00d525917f834d65e77361948a8c238c0131219d77cc3",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "5223a925d7e3c97366a03c06918de7f4e556f16aba07ea971efb08620b331a58",
+        "kind": "authority_ref",
+        "relative_path_or_authority_ref": "authority:approved-contract"
+      },
+      {
+        "digest": "03b598f4091c1171e8598e2892a3e58fe5a858f87beedae8290aee48f37cc59d",
+        "kind": "authority_ref",
+        "relative_path_or_authority_ref": "authority:HEAD"
+      },
+      {
+        "digest": "03b598f4091c1171e8598e2892a3e58fe5a858f87beedae8290aee48f37cc59d",
+        "kind": "authority_ref",
+        "relative_path_or_authority_ref": "authority:origin-main"
+      },
+      {
+        "digest": "501e716127c4a3ec8eaa910b62e2637f1772a8d0296c4b91f85e4368310065d1",
+        "kind": "authority_ref",
+        "relative_path_or_authority_ref": "authority:PHASE3-sealed"
+      },
+      {
+        "digest": "18f26d51b390bb32d6cfe0230285c252a882fe6b27c6c8a0b5a0dc15ad81b436",
+        "kind": "authority_ref",
+        "relative_path_or_authority_ref": "authority:TASK001_VERIFIED_PREFLIGHT_PAYLOAD.json"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/CONTRACT_REPROJECTION_ACTIVATION.json",
+        "sha256": "edf5e01622eed636d918e0d8dd69a5e17cd2466b15623b69a04c66a0d1ed253a"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/COVERAGE_EQUIVALENT_SUMMARY_V2.json",
+        "sha256": "bb94e5ddc232e432a23f5caba6d38f29f85cf68cbef3814d790bb706200a946d"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/EVD-014_EVIDENCE_PACKAGE.json",
+        "sha256": "dbf397fa77ccfb9bbc716cb0ed5859151dfdebf39ce5117d36dbff26149cf94e"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/EVD-015_FINAL_VALIDATION_QUESTIONS.json",
+        "sha256": "05c34bc66a8ef522910dc7a24f8b00d40f037c1bdf09b8471f6853b559b1f19b"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/EVD-016_ENTRY_GATE_DECISION.json",
+        "sha256": "a12acb3eef3eeb390dc799f801feaefec3d3d497e3856614f640bf8b8a682c2a"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/FINAL_STABLE_BASELINE_MANIFEST.json",
+        "sha256": "03f4eb05f099229151625debc46d520376fb5da8bf65cd7bdcf3b04e178aa05e"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/FINAL_STABLE_BASELINE_SUPPLEMENTAL_BINDING.json",
+        "sha256": "600930733f470694f9f79589c8bb2251047513bc3389ac9b4bc6a4934fa2e886"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GATE004_CURRENT_SOURCE_REBIND_V2.json",
+        "sha256": "91d02bdd36edd1074f16d295fca7df18a3f96ae792ee6a7a25df3b9fd42a2af3"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GATE005_FINAL_RECORD_V2.json",
+        "sha256": "337cd73733b8ad34c233447a3d9f484b6d81f1db6d2543dba288e296361abeb6"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_ID-EXEC-BACKEND-1.2_APPROVED_IMPLEMENTATION_DESIGN.md",
+        "sha256": "db4831deba577124a01c6f4fb83bd420e4c0a3ac71ee9331f4be17c4b0ef0492"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT_R2.txt",
+        "sha256": "b4131a7985fb15c0ea92037cffa74e51503515770ad9daa69b10f447d17c945a"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_CODEX_EXECUTION_INSTRUCTION_R2.md",
+        "sha256": "789b6b6dee4832af49018aece4fed58c7dc5e95393843e902057b2c51077e542"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_DEVELOPMENT_PLAN.txt",
+        "sha256": "3231bbdf5fa70798ae9f3ace037448af172ec1d7b26f49d25b4d9258d25dd5f2"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_EXECUTION_APPROVAL_RESULT_R2.md",
+        "sha256": "e74feb510523c0d44f85aa815ab5a9ecede3417f797ebc06afcdb81668f42ab5"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/ID-EXEC-BACKEND-1.2_USER_REAPPROVAL.json",
+        "sha256": "05b0f01ba29b0470ec0eae09123df0e4ca704a41194fcfc6636cfcef6cf6016a"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/SHARED_HARNESS_COMPATIBILITY_CONTROLLED_CHANGE.json",
+        "sha256": "0c85cf2c43b21b3f945f8101a71b55bb60d274f494456e35ea5bcc31d89fd9ac"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/SHARED_HARNESS_COMPATIBILITY_INDEPENDENT_REVIEW.json",
+        "sha256": "bcb2c66d6937131d61bcdb05bd2debb1e4d081766280c15b41d8668c9440dc4d"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/TEST-017_FINAL_GATE_EVALUATION.json",
+        "sha256": "39109116c6f7aed792aaaa22c6f07e074832635a7ce578f68109ceb4f4379c2d"
+      },
+      {
+        "mode": "0664",
+        "path": "docs/history/upgrades/2026-09-14-UPGRADE-002/TEST-018_FINAL_SOURCE_BINDING.json",
+        "sha256": "e877ae6c4fcb32d91acc1f7c1610e8d57c84a674563c7a0bc4c57b72c6d266ca"
+      },
+      {
+        "mode": "0664",
+        "path": "runtime/orchestrator/provider_router.py",
+        "sha256": "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7"
+      }
+    ],
+    "snapshot_digest": "f5e88e4a183ef7982d59ebcea450576bec9428136bd0b10587ea593810ab2eec",
+    "source_set_name": "ENTRY_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T10:39:32.316075Z",
+  "test_contract_digest": "9468d93deb0abc90a0bcc7663a35fd379757c2eb04ef18f2a33c8c0bcb0513c0",
+  "test_id": "TEST-001",
+  "verdict": "PASS"
+}

@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Iterable
 
-DEFAULT_BASELINE_REF = "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37"
+HISTORICAL_GRAPHIFY_BASELINE_REF = "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37"
+DEFAULT_BASELINE_REF = "fffe93a330d59c8dd91f60abde2bf4c53cd0542e"
 
 PROTECTED_PATHS = (
     "runtime/orchestrator/stage_gate.py",

@@ -1,0 +1,19 @@
+{
+  "attempt": 2,
+  "finding_counts": {
+    "blocker": 0,
+    "major": 0,
+    "minor": 0
+  },
+  "finding_refs": [],
+  "gate_id": "GATE-004",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "62b7448d0c5b867ba5747c60a8394a90266ccdbabbd5841985922a187551dc96",
+  "review_role": "operations_consumer_boundary_independent_review",
+  "reviewed_at_utc": "2026-09-16T16:01:54Z",
+  "reviewer_authority": "independent_qualification_review_authority",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.review.v1",
+  "selection_index_digest": "3a51f1d2b4b1873d8839a4b71b8c001816811f2ec1f2bf08e75e83b38996dfc5",
+  "selection_index_ref": "attempts/2/indexes/GATE-004.json"
+}

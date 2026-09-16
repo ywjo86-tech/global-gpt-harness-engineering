@@ -1,0 +1,63 @@
+{
+  "assertion_summary_digest": "08fd54266ccfb4e351a8393971923bcf7f5a1065e05f95009dd936f0930bf942",
+  "attempt": 1,
+  "audit_digest": "1d3ed3ed91e7d022828a8be154519b7cfe50b4220ced51f545180a4b89c40b5e",
+  "audit_ref": "events/execution-events.jsonl#TEST-013:TASK-006",
+  "consumer_task_id": "TASK-006",
+  "ended_at_utc": "2026-09-16T14:20:47Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-006",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "e43fb90daf8deef6d692f086eb06579c14e8cd9f5b31ceb7225b3480ef58e2ae",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "1bded709d973b6bfb1ccda9720115331104f97c0de1bfd9b73c24b6050dc7846",
+  "source_snapshot": {
+    "artifact_inputs": [],
+    "files": [
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/git_service.py",
+        "sha256": "99f6a19f2b9e9de013ba94daa93d5cb23244d3b7a858dd7e88a2fcfcb219a5ce"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_git.py",
+        "sha256": "4f2b7ce6a24efbe8f8f23369af4e2ff5b0bbe15ad0957ce0a87189fdc413f92d"
+      }
+    ],
+    "snapshot_digest": "170058afae2253935439186fbd97bdc9a623d2ef2633267f09720b6fea319290",
+    "source_set_name": "GIT_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T14:20:47Z",
+  "test_contract_digest": "54ac579b1b800065bae3c3790332441dbfdeffca3f6fb1cb0c1290244b2d4131",
+  "test_id": "TEST-013",
+  "verdict": "PASS"
+}

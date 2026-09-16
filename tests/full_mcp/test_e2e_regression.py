@@ -72,21 +72,33 @@ class RepresentativeLifecycleTests(unittest.TestCase):
 
 
 class GovernanceIsolationTests(unittest.TestCase):
-    def test_worktree_preserved_boundaries_and_gate_order(self) -> None:
+    def test_durable_baseline_and_gate_closure_are_preserved(self) -> None:
         repo = Path(__file__).resolve().parents[2]
-        canonical = Path("/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering")
-        branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo, text=True).strip()
-        self.assertEqual(branch, "upgrade-003/full-mcp")
-        self.assertEqual(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip(), "fffe93a330d59c8dd91f60abde2bf4c53cd0542e")
-        self.assertEqual(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=canonical, text=True).strip(), "fffe93a330d59c8dd91f60abde2bf4c53cd0542e")
-        self.assertEqual(subprocess.call(["git", "diff", "--quiet", "HEAD", "--", "runtime/orchestrator/provider_router.py", "docs/history/upgrades/2026-09-14-UPGRADE-002"], cwd=repo), 0)
-        self.assertEqual(hashlib.sha256((repo/"runtime/orchestrator/provider_router.py").read_bytes()).hexdigest(), "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7")
-        run = repo / "_workspace/full-mcp/20260916T123217Z-bd92159d"
-        gate_attempts = {"GATE-001": 1, "GATE-002": 1, "GATE-003": 2, "GATE-004": 2}
-        for gate_id, attempt in gate_attempts.items():
-            record = json.loads((run/f"attempts/{attempt}/gates/{gate_id}.json").read_text(encoding="utf-8"))
-            self.assertEqual(record["attempt"], attempt)
-            self.assertEqual(record["decision"], "GO")
+        integration_baseline = "fffe93a330d59c8dd91f60abde2bf4c53cd0542e"
+        self.assertEqual(
+            subprocess.call(["git", "merge-base", "--is-ancestor", integration_baseline, "HEAD"], cwd=repo),
+            0,
+        )
+        baseline_router = subprocess.check_output(
+            ["git", "show", f"{integration_baseline}:runtime/orchestrator/provider_router.py"], cwd=repo
+        )
+        self.assertEqual(
+            hashlib.sha256((repo / "runtime/orchestrator/provider_router.py").read_bytes()).hexdigest(),
+            hashlib.sha256(baseline_router).hexdigest(),
+        )
+
+        history = repo / "docs/history/upgrades/2026-09-16-UPGRADE-003"
+        gate6 = json.loads((history / "GATE-006.json").read_text(encoding="utf-8"))
+        official = json.loads((history / "OFFICIAL_EXIT_GATES.json").read_text(encoding="utf-8"))
+        eligibility = json.loads((history / "STABLE_BASELINE_ELIGIBILITY_MANIFEST.json").read_text(encoding="utf-8"))
+        final = json.loads((history / "MCP_STABLE_BASELINE_FINAL_MANIFEST_20260917.json").read_text(encoding="utf-8"))
+        self.assertEqual(gate6["decision"], "GO")
+        self.assertEqual(len(official["rows"]), 12)
+        self.assertTrue(all(row["result"] == "PASS" for row in official["rows"]))
+        self.assertEqual(eligibility["eligibility_status"], "ELIGIBLE")
+        self.assertEqual(eligibility["declaration_status"], "NOT_DECLARED")
+        self.assertEqual(final["final_baseline_approval_status"], "APPROVED_SEALED")
+        self.assertEqual(final["baseline_commit_sha"], "0848dab7596f59a7eae98f223b47636bad27b4bd")
 
 
 if __name__ == "__main__":

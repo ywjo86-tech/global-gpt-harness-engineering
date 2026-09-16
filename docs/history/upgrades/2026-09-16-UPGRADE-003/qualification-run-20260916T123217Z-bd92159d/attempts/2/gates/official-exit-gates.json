@@ -1,0 +1,544 @@
+{
+  "attempt": 2,
+  "generated_at_utc": "2026-09-16T22:40:11Z",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "fadff6447a1253c84321bbea191c08ba4f2d0df9372e179abb819a0d79ab9ccd",
+  "rows": [
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-004",
+          "record_digest": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+          "relative_path": "attempts/1/evidence/EVD-004.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Contract Conformance",
+      "required_evidence_ids": [
+        "EVD-004"
+      ],
+      "required_test_ids": [
+        "TEST-003"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-010",
+          "relative_path": "attempts/1/validation-results/TEST-003/TASK-010.json",
+          "result_digest": "64198e1e75c4e9ec5965ec84a86b2b0ab56e4d94ec254f95d0c854752c010c18",
+          "source_attempt": 1,
+          "test_id": "TEST-003"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-005",
+          "record_digest": "e536cbd6fbcec414dbdd0292435fe4a4396a69ab8872706d66b4453b7d854897",
+          "relative_path": "attempts/1/evidence/EVD-005.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Filesystem",
+      "required_evidence_ids": [
+        "EVD-005"
+      ],
+      "required_test_ids": [
+        "TEST-006",
+        "TEST-007",
+        "TEST-008"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-004",
+          "relative_path": "attempts/1/validation-results/TEST-006/TASK-004.json",
+          "result_digest": "7c30a7eaa9a98637138d2059817cb0f237dd0fcfe75384b8cc98128c7355ce2c",
+          "source_attempt": 1,
+          "test_id": "TEST-006"
+        },
+        {
+          "consumer_task_id": "TASK-004",
+          "relative_path": "attempts/1/validation-results/TEST-007/TASK-004.json",
+          "result_digest": "812cc59a6cbdc8678a9c6674e192af06af1005f7174babc3336314b0b6ae8da6",
+          "source_attempt": 1,
+          "test_id": "TEST-007"
+        },
+        {
+          "consumer_task_id": "TASK-004",
+          "relative_path": "attempts/1/validation-results/TEST-008/TASK-004.json",
+          "result_digest": "7df63991d868264bc4f16bc88ed51381ffc39d93afc537be874457f979e38444",
+          "source_attempt": 1,
+          "test_id": "TEST-008"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-006",
+          "record_digest": "4fca7fbcbbbdbb6866a7962fa46426736b8a2ca16e91471472b26f08984e9972",
+          "relative_path": "attempts/1/evidence/EVD-006.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Shell",
+      "required_evidence_ids": [
+        "EVD-006"
+      ],
+      "required_test_ids": [
+        "TEST-009",
+        "TEST-010"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-005",
+          "relative_path": "attempts/1/validation-results/TEST-009/TASK-005.json",
+          "result_digest": "e4071be8157232022c6c83687795f9980571164e17e1aa16dda762715a536cb2",
+          "source_attempt": 1,
+          "test_id": "TEST-009"
+        },
+        {
+          "consumer_task_id": "TASK-005",
+          "relative_path": "attempts/1/validation-results/TEST-010/TASK-005.json",
+          "result_digest": "d5078e1f645654597551e722157973d19cd90dc0c767d10414a70959e1ba26e1",
+          "source_attempt": 1,
+          "test_id": "TEST-010"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-007",
+          "record_digest": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+          "relative_path": "attempts/1/evidence/EVD-007.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Git",
+      "required_evidence_ids": [
+        "EVD-007"
+      ],
+      "required_test_ids": [
+        "TEST-011",
+        "TEST-012",
+        "TEST-013"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-006",
+          "relative_path": "attempts/1/validation-results/TEST-011/TASK-006.json",
+          "result_digest": "ea97a5746a6480e70445e79e9423bd5931768d821ab1073db99049e4c988ced1",
+          "source_attempt": 1,
+          "test_id": "TEST-011"
+        },
+        {
+          "consumer_task_id": "TASK-006",
+          "relative_path": "attempts/1/validation-results/TEST-012/TASK-006.json",
+          "result_digest": "a9f30ab8b1003e5a29a9e65474d51f9269b16e288d06b681096be0b004f271de",
+          "source_attempt": 1,
+          "test_id": "TEST-012"
+        },
+        {
+          "consumer_task_id": "TASK-006",
+          "relative_path": "attempts/1/validation-results/TEST-013/TASK-006.json",
+          "result_digest": "e43fb90daf8deef6d692f086eb06579c14e8cd9f5b31ceb7225b3480ef58e2ae",
+          "source_attempt": 1,
+          "test_id": "TEST-013"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-008",
+          "record_digest": "25b1ef7c8c2ebcd1792d7d8b4f2f49a23f16e73bb3e9841b5345a8e65a669980",
+          "relative_path": "attempts/1/evidence/EVD-008.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Test / Build",
+      "required_evidence_ids": [
+        "EVD-008"
+      ],
+      "required_test_ids": [
+        "TEST-014",
+        "TEST-015",
+        "TEST-016",
+        "TEST-017"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-010",
+          "relative_path": "attempts/1/validation-results/TEST-014/TASK-010.json",
+          "result_digest": "ea7ccd68a81be6e2e9bec4d0ccd6bc59197600567edf452ee33fa1a3a1c92f3e",
+          "source_attempt": 1,
+          "test_id": "TEST-014"
+        },
+        {
+          "consumer_task_id": "TASK-010",
+          "relative_path": "attempts/1/validation-results/TEST-015/TASK-010.json",
+          "result_digest": "37d70a37bd1a82605973855fb8f5c8b1562307ffc44fb75ad2eb9ab5aa45b36b",
+          "source_attempt": 1,
+          "test_id": "TEST-015"
+        },
+        {
+          "consumer_task_id": "TASK-011",
+          "relative_path": "attempts/1/validation-results/TEST-016/TASK-011.json",
+          "result_digest": "2e13a011128727d9482631bfafb77c077a3a1f99466b777d5ea0e23b946e963e",
+          "source_attempt": 1,
+          "test_id": "TEST-016"
+        },
+        {
+          "consumer_task_id": "TASK-011",
+          "relative_path": "attempts/1/validation-results/TEST-017/TASK-011.json",
+          "result_digest": "36428cfcf54cdd06eebbc9058a3e07c163227b367ff387d58aa0c495709fa49a",
+          "source_attempt": 1,
+          "test_id": "TEST-017"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-009",
+          "record_digest": "482f37f3402cb3b6ff0e72ee5d704006a561bfef296901930014a4f768f2ff14",
+          "relative_path": "attempts/2/evidence/EVD-009.json",
+          "source_attempt": 2
+        },
+        {
+          "evidence_id": "EVD-010",
+          "record_digest": "facaee0f137d9e6e97814e5af1269e520c94034903379410b137e97abd11858c",
+          "relative_path": "attempts/2/evidence/EVD-010.json",
+          "source_attempt": 2
+        },
+        {
+          "evidence_id": "EVD-013",
+          "record_digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+          "relative_path": "attempts/1/evidence/EVD-013.json",
+          "source_attempt": 1
+        },
+        {
+          "evidence_id": "EVD-016",
+          "record_digest": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+          "relative_path": "attempts/2/evidence/EVD-016.json",
+          "source_attempt": 2
+        }
+      ],
+      "name": "Security",
+      "required_evidence_ids": [
+        "EVD-009",
+        "EVD-010",
+        "EVD-013",
+        "EVD-016"
+      ],
+      "required_test_ids": [
+        "TEST-004",
+        "TEST-005",
+        "TEST-010",
+        "TEST-012",
+        "TEST-026",
+        "TEST-029"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/1/validation-results/TEST-004/TASK-012.json",
+          "result_digest": "d19c6e6e6964566ca0794156a777e545333f6f7414f9dcfdcedff56e6392454f",
+          "source_attempt": 1,
+          "test_id": "TEST-004"
+        },
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/1/validation-results/TEST-005/TASK-012.json",
+          "result_digest": "64b2678b5875c47b669237870ce6088e0a57a3f291bd63b8f49f5e64330e4a78",
+          "source_attempt": 1,
+          "test_id": "TEST-005"
+        },
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/1/validation-results/TEST-010/TASK-012.json",
+          "result_digest": "7ae56b0aeb002bf8c09863e24f077067c8c5871b47be5379e07c6dbe99f8aa5d",
+          "source_attempt": 1,
+          "test_id": "TEST-010"
+        },
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/1/validation-results/TEST-012/TASK-012.json",
+          "result_digest": "e4f0e2a94f395fe7280ebbb65f4af023d6a0e637c994d2f4486daeed0b153750",
+          "source_attempt": 1,
+          "test_id": "TEST-012"
+        },
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/1/validation-results/TEST-029/TASK-012.json",
+          "result_digest": "46ca0abf7a7914586bccb341d2253350301efdcf5c4a2d406ab32bfe45a83271",
+          "source_attempt": 1,
+          "test_id": "TEST-029"
+        },
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/2/validation-results/TEST-026/TASK-012.json",
+          "result_digest": "26645f0580a120dac6080db86e457e40467ea24fb161da180b69543583a1d92e",
+          "source_attempt": 2,
+          "test_id": "TEST-026"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-011",
+          "record_digest": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+          "relative_path": "attempts/1/evidence/EVD-011.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Audit",
+      "required_evidence_ids": [
+        "EVD-011"
+      ],
+      "required_test_ids": [
+        "TEST-019"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-008",
+          "relative_path": "attempts/1/validation-results/TEST-019/TASK-008.json",
+          "result_digest": "932d0b13a8f1fcb154c86263ae91ed49adcc86e2c1c4560df2b0bf25faa3d8ff",
+          "source_attempt": 1,
+          "test_id": "TEST-019"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-012",
+          "record_digest": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+          "relative_path": "attempts/1/evidence/EVD-012.json",
+          "source_attempt": 1
+        },
+        {
+          "evidence_id": "EVD-013",
+          "record_digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+          "relative_path": "attempts/1/evidence/EVD-013.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Failure Handling",
+      "required_evidence_ids": [
+        "EVD-012",
+        "EVD-013"
+      ],
+      "required_test_ids": [
+        "TEST-020",
+        "TEST-021"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-008",
+          "relative_path": "attempts/1/validation-results/TEST-020/TASK-008.json",
+          "result_digest": "d58ba4dc01e23bf70f72a7bb7895502c75de073ed1191949190769215e951665",
+          "source_attempt": 1,
+          "test_id": "TEST-020"
+        },
+        {
+          "consumer_task_id": "TASK-011",
+          "relative_path": "attempts/1/validation-results/TEST-021/TASK-011.json",
+          "result_digest": "b97f28d88a2c58024b66b7cc65f40275c87a0ce2e98d87d8435b5d34be40d907",
+          "source_attempt": 1,
+          "test_id": "TEST-021"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-013",
+          "record_digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+          "relative_path": "attempts/1/evidence/EVD-013.json",
+          "source_attempt": 1
+        },
+        {
+          "evidence_id": "EVD-017",
+          "record_digest": "3ef214c983fddd8e64d9b8b84fc3a65f3de83a6dcbefdf227b3421a3f68b99ca",
+          "relative_path": "attempts/2/evidence/EVD-017.json",
+          "source_attempt": 2
+        }
+      ],
+      "name": "Restore",
+      "required_evidence_ids": [
+        "EVD-013",
+        "EVD-017"
+      ],
+      "required_test_ids": [
+        "TEST-012",
+        "TEST-021",
+        "TEST-024"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-011",
+          "relative_path": "attempts/1/validation-results/TEST-012/TASK-011.json",
+          "result_digest": "d6e9cb1d1f0b28c912281e6632be8022c1179a765bc580fc7940d24bc1ba45ec",
+          "source_attempt": 1,
+          "test_id": "TEST-012"
+        },
+        {
+          "consumer_task_id": "TASK-011",
+          "relative_path": "attempts/1/validation-results/TEST-021/TASK-011.json",
+          "result_digest": "b97f28d88a2c58024b66b7cc65f40275c87a0ce2e98d87d8435b5d34be40d907",
+          "source_attempt": 1,
+          "test_id": "TEST-021"
+        },
+        {
+          "consumer_task_id": "TASK-013",
+          "relative_path": "attempts/2/validation-results/TEST-024/TASK-013.json",
+          "result_digest": "6b36d7a125c12a63434585faaa724a901ed6546ea41dad1d3bb088424f24336d",
+          "source_attempt": 2,
+          "test_id": "TEST-024"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-011",
+          "record_digest": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+          "relative_path": "attempts/1/evidence/EVD-011.json",
+          "source_attempt": 1
+        },
+        {
+          "evidence_id": "EVD-016",
+          "record_digest": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+          "relative_path": "attempts/2/evidence/EVD-016.json",
+          "source_attempt": 2
+        }
+      ],
+      "name": "Structured Observability Compatibility",
+      "required_evidence_ids": [
+        "EVD-011",
+        "EVD-016"
+      ],
+      "required_test_ids": [
+        "TEST-019",
+        "TEST-026"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-008",
+          "relative_path": "attempts/1/validation-results/TEST-019/TASK-008.json",
+          "result_digest": "932d0b13a8f1fcb154c86263ae91ed49adcc86e2c1c4560df2b0bf25faa3d8ff",
+          "source_attempt": 1,
+          "test_id": "TEST-019"
+        },
+        {
+          "consumer_task_id": "TASK-012",
+          "relative_path": "attempts/2/validation-results/TEST-026/TASK-012.json",
+          "result_digest": "26645f0580a120dac6080db86e457e40467ea24fb161da180b69543583a1d92e",
+          "source_attempt": 2,
+          "test_id": "TEST-026"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-004",
+          "record_digest": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+          "relative_path": "attempts/1/evidence/EVD-004.json",
+          "source_attempt": 1
+        },
+        {
+          "evidence_id": "EVD-014",
+          "record_digest": "2c74e9108c5b73fb84ee63b3aff8f0fe714e296414f3dce6f6c2a72df932f566",
+          "relative_path": "attempts/1/evidence/EVD-014.json",
+          "source_attempt": 1
+        }
+      ],
+      "name": "Contract-only Handoff Compatibility",
+      "required_evidence_ids": [
+        "EVD-004",
+        "EVD-014"
+      ],
+      "required_test_ids": [
+        "TEST-003",
+        "TEST-022"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-010",
+          "relative_path": "attempts/1/validation-results/TEST-003/TASK-010.json",
+          "result_digest": "64198e1e75c4e9ec5965ec84a86b2b0ab56e4d94ec254f95d0c854752c010c18",
+          "source_attempt": 1,
+          "test_id": "TEST-003"
+        },
+        {
+          "consumer_task_id": "TASK-010",
+          "relative_path": "attempts/1/validation-results/TEST-022/TASK-010.json",
+          "result_digest": "6ece323cb04230f256d86a0bcb87e0ada9f1307a24e1194b62cf8f5d81edfcc1",
+          "source_attempt": 1,
+          "test_id": "TEST-022"
+        }
+      ]
+    },
+    {
+      "evidence_refs": [
+        {
+          "evidence_id": "EVD-017",
+          "record_digest": "3ef214c983fddd8e64d9b8b84fc3a65f3de83a6dcbefdf227b3421a3f68b99ca",
+          "relative_path": "attempts/2/evidence/EVD-017.json",
+          "source_attempt": 2
+        },
+        {
+          "evidence_id": "EVD-018",
+          "record_digest": "7b86b277ff7eab4b97122b49a91bdf7da914ece6f9c1f742947d6ad7669771f1",
+          "relative_path": "attempts/2/evidence/EVD-018.json",
+          "source_attempt": 2
+        }
+      ],
+      "name": "E2E Execution",
+      "required_evidence_ids": [
+        "EVD-017",
+        "EVD-018"
+      ],
+      "required_test_ids": [
+        "TEST-024",
+        "TEST-027"
+      ],
+      "result": "PASS",
+      "validation_refs": [
+        {
+          "consumer_task_id": "TASK-013",
+          "relative_path": "attempts/2/validation-results/TEST-024/TASK-013.json",
+          "result_digest": "6b36d7a125c12a63434585faaa724a901ed6546ea41dad1d3bb088424f24336d",
+          "source_attempt": 2,
+          "test_id": "TEST-024"
+        },
+        {
+          "consumer_task_id": "TASK-013",
+          "relative_path": "attempts/2/validation-results/TEST-027/TASK-013.json",
+          "result_digest": "66921ae84b046b05c2d62d044a11fb3becc572dab857ab601eb4ef050fe6cdc3",
+          "source_attempt": 2,
+          "test_id": "TEST-027"
+        }
+      ]
+    }
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.official-exit-gates.v1",
+  "source_gate_digest": "ce9efad5f168efcec88038c308142b32e2f0feb2b5905d79171b0e033f768c25",
+  "source_gate_ref": "attempts/2/gates/GATE-005.json"
+}

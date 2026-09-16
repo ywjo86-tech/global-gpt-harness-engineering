@@ -1,0 +1,10 @@
+{
+  "changed_paths": [
+    "runtime/full_mcp/git_service.py"
+  ],
+  "expected_earliest_reentry_gate": "GATE-002",
+  "expected_final_reentry_gate": "GATE-003",
+  "fixture_digest": "7c708356b20cb14e9f820240e2cdec48b51bcd28662cd921a02d2a80cbcd6537",
+  "originally_failed_gate": "GATE-003",
+  "schema_version": "gch.full-mcp.recovery-fixture.v1"
+}

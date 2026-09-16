@@ -1,0 +1,68 @@
+{
+  "assertion_summary_digest": "4c4c6514bbd202c28eb1d2417f6accd16f6d69f3ec8fc44ebfbf0772cd351a09",
+  "attempt": 1,
+  "audit_digest": "184736ec92e5a32965e1259fe8eba015213fb19eaaf59e13a6254610126e6ba0",
+  "audit_ref": "events/execution-events.jsonl#TEST-019:TASK-012",
+  "consumer_task_id": "TASK-012",
+  "ended_at_utc": "2026-09-16T15:36:30Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-012",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "b0562e9e5e5cc71e9aff62e006e9b7444801627c7444dac6c43e2790a6873529",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "33854e5f4669b894bff4cabd66b993015789992e3400a79eb1e126e102bcfc81",
+  "source_snapshot": {
+    "artifact_inputs": [],
+    "files": [
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/observability.py",
+        "sha256": "583ddc233336097c3065a487a27fbf56ba6529e81209030934c278ab3d2f10e9"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/recovery.py",
+        "sha256": "2010bcdc02066e5dfe3883c18c077b6d071a688ce963dbf11b8730551ca1cbe8"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_observability_recovery.py",
+        "sha256": "d1aa3c7d57f4e81e3da0065541e6f924ad9b2b1ffdcb6d1e46bbf1cc7bca51a2"
+      }
+    ],
+    "snapshot_digest": "71fef714427f3b997b176233c132f8718543ae81d77858966371f346fb758154",
+    "source_set_name": "OBSERVABILITY_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T15:36:30Z",
+  "test_contract_digest": "0c8f8612c35910c880e5d0064987cb94e9d94c317714533231daf7cf0b64ee5d",
+  "test_id": "TEST-019",
+  "verdict": "PASS"
+}

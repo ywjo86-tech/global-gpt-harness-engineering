@@ -1,0 +1,63 @@
+{
+  "artifact_refs": [
+    {
+      "digest": "7c708356b20cb14e9f820240e2cdec48b51bcd28662cd921a02d2a80cbcd6537",
+      "kind": "invalidation_fixture",
+      "relative_path_or_authority_ref": "attempts/1/source/recovery-invalidation-fixture.json",
+      "source_attempt": 1
+    }
+  ],
+  "attempt": 1,
+  "collected_at_utc": "2026-09-16T15:06:22Z",
+  "evidence_id": "EVD-013",
+  "origin_gate_id": "GATE-003",
+  "producer_task_id": "TASK-011",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+  "requirement_refs": [
+    "OPS-004",
+    "OPS-005"
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.evidence.v2",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task011-a70fcc181e27bf9158ff0da452a33b03e910b42f15e1123831bed06f",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "46325957bc58b4a58152acdce2c533291f4498bc0c2ed2249835b13d1693729a"
+  },
+  "task_refs": [
+    "TASK-011"
+  ],
+  "test_refs": [
+    "TEST-012",
+    "TEST-020",
+    "TEST-021"
+  ],
+  "validation_result_refs": [
+    {
+      "consumer_task_id": "TASK-011",
+      "relative_path": "attempts/1/validation-results/TEST-012/TASK-011.json",
+      "result_digest": "d6e9cb1d1f0b28c912281e6632be8022c1179a765bc580fc7940d24bc1ba45ec",
+      "source_attempt": 1,
+      "test_id": "TEST-012"
+    },
+    {
+      "consumer_task_id": "TASK-011",
+      "relative_path": "attempts/1/validation-results/TEST-020/TASK-011.json",
+      "result_digest": "707a118b232f1a73403ab05ed94e382d4a49c85631272b11cb61ce48a1440a01",
+      "source_attempt": 1,
+      "test_id": "TEST-020"
+    },
+    {
+      "consumer_task_id": "TASK-011",
+      "relative_path": "attempts/1/validation-results/TEST-021/TASK-011.json",
+      "result_digest": "b97f28d88a2c58024b66b7cc65f40275c87a0ce2e98d87d8435b5d34be40d907",
+      "source_attempt": 1,
+      "test_id": "TEST-021"
+    }
+  ],
+  "verdict": "PASS"
+}

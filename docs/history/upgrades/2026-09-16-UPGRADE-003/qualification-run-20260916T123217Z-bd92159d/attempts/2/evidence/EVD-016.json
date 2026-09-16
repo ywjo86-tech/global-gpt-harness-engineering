@@ -1,0 +1,48 @@
+{
+  "artifact_refs": [
+    {
+      "digest": "77be98cc9080784d94b64641f81a8ae8ea26311ec3e7f3fc83da9371ea334631",
+      "kind": "security_boundary_fixture",
+      "relative_path_or_authority_ref": "attempts/2/source/security-boundary-fixture.json",
+      "source_attempt": 2
+    }
+  ],
+  "attempt": 2,
+  "collected_at_utc": "2026-09-16T15:58:52Z",
+  "evidence_id": "EVD-016",
+  "origin_gate_id": "GATE-003",
+  "producer_task_id": "TASK-012",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+  "requirement_refs": [
+    "SEC-006",
+    "SEC-007",
+    "OPS-009"
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.evidence.v2",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task012-a2-724bd9eeb5bfcb1b541362a4a288740338db8c006a026ad6b7a5a5cb",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "45ef14a3108a067fdf4fe6d5765e12a2b09910cf8f8e70b4abbd1a20d6e9fbde"
+  },
+  "task_refs": [
+    "TASK-012"
+  ],
+  "test_refs": [
+    "TEST-026"
+  ],
+  "validation_result_refs": [
+    {
+      "consumer_task_id": "TASK-012",
+      "relative_path": "attempts/2/validation-results/TEST-026/TASK-012.json",
+      "result_digest": "26645f0580a120dac6080db86e457e40467ea24fb161da180b69543583a1d92e",
+      "source_attempt": 2,
+      "test_id": "TEST-026"
+    }
+  ],
+  "verdict": "PASS"
+}

@@ -1,0 +1,59 @@
+{
+  "artifact_refs": [],
+  "attempt": 1,
+  "collected_at_utc": "2026-09-16T14:23:52Z",
+  "evidence_id": "EVD-005",
+  "origin_gate_id": "GATE-002",
+  "producer_task_id": "TASK-004",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "e536cbd6fbcec414dbdd0292435fe4a4396a69ab8872706d66b4453b7d854897",
+  "requirement_refs": [
+    "REQ-002",
+    "REQ-003",
+    "REQ-004",
+    "REQ-005",
+    "REQ-006"
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.evidence.v2",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "fanout-0bc512c97acc4449f200bb6730bb361978ae816737a5b810ee58cac47d4c56c5",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "01e4a12e480b01b12ffa08fe168d58f00dcf0fe50ff49b9a52cbb93c2ac7c630"
+  },
+  "task_refs": [
+    "TASK-004"
+  ],
+  "test_refs": [
+    "TEST-006",
+    "TEST-007",
+    "TEST-008"
+  ],
+  "validation_result_refs": [
+    {
+      "consumer_task_id": "TASK-004",
+      "relative_path": "attempts/1/validation-results/TEST-006/TASK-004.json",
+      "result_digest": "7c30a7eaa9a98637138d2059817cb0f237dd0fcfe75384b8cc98128c7355ce2c",
+      "source_attempt": 1,
+      "test_id": "TEST-006"
+    },
+    {
+      "consumer_task_id": "TASK-004",
+      "relative_path": "attempts/1/validation-results/TEST-007/TASK-004.json",
+      "result_digest": "812cc59a6cbdc8678a9c6674e192af06af1005f7174babc3336314b0b6ae8da6",
+      "source_attempt": 1,
+      "test_id": "TEST-007"
+    },
+    {
+      "consumer_task_id": "TASK-004",
+      "relative_path": "attempts/1/validation-results/TEST-008/TASK-004.json",
+      "result_digest": "7df63991d868264bc4f16bc88ed51381ffc39d93afc537be874457f979e38444",
+      "source_attempt": 1,
+      "test_id": "TEST-008"
+    }
+  ],
+  "verdict": "PASS"
+}

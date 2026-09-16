@@ -1,0 +1,124 @@
+{
+  "assertion_summary_digest": "79f572bf6429f6882b23802078db693dcf29e2aa21cdd9390398e9354919116a",
+  "attempt": 1,
+  "audit_digest": "4a859a785498ecd661787ca451ae54ead06c4384cfd79c3ef14bfaba496611f3",
+  "audit_ref": "events/execution-events.jsonl#TEST-014:TASK-010",
+  "consumer_task_id": "TASK-010",
+  "ended_at_utc": "2026-09-16T15:01:56Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-010",
+  "profile_digest": "127db62fbe85b21586e2e2c46f7842f5601a6ba592bab5ba00c0afb38d527b47",
+  "profile_id": "VP-UNIT-FULL-MCP",
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "ea7ccd68a81be6e2e9bec4d0ccd6bc59197600567edf452ee33fa1a3a1c92f3e",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "94e34e0b55c67920479566b7ed8f0154c214f25fccaa10e2bfaf856989302d5c",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "127db62fbe85b21586e2e2c46f7842f5601a6ba592bab5ba00c0afb38d527b47",
+        "kind": "validation_profile",
+        "relative_path_or_authority_ref": "authority:VP-UNIT-FULL-MCP"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/filesystem_service.py",
+        "sha256": "4216260fc799a55fff22819889837c7cbcfabd03f85b8cf82818d5329edaacec"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/git_service.py",
+        "sha256": "99f6a19f2b9e9de013ba94daa93d5cb23244d3b7a858dd7e88a2fcfcb219a5ce"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/observability.py",
+        "sha256": "583ddc233336097c3065a487a27fbf56ba6529e81209030934c278ab3d2f10e9"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/process_service.py",
+        "sha256": "3ba87eb8769066466e635a9579df7bb5eac4c4bdb62097462dc8a106eea1ed66"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/recovery.py",
+        "sha256": "2010bcdc02066e5dfe3883c18c077b6d071a688ce963dbf11b8730551ca1cbe8"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/validation_profiles.py",
+        "sha256": "32b375a17558cdb2ecf469eb5a3153d69af71b229e3a4bd1022fc891a0aaee14"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/validation_service.py",
+        "sha256": "cf19d237dd376e26ed50801e737c2bf79a1757fb94d2075fcf0cbdb098874ce7"
+      },
+      {
+        "mode": "0600",
+        "path": "scripts/full_mcp_lint.py",
+        "sha256": "48a84319fa4b0667917a033ddced8a0f1539a92a6be69562adf7cb1492923172"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_filesystem.py",
+        "sha256": "01762720b9cdea6d6d3011f5ac8c3ac0952fa1264b48cdb4c1643263bdb88df1"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_git.py",
+        "sha256": "4f2b7ce6a24efbe8f8f23369af4e2ff5b0bbe15ad0957ce0a87189fdc413f92d"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_observability_recovery.py",
+        "sha256": "d1aa3c7d57f4e81e3da0065541e6f924ad9b2b1ffdcb6d1e46bbf1cc7bca51a2"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_process.py",
+        "sha256": "022e938b3afe7ed2c4def7d26ac93d57cf06c927cf6cf82e4ef8ae7350202e4b"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_validation.py",
+        "sha256": "d1783eb6d9d07a4f1040c9a7ec10ee1e4c89fe1fa3baf1d8ba0735f567103753"
+      }
+    ],
+    "snapshot_digest": "947ce77cff6fecd9e0c2f7d6daa2e1433a3c53e0c203b380819185946842ac94",
+    "source_set_name": "UNIT_COMPOSITE_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T15:01:55Z",
+  "test_contract_digest": "62259f39fbbe19ef14a10b1aff75f6f480f50d8f01659022b77b5c32fde11687",
+  "test_id": "TEST-014",
+  "verdict": "PASS"
+}

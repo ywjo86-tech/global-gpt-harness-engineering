@@ -1,0 +1,59 @@
+{
+  "schema_version": "global-harness.full-plan-preop-diagnostic.v1",
+  "baseline": {
+    "branch": "main",
+    "head": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+    "origin_main": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37"
+  },
+  "checks": {
+    "focused_full_plan_regression": {
+      "tests": 233,
+      "result": "PASS"
+    },
+    "full_plan_named_contract_tests": {
+      "tests": 24,
+      "result": "PASS",
+      "skipped": 0
+    },
+    "synthetic_four_gate_full_plan": {
+      "completed_gates": 4,
+      "result": "PASS"
+    },
+    "synthetic_resume_replay": {
+      "result": "PASS",
+      "terminal_replay_child_invocations": 0,
+      "terminal_replay_mutation": false
+    },
+    "synthetic_bounded_failure": {
+      "result": "PASS",
+      "retry_budget_observed": 1,
+      "terminal_status": "HARD_STOP"
+    },
+    "canonical_full_regression": {
+      "tests": 1141,
+      "result": "PASS",
+      "skipped": 10
+    },
+    "clean_clone_full_regression": {
+      "tests": 1141,
+      "result": "PASS",
+      "skipped": 15
+    },
+    "engine_host_read_only_inspection": {
+      "result": "PASS",
+      "current_phase": "G-4B-RELEASE-HANDOFF",
+      "required_contract_files_valid": true,
+      "write_operations_performed": false,
+      "runtime_mutation_authorized": false
+    }
+  },
+  "scope": {
+    "external_provider_calls_performed": false,
+    "real_new_project_full_plan_run_performed": false,
+    "commit_performed": false,
+    "push_performed": false
+  },
+  "decision": "PASS_READY_FOR_CONTROLLED_REAL_E2E",
+  "blocking_defects_found": 0,
+  "statement": "No blocking defect was found in pre-operational self-diagnostics; this does not prove absence of all defects under real external provider/project conditions."
+}

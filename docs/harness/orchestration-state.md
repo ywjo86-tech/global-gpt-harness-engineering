@@ -1,5 +1,30 @@
 # Orchestration State
 
+> Updated: `2026-09-17`
+> Scope: GH-FULL-MCP-PH4 UPGRADE-003 FINAL APPROVED CLOSURE + EDP-1.0 integrity remediation
+
+## Current Execution Binding
+
+Current phase: FINAL_APPROVED_CLOSED
+
+- Active project: `GH-FULL-MCP-PH4`
+- Active lifecycle: `UPGRADE-003`
+- Active contract: `docs/DEVELOPMENT_PLAN.txt`
+- Contract SHA-256: `5223a925d7e3c97366a03c06918de7f4e556f16aba07ea971efb08620b331a58`
+- Stable Baseline Commit: `0848dab7596f59a7eae98f223b47636bad27b4bd`
+- Closure Commit: `39e0f6a739a4a23e4dbefd290e4c291d87a0645c`
+- Final Approval Commit: `0bdfad12c438f4f101d3fdeafda9daac8d5069b4`
+- GATE-001 through GATE-006: `GO`
+- Official Exit: `12/12 PASS`
+- Stable Baseline: `APPROVED_SEALED`
+- Full MCP PHASE 4 remaining tasks: `0`
+- PHASE 5 execution: `NOT_AUTHORIZED`
+- Provider expansion: `NOT_AUTHORIZED`
+- Remediation authority: user GOAL + `EXHAUSTIVE_DIAGNOSIS_PROTOCOL` (`EDP-1.0`)
+- Runtime binding note: this block supersedes all earlier current-state blocks below; prior records are preserved as history.
+
+## Historical State Preserved Below
+
 > Updated: `2026-09-15`
 > Scope: GCH-EXEC-BACKEND UPGRADE-002 FINAL STABLE BASELINE closure
 

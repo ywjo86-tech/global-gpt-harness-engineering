@@ -1,0 +1,48 @@
+{
+  "artifact_refs": [
+    {
+      "digest": "0b73b1064c734298c842f48ee9aae03fbc7c55c99b2a6bc00caa0a2daada4f5d",
+      "kind": "approved_contract",
+      "relative_path_or_authority_ref": "authority:EXECUTION_BACKEND_CONTRACT_FINAL",
+      "source_attempt": 1
+    }
+  ],
+  "attempt": 1,
+  "collected_at_utc": "2026-09-16T15:02:00Z",
+  "evidence_id": "EVD-014",
+  "origin_gate_id": "GATE-004",
+  "producer_task_id": "TASK-010",
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "2c74e9108c5b73fb84ee63b3aff8f0fe714e296414f3dce6f6c2a72df932f566",
+  "requirement_refs": [
+    "NFR-001",
+    "NFR-002",
+    "NFR-006"
+  ],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.evidence.v2",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task010-c84a843bfedd2e6104922a57a56c7983def6a4b4255d1830e3ebbb71",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "7f5372f414f115af667c625537ef2a8f1cc748f0d15aba559915ef22251e2ad0"
+  },
+  "task_refs": [
+    "TASK-010"
+  ],
+  "test_refs": [
+    "TEST-022"
+  ],
+  "validation_result_refs": [
+    {
+      "consumer_task_id": "TASK-010",
+      "relative_path": "attempts/1/validation-results/TEST-022/TASK-010.json",
+      "result_digest": "6ece323cb04230f256d86a0bcb87e0ada9f1307a24e1194b62cf8f5d81edfcc1",
+      "source_attempt": 1,
+      "test_id": "TEST-022"
+    }
+  ],
+  "verdict": "PASS"
+}

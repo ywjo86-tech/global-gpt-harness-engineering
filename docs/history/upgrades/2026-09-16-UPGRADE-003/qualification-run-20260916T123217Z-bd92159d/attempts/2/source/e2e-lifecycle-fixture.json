@@ -1,0 +1,16 @@
+{
+  "baseline_equivalence_required": true,
+  "manifest_digest": "f6ed037f49d547fd705533ea1f7db0d316a78736150b7bbe75f1eb2fe61b0d41",
+  "operation_sequence": [
+    "filesystem_read",
+    "filesystem_write",
+    "shell_execute",
+    "validate",
+    "git_restore",
+    "filesystem_read"
+  ],
+  "restore_dirty_state_required": "CLEAN",
+  "schema_version": "gch.full-mcp.e2e-fixture.v1",
+  "selector": "tests.full_mcp.test_e2e_regression.RepresentativeLifecycleTests",
+  "transport": "MCP_STDIO_2026_07_28"
+}

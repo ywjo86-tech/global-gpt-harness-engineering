@@ -1,0 +1,199 @@
+{
+  "assertion_summary_digest": "4d2996e285e40e1fd554cb6f78208743fcc0b4d9937b6cc7bc67772a4098b24e",
+  "attempt": 2,
+  "audit_digest": "45fef9a92050e404830eed12cba73bb46ab4b33e8797c938d4f6bf790e67d770",
+  "audit_ref": "events/execution-events.jsonl#TEST-028:TASK-014:attempt2",
+  "consumer_task_id": "TASK-014",
+  "ended_at_utc": "2026-09-16T22:40:11Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-014",
+  "profile_digest": "ed983ba876c94e89ea1ce8d297006f5671f5e50c9b7b0acd3278680cf7d484d4",
+  "profile_id": "VP-PREFINAL-QUALIFICATION",
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "fe83a2d4a439b97b03bff5d9dcb2e6dfe847e55a184ffb152e321f76a7e0c129",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "3561bcfa0ebc6f0cb9b92eca8980ef362a111e21ebded3588f840b5da0f6c998",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "d0c09eae28501b914faecf5be242e6c785497f96156c9133e9f3bb4eb17c9333",
+        "kind": "pre_final_index",
+        "relative_path_or_authority_ref": "attempts/2/indexes/PREFINAL.json"
+      },
+      {
+        "digest": "ca54b662fe16c0f831f47d111988f356a0774a318f9511193656e64b74b7c925",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-001.json"
+      },
+      {
+        "digest": "cd7310e86099d7173ec96be3287a423d325a0252aed910f9af8f450f1198b7d6",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-002.json"
+      },
+      {
+        "digest": "94838233ee77fbf4d62d3458532b6e3d3584908ea99607c30ef93b516e6258e7",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-003.json"
+      },
+      {
+        "digest": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-004.json"
+      },
+      {
+        "digest": "e536cbd6fbcec414dbdd0292435fe4a4396a69ab8872706d66b4453b7d854897",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-005.json"
+      },
+      {
+        "digest": "4fca7fbcbbbdbb6866a7962fa46426736b8a2ca16e91471472b26f08984e9972",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-006.json"
+      },
+      {
+        "digest": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-007.json"
+      },
+      {
+        "digest": "25b1ef7c8c2ebcd1792d7d8b4f2f49a23f16e73bb3e9841b5345a8e65a669980",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-008.json"
+      },
+      {
+        "digest": "482f37f3402cb3b6ff0e72ee5d704006a561bfef296901930014a4f768f2ff14",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-009.json"
+      },
+      {
+        "digest": "facaee0f137d9e6e97814e5af1269e520c94034903379410b137e97abd11858c",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-010.json"
+      },
+      {
+        "digest": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-011.json"
+      },
+      {
+        "digest": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-012.json"
+      },
+      {
+        "digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-013.json"
+      },
+      {
+        "digest": "2c74e9108c5b73fb84ee63b3aff8f0fe714e296414f3dce6f6c2a72df932f566",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/1/evidence/EVD-014.json"
+      },
+      {
+        "digest": "a4020da09899c0bd66c5187713cb063975a77ea05a5da7a8f443d24d46da2bb3",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-015.json"
+      },
+      {
+        "digest": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-016.json"
+      },
+      {
+        "digest": "3ef214c983fddd8e64d9b8b84fc3a65f3de83a6dcbefdf227b3421a3f68b99ca",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-017.json"
+      },
+      {
+        "digest": "7b86b277ff7eab4b97122b49a91bdf7da914ece6f9c1f742947d6ad7669771f1",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-018.json"
+      },
+      {
+        "digest": "f0c9e5360e407ffce0208117c931fbd2b393bedc5976e3049dc6da3360b3bfe7",
+        "kind": "prerequisite_evidence",
+        "relative_path_or_authority_ref": "attempts/2/evidence/EVD-021.json"
+      },
+      {
+        "digest": "4ce720869c6f7b6b82a06ba83811a9b819b16ca6c04e2ee9c5e95943a778ecdb",
+        "kind": "prerequisite_gate",
+        "relative_path_or_authority_ref": "attempts/1/gates/GATE-001.json"
+      },
+      {
+        "digest": "9aa74003c9872450353ecf7124b7c59e850e1712f9bd4d825aeee34cb84a38ae",
+        "kind": "prerequisite_review",
+        "relative_path_or_authority_ref": "attempts/1/reviews/GATE-001.json"
+      },
+      {
+        "digest": "0d52354ad9964070d411755f2b9230b8f5b3373179aa54d90a85e71f4946f89e",
+        "kind": "prerequisite_gate",
+        "relative_path_or_authority_ref": "attempts/1/gates/GATE-002.json"
+      },
+      {
+        "digest": "4164d39f3379e2eec7b3e690ea328e6faa6576ab416a79ac9636785a976a7517",
+        "kind": "prerequisite_review",
+        "relative_path_or_authority_ref": "attempts/1/reviews/GATE-002.json"
+      },
+      {
+        "digest": "febd7faca4bc6762bfb59cbcdfb4033a72306e79470ed22394601d44f76e1594",
+        "kind": "prerequisite_gate",
+        "relative_path_or_authority_ref": "attempts/2/gates/GATE-003.json"
+      },
+      {
+        "digest": "fb74ffcc42a44587c0edc3ed206a406a0ac67bb731ece94e1a090b50160bf912",
+        "kind": "prerequisite_review",
+        "relative_path_or_authority_ref": "attempts/2/reviews/GATE-003.json"
+      },
+      {
+        "digest": "4e7bd2d08ec8f9a56d23c5b6b4294198caceb6f2e7889cd579fdba49d04d7949",
+        "kind": "prerequisite_gate",
+        "relative_path_or_authority_ref": "attempts/2/gates/GATE-004.json"
+      },
+      {
+        "digest": "62b7448d0c5b867ba5747c60a8394a90266ccdbabbd5841985922a187551dc96",
+        "kind": "prerequisite_review",
+        "relative_path_or_authority_ref": "attempts/2/reviews/GATE-004.json"
+      },
+      {
+        "digest": "ce9efad5f168efcec88038c308142b32e2f0feb2b5905d79171b0e033f768c25",
+        "kind": "prerequisite_gate",
+        "relative_path_or_authority_ref": "attempts/2/gates/GATE-005.json"
+      },
+      {
+        "digest": "a2039c4947c24d99d0c1d8ff4d66247790aa6dac227c65e2ed29fbb03bbf05a6",
+        "kind": "prerequisite_review",
+        "relative_path_or_authority_ref": "attempts/2/reviews/GATE-005.json"
+      },
+      {
+        "digest": "fadff6447a1253c84321bbea191c08ba4f2d0df9372e179abb819a0d79ab9ccd",
+        "kind": "official_exit",
+        "relative_path_or_authority_ref": "attempts/2/gates/official-exit-gates.json"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0600",
+        "path": "docs/harness/full-mcp-runtime.md",
+        "sha256": "c294fdfad5c791fe53252bf8f6188a6f85b6d9b7a9a681c9cbd0c4ac2755a1a8"
+      },
+      {
+        "mode": "0664",
+        "path": "runtime/full_mcp/qualification.py",
+        "sha256": "fcba9fad2ed95e990834034163d77dc83c79eef54c22dde295d79590d0837712"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_final_qualification.py",
+        "sha256": "800205abff7b84e19b941e89181e9fade9ed1b7be50cbc3dae011d91ded90b8e"
+      }
+    ],
+    "snapshot_digest": "290fefee8b49fd5d4cf35fb5c4d40b4c3ebe92c90f0280dabad66d5a90839971",
+    "source_set_name": "FINAL_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T22:40:11Z",
+  "test_contract_digest": "83d1fb8a1dd4851acc362688847df05d6c4f6640607e7967575dcd9948b260be",
+  "test_id": "TEST-028",
+  "verdict": "PASS"
+}

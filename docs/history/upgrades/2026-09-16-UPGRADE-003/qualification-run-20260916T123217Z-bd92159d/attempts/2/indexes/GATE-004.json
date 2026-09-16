@@ -1,0 +1,93 @@
+{
+  "attempt": 2,
+  "evidence_entries": [
+    {
+      "evidence_id": "EVD-004",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+      "relative_path": "attempts/1/evidence/EVD-004.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-007",
+      "origin_gate_id": "GATE-002",
+      "record_digest": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+      "relative_path": "attempts/1/evidence/EVD-007.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-011",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+      "relative_path": "attempts/1/evidence/EVD-011.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-012",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+      "relative_path": "attempts/1/evidence/EVD-012.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-013",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+      "relative_path": "attempts/1/evidence/EVD-013.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-016",
+      "origin_gate_id": "GATE-003",
+      "record_digest": "712f91a4e6c37f873efc679ca8e0ab4b9c01a188806bf9a2e76ac0a0955c0ecc",
+      "relative_path": "attempts/2/evidence/EVD-016.json",
+      "source_attempt": 2,
+      "verdict": "PASS"
+    },
+    {
+      "evidence_id": "EVD-014",
+      "origin_gate_id": "GATE-004",
+      "record_digest": "2c74e9108c5b73fb84ee63b3aff8f0fe714e296414f3dce6f6c2a72df932f566",
+      "relative_path": "attempts/1/evidence/EVD-014.json",
+      "source_attempt": 1,
+      "verdict": "PASS"
+    }
+  ],
+  "generated_at_utc": "2026-09-16T16:01:12Z",
+  "index_digest": "3a51f1d2b4b1873d8839a4b71b8c001816811f2ec1f2bf08e75e83b38996dfc5",
+  "index_scope": "GATE-004",
+  "prerequisite_gate_refs": [
+    {
+      "decision": "GO",
+      "gate_id": "GATE-001",
+      "record_digest": "4ce720869c6f7b6b82a06ba83811a9b819b16ca6c04e2ee9c5e95943a778ecdb",
+      "relative_path": "attempts/1/gates/GATE-001.json",
+      "source_attempt": 1
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-002",
+      "record_digest": "0d52354ad9964070d411755f2b9230b8f5b3373179aa54d90a85e71f4946f89e",
+      "relative_path": "attempts/1/gates/GATE-002.json",
+      "source_attempt": 1
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-003",
+      "record_digest": "febd7faca4bc6762bfb59cbcdfb4033a72306e79470ed22394601d44f76e1594",
+      "relative_path": "attempts/2/gates/GATE-003.json",
+      "source_attempt": 2
+    }
+  ],
+  "project_id": "GH-FULL-MCP-PH4",
+  "review_refs": [],
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.selection-index.v1",
+  "workspace_state_digest": "45ef14a3108a067fdf4fe6d5765e12a2b09910cf8f8e70b4abbd1a20d6e9fbde",
+  "workspace_state_ref": "attempts/2/source/workspace-state-task012.json"
+}

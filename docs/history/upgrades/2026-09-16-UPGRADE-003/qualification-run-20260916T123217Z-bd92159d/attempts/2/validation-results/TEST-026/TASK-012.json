@@ -1,0 +1,189 @@
+{
+  "assertion_summary_digest": "c862e4ebf5623ea57b417f4bd9cee6193c2e233f128ade02ead569c981508886",
+  "attempt": 2,
+  "audit_digest": "2673eb9b7b5158b522a6d75ccba1b54a4c889f04a68a68256206bb87e2c22b07",
+  "audit_ref": "events/execution-events.jsonl#TEST-026:TASK-012:attempt2",
+  "consumer_task_id": "TASK-012",
+  "ended_at_utc": "2026-09-16T15:58:32Z",
+  "exit_status_category": "EXIT_0",
+  "producer_task_id": "TASK-012",
+  "profile_digest": null,
+  "profile_id": null,
+  "project_id": "GH-FULL-MCP-PH4",
+  "result_digest": "26645f0580a120dac6080db86e457e40467ea24fb161da180b69543583a1d92e",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.validation-result.v1",
+  "selector_digest": "a833452c7ecfc95a4ae469799a540708ea381dabc2e34852600df0fa77db08b8",
+  "source_snapshot": {
+    "artifact_inputs": [
+      {
+        "digest": "77be98cc9080784d94b64641f81a8ae8ea26311ec3e7f3fc83da9371ea334631",
+        "kind": "security_boundary_fixture",
+        "relative_path_or_authority_ref": "attempts/2/source/security-boundary-fixture.json"
+      },
+      {
+        "digest": "74485f55eeec222ef81caa373abda5e96f18baf156804f8ef6f76f11ab13c15c",
+        "kind": "authorization_fixture",
+        "relative_path_or_authority_ref": "attempts/1/fixtures/TASK-003-active-authorization-contracts.json"
+      }
+    ],
+    "files": [
+      {
+        "mode": "0664",
+        "path": "docs/harness/execution-backend-contract.md",
+        "sha256": "0b73b1064c734298c842f48ee9aae03fbc7c55c99b2a6bc00caa0a2daada4f5d"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/authorization.py",
+        "sha256": "4462b025a3fc941f938f06e400f99f69e3e7c58902929170307e89a9a94a521a"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/contracts.py",
+        "sha256": "de9176c8a32eaa0ebbca16a628781e5c50e3e12ec539ea8f1b14c5c5179a4349"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/filesystem_service.py",
+        "sha256": "4216260fc799a55fff22819889837c7cbcfabd03f85b8cf82818d5329edaacec"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/git_service.py",
+        "sha256": "99f6a19f2b9e9de013ba94daa93d5cb23244d3b7a858dd7e88a2fcfcb219a5ce"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/mcp_server.py",
+        "sha256": "b2f3ab8b27a6652ad33445ab9562c182a674ca30e2e23dce334cb36f45d6efed"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/observability.py",
+        "sha256": "583ddc233336097c3065a487a27fbf56ba6529e81209030934c278ab3d2f10e9"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/operation_registry.py",
+        "sha256": "64b048f9d307f40db0ed904712237919868c7bc19f826559c497a06220a2796f"
+      },
+      {
+        "mode": "0644",
+        "path": "runtime/full_mcp/path_policy.py",
+        "sha256": "874ebf791ddc8bb6304302cec92f242dc70f13e48f50ff381b5889ff5ef8f5d7"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/process_service.py",
+        "sha256": "3ba87eb8769066466e635a9579df7bb5eac4c4bdb62097462dc8a106eea1ed66"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/recovery.py",
+        "sha256": "2010bcdc02066e5dfe3883c18c077b6d071a688ce963dbf11b8730551ca1cbe8"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/recovery_integration.py",
+        "sha256": "f37e976ff77b5be60c10d4e2cc46583079f56e4ce09eab1592777541590d817c"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/runtime.py",
+        "sha256": "d75d02e6ac9f0fb77ef54efc74747263094d7668131f3da599f199a558bef468"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/stdio_entrypoint.py",
+        "sha256": "65d051f9bb01692bf5a9ab626ec835959bc849e78666c4f0c0b77a1e69919c6f"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/validation_profiles.py",
+        "sha256": "32b375a17558cdb2ecf469eb5a3153d69af71b229e3a4bd1022fc891a0aaee14"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/full_mcp/validation_service.py",
+        "sha256": "cf19d237dd376e26ed50801e737c2bf79a1757fb94d2075fcf0cbdb098874ce7"
+      },
+      {
+        "mode": "0600",
+        "path": "runtime/orchestrator/full_mcp_backend_adapter.py",
+        "sha256": "3b014fd992f2850d0d74d8090851c9bae3b029f7c68132564b3d0ecde9783c09"
+      },
+      {
+        "mode": "0664",
+        "path": "runtime/orchestrator/production_execution_gateway.py",
+        "sha256": "efe922cb392ca873110c25bd3ee3dcfaed7e66f4790b6aaf00441129a4331e4b"
+      },
+      {
+        "mode": "0600",
+        "path": "scripts/full_mcp_lint.py",
+        "sha256": "48a84319fa4b0667917a033ddced8a0f1539a92a6be69562adf7cb1492923172"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_adapter_contract.py",
+        "sha256": "fc9240faa8fd2919587e3fbaa84a6a4671af01d8cd8fb0cadc12b9dff24f1e02"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_filesystem.py",
+        "sha256": "01762720b9cdea6d6d3011f5ac8c3ac0952fa1264b48cdb4c1643263bdb88df1"
+      },
+      {
+        "mode": "0644",
+        "path": "tests/full_mcp/test_foundation.py",
+        "sha256": "e6f82cc85a89318c1a833330712a14673e835c6ac1c3baf19f7bee6de568ce02"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_git.py",
+        "sha256": "4f2b7ce6a24efbe8f8f23369af4e2ff5b0bbe15ad0957ce0a87189fdc413f92d"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_observability_recovery.py",
+        "sha256": "d1aa3c7d57f4e81e3da0065541e6f924ad9b2b1ffdcb6d1e46bbf1cc7bca51a2"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_process.py",
+        "sha256": "022e938b3afe7ed2c4def7d26ac93d57cf06c927cf6cf82e4ef8ae7350202e4b"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_recovery_integration.py",
+        "sha256": "daac9ae4f44a7bcf3116d756f4fff6a7685ff6066e1272d94e055da14b156870"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_runtime_server.py",
+        "sha256": "41aec94f188bcce4e0a4c413840cc67f5e20a9e55b1f11842f19c3bcfaf1179f"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_security_boundaries.py",
+        "sha256": "101c369d829edf78a514d5811bd359b10b88f81e249fb230658ecbe39894dcc3"
+      },
+      {
+        "mode": "0600",
+        "path": "tests/full_mcp/test_validation.py",
+        "sha256": "d1783eb6d9d07a4f1040c9a7ec10ee1e4c89fe1fa3baf1d8ba0735f567103753"
+      },
+      {
+        "mode": "0664",
+        "path": "tests/test_production_execution_gateway.py",
+        "sha256": "fc410464fbbf58a00cd69d5b8a301cffd1922e7c593d27c16628a0e3faf79597"
+      }
+    ],
+    "snapshot_digest": "a7113a891b2cfd58a2fd738ad025472af7bf07138195113c63d4467cddf9aaee",
+    "source_set_name": "SECURITY_SOURCE_SET"
+  },
+  "started_at_utc": "2026-09-16T15:58:32Z",
+  "test_contract_digest": "532bfe7c46a654a429418034f47993d3b7f3f6d5ac1f7959ccd273cc65706257",
+  "test_id": "TEST-026",
+  "verdict": "PASS"
+}

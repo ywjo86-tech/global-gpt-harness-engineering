@@ -1,0 +1,11 @@
+{
+  "approved_target_manifest_sha256": "5be29d0dc1d05def8db4ca36aec3d622b5e1688427b639b4f4d4f29e4a481709",
+  "captured_at_utc": "2026-09-16T12:32:17Z",
+  "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "schema_version": "gch.full-mcp.workspace-state.v1",
+  "state_digest": "bd0b03b3af017987d62c9659562e2b0a27b8bb07030761933c3158720d21eddb",
+  "tracked_diff_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "unauthorized_change_count": 0,
+  "unauthorized_change_manifest_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "untracked_owned_manifest_sha256": "13103713903041e5b6d43791bba30770c4128a792955e715c4b078f2671180df"
+}

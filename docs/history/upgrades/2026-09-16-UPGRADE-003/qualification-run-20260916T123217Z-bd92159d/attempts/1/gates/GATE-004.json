@@ -1,0 +1,53 @@
+{
+  "attempt": 1,
+  "blocker_count": 0,
+  "decision": "GO",
+  "evaluated_at_utc": "2026-09-16T15:41:16Z",
+  "evidence_digests": {
+    "EVD-004": "cdb871c9b887d348c2ff164793d0243bd97afa8e1c37cfd6ad4f6c1f48779a62",
+    "EVD-007": "028e513f26b77a24b574dd07f5aaa5fc8df0fe38dcc54480377e5444f5de9461",
+    "EVD-011": "2dcbcb1a9f464d3ed157bcd9014786722a3bfbfb5b8dcf653fb2b4624ebd3d01",
+    "EVD-012": "5f30a1eac4b795d7752c36a7886c797ef510d0fc9a90d953b2765a4377fd3f7f",
+    "EVD-013": "af5d1d2eb5fad56a4c2423b884009b336c576638b76ee32c0a8a63bc074208cb",
+    "EVD-014": "2c74e9108c5b73fb84ee63b3aff8f0fe714e296414f3dce6f6c2a72df932f566",
+    "EVD-016": "ee9a0197005f5d603b40ef70c50c093e02da4ce735e0e8e24f634cb98b443982"
+  },
+  "gate_id": "GATE-004",
+  "major_count": 0,
+  "official_acceptance_results": {
+    "Audit": "PASS",
+    "Contract-only Handoff Compatibility": "PASS",
+    "Failure Handling": "PASS",
+    "Structured Observability Compatibility": "PASS"
+  },
+  "prerequisite_gate_states": {
+    "GATE-001": "GO",
+    "GATE-002": "GO",
+    "GATE-003": "GO"
+  },
+  "project_id": "GH-FULL-MCP-PH4",
+  "record_digest": "911ad97fc7c407573aa99e1ba78aed2faaa8b463473019e1156b29c943c63505",
+  "required_evidence": [
+    "EVD-004",
+    "EVD-007",
+    "EVD-011",
+    "EVD-012",
+    "EVD-013",
+    "EVD-016",
+    "EVD-014"
+  ],
+  "review_digest": "7346b8477038d8163c16a09299b9a7141cb1c15ecfc222aa5daa174a6fdcbe87",
+  "review_ref": "attempts/1/reviews/GATE-004.json",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.gate-decision.v2",
+  "selection_index_digest": "f79370091e883f55abab9558e5b4efa8b4d230d1e681b4520cf96149d7310f8e",
+  "selection_index_ref": "attempts/1/indexes/GATE-004.json",
+  "source_binding": {
+    "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+    "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "invocation_context_id": "task012-e1b6ddd486df9bff2c584208e49620a7cb831fef32006c8f807a634b",
+    "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+    "phase3_sealed_sha": "5e96a35f347a016e24a9e2057661880b8ba32a8c",
+    "workspace_state_digest": "8816ae866bd201f99bc8154a20aed43f1880e64c4482e37e4fc28147776ba12e"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": "global-harness.full-plan-stable-baseline.durable-verification-manifest.v1",
+  "record_date": "2026-09-17",
+  "record_type": "DURABLE_VERIFICATION_INDEX_ONLY",
+  "baseline_id": "FULL_PLAN_STABLE_BASELINE",
+  "baseline_commit_sha": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "origin_main_sha": "958d335c2d85dfbbe4ed5a45bf6d78f14bdc9c37",
+  "synchronized": true,
+  "completion_status": "VERIFIED_COMPLETE",
+  "final_baseline_approval_status": "APPROVED_SEALED",
+  "blocking_defects_found": 0,
+  "authority_note": "Does not alter or re-approve the 2026-09-14 baseline; makes its previously untracked evidence reproducible.",
+  "supersedes_verification_only": {
+    "path": "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_MANIFEST_20260914.json",
+    "sha256": "130f86e9df803e3a0e9ab88fb98ff9c09255ed41308731b34099d058a1d9ceb0"
+  },
+  "documents": [
+    {
+      "path": "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_COMPLETION_20260914.md",
+      "sha256": "358f190c252e8a81fdf2d511f4cd27ebcdb11f82aa51f18dce354f253f1e1414"
+    },
+    {
+      "path": "docs/harness/FULL_PLAN_STABLE_BASELINE_GATE_REGRESSION_REPORT_20260914.md",
+      "sha256": "3bae60f422811f15ec9d373f371fec88e60879fbb0bef7cb0e16b3f691731cce"
+    }
+  ],
+  "source_evidence": [
+    {
+      "path": "docs/harness/ORCH04_G4B_FINAL_APPROVAL_20260914.json",
+      "sha256": "0c6187c1ca42cdad412fb23bab26f752791efae4bd213837405f7452e9da81c6"
+    },
+    {
+      "path": "docs/harness/FP_MPEB_PHASE1_STOP_GATE_EVIDENCE_20260914.json",
+      "sha256": "82212a64e8880270f2feb12bc2466148b4e559b23229a66625b68cf5ca1ac0aa"
+    },
+    {
+      "path": "docs/history/governance/2026-09-17/full-plan-stable-baseline-durable-evidence/ubuntu_operational_closure_20260914.json",
+      "sha256": "ccea826630bbfdabfbf2c094c1d3fec92592b59d1a7b2ad0f709c877be5150b4"
+    },
+    {
+      "path": "docs/history/governance/2026-09-17/full-plan-stable-baseline-durable-evidence/diagnostic_result.json",
+      "sha256": "945fd8833e516d0de5e48ef54bd659bce700ee7d54c4a9ac6a0a0f7325f06075"
+    }
+  ],
+  "approval_record": {
+    "path": "docs/harness/FULL_PLAN_STABLE_BASELINE_FINAL_APPROVAL_20260914.json",
+    "sha256": "33cab9228aff819848b4100c1f7eb9255e2fde85c0a744cec3f4baf8174456e2"
+  }
+}

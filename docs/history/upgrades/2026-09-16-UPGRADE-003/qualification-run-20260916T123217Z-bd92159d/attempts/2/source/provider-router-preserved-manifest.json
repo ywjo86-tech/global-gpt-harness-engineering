@@ -1,0 +1,13 @@
+{
+  "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "manifest_digest": "f49fbf27a11d4e8a04582bc568525283082ecc8163052bfe1db31ef3ba01bbe0",
+  "provider_router_diff_from_head": false,
+  "provider_router_sha256": "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7",
+  "required_semantics": {
+    "hybrid_read_only": "nvidia",
+    "hybrid_state_changing": "codex",
+    "nvidia_state_changing": "manual_ineligible",
+    "nvidia_to_codex_auto_fallback": false
+  },
+  "schema_version": "gch.full-mcp.provider-preserved.v1"
+}

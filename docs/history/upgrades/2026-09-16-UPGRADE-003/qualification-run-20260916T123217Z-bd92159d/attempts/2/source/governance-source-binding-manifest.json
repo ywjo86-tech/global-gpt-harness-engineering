@@ -1,0 +1,18 @@
+{
+  "branch": "upgrade-003/full-mcp",
+  "canonical_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "gate_attempts": {
+    "GATE-001": 1,
+    "GATE-002": 1,
+    "GATE-003": 2,
+    "GATE-004": 2
+  },
+  "head_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "main_development_prohibited": true,
+  "manifest_digest": "e46e27a32267dcb81559811b64e5b2975c1dce30ff4c800884241760230aad36",
+  "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "provider_router_sha256": "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7",
+  "schema_version": "gch.full-mcp.governance-fixture.v1",
+  "sealed_upgrade002_mutation": false,
+  "upgrade002_tree_digest": "ee82408f5416b73d42b19fca77192951e6221fa477d10802daa666188e15f9f8"
+}

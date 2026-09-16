@@ -1,0 +1,73 @@
+{
+  "active_contracts": [
+    {
+      "approval_authority": "USER_DECISION",
+      "authorization_decision_ref": "DEC-TEST",
+      "canonical_plan_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability_class": "FILE_READ",
+      "contract_digest": "a2d4ffe533fcd8683dae0494783833aa89504c70270bfd6da56c9b486e78eba2",
+      "contract_id": "TAC-TEST-READ",
+      "contract_status": "ACTIVE",
+      "contract_version": "tool-authorization.v1",
+      "gate_id": "GATE-002",
+      "lv_id": "LV-TEST",
+      "operation_class_id": "TEST_READ",
+      "operation_intent": "READ",
+      "owned_scope_sha256": "546110e7155d73d36385926654ebf105b7978fddc2f21cebcb52028e4fe5cf6d",
+      "package_binding_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "plan_task_refs": [
+        "TASK-TEST"
+      ],
+      "project_id": "GH-FULL-MCP-PH4",
+      "requirement_binding": "REQUIRED",
+      "requirement_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "requirement_refs": [
+        "REQ-002"
+      ],
+      "run_id": "run-test",
+      "scope_authorization_source": "USER_DECISION",
+      "scope_binding": "IN_SCOPE",
+      "security_obligation_profile": "SECRET_SCAN_REQUIRED",
+      "validity_scope": "TASK_ONLY",
+      "worker_task_id": "TASK-TEST"
+    }
+  ],
+  "invocation_context": {
+    "attempt": 1,
+    "authorization_contract_digests": [
+      "a2d4ffe533fcd8683dae0494783833aa89504c70270bfd6da56c9b486e78eba2"
+    ],
+    "canonical_plan_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "correlation_id": "corr-test",
+    "dependency_lock_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "gate_id": "GATE-002",
+    "invocation_context_id": "ctx-f5f37e9383ce91fb6931fbf2826cbd35729794a402d3c290e71d9422027cb916",
+    "lv_id": "LV-TEST",
+    "mutable_scope_sha256": "546110e7155d73d36385926654ebf105b7978fddc2f21cebcb52028e4fe5cf6d",
+    "mutable_scopes": [
+      "owned"
+    ],
+    "project_id": "GH-FULL-MCP-PH4",
+    "read_scope_sha256": "19a3f6872c35183258369865a8dbf1c1d9153746792b755d177241c485a2544f",
+    "read_scopes": [
+      "."
+    ],
+    "request_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "run_id": "run-test",
+    "schema_version": "gch.full-mcp.invocation-context.v1",
+    "validation_profile_digests": [],
+    "workspace_root": "/workspace/GH-FULL-MCP-PH4"
+  },
+  "path_policy_fixture": {
+    "mutable_scopes": [
+      "owned"
+    ],
+    "read_only_exceptions": [
+      "sensitive/.env"
+    ],
+    "read_scopes": [
+      "."
+    ]
+  },
+  "schema_version": "gch.full-mcp.task003-authorization-fixture.v1"
+}

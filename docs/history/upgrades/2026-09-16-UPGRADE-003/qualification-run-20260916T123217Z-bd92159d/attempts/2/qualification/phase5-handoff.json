@@ -1,0 +1,63 @@
+{
+  "approved_plan_ref": "GH-FULL-MCP-PH4_APPROVED_DEVELOPMENT_PLAN.md",
+  "attempt": 2,
+  "dependency_lock_sha256": "30c9d5ece77bd4f1a73e931299a92dad6ef55c7177ecf14e94150e1428d1f75f",
+  "design_ref": "GH-FULL-MCP-PH4_APPROVED_IMPLEMENTATION_DESIGN.md",
+  "evd019_digest": "ad7f8b353f4608fe41f597dc931494a8fe171f363814a6560c00b87b371f8c50",
+  "evd019_ref": "attempts/2/evidence/EVD-019.json",
+  "execution_contract": {
+    "ref": "GH-FULL-MCP-PH4_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt",
+    "sha256": "5223a925d7e3c97366a03c06918de7f4e556f16aba07ea971efb08620b331a58"
+  },
+  "execution_mode": "HYBRID",
+  "generated_at_utc": "2026-09-16T22:40:11Z",
+  "handoff_status": "CANDIDATE_NOT_AUTHORIZED",
+  "official_exit_digest": "fadff6447a1253c84321bbea191c08ba4f2d0df9372e179abb819a0d79ab9ccd",
+  "official_exit_ref": "attempts/2/gates/official-exit-gates.json",
+  "pre_final_index_digest": "d0c09eae28501b914faecf5be242e6c785497f96156c9133e9f3bb4eb17c9333",
+  "pre_final_index_ref": "attempts/2/indexes/PREFINAL.json",
+  "prerequisite_gate_refs": [
+    {
+      "decision": "GO",
+      "gate_id": "GATE-001",
+      "record_digest": "4ce720869c6f7b6b82a06ba83811a9b819b16ca6c04e2ee9c5e95943a778ecdb",
+      "relative_path": "attempts/1/gates/GATE-001.json",
+      "source_attempt": 1
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-002",
+      "record_digest": "0d52354ad9964070d411755f2b9230b8f5b3373179aa54d90a85e71f4946f89e",
+      "relative_path": "attempts/1/gates/GATE-002.json",
+      "source_attempt": 1
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-003",
+      "record_digest": "febd7faca4bc6762bfb59cbcdfb4033a72306e79470ed22394601d44f76e1594",
+      "relative_path": "attempts/2/gates/GATE-003.json",
+      "source_attempt": 2
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-004",
+      "record_digest": "4e7bd2d08ec8f9a56d23c5b6b4294198caceb6f2e7889cd579fdba49d04d7949",
+      "relative_path": "attempts/2/gates/GATE-004.json",
+      "source_attempt": 2
+    },
+    {
+      "decision": "GO",
+      "gate_id": "GATE-005",
+      "record_digest": "ce9efad5f168efcec88038c308142b32e2f0feb2b5905d79171b0e033f768c25",
+      "relative_path": "attempts/2/gates/GATE-005.json",
+      "source_attempt": 2
+    }
+  ],
+  "project_id": "GH-FULL-MCP-PH4",
+  "provider_selection_authority": "PROVIDER_ROUTER",
+  "record_digest": "7adbcb825e5389bfca678010c29cc72c456f767933d6c9cd107ecb48dd902275",
+  "run_id": "20260916T123217Z-bd92159d",
+  "schema_version": "gch.full-mcp.phase5-handoff.v1",
+  "workspace_state_digest": "d72a0734158e5e7826968601c08ca6cb59c9987e6d59071ec99c951deb222912",
+  "workspace_state_ref": "attempts/2/source/workspace-state-task014.json"
+}
