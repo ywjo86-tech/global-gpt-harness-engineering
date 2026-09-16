@@ -29,6 +29,7 @@ GATEWAY_CONTRACT_VERSION = "HOST-GATEWAY.v1"
 LOCAL_CHILD = "LOCAL_CHILD"
 HOST_GATEWAY = "HOST_GATEWAY"
 SUPPORTED_BACKENDS = frozenset({LOCAL_CHILD, HOST_GATEWAY})
+ExecutionRuntimeHandler = Callable[..., Mapping[str, Any]]
 AF_UNIX_PATH_LIMIT = 108
 
 
@@ -604,10 +605,13 @@ class UnixSocketHostRunner:
     """Single-request host runner for tests and an explicit future service entrypoint."""
 
     def __init__(self, socket_path: str | Path, ledger_root: str | Path, *, expected_uid: int | None = None,
-                 executor: Callable[..., Any] | None = None, broker_native: bool = False) -> None:
+                 executor: Callable[..., Any] | None = None, broker_native: bool = False,
+                 runtime_handler: ExecutionRuntimeHandler | None = None) -> None:
+        if runtime_handler is not None and (executor is not None or broker_native):
+            raise GatewayError("runtime handler configuration is ambiguous")
         self.socket_path = Path(socket_path); self.ledger = DurableExecutionLedger(ledger_root)
         self.expected_uid = os.getuid() if expected_uid is None else expected_uid; self.executor = executor
-        self.broker_native = broker_native
+        self.broker_native = broker_native; self.runtime_handler = runtime_handler
 
     def serve_once(self, *, timeout: int = 1800) -> None:
         if self.socket_path.exists():
@@ -646,6 +650,60 @@ class UnixSocketHostRunner:
                         response["gateway_result"] = gateway_result
                     else:
                         self.ledger.transition(request, "RECEIVED"); self.ledger.transition(request, "RUNNING")
+                        if self.runtime_handler is not None:
+                            prompt = base64.b64decode(envelope.get("prompt_b64", ""), validate=True)
+                            workspace_root = Path(str(envelope.get("workspace_root", "")))
+                            if not workspace_root.is_absolute() or not workspace_root.is_dir() or workspace_root.is_symlink():
+                                raise GatewayError("host runner workspace is invalid")
+                            relative_target = envelope.get("last_message_relative")
+                            if not isinstance(relative_target, str):
+                                raise GatewayError("final-message target binding is missing")
+                            target, rebound = _workspace_artifact_binding(workspace_root, workspace_root / relative_target)
+                            if rebound != relative_target:
+                                raise GatewayError("final-message target binding mismatch")
+                            cancel_name = envelope.get("cancel_name")
+                            if not isinstance(cancel_name, str) or not cancel_name or Path(cancel_name).name != cancel_name:
+                                raise GatewayError("cancel target binding is invalid")
+                            outcome = self.runtime_handler(
+                                request, prompt=prompt, workspace_root=workspace_root, last_message=target,
+                                timeout=timeout, cancel_path=workspace_root / cancel_name,
+                            )
+                            if not isinstance(outcome, Mapping):
+                                raise GatewayError("runtime handler response is malformed")
+                            execution_status = outcome.get("execution_status")
+                            if execution_status not in {"COMPLETED", "FAILED", "BLOCKED"}:
+                                raise GatewayError("runtime handler status is invalid")
+                            gateway_result = build_gateway_result(
+                                request, backend_identity=HOST_GATEWAY,
+                                process_termination_category=str(outcome.get("process_termination_category", "EXITED")),
+                                exit_status_category=str(outcome.get("exit_status_category", "NONZERO")),
+                                structured_event_metadata=dict(outcome.get("structured_event_metadata") or {}),
+                                stderr_security_metadata=dict(outcome.get("stderr_security_metadata") or {}),
+                                final_message_metadata=dict(outcome.get("final_message_metadata") or {}),
+                                worker_result_identity=dict(outcome.get("worker_result_identity") or {}),
+                                execution_status=str(execution_status),
+                            )
+                            def _bytes_field(name: str) -> bytes:
+                                value = outcome.get(name, b"")
+                                if not isinstance(value, (bytes, bytearray)):
+                                    raise GatewayError("runtime handler byte output is malformed")
+                                return bytes(value)
+                            response = {
+                                "execution_request_id": request["execution_request_id"],
+                                "request_digest": request["request_digest"], "adopted": False,
+                                "process_evidence": dict(outcome.get("process_evidence") or {}),
+                                "adapter_evidence": dict(outcome.get("adapter_evidence") or {}),
+                                "stdout_b64": base64.b64encode(_bytes_field("stdout")).decode("ascii"),
+                                "stderr_b64": base64.b64encode(_bytes_field("stderr")).decode("ascii"),
+                                "final_message_b64": base64.b64encode(_bytes_field("final_message")).decode("ascii"),
+                                "gateway_result": gateway_result,
+                            }
+                            self.ledger.transition(
+                                request, "COMPLETED" if execution_status == "COMPLETED" else "FAILED",
+                                result_digest=gateway_result["result_digest"],
+                            )
+                            conn.sendall(_frame(response))
+                            return
                         if self.broker_native:
                             from .production_tool_transport import ProductionToolTransport
                             from .production_worker_executor import _secret_findings

@@ -240,6 +240,16 @@ class GatewayContractTests(unittest.TestCase):
         self.assertEqual(result["DUPLICATE_RERUN"], "NO")
         self.assertEqual(result["ADOPTION"], "PASS")
 
+    def test_runtime_handler_configuration_is_generic_and_mutually_exclusive(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            handler = lambda request, **kwargs: {"execution_status": "BLOCKED"}
+            runner = UnixSocketHostRunner(root / "handler.sock", root / "ledger", runtime_handler=handler)
+            self.assertIs(runner.runtime_handler, handler)
+            with self.assertRaisesRegex(GatewayError, "ambiguous"):
+                UnixSocketHostRunner(root / "bad.sock", root / "ledger2", runtime_handler=handler, executor=lambda *a, **k: None)
+
+
 
 if __name__ == "__main__":
     unittest.main()
