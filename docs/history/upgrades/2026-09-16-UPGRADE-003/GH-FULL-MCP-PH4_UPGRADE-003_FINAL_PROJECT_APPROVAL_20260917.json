@@ -1,0 +1,31 @@
+{
+  "schema_version": "gch.full-mcp.upgrade003-final-project-approval.v1",
+  "project_id": "GH-FULL-MCP-PH4",
+  "upgrade_sequence": "UPGRADE-003",
+  "authority": "Project Owner",
+  "approval_statement_verbatim": "풀 MCP 구현이 완료되었다면 푸시하고 최종 승인으로 진행해.",
+  "normalized_decision": "FINAL_APPROVED",
+  "approval_scope": "Completed Full MCP UPGRADE-003 project closure after verified publication of the isolated upgrade branch.",
+  "final_project_status": "APPROVED_CLOSED",
+  "stable_baseline_id": "MCP_STABLE_BASELINE",
+  "stable_baseline_commit_sha": "0848dab7596f59a7eae98f223b47636bad27b4bd",
+  "stable_baseline_status": "APPROVED_SEALED",
+  "administrative_closure_commit_sha": "39e0f6a739a4a23e4dbefd290e4c291d87a0645c",
+  "remote_branch": "upgrade-003/full-mcp",
+  "remote_closure_sha_at_approval": "39e0f6a739a4a23e4dbefd290e4c291d87a0645c",
+  "gate_status": "GATE-001_THROUGH_GATE-006_GO",
+  "official_exit_status": "12/12_PASS",
+  "qa_release_review": "PASS_FOR_FULL_MCP_PROJECT_CLOSURE",
+  "new_functional_regressions": 0,
+  "remaining_full_mcp_phase4_tasks": 0,
+  "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "operational_boundary": {
+    "upgrade_branch_push_completed": true,
+    "main_merge_authorized": false,
+    "main_push_authorized": false,
+    "deployment_authorized": false,
+    "phase5_execution_authorized": false,
+    "provider_expansion_authorized": false
+  },
+  "recorded_at_utc": "2026-09-16T23:14:45.488663+00:00"
+}
