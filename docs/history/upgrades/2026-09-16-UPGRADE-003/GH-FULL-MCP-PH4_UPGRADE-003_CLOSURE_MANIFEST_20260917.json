@@ -1,0 +1,72 @@
+{
+  "schema_version": "gch.full-mcp.upgrade003-closure-manifest.v1",
+  "project_id": "GH-FULL-MCP-PH4",
+  "upgrade_sequence": "UPGRADE-003",
+  "baseline_id": "MCP_STABLE_BASELINE",
+  "baseline_commit_sha": "0848dab7596f59a7eae98f223b47636bad27b4bd",
+  "baseline_parent_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "implementation_status": "COMPLETE",
+  "qualification_status": "COMPLETE",
+  "stable_baseline_status": "APPROVED_SEALED",
+  "upgrade_status": "CLOSED",
+  "gate_range": "GATE-001..GATE-006",
+  "official_exit": "12/12_PASS",
+  "new_functional_regressions": 0,
+  "phase5_handoff_status": "CANDIDATE_NOT_AUTHORIZED",
+  "push_status": "NOT_PERFORMED",
+  "merge_status": "NOT_PERFORMED",
+  "deployment_status": "NOT_PERFORMED",
+  "provider_expansion_status": "NOT_PERFORMED",
+  "closure_scope": "FULL_MCP_PHASE4_ONLY",
+  "archived_evidence": [
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/GATE-006.json",
+      "sha256": "d22902f2c005be5b7ef5bf002bb61ef3175c7ed67814f9483e69f375ac0b8106"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/GATE-006_REVIEW.json",
+      "sha256": "d35c42951c59a3039af3044c4bf81317d22e6bb4d20c40dbfa59729cb1400a12"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/OFFICIAL_EXIT_GATES.json",
+      "sha256": "56797693359df5f014ae36b992dfa773052d6cf77ff2b1a79b20067314b34dc5"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/STABLE_BASELINE_ELIGIBILITY_MANIFEST.json",
+      "sha256": "662efedbe34730ffbdfe1f7630ba4b1f6b67fa1131d000e5f40be98b8619c0e3"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/PHASE5_HANDOFF_CANDIDATE.json",
+      "sha256": "8e53027c2f554c56119fcb37ac786ac6369ee9ebe4e4a6ed9eb363daa6c9c5f2"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/EVD-019.json",
+      "sha256": "3633b201b19da264a0ad9ca651969448d664a47abee54d127ae4079b256c0475"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/EVD-020.json",
+      "sha256": "ddd13c7adc56cdc1adc4d4cf0cb164ec602005d689ab93ffdb6474611f73ec49"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/PERM010_POST_COMMIT_RESULT.json",
+      "sha256": "5c0bb41bf7c34d9e7f8051176d886fcc28b7e32558e44a67ed90fc9cdad875cb"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/MCP_STABLE_BASELINE_FINAL_APPROVAL_20260917.json",
+      "sha256": "0252307c96c3749fd9a716bff6150d0fd194f138f6391aa6d72666105a69f330"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/MCP_STABLE_BASELINE_FINAL_MANIFEST_20260917.json",
+      "sha256": "77eeb470616e7f60bb03536f2f94eb18a877301b6a8fd337cdb9f830710f2bfb"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/MCP_STABLE_BASELINE_FINAL_COMPLETION_20260917.md",
+      "sha256": "913cbdcef928c29144c46e4e7bc6ed1b2921599ad3f537a7ef83a270321be503"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-16-UPGRADE-003/GH-FULL-MCP-PH4_QA_RELEASE_REVIEW_20260917.json",
+      "sha256": "66a78b4fad2f16e023840ce2faebb7ae99133d486427241885babbec63baf6a7"
+    }
+  ],
+  "recorded_at_utc": "2026-09-16T23:09:56.326000+00:00"
+}

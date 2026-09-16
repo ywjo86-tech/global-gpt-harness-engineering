@@ -1,0 +1,52 @@
+{
+  "schema_version": "gch.full-mcp.qa-release-review.v1",
+  "project_id": "GH-FULL-MCP-PH4",
+  "upgrade_sequence": "UPGRADE-003",
+  "review_skill": "qa-release-review",
+  "supporting_skill": "harness",
+  "reviewed_at_utc": "2026-09-16T23:09:56.325673+00:00",
+  "baseline_commit_sha": "0848dab7596f59a7eae98f223b47636bad27b4bd",
+  "baseline_parent_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "changed_file_count": 38,
+  "checks": {
+    "expected_repository_paths": true,
+    "codex_agent_toml_applicable": true,
+    "agents_skills_approved_surface_unchanged": true,
+    "workspace_excluded_from_default_commits": true,
+    "sensitive_pattern_scan_hits": 0,
+    "docs_lifecycle_consistent": true,
+    "git_diff_check_pass": true,
+    "build_pass": true,
+    "full_mcp_lint_pass": true,
+    "final_qualification_pass": true,
+    "full_mcp_suite_tests_run": 65,
+    "full_mcp_suite_raw_failures": 1,
+    "new_functional_regressions": 0,
+    "full_harness_tests_run": 1344,
+    "full_harness_raw_failures": 4,
+    "full_harness_errors": 0
+  },
+  "known_nonfunctional_or_preexisting_failures": [
+    {
+      "id": "TEST-025_HEAD_BINDING",
+      "classification": "EXPECTED_POST_COMMIT_GOVERNANCE_BINDING",
+      "reason": "Historical governance qualification intentionally binds source HEAD fffe93a; baseline checkpoint is 0848dab. Modifying the sealed test would stale GATE evidence."
+    },
+    {
+      "id": "test_contract_loader.ContractLoaderTest.test_cli_passes_explicit_engine_host_role_to_read_only_inspector",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_actual_repository_guard_is_clear",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "test_graphify_baseline_guard.GraphifyBaselineGuardTests.test_poc_only_change_request_remains_clear",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    }
+  ],
+  "release_readiness": "PASS_FOR_FULL_MCP_PROJECT_CLOSURE",
+  "publication_status": "NOT_PUSHED",
+  "phase5_execution_status": "NOT_AUTHORIZED",
+  "follow_up_items": []
+}

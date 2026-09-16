@@ -1,0 +1,56 @@
+{
+  "approval_statement_verbatim": "APPROVE GH-FULL-MCP-PH4 MCP_STABLE_BASELINE FINAL RECORD",
+  "authority": "Project Owner",
+  "baseline_commit_sha": "0848dab7596f59a7eae98f223b47636bad27b4bd",
+  "baseline_id": "MCP_STABLE_BASELINE",
+  "candidate_record": {
+    "path": "MCP_STABLE_BASELINE_FINAL_RECORD_CANDIDATE_20260917.md",
+    "sha256": "d1de9679e09a0f2cba9e0eb38a5200ba9ef74f1ad1bee748412e3e5d99991056"
+  },
+  "final_record_status": "APPROVED_SEALED",
+  "gate006": {
+    "blocker_count": 0,
+    "decision": "GO",
+    "major_count": 0,
+    "record_digest": "a9d3b1a62f54cd545653d9fdb67decb820b5ba16d14191dfcbb0a1cfba356e10"
+  },
+  "normalized_decision": "APPROVED",
+  "official_exit": {
+    "pass": 12,
+    "record_digest": "fadff6447a1253c84321bbea191c08ba4f2d0df9372e179abb819a0d79ab9ccd",
+    "total": 12
+  },
+  "operational_boundary": {
+    "commit_authorized": false,
+    "deployment_authorized": false,
+    "merge_authorized": false,
+    "phase5_execution_authorized": false,
+    "provider_expansion_authorized": false,
+    "push_authorized": false
+  },
+  "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "perm010_post_commit": {
+    "path": "PERM010_POST_COMMIT_RESULT.json",
+    "sha256": "5c0bb41bf7c34d9e7f8051176d886fcc28b7e32558e44a67ed90fc9cdad875cb"
+  },
+  "phase5_handoff_status": "CANDIDATE_NOT_AUTHORIZED",
+  "preapproval_packet": {
+    "path": "MCP_STABLE_BASELINE_PREAPPROVAL_PACKET_20260917.json",
+    "sha256": "2bc4ba2c951b25fc49faf1fb642781de7bf572320568accd5b208636c6fcb7e6"
+  },
+  "project_id": "GH-FULL-MCP-PH4",
+  "project_owner_declaration": {
+    "baseline_declaration_status": "DECLARED",
+    "note": "Project Owner declaration is external to and does not mutate the technical eligibility manifest.",
+    "sealed": true
+  },
+  "qualified_source_parent_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "recorded_at_utc": "2026-09-16T23:02:24Z",
+  "schema_version": "gch.full-mcp.stable-baseline-final-approval.v1",
+  "technical_eligibility": {
+    "eligibility_manifest_declaration_status": "NOT_DECLARED",
+    "eligibility_status": "ELIGIBLE",
+    "manifest_digest": "cbd6a238b034855374a7fc37b0ed7d767b5e1a2a4af437de5ca2c36ebe1e89d5"
+  },
+  "upgrade_sequence": "UPGRADE-003"
+}

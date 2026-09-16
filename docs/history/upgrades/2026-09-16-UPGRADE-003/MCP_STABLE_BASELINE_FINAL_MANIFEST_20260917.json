@@ -1,0 +1,63 @@
+{
+  "approval_record": {
+    "path": "MCP_STABLE_BASELINE_FINAL_APPROVAL_20260917.json",
+    "sha256": "0252307c96c3749fd9a716bff6150d0fd194f138f6391aa6d72666105a69f330"
+  },
+  "baseline_commit_sha": "0848dab7596f59a7eae98f223b47636bad27b4bd",
+  "baseline_id": "MCP_STABLE_BASELINE",
+  "branch": "upgrade-003/full-mcp",
+  "completion_status": "VERIFIED_COMPLETE",
+  "eligibility_manifest_declaration_status": "NOT_DECLARED",
+  "final_baseline_approval_status": "APPROVED_SEALED",
+  "gate006_decision": "GO",
+  "official_exit_pass": "12/12",
+  "operational_boundary": {
+    "commit_authorized": false,
+    "deployment_authorized": false,
+    "merge_authorized": false,
+    "phase5_execution_authorized": false,
+    "provider_expansion_authorized": false,
+    "push_authorized": false
+  },
+  "origin_main_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "phase5_handoff_status": "CANDIDATE_NOT_AUTHORIZED",
+  "project_id": "GH-FULL-MCP-PH4",
+  "project_owner_declaration_status": "DECLARED",
+  "push_performed": false,
+  "qualified_source_parent_sha": "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+  "recorded_at_utc": "2026-09-16T23:02:24Z",
+  "schema_version": "gch.full-mcp.stable-baseline-final-manifest.v1",
+  "source_records": [
+    {
+      "path": "MCP_STABLE_BASELINE_PREAPPROVAL_PACKET_20260917.json",
+      "sha256": "2bc4ba2c951b25fc49faf1fb642781de7bf572320568accd5b208636c6fcb7e6"
+    },
+    {
+      "path": "MCP_STABLE_BASELINE_FINAL_RECORD_CANDIDATE_20260917.md",
+      "sha256": "d1de9679e09a0f2cba9e0eb38a5200ba9ef74f1ad1bee748412e3e5d99991056"
+    },
+    {
+      "path": "PERM010_POST_COMMIT_RESULT.json",
+      "sha256": "5c0bb41bf7c34d9e7f8051176d886fcc28b7e32558e44a67ed90fc9cdad875cb"
+    },
+    {
+      "path": "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/gates/GATE-006.json",
+      "sha256": "d22902f2c005be5b7ef5bf002bb61ef3175c7ed67814f9483e69f375ac0b8106"
+    },
+    {
+      "path": "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/gates/official-exit-gates.json",
+      "sha256": "56797693359df5f014ae36b992dfa773052d6cf77ff2b1a79b20067314b34dc5"
+    },
+    {
+      "path": "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/qualification/stable-baseline-manifest.json",
+      "sha256": "662efedbe34730ffbdfe1f7630ba4b1f6b67fa1131d000e5f40be98b8619c0e3"
+    },
+    {
+      "path": "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/qualification/phase5-handoff.json",
+      "sha256": "8e53027c2f554c56119fcb37ac786ac6369ee9ebe4e4a6ed9eb363daa6c9c5f2"
+    }
+  ],
+  "technical_eligibility_status": "ELIGIBLE",
+  "upgrade_sequence": "UPGRADE-003",
+  "working_tree_clean_at_declaration": true
+}
