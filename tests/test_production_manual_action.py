@@ -111,6 +111,47 @@ class ProductionManualActionTests(unittest.TestCase):
         with self.assertRaisesRegex(ProductionManualActionError, "package digest"):
             execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch, package_manifest_sha256="d"*64)
 
+    def test_clean_safe_descendant_outside_owned_scope_is_allowed(self):
+        action, auth = self.make()
+        (self.root / "notes.txt").write_text("infra-only\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "notes.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-q", "-m", "infra descendant"], check=True)
+        descendant = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True).strip()
+        result = execute_gpt_operator_manual_action(
+            project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest,
+            preflight_evidence_sha256="f"*64, action_package=action, authorization=auth,
+            expected_branch=self.branch, package_manifest_sha256="d"*64)
+        self.assertEqual(result["baseline_head"], descendant)
+        self.assertEqual(result["sealed_source_head"], self.head)
+        self.assertTrue(result["safe_descendant_source"])
+
+    def test_safe_descendant_rejects_owned_scope_drift(self):
+        action, auth = self.make()
+        (self.root / "a.py").write_text("VALUE = 9\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "a.py"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-q", "-m", "owned drift"], check=True)
+        with self.assertRaisesRegex(ProductionManualActionError, "changed owned scope"):
+            execute_gpt_operator_manual_action(
+                project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest,
+                preflight_evidence_sha256="f"*64, action_package=action, authorization=auth,
+                expected_branch=self.branch, package_manifest_sha256="d"*64)
+
+    def test_non_descendant_source_is_rejected(self):
+        action, auth = self.make()
+        subprocess.run(["git", "-C", str(self.root), "checkout", "--orphan", "other"], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["git", "-C", str(self.root), "rm", "-rf", "."], check=True, stdout=subprocess.DEVNULL)
+        (self.root / "a.py").write_text("VALUE = 1\n")
+        (self.root / ".gitignore").write_text("__pycache__/\n*.pyc\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "a.py", ".gitignore"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-q", "-m", "other root"], check=True)
+        action = dict(action)
+        # Branch binding must match so ancestry, not branch identity, is the rejecting control.
+        with self.assertRaisesRegex(ProductionManualActionError, "not a safe descendant"):
+            execute_gpt_operator_manual_action(
+                project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest,
+                preflight_evidence_sha256="f"*64, action_package=action, authorization=auth,
+                expected_branch="other", package_manifest_sha256="d"*64)
+
 
 if __name__ == "__main__":
     unittest.main()

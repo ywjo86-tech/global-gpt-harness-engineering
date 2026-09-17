@@ -29,6 +29,7 @@ EXECUTOR_VERSION = "1"
 COMPLETION_MODE = "GPT_OPERATOR_MANUAL_ACTION"
 _VALIDATION_KEYS = ("focused_test", "full_regression", "compile_import", "git_diff_check")
 _SHA64 = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 
 class ProductionManualActionError(ValueError):
@@ -79,6 +80,22 @@ def _git_text(root: Path, *args: str) -> str:
     if cp.returncode != 0:
         raise ProductionManualActionError("manual action Git verification failed")
     return cp.stdout.decode("utf-8", errors="strict").strip()
+
+
+def _assert_safe_descendant_source(root: Path, *, sealed_head: str, current_head: str,
+                                   owned_files: Sequence[str]) -> bool:
+    """Allow a sealed manual action on a clean descendant only when its owned scope is untouched."""
+    if current_head == sealed_head:
+        return False
+    if not _GIT_OID.fullmatch(sealed_head) or not _GIT_OID.fullmatch(current_head):
+        raise ProductionManualActionError("manual action source identity drift")
+    ancestor = _git(root, "merge-base", "--is-ancestor", sealed_head, current_head)
+    if ancestor.returncode != 0:
+        raise ProductionManualActionError("manual action source is not a safe descendant")
+    changed = _git_text(root, "diff", "--name-only", f"{sealed_head}..{current_head}").splitlines()
+    if any(_within(path, owned_files) for path in changed):
+        raise ProductionManualActionError("manual action safe descendant changed owned scope")
+    return True
 
 
 def _command(root: Path, argv: Sequence[str], *, timeout: int = 180) -> dict[str, Any]:
@@ -253,10 +270,14 @@ def execute_gpt_operator_manual_action(*, project_root: str | Path, package_root
         raise ProductionManualActionError("manual action package manifest digest is invalid")
     if not isinstance(expected_branch, str) or not expected_branch.strip():
         raise ProductionManualActionError("manual action approved branch binding is missing")
-    if baseline != action_package["source_head"] or _git_text(root, "branch", "--show-current") != expected_branch:
+    if _git_text(root, "branch", "--show-current") != expected_branch:
         raise ProductionManualActionError("manual action source identity drift")
     if _git_text(root, "status", "--porcelain=v1", "-uall"):
         raise ProductionManualActionError("manual action requires a clean product worktree")
+    safe_descendant = _assert_safe_descendant_source(
+        root, sealed_head=str(action_package["source_head"]), current_head=baseline,
+        owned_files=list(manifest["owned_files"]),
+    )
     baseline_tree = _git_text(root, "rev-parse", "HEAD^{tree}")
     patch_text = str(action_package["patch"])
     patch_fd, patch_name = tempfile.mkstemp(prefix="manual-action-", suffix=".patch", dir=str(package))
@@ -316,6 +337,7 @@ def execute_gpt_operator_manual_action(*, project_root: str | Path, package_root
         "plan_sha256": manifest["canonical_plan_sha256"], "attempt": 1, "completion_mode": COMPLETION_MODE,
         "tests": list(action_package["validation_ids"]), "owned_files": list(manifest["owned_files"]),
         "changed_files": changed, "baseline_head": baseline, "baseline_tree": baseline_tree,
+        "sealed_source_head": str(action_package["source_head"]), "safe_descendant_source": safe_descendant,
         "current_head": head, "current_tree": tree, "checkpoint_commit": head, "commands": commands,
         "staged_changes": False, "unstaged_changes": False, "review_verdict": "PASS",
         "executor": {"identity": EXECUTOR_ID, "version": EXECUTOR_VERSION}, "manual_action": manual,
