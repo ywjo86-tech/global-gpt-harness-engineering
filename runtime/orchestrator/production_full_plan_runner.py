@@ -60,7 +60,8 @@ def _failure_class(reason: object) -> str:
         "CHECKPOINT_ADOPTION_TREE_MISMATCH", "product-completion.json",
         "product completion replay conflict", "source snapshot mismatch",
     )
-    provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_")
+    provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_",
+                        "Codex readiness", "nvidia_timeout", "provider readiness")
     if any(marker in text for marker in artifact_markers):
         return "ARTIFACT_CONTRACT_FAILURE"
     if any(marker in text for marker in provider_markers):
@@ -405,6 +406,16 @@ class DurableFullPlanSupervisor:
             self._alert(wait_state, state, gate_id=item["gate_id"], reason=reason)
             return state
         attempt = int(item.get("attempt", 1))
+        # Provider availability is a wait condition, never a dead-letter/retry-budget failure.
+        if failure_class == "PROVIDER_FAILURE":
+            item["status"] = "READY"
+            item["resume"] = True
+            state["state"] = "WAITING_PROVIDER"
+            state["terminal_reason"] = None
+            state = self._persist(state, {"event":"WAITING_PROVIDER", "gate_id":item["gate_id"],
+                                          "reason":reason, "failure_class":failure_class})
+            self._alert("WAITING_PROVIDER", state, gate_id=item["gate_id"], reason=reason)
+            return state
         # Artifact/evidence contract failures must never blindly rerun a worker.
         # They require an explicit evidence-preserving recovery path.
         if failure_class == "ARTIFACT_CONTRACT_FAILURE":
@@ -587,6 +598,23 @@ class DurableFullPlanSupervisor:
                                           "completed_gate": item["gate_id"], "next_gate": next_gate,
                                           "next_idempotency_key": state["queue"][-1]["idempotency_key"]})
         return FullPlanResult(str(state["state"]), state, tuple(executed), recovered)
+
+    def reclassify_blocked_provider_wait(self) -> dict[str, Any]:
+        """Migrate a legacy provider-caused BLOCKED state to WAITING_PROVIDER without executing work."""
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if state.get("state") != "BLOCKED" or _failure_class(state.get("last_error")) != "PROVIDER_FAILURE":
+                raise ProductionFullPlanError("blocked state is not a provider wait")
+            candidates = [item for item in state.get("queue", []) if item.get("status") == "BLOCKED"]
+            if len(candidates) != 1:
+                raise ProductionFullPlanError("provider wait migration requires exactly one blocked queue item")
+            item = candidates[0]; item["status"] = "READY"; item["resume"] = True
+            state["state"] = "WAITING_PROVIDER"; state["terminal_reason"] = None; state["lease"] = None
+            return self._persist(state, {"event":"PROVIDER_BLOCK_RECLASSIFIED_TO_WAIT",
+                                         "gate_id":item["gate_id"], "failure_class":"PROVIDER_FAILURE"})
+        finally:
+            self._release_run_lock(handle)
 
     def resume_recoverable_block(self, *, expected_failure_class: str = "ARTIFACT_CONTRACT_FAILURE") -> dict[str, Any]:
         """Explicitly reopen a blocked run only after an evidence-preserving repair exists."""
