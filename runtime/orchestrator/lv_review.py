@@ -1751,15 +1751,9 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
         if path.endswith(".py") and not path.startswith("tests/")
     ]
     if allow_test_only and not test_targets and not import_targets:
-        test_runner = runner if runner in {"pytest", "unittest"} else "pytest"
-        full = _run_command(
-            [str(interpreter), "-B", "-m", test_runner, "-q"]
-            if test_runner == "pytest"
-            else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"],
-            root, 180,
-        )
-        skipped = {"command": ["not-applicable"], "exit_code": 0, "timeout": False}
-        return [skipped, full, skipped], None
+        if not full_test_targets:
+            return [], "owned Python test target is missing or unsafe"
+        test_targets = list(full_test_targets)
     if not test_targets or (not import_targets and not allow_test_only):
         return [], "owned Python test/module scope is missing"
     for relative in test_targets:
@@ -2611,7 +2605,13 @@ def review_run(
             context["project_root"], list(context["manifest"]["owned_files"]), list(actual["changed_files"])
         )
         verification_only = is_production and payload.get("completion_mode") == "VERIFICATION_ONLY"
-        if not native_validation and ((not verification_only and not owned_test_files) or any(
+        test_only_owned_scope = bool(owned_scopes) and all(
+            isinstance(scope, str)
+            and scope.startswith("tests/")
+            and (scope.endswith(".py") or scope.endswith("/"))
+            for scope in owned_scopes
+        )
+        if not native_validation and ((not (verification_only or test_only_owned_scope) and not owned_test_files) or any(
             not (context["project_root"] / path).is_file()
             or (context["project_root"] / path).is_symlink()
             for path in owned_test_files
@@ -2633,7 +2633,7 @@ def review_run(
             context["interpreter"],
             list(context["manifest"]["owned_files"]),
             runner="unittest" if context["manifest"].get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else "pytest",
-            allow_test_only=verification_only,
+            allow_test_only=verification_only or test_only_owned_scope,
             expected_profiles=expected_profiles,
             changed_files=list(actual["changed_files"]),
         )
