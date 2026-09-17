@@ -1534,6 +1534,15 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 return sealed("PACKAGE", "SEALED", digest)
             # PACKAGE/PREFLIGHT/WORKER events are durable continuation points
             # even before the later CHECKPOINT lifecycle stage is reached.
+            if all(record.get("lifecycle") == "PACKAGE" for record in records):
+                execution_evidence = [
+                    package_root / "preflight" / "preflight.evidence.json",
+                    package_root / "worker.request.json",
+                    package_root / "worker.result.json",
+                    *sorted(package_root.glob("production.review-request-*.json")),
+                ]
+                if not any(path.exists() or path.is_symlink() for path in execution_evidence):
+                    state["package_only_safe_descendant_resume"] = True
             latest = [record for record in records if record.get("checkpoint")] or records
             state["latest_checkpoint"] = latest[-1]
             state["resume_records"] = records
