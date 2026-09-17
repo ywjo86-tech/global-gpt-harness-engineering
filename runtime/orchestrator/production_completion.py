@@ -111,8 +111,27 @@ def verify_product_completion(project_root: str | Path, evidence: Mapping[str, A
             head = _git(root, "rev-parse", "HEAD"); tree = _git(root, "rev-parse", f"{checkpoint}^{{tree}}")
             files = set(_git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines())
             if mode == _CHECKPOINT_ADOPTION_MODE:
-                if evidence.get("current_head") != head: reasons.append("CHECKPOINT_ADOPTION_HEAD_MISMATCH")
-                if evidence.get("current_tree") != _git(root, "rev-parse", "HEAD^{tree}"): reasons.append("CHECKPOINT_ADOPTION_TREE_MISMATCH")
+                recorded_head = evidence.get("current_head")
+                if terminal_head:
+                    if recorded_head != head: reasons.append("CHECKPOINT_ADOPTION_HEAD_MISMATCH")
+                    if evidence.get("current_tree") != _git(root, "rev-parse", "HEAD^{tree}"): reasons.append("CHECKPOINT_ADOPTION_TREE_MISMATCH")
+                else:
+                    if not isinstance(recorded_head, str) or not _SHA.fullmatch(recorded_head):
+                        reasons.append("CHECKPOINT_ADOPTION_HEAD_MISMATCH")
+                    else:
+                        recorded_is_descendant = subprocess.run(
+                            ["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, recorded_head], check=False
+                        )
+                        recorded_is_ancestor = subprocess.run(
+                            ["git", "-C", str(root), "merge-base", "--is-ancestor", recorded_head, head], check=False
+                        )
+                        if recorded_is_descendant.returncode != 0 or recorded_is_ancestor.returncode != 0:
+                            reasons.append("CHECKPOINT_ADOPTION_HEAD_MISMATCH")
+                        else:
+                            try:
+                                if evidence.get("current_tree") != _git(root, "rev-parse", f"{recorded_head}^{{tree}}"):                                     reasons.append("CHECKPOINT_ADOPTION_TREE_MISMATCH")
+                            except ProductCompletionError:
+                                reasons.append("CHECKPOINT_ADOPTION_TREE_MISMATCH")
                 ancestor = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, head], check=False)
                 if ancestor.returncode != 0: reasons.append("CHECKPOINT_NOT_ANCESTOR")
                 else:

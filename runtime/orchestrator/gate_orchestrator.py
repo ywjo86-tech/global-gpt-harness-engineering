@@ -1771,7 +1771,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 contract = {"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,"run_id":run_id,
                             "approval_event_id":evidence.get("approval_event_id"),"plan_sha256":plan.canonical_plan_sha256,
                             "owned_files":list(next(item for item in plan.lvs if item.lv_id == lv_id).owned_files)}
-                verdict = verify_product_completion(root, evidence, contract)
+                verdict = verify_product_completion(root, evidence, contract, terminal_head=False)
                 if verdict["status"] != "PASS":
                     raise GateControllerError(f"product completion verification failed: {verdict['reasons']}")
                 evidence["product_verdict_sha256"] = hashlib.sha256(canonical_json_bytes(verdict)).hexdigest()
