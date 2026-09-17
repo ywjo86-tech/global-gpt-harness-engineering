@@ -8,7 +8,7 @@ from pathlib import Path
 from runtime.orchestrator.operator_control import MANUAL_ACTION_AUTH_SCHEMA, OPERATOR_DIRECTIVE_SCHEMA, ManualActionAuthorizationV1, OperatorDirectiveV1
 from runtime.orchestrator.provider_router import ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2, ProviderEligibilitySnapshotV1, RouterRequestV2, route_request
 from runtime.orchestrator.production_manual_action import ACTION_SCHEMA, ProductionManualActionError, build_manual_worker_request, command_plan_digest, editable_scope_digest, execute_gpt_operator_manual_action
-from runtime.orchestrator.lv_review import LVReviewError, _validate_production_provenance
+from runtime.orchestrator.lv_review import LVReviewError, _validate_production_baseline, _validate_production_provenance
 from runtime.orchestrator.schemas import TaskSlice
 
 
@@ -124,6 +124,7 @@ class ProductionManualActionTests(unittest.TestCase):
         self.assertEqual(result["baseline_head"], descendant)
         self.assertEqual(result["sealed_source_head"], self.head)
         self.assertTrue(result["safe_descendant_source"])
+        _validate_production_baseline(result, self.manifest, self.root)
 
     def test_safe_descendant_rejects_owned_scope_drift(self):
         action, auth = self.make()

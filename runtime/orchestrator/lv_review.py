@@ -1433,7 +1433,21 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
         raise LVReviewError("production worker executor identity is invalid")
 
 
-def _validate_production_baseline(payload: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
+def _safe_descendant_outside_owned(root: Path, *, ancestor: str, descendant: str, owned_files: list[str]) -> bool:
+    if not ancestor or not descendant or ancestor == descendant:
+        return False
+    relation = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if relation.returncode != 0:
+        return False
+    changed = _git(root, "diff", "--name-only", f"{ancestor}..{descendant}").decode("utf-8").splitlines()
+    return not any(_path_within_owned_scope(path, owned_files) for path in changed)
+
+
+def _validate_production_baseline(payload: Mapping[str, Any], manifest: Mapping[str, Any],
+                                  project_root: Path | None = None) -> None:
     if payload.get("completion_mode") == "VERIFIED_CHECKPOINT_ADOPTION":
         adoption = payload.get("adoption")
         transition = manifest.get("production_transition")
@@ -1444,6 +1458,21 @@ def _validate_production_baseline(payload: Mapping[str, Any], manifest: Mapping[
             or transition.get("baseline_head") != payload.get("checkpoint_commit")
         ):
             raise LVReviewError("checkpoint adoption baseline does not match package")
+        return
+    if payload.get("completion_mode") == "GPT_OPERATOR_MANUAL_ACTION" and payload.get("safe_descendant_source") is True:
+        if project_root is None:
+            raise LVReviewError("manual action safe descendant review requires project root")
+        sealed = payload.get("sealed_source_head")
+        baseline = payload.get("baseline_head")
+        owned = manifest.get("owned_files")
+        if (sealed != manifest.get("source_head") or not isinstance(baseline, str)
+                or not isinstance(owned, list) or not owned
+                or not _safe_descendant_outside_owned(project_root, ancestor=str(sealed or ""),
+                                                       descendant=baseline, owned_files=list(owned))):
+            raise LVReviewError("manual action safe descendant baseline does not match package")
+        baseline_tree = _git(project_root, "rev-parse", f"{baseline}^{{tree}}").decode("ascii").strip()
+        if payload.get("baseline_tree") != baseline_tree:
+            raise LVReviewError("manual action safe descendant baseline tree mismatch")
         return
     if (payload.get("baseline_head") != manifest.get("source_head")
             or payload.get("baseline_tree") != manifest.get("source_tree")):
@@ -2399,7 +2428,7 @@ def review_run(
         elif payload.get("worker_type") != "manual":
             raise LVReviewError("worker_type must be manual")
         if payload.get("schema_version") == "orchestration.product-completion-evidence.v1":
-            _validate_production_baseline(payload, context["manifest"])
+            _validate_production_baseline(payload, context["manifest"], context["project_root"])
         else:
             for result_field, manifest_field in (
                 ("source_head_before", "source_head"),
@@ -2482,16 +2511,28 @@ def review_run(
                 violations.append(f"Git {git_field} differs from preflight evidence")
         if is_production:
             checkpoint_tree = _git(context["project_root"], "rev-parse", f"{payload['checkpoint_commit']}^{{tree}}").decode().strip()
-            if is_checkpoint_adoption:
+            manual_safe_descendant = (
+                payload.get("completion_mode") == "GPT_OPERATOR_MANUAL_ACTION"
+                and payload.get("safe_descendant_source") is True
+            )
+            if is_checkpoint_adoption or manual_safe_descendant:
                 adopted = subprocess.run(["git", "-C", str(context["project_root"]), "merge-base", "--is-ancestor",
                                            payload["checkpoint_commit"], current_identity["head"]], check=False)
                 later = set(_git(context["project_root"], "diff", "--name-only",
                                  f"{payload['checkpoint_commit']}..{current_identity['head']}").decode().splitlines())
-                if (adopted.returncode != 0
-                        or payload.get("current_head") != current_identity["head"]
-                        or payload.get("current_tree") != current_identity["tree"]
-                        or any(_path_within_owned_scope(path, list(context["manifest"]["owned_files"])) for path in later)):
-                    violations.append("checkpoint adoption identity does not match current Git state")
+                later_owned = any(
+                    _path_within_owned_scope(path, list(context["manifest"]["owned_files"])) for path in later
+                )
+                if is_checkpoint_adoption:
+                    identity_invalid = (payload.get("current_head") != current_identity["head"]
+                                        or payload.get("current_tree") != current_identity["tree"])
+                    violation_text = "checkpoint adoption identity does not match current Git state"
+                else:
+                    identity_invalid = (payload.get("current_head") != payload.get("checkpoint_commit")
+                                        or payload.get("current_tree") != checkpoint_tree)
+                    violation_text = "manual action checkpoint descendant is not review-safe"
+                if adopted.returncode != 0 or identity_invalid or later_owned:
+                    violations.append(violation_text)
             elif (payload.get("current_head") != payload.get("checkpoint_commit")
                     or payload.get("current_head") != current_identity["head"]
                     or payload.get("current_tree") != current_identity["tree"]
