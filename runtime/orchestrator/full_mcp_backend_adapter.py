@@ -9,6 +9,7 @@ from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
 from runtime.orchestrator.tool_authorization import ToolAuthorizationContract
+from runtime.orchestrator.public_execution_contract import PublicExecutionRequestV1, public_execution_tool_call
 from runtime.full_mcp.contracts import InvocationContext, MCPMetaBinding, validate_invocation_context
 
 PROTOCOL_VERSION = "2026-07-28"
@@ -23,6 +24,14 @@ class AdapterToolCall:
     operation: str
     arguments: Mapping[str, Any]
     operation_request_id: str
+
+    @classmethod
+    def from_public_execution_request(cls, request: PublicExecutionRequestV1) -> "AdapterToolCall":
+        projected = public_execution_tool_call(request)
+        return cls(
+            operation=str(projected["operation"]), arguments=dict(projected["arguments"]),
+            operation_request_id=str(projected["operation_request_id"]),
+        )
 
     def validate(self) -> None:
         if not isinstance(self.operation, str) or not self.operation:

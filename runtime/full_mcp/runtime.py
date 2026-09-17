@@ -20,12 +20,18 @@ from .authorization import (
     authorize_registered_operation,
     validate_contract_set,
 )
-from .contracts import FullMCPContractError, InvocationContext, MCPMetaBinding, canonical_sha256
+from .contracts import (
+    GIT_COMMIT_INTENT_SCHEMA_V1, GIT_PUSH_INTENT_SCHEMA_V1, GIT_STAGE_INTENT_SCHEMA_V1,
+    INVOCATION_CONTEXT_SCHEMA_V2, FullMCPContractError, GitCommitIntentV1,
+    GitPublicationAuthorizationV1, GitPushIntentV1, GitStageIntentV1, InvocationContext,
+    MCPMetaBinding, canonical_sha256, scope_digest,
+)
 from .filesystem_service import FilesystemService, FilesystemServiceError
 from .git_service import GitService, GitServiceError
 from .observability import ObservabilityError, ObservabilityStore
 from .operation_registry import FullMCPOperationRegistry, OperationRegistryError
 from .path_policy import PathPolicyError, WorkspacePathPolicy
+from .publication_evidence import seal_publication_evidence
 from .process_service import ProcessService, ProcessServiceError, ShellPolicy
 from .validation_profiles import ValidationProfileCatalog, ValidationProfileError, default_validation_catalog
 from .validation_service import ValidationService, ValidationServiceError
@@ -70,7 +76,7 @@ def _array(items: Mapping[str, object]) -> dict[str, object]:
     return {"type": "array", "items": dict(items)}
 
 
-def operation_definitions() -> tuple[RegisteredOperation, ...]:
+def operation_definitions(*, include_publication: bool = False) -> tuple[RegisteredOperation, ...]:
     line_edit = _object_schema(
         {"start_line": _int(), "end_line": _int(), "replacement": _str()},
         ("start_line", "end_line", "replacement"),
@@ -111,6 +117,30 @@ def operation_definitions() -> tuple[RegisteredOperation, ...]:
         ("validate", "OTHER", "VALIDATE", "READ_ONLY",
          _object_schema({"operation_request_id": _str(), "expectations": _array(expectation)}, ("operation_request_id", "expectations")), any_object),
     )
+    if include_publication:
+        specs += (
+            ("git_stage", "GIT", "WRITE", "STATE_CHANGING",
+             _object_schema({
+                 "intent_schema_version": _str(), "paths": _array(_str()),
+                 "expected_worktree_digest": _str(), "expected_head": _str(),
+                 "candidate_diff_digest": _str(), "publication_policy_digest": _str(),
+             }, ("intent_schema_version", "paths", "expected_worktree_digest", "expected_head",
+                 "candidate_diff_digest", "publication_policy_digest")), any_object),
+            ("git_commit", "GIT", "WRITE", "STATE_CHANGING",
+             _object_schema({
+                 "intent_schema_version": _str(), "expected_staged_diff_digest": _str(),
+                 "expected_index_digest": _str(), "expected_head": _str(), "expected_parent": _str(),
+                 "subject": _str(), "publication_policy_digest": _str(),
+             }, ("intent_schema_version", "expected_staged_diff_digest", "expected_index_digest",
+                 "expected_head", "expected_parent", "subject", "publication_policy_digest")), any_object),
+            ("git_push", "GIT", "WRITE", "STATE_CHANGING",
+             _object_schema({
+                 "intent_schema_version": _str(), "remote": _str(), "branch": _str(),
+                 "local_commit_sha": _str(), "expected_remote_head": _str(),
+                 "publication_policy_digest": _str(),
+             }, ("intent_schema_version", "remote", "branch", "local_commit_sha",
+                 "expected_remote_head", "publication_policy_digest")), any_object),
+        )
     return tuple(
         RegisteredOperation(
             operation_registration_id=f"REG-{name.upper().replace('_', '-')}",
@@ -154,12 +184,24 @@ class FullMCPRuntime:
         contracts: Sequence[ToolAuthorizationContract],
         registry: FullMCPOperationRegistry,
         services: RuntimeServices,
+        publication_authorizations: Sequence[GitPublicationAuthorizationV1] = (),
     ) -> None:
         validated = validate_contract_set(context, contracts)
         self.context = context
         self.contracts = {contract.operation_class_id: contract for contract in validated}
         self.registry = registry
         self.services = services
+        authorizations = tuple(publication_authorizations)
+        if authorizations and context.schema_version != INVOCATION_CONTEXT_SCHEMA_V2:
+            raise FullMCPAuthorizationError("publication authority requires InvocationContext.v2")
+        self.publication_authorizations: dict[str, GitPublicationAuthorizationV1] = {}
+        for authorization in authorizations:
+            digest = authorization.policy_digest
+            if digest in self.publication_authorizations:
+                raise FullMCPAuthorizationError("duplicate publication policy digest")
+            if digest not in context.operation_policy_digests:
+                raise FullMCPAuthorizationError("publication policy is not invocation-bound")
+            self.publication_authorizations[digest] = authorization
         self.replay_guard = OperationRequestReplayGuard()
         registered = {item["name"] for item in registry.dynamic_specs()}
         if registered != set(self.contracts):
@@ -189,6 +231,9 @@ class FullMCPRuntime:
                     raise FullMCPRuntimeError("INPUT_SCHEMA_INVALID", "POLICY", "restore paths are invalid")
                 for path in paths:
                     self.services.git.path_policy.resolve_mutable(path)
+            elif operation_name in {"git_stage", "git_commit", "git_push"}:
+                self._publication_authorization(operation_name, arguments)
+                self._publication_intent(operation_name, arguments)
             elif operation_name == "validation_execute":
                 profile_id = arguments.get("profile_id")
                 if not isinstance(profile_id, str):
@@ -201,6 +246,81 @@ class FullMCPRuntime:
         except (PathPolicyError, ProcessServiceError, ValidationProfileError) as exc:
             code = getattr(exc, "code", "PATH_POLICY_VIOLATION")
             raise FullMCPRuntimeError(code, "POLICY", "state-changing operation policy preflight failed") from exc
+
+    def _publication_authorization(self, operation_name: str, arguments: Mapping[str, Any]) -> GitPublicationAuthorizationV1:
+        if self.context.schema_version != INVOCATION_CONTEXT_SCHEMA_V2:
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication requires InvocationContext.v2")
+        digest = arguments.get("publication_policy_digest")
+        if not isinstance(digest, str) or digest not in self.context.operation_policy_digests:
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication policy is not invocation-bound")
+        authorization = self.publication_authorizations.get(digest)
+        if authorization is None or authorization.policy_digest != digest:
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication authorization is unavailable")
+        if operation_name not in authorization.operations:
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication operation is not authorized")
+        try:
+            issued = datetime.fromisoformat(authorization.issued_at.replace("Z", "+00:00"))
+            expires = datetime.fromisoformat(authorization.expires_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication time binding is invalid") from exc
+        now = datetime.now(timezone.utc)
+        if issued.tzinfo is None or expires.tzinfo is None or not (issued <= now < expires):
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication authorization is outside its validity window")
+        if not authorization.protected_branch_policy_ref.startswith("ALLOW-"):
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "protected-branch policy does not authorize publication")
+        if authorization.repository_identity_digest != self.services.git.repository_identity_digest():
+            raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "repository identity binding mismatch")
+        branch = self.services.git.branch()
+        if branch["detached"] or branch["branch"] != authorization.approved_branch:
+            raise FullMCPRuntimeError("GIT_BRANCH_MISMATCH", "POLICY", "approved branch binding mismatch")
+        if operation_name == "git_stage":
+            paths = arguments.get("paths")
+            if isinstance(paths, (str, bytes)) or not isinstance(paths, Sequence) or not paths:
+                raise FullMCPRuntimeError("INPUT_SCHEMA_INVALID", "POLICY", "publication paths are invalid")
+            if scope_digest(tuple(str(item) for item in paths)) != authorization.allowed_path_digest:
+                raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "publication path digest mismatch")
+        elif operation_name == "git_commit":
+            staged = self.services.git.publication_staged_paths()
+            if not staged or scope_digest(tuple(staged)) != authorization.allowed_path_digest:
+                raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "staged publication scope mismatch")
+        elif operation_name == "git_push":
+            if arguments.get("remote") != authorization.approved_remote or arguments.get("branch") != authorization.approved_branch:
+                raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "push remote/branch binding mismatch")
+            if arguments.get("expected_remote_head") != authorization.expected_remote_head:
+                raise FullMCPRuntimeError("GIT_REMOTE_STALE", "POLICY", "push freshness binding mismatch")
+            if self.services.git.remote_url_fingerprint(authorization.approved_remote) != authorization.remote_url_fingerprint:
+                raise FullMCPRuntimeError("AUTHORIZATION_DENIED", "POLICY", "remote URL fingerprint mismatch")
+        return authorization
+
+    def _publication_intent(self, operation_name: str, arguments: Mapping[str, Any]) -> object:
+        if operation_name == "git_stage":
+            return GitStageIntentV1(
+                schema_version=str(arguments.get("intent_schema_version", "")),
+                paths=tuple(arguments.get("paths", ())),
+                expected_worktree_digest=str(arguments.get("expected_worktree_digest", "")),
+                expected_head=str(arguments.get("expected_head", "")),
+                candidate_diff_digest=str(arguments.get("candidate_diff_digest", "")),
+                publication_policy_digest=str(arguments.get("publication_policy_digest", "")),
+            )
+        if operation_name == "git_commit":
+            return GitCommitIntentV1(
+                schema_version=str(arguments.get("intent_schema_version", "")),
+                expected_staged_diff_digest=str(arguments.get("expected_staged_diff_digest", "")),
+                expected_index_digest=str(arguments.get("expected_index_digest", "")),
+                expected_head=str(arguments.get("expected_head", "")),
+                expected_parent=str(arguments.get("expected_parent", "")),
+                subject=str(arguments.get("subject", "")),
+                publication_policy_digest=str(arguments.get("publication_policy_digest", "")),
+            )
+        if operation_name == "git_push":
+            return GitPushIntentV1(
+                schema_version=str(arguments.get("intent_schema_version", "")),
+                remote=str(arguments.get("remote", "")), branch=str(arguments.get("branch", "")),
+                local_commit_sha=str(arguments.get("local_commit_sha", "")),
+                expected_remote_head=str(arguments.get("expected_remote_head", "")),
+                publication_policy_digest=str(arguments.get("publication_policy_digest", "")),
+            )
+        raise FullMCPRuntimeError("INPUT_SCHEMA_INVALID", "POLICY", "unknown publication operation")
 
     def _identity(self, operation: RegisteredOperation, binding: MCPMetaBinding, contract: ToolAuthorizationContract) -> OperationIdentity:
         return OperationIdentity(
@@ -274,6 +394,34 @@ class FullMCPRuntime:
             return self.services.git.restore(arguments["paths"], source_ref=arguments["source_ref"]), None, None, None
         if operation_name == "git_prepare_commit":
             return self.services.git.prepare_commit(arguments["paths"], subject=arguments["subject"]), None, None, None
+        if operation_name == "git_stage":
+            data = self.services.git.stage_publication(
+                arguments["paths"], expected_worktree_digest=arguments["expected_worktree_digest"],
+                expected_head=arguments["expected_head"], candidate_diff_digest=arguments["candidate_diff_digest"],
+            )
+            data["publication_evidence"] = seal_publication_evidence(
+                "git_stage", arguments["publication_policy_digest"], data
+            )
+            return data, None, None, None
+        if operation_name == "git_commit":
+            data = self.services.git.commit_publication(
+                expected_staged_diff_digest=arguments["expected_staged_diff_digest"],
+                expected_index_digest=arguments["expected_index_digest"], expected_head=arguments["expected_head"],
+                expected_parent=arguments["expected_parent"], subject=arguments["subject"],
+            )
+            data["publication_evidence"] = seal_publication_evidence(
+                "git_commit", arguments["publication_policy_digest"], data
+            )
+            return data, None, None, None
+        if operation_name == "git_push":
+            data = self.services.git.push_publication(
+                remote=arguments["remote"], branch=arguments["branch"],
+                local_commit_sha=arguments["local_commit_sha"], expected_remote_head=arguments["expected_remote_head"],
+            )
+            data["publication_evidence"] = seal_publication_evidence(
+                "git_push", arguments["publication_policy_digest"], data
+            )
+            return data, None, None, None
         if operation_name == "validation_execute":
             data = self.services.validation.execute(arguments["profile_id"])
             if data["exit_code"] != 0:
@@ -346,7 +494,11 @@ class FullMCPRuntime:
                 status="BLOCKED" if mapped.code in {
                     "AUTHENTICATION_FAILED", "AUTHORIZATION_DENIED", "INPUT_SCHEMA_INVALID", "WORKSPACE_VIOLATION",
                     "PATH_POLICY_VIOLATION", "SYMLINK_VIOLATION", "SENSITIVE_PATH_BLOCKED", "COMMAND_NOT_ALLOWED",
-                    "GIT_BOUNDARY_VIOLATION", "EFFECT_REPLAY_BLOCKED", "RECOVERY_AMBIGUOUS",
+                    "GIT_BOUNDARY_VIOLATION", "GIT_INDEX_NOT_CLEAN", "GIT_HEAD_DRIFT",
+                    "GIT_WORKTREE_DRIFT", "GIT_CANDIDATE_DRIFT", "GIT_INDEX_DRIFT",
+                    "GIT_BRANCH_MISMATCH", "GIT_REMOTE_STALE", "GIT_NON_FAST_FORWARD",
+                    "GIT_PUSH_REJECTED", "GIT_REMOTE_HEAD_UNAVAILABLE",
+                    "EFFECT_REPLAY_BLOCKED", "RECOVERY_AMBIGUOUS",
                 } else "FAILED",
                 data=None, exit_code=None, stdout=None, stderr=None, effect_id=effect_id,
                 error={"code": mapped.code, "stage": mapped.stage, "retryable": mapped.retryable},
@@ -462,6 +614,7 @@ def build_default_runtime(
     *,
     catalog: ValidationProfileCatalog | None = None,
     shell_policy: ShellPolicy | None = None,
+    publication_authorizations: Sequence[GitPublicationAuthorizationV1] = (),
 ) -> FullMCPRuntime:
     workspace_root = Path(context.workspace_root)
     path_policy = WorkspacePathPolicy(
@@ -492,6 +645,7 @@ def build_default_runtime(
     return FullMCPRuntime(
         context=context,
         contracts=contracts,
-        registry=FullMCPOperationRegistry(operation_definitions()),
+        registry=FullMCPOperationRegistry(operation_definitions(include_publication=bool(publication_authorizations))),
         services=services,
+        publication_authorizations=publication_authorizations,
     )

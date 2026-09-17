@@ -6,7 +6,7 @@ from pathlib import Path
 from runtime.orchestrator.public_execution_contract import (
     PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, PUBLIC_EXECUTION_RESULT_SCHEMA_V1,
     PublicExecutionContractError, PublicExecutionRequestV1, PublicExecutionResultV1,
-    public_execution_request_from_mapping,
+    public_execution_request_from_mapping, public_execution_tool_call, project_full_mcp_result,
 )
 from runtime.mprf.execution_client import PublicExecutionClient, PublicExecutionClientError
 
@@ -15,7 +15,7 @@ class PublicExecutionContractTest(unittest.TestCase):
     def _request(self):
         return PublicExecutionRequestV1(
             schema_version=PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, operation_class="git_stage",
-            public_arguments={"paths": ["owned/a.txt"]}, authorization_ref="AUTH-PUB-1",
+            public_arguments={"paths": ["owned/a.txt"], "publication_policy_digest": "a" * 64}, authorization_ref="AUTH-PUB-1",
             operation_request_id="pub-op-1", correlation_id="corr-pub-1",
             policy_digests=("a" * 64,), expected_effect_semantics="STATE_CHANGING",
         )
@@ -67,6 +67,30 @@ class PublicExecutionContractTest(unittest.TestCase):
         self.assertNotIn("from runtime.full_mcp", public_source)
         self.assertNotIn("import runtime.full_mcp", public_source)
         self.assertNotIn("provider_router", client_source)
+
+    def test_public_request_projects_to_exact_publication_call_and_result(self):
+        request = self._request()
+        call = public_execution_tool_call(request)
+        self.assertEqual(call["operation"], "git_stage")
+        self.assertEqual(call["operation_request_id"], request.operation_request_id)
+        raw = {
+            "operation_request_id": request.operation_request_id, "correlation_id": request.correlation_id,
+            "status": "COMPLETED", "result_digest": "b" * 64, "effect_id": "effect-1",
+            "audit_ref": "audit-1", "data": {"reconciliation_state": "NOT_REQUIRED"}, "error": None,
+        }
+        projected = project_full_mcp_result(request, raw)
+        self.assertEqual(projected.status, "COMPLETED")
+        self.assertEqual(projected.effect_ref, "effect-1")
+
+    def test_publication_call_requires_policy_digest_inside_public_arguments(self):
+        request = PublicExecutionRequestV1(
+            schema_version=PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, operation_class="git_stage",
+            public_arguments={"paths": ["owned/a.txt"]}, authorization_ref="AUTH-PUB-1",
+            operation_request_id="pub-op-x", correlation_id="corr-pub-x",
+            policy_digests=("a" * 64,), expected_effect_semantics="STATE_CHANGING",
+        )
+        with self.assertRaises(PublicExecutionContractError):
+            public_execution_tool_call(request)
 
 
 if __name__ == "__main__":

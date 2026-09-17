@@ -200,3 +200,61 @@ def public_execution_result_from_mapping(raw: Mapping[str, Any]) -> PublicExecut
         return PublicExecutionResultV1(**dict(raw))
     except (TypeError, KeyError) as exc:
         raise PublicExecutionContractError("public execution result payload is malformed") from exc
+
+
+PUBLICATION_OPERATION_CLASSES = frozenset({"git_stage", "git_commit", "git_push"})
+
+def public_execution_tool_call(request: PublicExecutionRequestV1) -> dict[str, Any]:
+    """Project the public DTO into a provider-neutral Full MCP tool-call shape."""
+    if not isinstance(request, PublicExecutionRequestV1):
+        raise PublicExecutionContractError("public execution request type is invalid")
+    if request.operation_class not in PUBLICATION_OPERATION_CLASSES:
+        raise PublicExecutionContractError("public execution operation is outside the publication catalog")
+    if request.expected_effect_semantics != "STATE_CHANGING":
+        raise PublicExecutionContractError("publication operation requires STATE_CHANGING semantics")
+    arguments = dict(request.public_arguments)
+    policy_digest = arguments.get("publication_policy_digest")
+    if not isinstance(policy_digest, str) or policy_digest not in request.policy_digests:
+        raise PublicExecutionContractError("public execution policy binding mismatch")
+    _assert_public_value(arguments)
+    return {
+        "operation": request.operation_class,
+        "arguments": arguments,
+        "operation_request_id": request.operation_request_id,
+        "correlation_id": request.correlation_id,
+        "authorization_ref": request.authorization_ref,
+    }
+
+
+def project_full_mcp_result(
+    request: PublicExecutionRequestV1, raw: Mapping[str, Any]
+) -> PublicExecutionResultV1:
+    """Project a generic Full MCP result without importing or exposing Full MCP internals."""
+    if not isinstance(raw, Mapping):
+        raise PublicExecutionContractError("Full MCP result projection source must be an object")
+    if raw.get("operation_request_id") != request.operation_request_id or raw.get("correlation_id") != request.correlation_id:
+        raise PublicExecutionContractError("Full MCP result/public request binding mismatch")
+    status = str(raw.get("status", ""))
+    if status not in PUBLIC_STATUSES:
+        raise PublicExecutionContractError("Full MCP result status cannot be projected")
+    result_digest = str(raw.get("result_digest", ""))
+    effect_ref = str(raw.get("effect_id") or "")
+    audit_ref = str(raw.get("audit_ref") or "")
+    error = raw.get("error")
+    error_code = str(error.get("code", "")) if isinstance(error, Mapping) else ""
+    data = raw.get("data")
+    data_map = data if isinstance(data, Mapping) else {}
+    if error_code == "ACTION_SIDE_EFFECT_AMBIGUOUS":
+        reconciliation_state = "AMBIGUOUS"
+    elif status == "COMPLETED":
+        reconciliation_state = str(data_map.get("reconciliation_state") or "NOT_REQUIRED")
+    elif status == "PENDING":
+        reconciliation_state = "PENDING"
+    else:
+        reconciliation_state = "FAILED"
+    return PublicExecutionResultV1(
+        schema_version=PUBLIC_EXECUTION_RESULT_SCHEMA_V1,
+        operation_request_id=request.operation_request_id, correlation_id=request.correlation_id,
+        status=status, result_digest=result_digest, effect_ref=effect_ref,
+        reconciliation_state=reconciliation_state, error_code=error_code, audit_ref=audit_ref,
+    )
