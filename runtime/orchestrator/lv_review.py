@@ -620,6 +620,7 @@ def _assert_source_snapshot(
     source: dict[str, Any],
     *,
     require_clean: bool,
+    allow_safe_descendant_source: bool = False,
 ) -> None:
     current = {
         "source_head": _git(root, "rev-parse", "HEAD").decode("ascii").strip(),
@@ -628,6 +629,22 @@ def _assert_source_snapshot(
         "source_worktree_fingerprint": _tracked_content_fingerprint(root),
     }
     identity_fields = () if not require_clean else ("source_head", "source_tree", "source_index_fingerprint")
+    if require_clean and allow_safe_descendant_source:
+        historical_fields = ("source_head", "source_tree", "source_index_fingerprint", "source_worktree_fingerprint")
+        if any(manifest.get(field) != source.get(field) for field in historical_fields):
+            raise LVReviewError("source snapshot historical binding mismatch")
+        sealed_head = manifest.get("source_head")
+        if not isinstance(sealed_head, str) or subprocess.run(
+                ["git", "-C", str(root), "merge-base", "--is-ancestor", sealed_head, current["source_head"]],
+                capture_output=True).returncode != 0:
+            raise LVReviewError("source snapshot is not an ancestor of current HEAD")
+        owned = manifest.get("owned_files")
+        if not isinstance(owned, list) or not owned or any(not isinstance(item, str) or not item for item in owned):
+            raise LVReviewError("safe descendant source owned scope is invalid")
+        changed = _git(root, "diff", "--name-only", f"{sealed_head}..{current['source_head']}").decode("utf-8").splitlines()
+        if any(any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in changed):
+            raise LVReviewError("safe descendant source changed owned scope")
+        identity_fields = ()
     for field in identity_fields:
         value = current[field]
         if manifest.get(field) != value or source.get(field) != value:
@@ -637,7 +654,9 @@ def _assert_source_snapshot(
             raise LVReviewError("Wallet worktree is dirty")
         if _git(root, "ls-files", "--others", "--exclude-standard", "-z").strip(b"\0"):
             raise LVReviewError("Wallet has untracked files")
-        if manifest.get("source_worktree_fingerprint") != current["source_worktree_fingerprint"] or source.get("source_worktree_fingerprint") != current["source_worktree_fingerprint"]:
+        if (not allow_safe_descendant_source and
+                (manifest.get("source_worktree_fingerprint") != current["source_worktree_fingerprint"] or
+                 source.get("source_worktree_fingerprint") != current["source_worktree_fingerprint"])):
             raise LVReviewError("source snapshot mismatch: source_worktree_fingerprint")
 
 
@@ -674,6 +693,7 @@ def _preflight(
     check_result_absent: bool = True,
     review_attempt: int = 1,
     project_root: Path | None = None,
+    allow_safe_descendant_source: bool = False,
 ) -> dict[str, Any]:
     _safe_run_id(run_id)
     package_root = package_root or _package_root(run_id)
@@ -682,7 +702,8 @@ def _preflight(
     root = (_validate_execution_root(project_root, project_id)
             if project_root is not None else _project_root_for(project_id))
     _assert_canonical_binding(root, manifest)
-    _assert_source_snapshot(root, manifest, source, require_clean=not allow_worker_changes)
+    _assert_source_snapshot(root, manifest, source, require_clean=not allow_worker_changes,
+                            allow_safe_descendant_source=allow_safe_descendant_source)
     result_path = result_path or _result_path(run_id)
     if check_result_absent and (result_path.exists() or result_path.is_symlink()):
         raise LVReviewError("worker result already exists")
@@ -783,7 +804,7 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None,
-                  project_root: Path | None = None) -> dict[str, Any]:
+                  project_root: Path | None = None, allow_safe_descendant_source: bool = False) -> dict[str, Any]:
     if project_root is not None and package_root is not None:
         try:
             package_manifest = _canonical_json(Path(package_root) / "package.manifest.json")
@@ -811,7 +832,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
                     "preflight_evidence_sha256": digest, "idempotent": True}
     try:
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
-                             review_attempt=1, project_root=project_root)
+                             review_attempt=1, project_root=project_root,
+                             allow_safe_descendant_source=allow_safe_descendant_source)
         # A package-scoped invocation must seal into that package's namespace;
         # falling back to the run-root preflight would collide with a prior LV.
         if package_root is not None:
