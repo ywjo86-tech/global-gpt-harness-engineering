@@ -349,11 +349,45 @@ class OrchestrationEngine:
                 nvidia_model = ""
 
         nvidia_eligible = bool(os.getenv("NVIDIA_API_KEY", "").strip() and nvidia_model)
-        # No approved pre-MPRF Codex model policy is currently installed.
-        # ACTION therefore fails closed/queues instead of deriving model choice
-        # from CODEX_MODEL or any task-level/default setting.
-        codex_eligible = False
-        model_refs: dict[str, str] = {"nvidia": nvidia_model} if nvidia_model else {}
+
+        # Codex model authority is optional and file-backed. Environment model
+        # variables are never authoritative in governed HYBRID. If this static
+        # compatibility policy is absent/invalid, ACTION remains fail-closed.
+        codex_model = ""
+        codex_policy_path = Path(
+            os.getenv(
+                "GCH_PRE_MPRF_PROVIDER_POLICY",
+                str(Path.home() / ".config" / "gch" / "pre-mprf-provider-policy.json"),
+            )
+        ).expanduser()
+        if codex_policy_path.is_file() and not codex_policy_path.is_symlink():
+            try:
+                raw = codex_policy_path.read_bytes()
+                policy_doc = json.loads(raw.decode("utf-8"))
+                providers = policy_doc.get("providers", {})
+                codex_record = providers.get("codex", {}) if isinstance(providers, dict) else {}
+                provider_names = set(providers) if isinstance(providers, dict) else set()
+                valid_codex_policy = (
+                    policy_doc.get("schema_version") == "gch.pre-mprf.provider-policy.v1"
+                    and policy_doc.get("policy_profile") == GOVERNED_POLICY_V1
+                    and provider_names.issubset({"codex"})
+                    and isinstance(codex_record, dict)
+                    and codex_record.get("status") == "ACTIVE"
+                    and bool(str(codex_record.get("approval_ref", "")).strip())
+                )
+                if valid_codex_policy:
+                    codex_model = str(codex_record.get("model", "")).strip()
+                    if codex_model:
+                        evidence_refs.append(f"pre-mprf-provider-policy-sha256:{hashlib.sha256(raw).hexdigest()}")
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, AttributeError):
+                codex_model = ""
+
+        codex_eligible = bool(codex_model and detect_codex_cli())
+        model_refs: dict[str, str] = {}
+        if nvidia_model:
+            model_refs["nvidia"] = nvidia_model
+        if codex_model:
+            model_refs["codex"] = codex_model
         return ProviderEligibilitySnapshotV1(
             schema_version=ELIGIBILITY_SCHEMA_V1,
             snapshot_id=f"pre-mprf-{run_id}",

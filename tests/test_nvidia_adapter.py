@@ -72,17 +72,6 @@ class NvidiaAdapterTest(unittest.TestCase):
             result = run_nvidia_reasoning_task(prompt="hello", project_root=Path(temp_dir))
             self.assertEqual(result["provider_error_class"], "nvidia_config_error")
 
-    def test_governed_explicit_model_does_not_fall_back_to_environment_model(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
-            "os.environ", {"NVIDIA_API_KEY": "secret", "NVIDIA_MODEL": "environment-model"}, clear=True
-        ):
-            result = run_nvidia_reasoning_task(
-                prompt="hello", project_root=temp_dir, model=None, require_explicit_model=True
-            )
-        self.assertEqual(result["status"], "provider_failed")
-        self.assertEqual(result["provider_error_class"], "nvidia_config_error")
-        self.assertNotEqual(result.get("model"), "environment-model")
-
     def test_transient_errors_retry_with_classified_terminal_failure(self) -> None:
         cases = ((408, "nvidia_timeout"), (429, "nvidia_rate_limit"), (503, "nvidia_server_error"))
         for status_code, error_class in cases:

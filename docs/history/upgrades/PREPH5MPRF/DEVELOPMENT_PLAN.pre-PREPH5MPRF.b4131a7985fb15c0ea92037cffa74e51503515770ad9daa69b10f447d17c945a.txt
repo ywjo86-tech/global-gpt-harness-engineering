@@ -1,0 +1,2527 @@
+# FULL PLAN EXECUTION CONTRACT
+
+TARGET_RUNTIME_FILE: docs/DEVELOPMENT_PLAN.txt
+CONTRACT_TYPE: FULL_PLAN_EXECUTION_CONTRACT
+CONTRACT_STATUS: READY_FOR_CODEX
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-15
+APPROVED_CONTRACT_ARTIFACT: docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT_R2.txt
+DIAGNOSED_CONTRACT_BODY_SHA256: aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0
+FINAL_CONTRACT_BODY_SHA256: aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0
+
+SOURCE_AUTHORITY_MODE: BASE_PLUS_APPROVED_DELTA
+BASE_SOURCE_AUTHORITY_SHA256: 4240943a98221bce7547789e1e5d738a4abf0e2c42260223d27d9f984f1bd0a1
+SOURCE_AUTHORITY_SHA256: db4831deba577124a01c6f4fb83bd420e4c0a3ac71ee9331f4be17c4b0ef0492
+SOURCE_DESIGN_REAPPROVAL_SHA256: 05b0f01ba29b0470ec0eae09123df0e4ca704a41194fcfc6636cfcef6cf6016a
+SOURCE_HANDOFF_MANIFEST_SHA256: e057c798f9ec03ed01e2bde533115197585567f2a6710272e6e6dc2bf740f58e
+
+<!-- SEMANTIC_BODY_BEGIN -->
+
+# EC-00 CONTRACT IDENTITY
+
+PROJECT_NAME: Global GPT Harness Engineering — Execution Backend Contract Finalization
+PROJECT_ID: GCH-EXEC-BACKEND
+PROJECT_KEY: GCH-EXEC-BACKEND
+PROJECT_TYPE: EXISTING
+PROJECT_LIFECYCLE_MODE: UPGRADE
+TARGET_PROJECT_ROOT: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering
+CURRENT_VERSION: N/A — verified repository has no native project version scheme
+TARGET_VERSION: N/A — this lifecycle run does not introduce a native project version scheme
+UPGRADE_SEQUENCE: UPGRADE-002
+
+SOURCE_IMPLEMENTATION_DESIGN_ARTIFACT: GCH-EXEC-BACKEND_APPROVED_IMPLEMENTATION_DESIGN.md
+SOURCE_IMPLEMENTATION_DESIGN_SHA256: 4240943a98221bce7547789e1e5d738a4abf0e2c42260223d27d9f984f1bd0a1
+SOURCE_IMPLEMENTATION_DESIGN_VERSION: ID-EXEC-BACKEND-1.1
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_VERSION: ID-EXEC-BACKEND-1.1
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_DATE: 2026-09-14
+SOURCE_IMPLEMENTATION_DESIGN_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_HANDOFF_READINESS: READY
+SOURCE_HANDOFF_MANIFEST: GCH-EXEC-BACKEND_EXECUTION_APPROVAL_HANDOFF_MANIFEST.md
+SOURCE_HANDOFF_MANIFEST_SHA256: e057c798f9ec03ed01e2bde533115197585567f2a6710272e6e6dc2bf740f58e
+SOURCE_FINAL_RE_DIAGNOSIS: GCH-EXEC-BACKEND_ID-EXEC-BACKEND-1.1-DIAG-07_IMPLEMENTATION_DESIGN_DIAGNOSIS.md
+SOURCE_FINAL_RE_DIAGNOSIS_SHA256: 71dbb93a01bc31ea342f84f00dedc82f1c0349e5f29ce67a9d615fb3dc59647f
+
+TARGET_REPOSITORY: ywjo86-tech/global-gpt-harness-engineering
+BASELINE_REF: fc015712d94cc46916608ac2a956d1251562b464
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE: HYBRID
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER
+NVIDIA_STATE_CHANGING_EXECUTION: PROHIBITED
+NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED
+CODEX_TO_MANUAL_FALLBACK: PRESERVE_EXISTING
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+DYNAMIC_ROUTING_EXPANSION: PROHIBITED
+BENCHMARK_ROUTER: OUT_OF_SCOPE
+COST_OPTIMIZER: OUT_OF_SCOPE
+AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE
+
+## LOSSLESS SOURCE PROJECTION — AUTHORITY / APPROVAL / HANDOFF CONTROL
+# ID-00 Document Control
+
+PROJECT_NAME: Global GPT Harness Engineering — Execution Backend Contract Finalization  
+PROJECT_ID: GCH-EXEC-BACKEND  
+PROJECT_KEY: GCH-EXEC-BACKEND  
+DOCUMENT_TYPE: IMPLEMENTATION_DESIGN  
+DESIGN_VERSION: ID-EXEC-BACKEND-1.1  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+CREATED_DATE: 2026-09-14  
+LAST_UPDATED_DATE: 2026-09-14
+APPROVED_VERSION: ID-EXEC-BACKEND-1.1  
+APPROVED_DATE: 2026-09-14
+
+PROJECT_TYPE: EXISTING  
+PROJECT_LIFECYCLE_MODE: UPGRADE  
+TARGET_PROJECT_ROOT: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering  
+CURRENT_VERSION: N/A — verified repository has no native project version scheme  
+TARGET_VERSION: N/A — this lifecycle run does not introduce a native project version scheme  
+UPGRADE_SEQUENCE: UPGRADE-002
+
+APPROVED_PLAN_VERSION: DP-EXEC-BACKEND-1.1  
+APPROVED_PLAN_APPROVED_VERSION: DP-EXEC-BACKEND-1.1  
+APPROVED_PLAN_APPROVED_DATE: 2026-09-14  
+APPROVED_PLAN_SOURCE_REF: GCH-EXEC-BACKEND_APPROVED_DEVELOPMENT_PLAN.md
+
+TARGET_REPOSITORY: ywjo86-tech/global-gpt-harness-engineering  
+BASELINE_REF: fc015712d94cc46916608ac2a956d1251562b464
+
+ARTIFACT_FILENAME: GCH-EXEC-BACKEND_APPROVED_IMPLEMENTATION_DESIGN.md
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN  
+EXECUTION_MODE: HYBRID  
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER  
+PLANNER_PROVIDER_SELECTION: PROHIBITED  
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED  
+NVIDIA_STATE_CHANGING_EXECUTION: PROHIBITED  
+NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED  
+CODEX_TO_MANUAL_FALLBACK: PRESERVE_EXISTING  
+DYNAMIC_ROUTING_EXPANSION: PROHIBITED  
+BENCHMARK_ROUTER: OUT_OF_SCOPE  
+COST_OPTIMIZER: OUT_OF_SCOPE  
+AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE
+
+IMPLEMENTATION_AUTHORIZATION: NOT_GRANTED_BY_THIS_DOCUMENT  
+RUNTIME_EVIDENCE_STATUS: NOT_EXECUTED_IN_DESIGN_PROJECT
+
+---
+
+# ID-02 Approved Development Plan Binding
+
+## Planning Authority
+
+AUTHORITATIVE_PLAN: GCH-EXEC-BACKEND_APPROVED_DEVELOPMENT_PLAN.md  
+PLAN_VERSION: DP-EXEC-BACKEND-1.1  
+PLAN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: DP-EXEC-BACKEND-1.1  
+APPROVED_DATE: 2026-09-14  
+EXPLICIT_USER_APPROVAL_DATE: 2026-09-14  
+SOURCE_REF: GCH-EXEC-BACKEND_APPROVED_DEVELOPMENT_PLAN.md  
+TARGET_REPOSITORY: ywjo86-tech/global-gpt-harness-engineering  
+BASELINE_REF: fc015712d94cc46916608ac2a956d1251562b464
+
+The received Plan already declared `APPROVAL_STATUS: APPROVED`, `USER_APPROVAL: EXPLICIT`, `USER_APPROVAL_DATE: 2026-09-14`, `CURRENT_STATUS: APPROVED`, and the final approved artifact. Before this revision, its stale control fields were clerically normalized without WHAT/identity/root/version/HYBRID change: `PLAN_STATUS`→`APPROVED`, `ARTIFACT_FILENAME`→the approved filename, `APPROVED_VERSION`→`DP-EXEC-BACKEND-1.1`, and `APPROVED_DATE`→`2026-09-14`. The as-received source and correction record are preserved separately for audit.
+
+## Project Identity Binding
+
+PROJECT_NAME: Global GPT Harness Engineering — Execution Backend Contract Finalization  
+PROJECT_ID: GCH-EXEC-BACKEND  
+PROJECT_KEY: GCH-EXEC-BACKEND  
+PROJECT_TYPE: EXISTING  
+PROJECT_LIFECYCLE_MODE: UPGRADE  
+TARGET_PROJECT_ROOT: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering  
+CURRENT_VERSION: N/A — no native project version scheme  
+TARGET_VERSION: N/A — no native project version scheme introduced  
+UPGRADE_SEQUENCE: UPGRADE-002
+
+IDENTITY_STATUS: VERIFIED
+
+## Preserved Planning Boundaries
+
+The Implementation Design preserves without WHAT change:
+- User Intent
+- REQ-901~REQ-910
+- NFR-901~NFR-904
+- SEC-901~SEC-902
+- OPS-901~OPS-909
+- all Acceptance Conditions
+- IN SCOPE / OUT OF SCOPE / deferred/future-candidate boundaries
+- Constraints
+- SC-BACKEND-001~SC-BACKEND-008
+- DEL-001~DEL-007
+- Project Identity / Lifecycle / Version Binding
+- Mandatory Entry Gate conjunction and 10/10 YES rule
+- Full Plan HYBRID planning constraints
+- Provider Router authority / Planner provider-neutral rule
+- NVIDIA→Codex automatic fallback prohibition
+- existing Codex→manual fallback semantics
+- Full Plan Core Controlled Change boundary
+
+## Approved Design Revision Overlay — ID-EXEC-BACKEND-1.2
+
+REVISION_FORM: BOUNDED_DELTA_AGAINST_APPROVED_DESIGN  
+BASE_APPROVED_DESIGN_VERSION: ID-EXEC-BACKEND-1.1  
+BASE_APPROVED_DESIGN_SHA256: 4240943a98221bce7547789e1e5d738a4abf0e2c42260223d27d9f984f1bd0a1  
+EFFECTIVE_APPROVED_DESIGN_VERSION: ID-EXEC-BACKEND-1.2  
+APPROVED_DESIGN_DELTA_ARTIFACT: _workspace/execution-backend-contract/gch-exec-backend-design-correction-20260915/GCH-EXEC-BACKEND_ID-EXEC-BACKEND-1.2_APPROVED_IMPLEMENTATION_DESIGN.md  
+APPROVED_DESIGN_DELTA_SHA256: db4831deba577124a01c6f4fb83bd420e4c0a3ac71ee9331f4be17c4b0ef0492  
+USER_DESIGN_REAPPROVAL_RECORD: _workspace/execution-backend-contract/gch-exec-backend-design-correction-20260915/ID-EXEC-BACKEND-1.2_USER_REAPPROVAL.json  
+USER_DESIGN_REAPPROVAL_SHA256: 05b0f01ba29b0470ec0eae09123df0e4ca704a41194fcfc6636cfcef6cf6016a  
+FINAL_DESIGN_DIAGNOSIS_V3_SHA256: 6831b02bb20df9ae36054f0b1970f15e30329f1a402b4bb25011d95735aa779f  
+WHAT_CHANGE: NONE  
+PLAN_REVISION_REQUIRED: NO  
+QUESTION_TEXT_IDENTITY_REQUIRED: YES  
+QUESTION_REPHRASING: PROHIBITED  
+QUESTION_ORDER: Q01_THROUGH_Q10  
+MISSING_OR_UNKNOWN_QUESTION: FAIL_CLOSED  
+CONDITIONAL_GO: PROHIBITED
+
+### Exact Approved Final Validation Questions
+
+| ID | Exact approved question |
+|---|---|
+| Q01 | 현재 설치된 Codex CLI를 실제 기준으로 검증하는가? |
+| Q02 | Full Plan launcher와 CLI 호환성을 실제 Worker 실행으로 검증하는가? |
+| Q03 | 동일 오류가 다음 프로젝트 시작 시 Gate에서 사전 차단되는가? |
+| Q04 | Codex CLI 변경이 상위 Orchestration 계층 변경으로 전파되지 않는가? |
+| Q05 | Provider Router authority가 유지되는가? |
+| Q06 | NVIDIA→Codex automatic fallback 금지가 유지되는가? |
+| Q07 | Codex→manual fallback semantics가 유지되는가? |
+| Q08 | Full Plan Core 변경이 필요하면 Controlled Change 절차로 분리되는가? |
+| Q09 | Backend 수정 후 기존 Full Plan 및 Graphify regression을 수행하는가? |
+| Q10 | 위 조건이 모두 PASS해야 PHASE 3 본 실행으로 진입하는가? |
+
+### Exact Question Runtime Binding
+
+| Question | Runtime design binding |
+|---|---|
+| Q01 | TASK-015/TASK-014 → TEST-019/017/018 → EVD-001/014/015/016 → GATE-001/005 |
+| Q02 | TASK-007/008/014 → TEST-008/009/017 → EVD-004/005/015/016 → GATE-003/005 |
+| Q03 | TASK-005/006/014 → TEST-002/003/017/020 → EVD-002/014/015/016 → GATE-002/005 |
+| Q04 | TASK-004/010/013/014 → TEST-007/012/015/017 → EVD-008/009/012/015/016 → GATE-004/005 |
+| Q05 | TASK-003/009/013/014 → TEST-006/011/015/017 → EVD-007/009/012/015/016 → GATE-003/004/005 |
+| Q06 | TASK-009/013/014 → TEST-011/015/017 → EVD-007/012/015/016 → GATE-003/004/005 |
+| Q07 | TASK-002/008/014 → TEST-005/010/017 → EVD-006/015/016 → GATE-003/005 |
+| Q08 | TASK-010/013/014 → TEST-015/017 → EVD-009/012/015/016 → GATE-004/005 |
+| Q09 | TASK-011/014 → TEST-013/014/017 → EVD-010/011/015/016 → GATE-004/005 |
+| Q10 | TASK-014 → TEST-017/018 → EVD-014/015/016 → GATE-005 |
+
+---
+
+# ID-24 Implementation Design Diagnosis
+
+DIAGNOSIS_STATUS: PASS  
+DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL  
+DIAGNOSIS_VERSION: ID-EXEC-BACKEND-1.1-DIAG-05  
+SOURCE_DRIFT_STATUS: CLEAR
+
+REQ_COVERAGE: PASS — 10/10  
+NFR_COVERAGE: PASS — 4/4  
+SEC_COVERAGE: PASS — 2/2  
+OPS_COVERAGE: PASS — 9/9  
+ARCHITECTURE_COVERAGE: PASS  
+TASK_COVERAGE: PASS — 15/15 tasks complete contract fields; TASK-015 is an explicit pre-change preflight task  
+REQUIRED_CAPABILITY_COVERAGE: PASS — 15/15 tasks provider-neutral and routable  
+VALIDATION_COVERAGE: PASS — 20 test contracts; task-completion validation is acyclic and downstream assurance is separately labeled  
+PERMISSION_COVERAGE: PASS — Planning revision, separate approval, and prohibited classes are deterministic  
+EVIDENCE_COVERAGE: PASS — 16 evidence contracts  
+GATE_COVERAGE: PASS — 5 gates; GATE-001 now precedes source modification and final gate remains fail-closed  
+RECOVERY_COVERAGE: PASS — 6 recovery paths; Controlled Change cannot bypass Planning revision  
+TRACEABILITY_COVERAGE: PASS — 25/25 MUST requirements  
+PROJECT_IDENTITY_INTEGRITY: PASS  
+VERSION_INTEGRITY: PASS  
+HYBRID_POLICY_INTEGRITY: PASS  
+PLANNING_AUTHORITY_INTEGRITY: PASS — metadata-only correction completed with WHAT unchanged  
+ARTIFACT_NAMESPACE_INTEGRITY: PASS  
+BLOCKER_COUNT: 0  
+MAJOR_COUNT: 0  
+MINOR_COUNT: 0  
+OPEN_FINDINGS: NONE
+
+Diagnosis history:
+- `ID-EXEC-BACKEND-1.0-DIAG-01` identified launcher-override validation, complete state-changing precedence, and structured final-output transport hardening; incorporated before DIAG-02.
+- `ID-EXEC-BACKEND-1.0-DIAG-02` passed the prior draft.
+- `ID-EXEC-BACKEND-1.0-DIAG-03` independently reopened readiness with one blocker and three majors: Planning authority metadata inconsistency, preflight ordering, forward/cyclic validation references, and Controlled Change vs Planning revision ambiguity.
+- This `ID-EXEC-BACKEND-1.1` revision closes all DIAG-03 findings without changing approved WHAT.
+- Re-diagnosis `ID-EXEC-BACKEND-1.1-DIAG-04` passed after DIAG-03 remediation.
+- Final pre-approval independent diagnosis `ID-EXEC-BACKEND-1.1-DIAG-05` PASS: BLOCKER 0 / MAJOR 0 / MINOR 0, `READY_FOR_USER_APPROVAL`.
+
+---
+
+# ID-25 User Approval
+
+FINAL_DIAGNOSIS_STATUS: PASS  
+FINAL_DIAGNOSIS_VERSION: ID-EXEC-BACKEND-1.1-DIAG-05  
+FINAL_DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL  
+
+USER_DESIGN_APPROVAL: EXPLICIT  
+USER_DESIGN_APPROVAL_DATE: 2026-09-14  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: ID-EXEC-BACKEND-1.1  
+APPROVED_DATE: 2026-09-14  
+ARTIFACT_FILENAME: GCH-EXEC-BACKEND_APPROVED_IMPLEMENTATION_DESIGN.md
+
+This explicit approval promotes the diagnosed `ID-EXEC-BACKEND-1.1` design, unchanged in technical HOW, to the authoritative implementation-design baseline.
+
+Approval of this design does **not** itself authorize implementation, Worker execution, runtime tests, repository modification, deployment, merge, Git push, or Full Plan orchestration. Those actions remain subject to the next project, `프로젝트 실행승인`.
+
+Required final H1:
+
+`# Global GPT Harness Engineering — Execution Backend Contract Finalization — Approved Implementation Design`
+
+---
+
+# ID-26 Post-Approval Change Control
+
+Technical HOW-only change:
+
+Implementation Design Revision  
+→ Implementation Design Diagnosis  
+→ User Design Re-approval
+
+Material change to Requirement / Scope / Constraint / Success Criterion / Deliverable / Project Identity / target root / lifecycle/version transition / Core authority meaning:
+
+Development Plan Revision  
+→ Development Plan Diagnosis  
+→ User Plan Re-approval  
+→ Implementation Design Revision  
+→ Implementation Design Diagnosis  
+→ User Design Re-approval
+
+---
+
+# ID-27 Full Plan Handoff Readiness
+
+The next project is:
+`프로젝트 실행승인`
+
+Authoritative input:
+`GCH-EXEC-BACKEND_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+The next project must not newly design Requirement, Architecture, Component, Interface, Task, Dependency, Required Capability, Change Target, Validation, Security, Permission, Evidence, Fan-Out/Fan-In, Gate, Recovery, or Ownership Boundary.
+
+HANDOFF_READINESS: READY
+
+This approved document is the sole implementation-design authority for the next project. Execution authorization remains separate and is not granted by this document.
+
+---
+
+# ID-28 Final Baseline Declaration
+
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: ID-EXEC-BACKEND-1.1  
+APPROVED_DATE: 2026-09-14  
+
+This document is the authoritative Implementation Design baseline for the next project:
+
+`프로젝트 실행승인`
+
+Authoritative filename:
+
+`GCH-EXEC-BACKEND_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+Required final H1:
+
+`# Global GPT Harness Engineering — Execution Backend Contract Finalization — Approved Implementation Design`
+
+Sole-authority rule:
+- use this approved implementation design as the implementation-design authority
+- Draft artifacts are non-authoritative history
+- Diagnosis reports are supporting audit artifacts, not execution authority
+- superseded revisions, abandoned alternatives, and unapproved design changes are non-authoritative
+
+FINAL_PROJECT_STATE: COMPLETE  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED
+
+# EC-01 SCOPE
+
+## LOSSLESS SOURCE PROJECTION — EXECUTIVE SUMMARY / APPROVED SCOPE / CONSTRAINTS
+# ID-01 Executive Summary
+
+## Purpose
+
+PHASE 3 — Execution Backend Contract Finalization의 승인된 WHAT을 실제 구현 가능한 HOW로 고정한다. 핵심은 현재 Full Plan Codex Worker 경로의 legacy launcher를 실제 설치 Codex CLI가 제공하는 비대화형 인터페이스에 맞추고, 이 호환성 판단을 실행 전 Preflight와 실제 Worker smoke 및 폐쇄적 Entry Gate로 강제하는 것이다.
+
+## Design Goal
+
+CLI-specific 변화는 `Execution Backend Adapter → Launcher Contract → Actual Installed Runtime/CLI` 경계 내부에서 흡수한다. Orchestrator, Provider Router authority, Result Normalization, Fan-in, Stage Gate, Completion/Worker Authority의 의미는 보존한다. Runtime capability를 실행 시점에 검출해 지원 가능한 launcher contract만 선택하고, unknown/unsupported 상태는 `BACKEND_LAUNCHER_COMPATIBILITY_FAILED`로 fail-closed 처리한다.
+
+## Expected Implementation Outcome
+
+1. 현재 설치 Runtime에서 `codex exec` 기반 launcher contract가 실제 Worker 단위로 동작한다.
+2. prompt는 stdin transport를 사용하고, 결과는 Codex final structured output을 Adapter가 canonical Worker Result v1로 normalize한다.
+3. unsupported/deprecated subcommand/option, PATH/executable 문제, prompt/result transport mismatch, abnormal-success ambiguity가 Gate 이전에 차단된다.
+4. read-only backend diagnostic, isolated state-changing, execution failure/manual fallback, Provider Separation 실제 smoke가 각각 독립 증거를 만든다.
+5. state-changing capability가 `read_only`보다 우선하며 `filesystem_write`, `shell`, `test`, `git`, `implementation`, `integration`은 NVIDIA 실행 대상이 될 수 없다.
+6. Codex→manual fallback은 유지되고 NVIDIA→Codex automatic fallback은 존재하지 않는다.
+7. Graphify PHASE 2와 Full Plan 핵심 regression이 모두 PASS하고 최종 evidence package가 완결될 때만 PHASE 3 Entry Gate가 GO가 된다.
+
+---
+
+# ID-05 Approved Scope and Constraints
+
+## IN SCOPE
+
+- Execution Backend Preflight 및 Entry Gate 강화
+- 실제 설치 Codex CLI version/capability/command/option 검증
+- Full Plan-generated launcher와 실제 CLI interface 차이 진단
+- Launcher Compatibility Contract 정식화
+- Execution Backend Adapter / Launcher boundary의 최소 compatibility remediation
+- Runtime Capability Detection → Supported Launcher Contract Resolution → Backend Invocation → Result Normalization 수준의 최소 compatibility layer
+- unsupported/deprecated command/option/PATH/prompt/invocation mismatch fail-closed detection
+- stdout/stderr/exit code, prompt transport, cwd, input/output artifact 전달, timeout/retry/cancellation contract 검증
+- existing Codex→manual fallback preservation validation
+- actual read-only / isolated state-changing / failure fallback / provider separation smoke
+- Worker Result normalization / Fan-in / Stage Gate convergence validation
+- Full Plan Core authority change triage / Controlled Change branch when required
+- Graphify PHASE 2 + Full Plan core regression
+- evidence package and final Entry Gate decision
+- Graphify PHASE 2 launcher defect Known Issue closure
+
+## OUT OF SCOPE
+
+- Provider Router authority redefinition
+- additional Provider
+- NVIDIA→Codex automatic fallback
+- Planner task-level Provider assignment
+- dynamic routing expansion
+- benchmark router / cost optimizer / automatic multi-model routing
+- generalized multi-runtime/CLI framework
+- Full MCP, AI Office, PHASE 6/7/8 implementation
+- Graphify production adoption expansion
+- arbitrary Stage Gate / Completion / Worker / Fan-in governance semantic changes
+
+## Approved Constraints
+
+### Technical
+- actual installed runtime/CLI is authoritative at execution time.
+- upper orchestration cannot hardcode CLI command strings.
+- CLI-specific invocation stays inside Adapter/Launcher boundary.
+- result converges to existing Worker Result normalization.
+- static validation alone cannot declare compatibility PASS.
+- Codex read-only smoke is a backend diagnostic and does not redefine normal HYBRID routing.
+
+### Compatibility
+- plan-time verified fact is `codex-cli 0.150.1` / `codex exec`, not an execution invariant.
+- legacy `codex run --prompt-file ... --output-dir ...` is incompatible with the verified runtime.
+- exit code alone is insufficient to identify support.
+- version-specific scattered hardcoding is prohibited.
+
+### Security
+- state-changing smoke only in isolated fixture.
+- protected product/core mutation must be zero.
+- NVIDIA state-changing execution is prohibited.
+
+### Operational
+- compatibility failure/unknown is fail-closed.
+- remediation flow is Diagnose → Adapter/Launcher remediation → Focused Test → Regression → Entry Gate Re-evaluation.
+- Core/source changes that preserve approved authority meaning may use Controlled Change when required; any authority-meaning/WHAT change first stops with `PLAN_REVISION_REQUIRED` and returns to Planning revision.
+- Graphify PHASE 2 historical completion/GO/no-core-modification is preserved.
+
+### Business / Cost
+- no additional provider or cost routing.
+- use only the minimum compatibility layer.
+
+## Full Plan HYBRID Constraints
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN  
+EXECUTION_MODE: HYBRID  
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER
+
+Rules:
+- implementation tasks declare Required Capabilities, never a concrete Provider/model.
+- state-changing capabilities override read-only eligibility.
+- NVIDIA state-changing execution: PROHIBITED.
+- NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED.
+- CODEX_TO_MANUAL_FALLBACK: PRESERVE_EXISTING.
+- UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED.
+- DYNAMIC_ROUTING_EXPANSION: PROHIBITED.
+- BENCHMARK_ROUTER: OUT_OF_SCOPE.
+- COST_OPTIMIZER: OUT_OF_SCOPE.
+- AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE.
+
+## Approved Success Criteria
+
+- SC-BACKEND-001: actual installed Codex CLI and Full Plan Codex Backend launcher are compatible at real execution level.
+- SC-BACKEND-002: unsupported Codex commands/options fail closed before or at first execution boundary.
+- SC-BACKEND-003: actual Codex read-only and state-changing smoke workers execute.
+- SC-BACKEND-004: existing Codex→manual fallback semantics remain.
+- SC-BACKEND-005: NVIDIA→Codex automatic fallback does not occur.
+- SC-BACKEND-006: Provider Router authority and Planner provider-neutrality remain.
+- SC-BACKEND-007: Backend invocation change does not alter Fan-in / Stage Gate / Completion / Worker Authority semantics.
+- SC-BACKEND-008: Graphify PHASE 2 and Full Plan core regressions pass after remediation.
+
+## Approved Deliverables
+
+- DEL-001: Execution Backend Preflight & Known Issue Baseline
+- DEL-002: Launcher Compatibility Contract
+- DEL-003: Actual Worker Smoke Validation Evidence Set
+- DEL-004: Core Authority Change Classification / Controlled Change Record if required
+- DEL-005: Graphify + Full Plan Regression Evidence
+- DEL-006: Backend Contract Final Evidence Package
+- DEL-007: Final PHASE 3 Entry Gate Decision Record
+
+---
+
+# EC-02 REQUIREMENTS / ACCEPTANCE / SUCCESS / DELIVERABLES
+
+## LOSSLESS SOURCE PROJECTION — APPROVED REQUIREMENTS
+# ID-04 Approved Requirements
+
+## Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| REQ-901 | PHASE 3 본 구현 전에 Execution Backend Preflight를 수행해야 한다. | 실제 설치 Codex CLI version, supported command/options, generated launcher command, prompt 전달, cwd/input/output, stdout/stderr/exit code, timeout/retry/cancellation, fallback, normalization/Fan-in/Gate 수렴 여부가 검증 기록에 포함됨 | MUST |
+| REQ-902 | Launcher Compatibility Contract를 정의해야 한다. | `Orchestrator → Provider Router → Execution Backend Adapter → Launcher → Actual Installed Runtime/CLI → Normalized Worker Result` 경계와 책임이 문서화되고 상위 계층에 CLI command string이 하드코딩되지 않음 | MUST |
+| REQ-903 | Deprecated/unsupported CLI invocation을 자동 검출하고 fail-closed 처리해야 한다. | unsupported subcommand/option, wrong prompt transport, version-contract mismatch, executable/PATH 문제, invocation failure, abnormal-success ambiguity가 `BACKEND_LAUNCHER_COMPATIBILITY_FAILED` 또는 동등 상태로 진입하고 remediation→focused test→regression→gate re-evaluation 흐름을 강제함 | MUST |
+| REQ-904 | 실제 Codex read-only Worker smoke를 수행해야 한다. | 실제 CLI invocation 성공, result artifact 생성, Worker Result normalization 성공이 증거로 남음 | MUST |
+| REQ-905 | 실제 Codex isolated state-changing Worker smoke를 수행해야 한다. | 격리 fixture에서 제한된 write/change가 성공하고 변경 증거가 생성되며 product/core 영역은 변경되지 않음 | MUST |
+| REQ-906 | Codex execution failure smoke를 수행하고 기존 Codex→manual fallback을 검증해야 한다. | 의도된 Codex failure가 manual fallback 상태와 artifact로 정상 수렴함 | MUST |
+| REQ-907 | Provider separation smoke를 수행해야 한다. | HYBRID에서 read-only/reasoning/evidence analysis는 NVIDIA, state-changing capabilities는 Codex로 Router가 선택하고 Planner provider hardcoding이 없음 | MUST |
+| REQ-908 | Backend compatibility defect의 변경 범위를 Adapter/Launcher 내부 수정과 Full Plan Core authority 변경으로 구분해야 한다. | Adapter/Launcher 내부 해결은 PHASE 3에서 처리하고, Stage Gate/Completion/Worker/Provider Router/Fan-in governance semantics 등 Core authority 변경은 Controlled Change로 분리됨 | MUST |
+| REQ-909 | Runtime capability detection을 통해 지원 가능한 launcher contract를 선택하는 최소 compatibility layer를 제공해야 한다. | 특정 version string/legacy command에 상위 계층이 직접 결합되지 않고 현재 runtime capability에 맞는 supported launcher invocation이 Backend boundary 내부에서 결정됨 | MUST |
+| REQ-910 | Graphify PHASE 2 launcher mismatch를 공식 PHASE 3 Known Issue/Input Issue로 추적해야 한다. | Issue record가 observed phase, temporary recovery, no core modification, required phase3 action을 포함하고 closure evidence가 Entry Gate 판정에 연결됨 | MUST |
+
+## Non-Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| NFR-901 | CLI 변경이 Planner, Provider Router, Fan-in, Stage Gate 등 상위 orchestration 계층 변경으로 전파되지 않도록 compatibility 경계를 유지해야 한다. | CLI interface 변경 대응이 Backend Adapter/Launcher boundary 안에서 가능하고 상위 authority semantics 변경이 없음 | MUST |
+| NFR-902 | Unsupported/ambiguous launcher 상태는 추정 기반 auto-fix 또는 silent fallback 없이 fail-closed여야 한다. | compatibility unknown/failed 상태에서 PHASE 3 본 구현 Gate가 열리지 않음 | MUST |
+| NFR-903 | Compatibility solution은 필요한 최소 범위로 제한하고 범용 dynamic runtime routing/CLI abstraction framework로 확대하지 않는다. | 신규 framework/provider/dynamic router/benchmark/cost optimizer가 추가되지 않음 | MUST |
+| NFR-904 | Backend compatibility 변경은 기존 Full Plan 결과 계약과 provider-agnostic normalization을 보존해야 한다. | Codex 결과가 기존 Worker Result normalization→Fan-in→Stage Gate 흐름으로 수렴함 | MUST |
+
+## Security Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| SEC-901 | State-changing smoke는 격리 fixture에서만 수행하고 실제 product/core 영역에 변경을 가하지 않아야 한다. | smoke evidence에서 허용된 fixture scope만 변경되며 protected product/core path mutation이 0임 | MUST |
+| SEC-902 | NVIDIA에는 state-changing capability를 부여하지 않아야 한다. | filesystem_write/shell/test/git/integration 작업이 NVIDIA로 실행되지 않음 | MUST |
+
+## Operational Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| OPS-901 | PHASE 3 Entry Gate는 Codex CLI detected/version recorded/supported invocation verified/launcher compatibility/read-only smoke/state-changing smoke/Codex→manual fallback/no NVIDIA→Codex auto fallback/Router authority/core regression을 모두 요구해야 한다. | 하나라도 FAIL이면 PHASE 3 본 구현 진입이 차단됨 | MUST |
+| OPS-902 | 기존 Full Plan HYBRID provider policy를 변경하지 않아야 한다. | EXECUTION_MODE=HYBRID, Provider Router authority 유지, Planner provider-neutral 유지 | MUST |
+| OPS-903 | NVIDIA→Codex automatic fallback을 금지해야 한다. | NVIDIA failure가 자동 Codex reroute로 전환되지 않음 | MUST |
+| OPS-904 | 기존 Codex→manual fallback semantics를 보존해야 한다. | Codex launch/runtime failure가 승인된 manual fallback 흐름으로 수렴함 | MUST |
+| OPS-905 | Full Plan Core authority 변경이 필요할 경우 Controlled Change 절차를 적용해야 한다. | Change Request→Impact Analysis→Controlled Change→Regression Test→Baseline Reconfirmation→Gate Re-evaluation 기록이 존재함 | MUST |
+| OPS-906 | Backend compatibility 수정 후 Graphify PHASE 2 및 기존 Full Plan 핵심 regression을 수행해야 한다. | Graphify 및 Full Plan regression evidence가 모두 PASS여야 Entry Gate가 GO 가능 | MUST |
+| OPS-907 | 최종 evidence package는 실제 Codex version, supported command, legacy/current 차이, launcher contract, smoke/fallback/routing/core regression, changed files, Core change 여부, Controlled Change 여부, final gate 판정을 포함해야 한다. | 모든 evidence 항목이 누락 없이 추적 가능함 | MUST |
+| OPS-908 | 사용자 최종 검증 질문 10개가 모두 YES여야 보완 완료로 판정해야 한다. | 하나라도 NO이면 plan readiness 또는 Entry Gate가 PASS가 아님 | MUST |
+| OPS-909 | PHASE 3 compatibility remediation은 Graphify PHASE 2의 완료 상태를 소급 변경하지 않아야 한다. | Graphify PHASE 2는 manual recovery로 완료된 역사적 사실과 no core modification 기록을 유지하고 defect만 PHASE 3 입력 이슈로 추적함 | MUST |
+
+---
+
+# EC-03 ARCHITECTURE / COMPONENTS / CHANGE TARGETS
+
+## LOSSLESS SOURCE PROJECTION — ARCHITECTURE / COMPONENTS / CHANGE TARGETS
+# ID-06 Architecture Design
+
+## Current Architecture Boundary
+
+Current backend-specific boundary begins at the Provider Executor's Codex branch and ends when a canonical Worker Result is written. Current CLI command construction is embedded in `codex_adapter.py`, while upper layers depend only on provider decision and result artifacts.
+
+## Target Architecture
+
+```text
+Orchestrator / Task Package
+  → Provider Router (authority preserved)
+  → Provider Executor
+  → Codex Adapter
+      → Codex Launcher Capability Probe
+      → Launcher Contract Resolver
+      → Codex Process Executor
+      → Structured Final Output Decoder
+      → Worker Result Normalizer
+  → Result Collector
+  → Fan-in
+  → Stage Gate
+```
+
+PHASE 3 readiness is a separate verification plane:
+
+```text
+Current Source Verification
+  → Execution Backend Preflight
+  → Launcher Contract Verification
+  → Live Smoke A/B/C/D
+  → Core/Graphify Regression
+  → Evidence Package
+  → PHASE 3 Entry Gate Evaluator
+```
+
+## Preserved Architecture
+
+- Orchestrator and Planner remain provider-neutral.
+- Provider Router remains sole provider-selection authority.
+- Worker Result schema `orchestration.worker.result.v1` remains canonical downstream contract.
+- Result Collector, Fan-in, Stage Gate, Completion/Worker Authority semantics remain unchanged.
+- manual fallback remains the Codex execution recovery path.
+- NVIDIA failure does not reroute automatically to Codex.
+- separate Codex App Server dynamic-tool transport/readiness remains separate and pinned according to its own existing contract.
+
+## Changed Architecture
+
+- move CLI-specific command selection from static legacy `_build_command` to a dedicated current-runtime capability/contract resolver.
+- add explicit process timeout/cancellation handling.
+- formalize prompt/cwd/sandbox/result transport for `codex exec`.
+- validate `CODEX_CLI_COMMAND` overrides rather than trusting them.
+- add fail-closed compatibility taxonomy and Preflight record.
+- correct state-changing capability precedence for `implementation` and `integration` without changing Provider Router authority.
+- add PHASE 3 backend Entry Gate evaluator and evidence schema.
+
+## New Architecture Elements
+
+- `codex_launcher.py`: current-runtime probe, supported-contract resolution, invocation execution, bounded process result.
+- `execution_backend_preflight.py`: preflight collection and compatibility status.
+- `execution_backend_entry_gate.py`: pure conjunctive gate evaluation and final evidence validation.
+- `docs/harness/execution-backend-contract.md`: documented Launcher Contract + Known Issue lifecycle.
+- PHASE 3 smoke/evidence tests and isolated fixture runtime.
+
+## Architecture Decisions
+
+| ID | Decision | Related Requirements | Rationale |
+|---|---|---|---|
+| ARC-001 | Keep CLI-specific behavior behind Codex Adapter/Launcher boundary; upper orchestration receives no CLI strings. | REQ-902, NFR-901, NFR-903 | confines runtime drift to the backend boundary |
+| ARC-002 | Resolve compatibility by actual capability probe (`codex --version`, `codex exec --help`) rather than exact-version whitelist. | REQ-901, REQ-903, REQ-909 | plan-time version is evidence, not invariant |
+| ARC-003 | Required launcher capabilities are: `exec` subcommand, stdin prompt (`-`), `-C/--cd`, `--sandbox`, `--output-schema`, `-o/--output-last-message`; optional `--json` is used when present for event diagnostics. Missing required capability fails closed. | REQ-901, REQ-903, REQ-909 | prevents guessed compatibility and removes legacy file/output-dir assumptions |
+| ARC-004 | Prompt transport uses stdin; command includes no prompt content. A generated bounded JSON output schema constrains final message; `-o` stores that final message and Adapter converts it to canonical `result.json` + handoff files. | REQ-901, REQ-904, NFR-904 | deterministic prompt/result transport independent of CLI output-dir option |
+| ARC-005 | Working directory is explicit `-C <project_root>`. Read-only diagnostic uses `--sandbox read-only`; action-capable task uses `--sandbox workspace-write` based only on provider-neutral capabilities. Dangerous bypass flags are never generated. | REQ-901, SEC-901, SEC-902 | explicit cwd and least-capability execution |
+| ARC-006 | State-changing set for routing/sandbox precedence is `{filesystem_write, shell, test, git, implementation, integration}`. Any member overrides `read_only`. | REQ-907, SEC-902, OPS-902 | closes observed `read_only+integration` defect while preserving approved policy |
+| ARC-007 | `CODEX_CLI_COMMAND` remains accepted for backward compatibility only if it resolves to a contract-compatible `codex exec` invocation shape; invalid/legacy overrides fail closed and may then use existing manual fallback. | REQ-903, NFR-902, OPS-904 | preserves external configuration surface without trusting incompatible commands |
+| ARC-008 | Process defaults: timeout 600 seconds, termination grace 5 seconds, automatic retry count 0. Timeout/cancellation is classified explicitly; no retry hides compatibility or runtime failures. | REQ-901, REQ-903, NFR-902 | bounded automatic execution and deterministic recovery |
+| ARC-009 | Adapter returns `manual_fallback` on Codex compatibility/launch/runtime failure, but also carries a bounded reason taxonomy. Entry Gate consumes compatibility state independently and cannot interpret manual recovery as launcher compatibility PASS. | REQ-903, REQ-906, OPS-904 | preserves fallback while preventing silent success |
+| ARC-010 | `result_normalizer`, fan-in and stage-gate result semantics are preserved. Adapter owns conversion from structured CLI final output to existing Worker Result v1. | NFR-904, SC-BACKEND-007 | no provider-specific downstream branching |
+| ARC-011 | Preflight evidence records executable detection, version, capability booleans, resolved invocation shape (without prompt secrets), cwd mode, output transport, process policy, fallback policy, normalization/fan-in/gate checks, and status. | REQ-901, OPS-901, OPS-907 | complete execution contract evidence |
+| ARC-012 | Entry Gate is a pure conjunctive evaluator. Unknown/missing evidence equals FAIL. `CONDITIONAL_GO` is not valid for mandatory final Entry Gate; it is treated as closed. | NFR-902, OPS-901, OPS-908 | fail-closed final readiness |
+| ARC-013 | Graphify TASK-013 mismatch is recorded as one PHASE 3 Known Issue with historical completion/manual recovery/no-core-modification preserved; closure requires launcher compatibility + regressions. | REQ-910, OPS-909 | no retrospective rewrite of PHASE 2 |
+| ARC-014 | Core/source changes that preserve every approved authority semantic and remain inside approved WHAT may use the existing Controlled Change process when that process is otherwise required. Any change to Requirement/Scope/Constraint/Success/Deliverable, Provider Router authority, Stage Gate/Completion/Worker/Fan-in governance meaning, Project Identity/root/lifecycle/version transition, or provider/routing policy stops execution with `PLAN_REVISION_REQUIRED` before any Controlled Change or implementation continuation. | REQ-908, OPS-905 | prevents Controlled Change from bypassing Planning authority |
+| ARC-015 | Existing `codex_dynamic_transport.py` and `codex_readiness.py` App Server contract remain separate; PHASE 3 does not merge them into a generalized runtime abstraction. | NFR-903 | avoids scope expansion |
+| ARC-016 | A read-only execution-start Preflight Baseline is captured from the approved repository and actual installed runtime before any PHASE 3 source modification. It records the current legacy launcher mismatch and classifies remediation readiness; it does not depend on the new preflight module being implemented. | REQ-901, REQ-903, REQ-910, OPS-901/907/909 | makes Plan Phase 1 and GATE-001 an actual pre-change gate |
+
+---
+
+# ID-07 Component Design
+
+| ID | Component | Responsibility | Related Requirements | Change Type |
+|---|---|---|---|---|
+| CMP-101 | Codex Launcher Contract | probe current CLI, resolve supported invocation, classify compatibility | REQ-901/902/903/909 | CREATE |
+| CMP-102 | Codex Process Executor | bounded subprocess execution, timeout/cancel, stdout/stderr/exit capture | REQ-901/903 | CREATE |
+| CMP-103 | Codex Adapter | bridge task prompt to launcher and structured result to normalization/manual fallback | REQ-902/904/906, NFR-904 | MODIFY |
+| CMP-104 | Provider Router | preserve authority; enforce full state-changing precedence | REQ-907, SEC-902, OPS-902/903 | MODIFY |
+| CMP-105 | Provider Executor | pass project root + provider-neutral capabilities into adapter | REQ-902/907 | MODIFY |
+| CMP-106 | Orchestration Engine | pass existing task/project context into adapter without CLI details | REQ-902, NFR-901 | MODIFY |
+| CMP-107 | Stage Gate Codex callsite | pass explicit read-only capability context to adapter | NFR-901/904 | MODIFY |
+| CMP-108 | Execution Backend Preflight | generate fail-closed current-runtime compatibility evidence | REQ-901/903/910, OPS-901/907 | CREATE |
+| CMP-109 | Execution Backend Entry Gate | evaluate required smoke/regression/evidence conjunction | OPS-901/907/908 | CREATE |
+| CMP-110 | Result Normalizer | canonical Worker Result v1 | NFR-904 | PRESERVE |
+| CMP-111 | Result Collector / Fan-in | provider-agnostic completion and merge | NFR-904, REQ-908 | PRESERVE |
+| CMP-112 | Existing App Server Transport / Readiness | separate pinned production transport | NFR-903 | PRESERVE |
+| CMP-113 | PHASE 3 Smoke Harness | actual diagnostic/state-change/failure/provider-separation validations | REQ-904/905/906/907, SEC-901/902 | CREATE |
+| CMP-114 | Backend Contract Documentation | launcher contract and Known Issue lifecycle | REQ-902/910 | CREATE |
+
+## Component Details
+
+### CMP-101 — Codex Launcher Contract
+Responsibility: Inspect the actual installed CLI and produce a bounded launcher manifest plus a resolved invocation specification only when required capabilities are present.  
+Inputs: executable lookup, CLI help/version output, project root, output directory, required capabilities, optional existing `CODEX_CLI_COMMAND`.  
+Outputs: `CodexCliCapabilityManifest`, `CodexLauncherInvocation`, or compatibility failure taxonomy.  
+Dependencies: Python stdlib only.  
+State Behavior: stateless; manifest can be serialized as evidence.  
+Error Behavior: any missing/ambiguous required capability yields `BACKEND_LAUNCHER_COMPATIBILITY_FAILED`.  
+Compatibility Considerations: version is recorded but not used as sole allow/deny key.  
+Preserved Behavior: no upper-layer CLI string knowledge.
+
+### CMP-102 — Codex Process Executor
+Responsibility: Execute the resolved invocation with stdin prompt and bounded process policy.  
+Inputs: invocation, prompt text, timeout.  
+Outputs: return code, stdout, stderr, duration, timeout/cancel status, final-message path existence.  
+Dependencies: `subprocess.Popen`.  
+State Behavior: child process only.  
+Error Behavior: timeout → terminate → 5-second grace → kill; no automatic retry.  
+Compatibility Considerations: no shell string execution; argv list only.  
+Preserved Behavior: caller decides manual fallback.
+
+### CMP-103 — Codex Adapter
+Responsibility: preserve public task execution behavior while replacing legacy command build with CMP-101/CMP-102.  
+Inputs: prompt path, output directory, execution mode, optional project root and required capabilities.  
+Outputs: completed result metadata or existing manual fallback artifact/status.  
+Dependencies: CMP-101/102, CMP-110.  
+State Behavior: writes launcher log, structured final response, canonical result/handoff artifacts in task output dir.  
+Error Behavior: bounded compatibility/runtime errors become `manual_fallback` with taxonomy.  
+Compatibility Considerations: existing positional parameters remain valid; new context is keyword-only with safe defaults.  
+Preserved Behavior: `mock`, `manual`, CLI missing/failure fallback semantics.
+
+### CMP-104 — Provider Router
+Responsibility: preserve Provider Router authority and approved HYBRID split.  
+Inputs: mode + required capabilities.  
+Outputs: provider decision.  
+Dependencies: execution mode vocabulary only.  
+State Behavior: pure deterministic function.  
+Error Behavior: unsafe/contradictory capability cannot become NVIDIA-eligible.  
+Compatibility Considerations: only adds approved state-changing capability vocabulary `implementation`, `integration`; no provider/routing expansion.  
+Preserved Behavior: normal read-only/reasoning eligible path; existing non-read-only path; no NVIDIA→Codex failure fallback logic is introduced.
+
+### CMP-108 — Execution Backend Preflight
+Responsibility: produce the pre-implementation runtime compatibility baseline.  
+Inputs: repository identity/baseline, CMP-101 manifest, process policy, known issue metadata, focused static checks.  
+Outputs: `execution_backend_preflight.json` with status `PASS` or `BACKEND_LAUNCHER_COMPATIBILITY_FAILED`.  
+Dependencies: current source and actual CLI.  
+State Behavior: evidence-only; no product/core mutation.  
+Error Behavior: any unknown is failure.  
+Compatibility Considerations: current version and invocation shape are evidence, not permanent source constants.  
+Preserved Behavior: untracked historical runtime artifacts are not deleted/promoted.
+
+### CMP-109 — Execution Backend Entry Gate
+Responsibility: evaluate the exact approved final conjunction and 10-question result.  
+Inputs: preflight, four smoke records, fallback/routing/core regression/Graphify regression records, changed-file/core-change record, Known Issue closure, 10-question matrix.  
+Outputs: final gate record with `GO` or `NO_GO`.  
+Dependencies: evidence only.  
+State Behavior: pure evaluator + serialized decision record.  
+Error Behavior: missing/unknown/CONDITIONAL data → `NO_GO`.  
+Compatibility Considerations: gate does not execute providers or mutate router.  
+Preserved Behavior: approved mandatory conjunction.
+
+---
+
+# ID-10 Change Targets
+
+## Verified Existing Change Targets
+
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | `runtime/orchestrator/codex_adapter.py` | MODIFY | TASK-002 | VERIFIED |
+| CT-002 | `runtime/orchestrator/provider_router.py` | MODIFY | TASK-003 | VERIFIED |
+| CT-003 | `runtime/orchestrator/provider_executor.py` | MODIFY | TASK-004 | VERIFIED |
+| CT-004 | `runtime/orchestrator/engine.py` | MODIFY | TASK-004 | VERIFIED |
+| CT-005 | `runtime/orchestrator/stage_gate.py` | MODIFY | TASK-004 | VERIFIED |
+| CT-006 | `runtime/orchestrator/result_normalizer.py` | PRESERVE | TASK-004/010 | VERIFIED |
+| CT-007 | `runtime/orchestrator/result_collector.py` | PRESERVE | TASK-010 | VERIFIED |
+| CT-008 | `runtime/orchestrator/fanin.py` | PRESERVE | TASK-010 | VERIFIED |
+| CT-009 | `runtime/orchestrator/codex_dynamic_transport.py` | PRESERVE | TASK-013 | VERIFIED |
+| CT-010 | `runtime/orchestrator/codex_readiness.py` | PRESERVE | TASK-013 | VERIFIED |
+| CT-011 | `tests/test_codex_adapter_manual_mode.py` | MODIFY | TASK-006/008 | VERIFIED |
+| CT-012 | `tests/test_provider_router.py` | MODIFY | TASK-009 | VERIFIED |
+| CT-013 | `tests/test_hybrid_runtime_flow.py` | MODIFY | TASK-009/010 | VERIFIED |
+| CT-014 | `tests/test_codex_runtime_flow.py` | MODIFY | TASK-010 | VERIFIED |
+| CT-015 | `tests/test_result_normalizer.py` | PRESERVE / REGRESSION | TASK-010 | VERIFIED |
+| CT-016 | `tests/test_fanout_fanin.py` | PRESERVE / REGRESSION | TASK-010 | VERIFIED |
+| CT-017 | `tests/test_graphify_backend_independence.py` | PRESERVE / REGRESSION | TASK-011 | VERIFIED |
+| CT-018 | `tests/test_graphify_entry_gate.py` | PRESERVE / REGRESSION | TASK-011 | VERIFIED |
+
+## New Change Targets
+
+| Target ID | Planned Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-101 | `runtime/orchestrator/codex_launcher.py` | CREATE | TASK-001 | NEW PATH DECIDED |
+| CT-102 | `runtime/orchestrator/execution_backend_preflight.py` | CREATE | TASK-005 | NEW PATH DECIDED |
+| CT-103 | `runtime/orchestrator/execution_backend_entry_gate.py` | CREATE | TASK-005 | NEW PATH DECIDED |
+| CT-104 | `tests/test_codex_launcher_contract.py` | CREATE | TASK-006 | NEW PATH DECIDED |
+| CT-105 | `tests/test_execution_backend_preflight.py` | CREATE | TASK-006 | NEW PATH DECIDED |
+| CT-106 | `tests/test_execution_backend_entry_gate.py` | CREATE | TASK-006 | NEW PATH DECIDED |
+| CT-107 | `tests/test_execution_backend_smoke.py` | CREATE | TASK-007/008/009 | NEW PATH DECIDED |
+| CT-108 | `docs/harness/execution-backend-contract.md` | CREATE | TASK-012 | NEW PATH DECIDED |
+
+## Runtime Evidence Paths — created only during approved execution
+
+These are not source change targets and are not generated in this design project:
+
+`_workspace/execution-backend-contract/<run-id>/`
+- `preflight.json`
+- `launcher_capabilities.json`
+- `smoke/read_only.json`
+- `smoke/state_changing.json`
+- `smoke/failure_fallback.json`
+- `smoke/provider_separation.json`
+- `regression/full_plan.json`
+- `regression/graphify.json`
+- `core_change_classification.json`
+- `known_issue_closure.json`
+- `final_validation_questions.json`
+- `evidence_package.json`
+- `entry_gate_decision.json`
+
+No unverified existing path is presented as verified.
+
+---
+
+# EC-04 INTERFACES / EXECUTION FLOW
+
+## LOSSLESS SOURCE PROJECTION — INTERFACES / DATA / CONTROL / STATE FLOW
+# ID-08 Interface Design
+
+| ID | Interface | Source | Target | Purpose | Related Requirements |
+|---|---|---|---|---|---|
+| IF-101 | `probe_codex_cli_capabilities()` | CMP-108/CMP-103 | CMP-101 | actual runtime capability manifest | REQ-901/903/909 |
+| IF-102 | `resolve_codex_launcher(...)` | CMP-103 | CMP-101 | supported argv + transport contract | REQ-902/909 |
+| IF-103 | `execute_codex_invocation(...)` | CMP-103 | CMP-102 | bounded CLI process execution | REQ-901/903 |
+| IF-104 | `run_task_prompt(..., *, project_root=None, required_capabilities=())` | CMP-105/106/107 | CMP-103 | backward-compatible adapter entry | REQ-902/904/906 |
+| IF-105 | structured final output schema | actual CLI | CMP-103 | bounded worker result payload | REQ-904, NFR-904 |
+| IF-106 | `route_provider(mode, required_capabilities)` | CMP-105 | CMP-104 | approved HYBRID decision | REQ-907, SEC-902 |
+| IF-107 | `normalize_worker_result(...)` | CMP-103 | CMP-110 | canonical result v1 | NFR-904 |
+| IF-108 | `collect_execution_backend_preflight(...)` | execution preflight flow | CMP-108 | Preflight evidence | REQ-901/910 |
+| IF-109 | `evaluate_execution_backend_entry_gate(...)` | final evidence closure | CMP-109 | deterministic Entry Gate | OPS-901/907/908 |
+| IF-110 | manual fallback artifact contract | CMP-103 | operator/manual path | preserve Codex failure recovery | REQ-906, OPS-904 |
+
+## Interface Details
+
+### IF-101 — `probe_codex_cli_capabilities()`
+Input: no provider-selection input; optional executable resolver for testing.  
+Output fields:
+- `executable_detected: bool`
+- `executable_path_fingerprint: str` (hash, not required to expose full path in packaged evidence)
+- `cli_version: str`
+- `exec_subcommand: bool`
+- `stdin_prompt: bool`
+- `cwd_option: bool`
+- `sandbox_option: bool`
+- `output_schema_option: bool`
+- `output_last_message_option: bool`
+- `json_events_option: bool`
+- `probe_returncodes`
+- `status`
+
+Contract: required booleans except `json_events_option` must be true to resolve the default launcher contract.  
+Error Handling: executable missing, help invocation failure, unparseable/ambiguous required capability → compatibility failure.  
+Compatibility: no equality check against `0.150.1` for the Worker launcher.  
+Security: raw environment/secrets are not serialized.
+
+### IF-102 — `resolve_codex_launcher(...)`
+Input: capability manifest, project root, output dir, required capabilities, optional override.  
+Output: argv list, stdin mode, sandbox mode, output schema path, final output path, optional JSON events flag.  
+Contract: default current invocation shape is logically equivalent to:
+`codex exec -C <project_root> --sandbox <read-only|workspace-write> --output-schema <schema> -o <final-output> [--json] -`
+The exact executable path and optional flag presence come from capability resolution.  
+Error Handling: any legacy/unsupported override or required option omission fails closed.  
+Compatibility: prompt content is not embedded in argv.  
+Security: never emit `--dangerously-bypass-approvals-and-sandbox` or `--dangerously-bypass-hook-trust`.
+
+### IF-103 — `execute_codex_invocation(...)`
+Input: argv + prompt text + timeout 600s.  
+Output: process result record.  
+Contract: retry=0; timeout→terminate→5s grace→kill.  
+Error Handling taxonomy includes `CLI_NOT_FOUND`, `COMPATIBILITY_FAILED`, `TIMEOUT`, `CANCELLED`, `NONZERO_EXIT`, `STRUCTURED_OUTPUT_MISSING`, `STRUCTURED_OUTPUT_INVALID`, `ABNORMAL_SUCCESS_AMBIGUITY`.  
+Compatibility: `returncode=0` is necessary but not sufficient for success.  
+Security: shell=False.
+
+### IF-104 — Adapter Entry
+Input: existing three positional args plus optional keyword `project_root`, `required_capabilities`.  
+Output: same high-level completed/manual fallback contract plus optional bounded `backend_failure_class` / launcher evidence reference.  
+Contract: callsites never build CLI argv.  
+Error Handling: compatibility/runtime errors preserve manual fallback.  
+Compatibility: existing callers remain source-compatible.  
+Security: sandbox mode derives from capabilities, not provider labels.
+
+### IF-105 — Structured Final Output
+The launcher generates a bounded JSON Schema in the task output directory. Minimum accepted final fields are:
+- `thread_id`
+- `agent_name`
+- `status`
+- `summary`
+- `findings[]`
+- `warnings[]`
+- `errors[]`
+- `artifacts[]`
+- `next_step`
+
+Adapter parses the `-o` file as JSON, passes it through `normalize_worker_result`, writes canonical `result.json`, then renders `handoff_report.md` and `worker_handoff.md`. Missing/invalid structured final output is not treated as success even if exit code is zero.
+
+### IF-106 — Provider Route
+`STATE_CHANGING_CAPABILITIES = {filesystem_write, shell, test, git, implementation, integration}`.  
+If any state-changing capability exists, `read_only` cannot make the task NVIDIA-eligible.  
+No Provider assignment is introduced into planning/task ownership.
+
+### IF-108 — Preflight Record
+Canonical top-level fields:
+- identity/baseline binding
+- `cli`
+- `launcher_contract`
+- `process_policy`
+- `fallback_policy`
+- `result_flow_contract`
+- `known_issue`
+- `compatibility_status`
+- `blocking_reasons[]`
+- evidence references
+
+### IF-109 — Entry Gate
+All approved mandatory predicates plus Graphify regression and Provider Separation smoke must be true. 10/10 final questions must be YES. Missing evidence is false. Output is `GO` or `NO_GO`; final `CONDITIONAL_GO` is not accepted.
+
+---
+
+# ID-09 Data / Control / State Flow
+
+## Data Flow
+
+1. `TaskSlice` provides prompt path, output dir, project root context and provider-neutral `required_capabilities`.
+2. Provider Router decides the execution backend from approved HYBRID policy.
+3. Codex Adapter requests a current capability manifest from Launcher Contract.
+4. Launcher Contract resolves an argv specification only if required capabilities are verified.
+5. Adapter reads prompt text and sends it through stdin.
+6. CLI runs with explicit project cwd and capability-derived sandbox.
+7. CLI writes only its structured final response to `-o` path; optional JSONL events remain diagnostic stdout.
+8. Adapter validates return code + structured output presence/schema + expected task binding.
+9. Adapter normalizes payload into existing Worker Result v1 and writes canonical result/handoff artifacts.
+10. existing Collector → Fan-in → Stage Gate consume the same canonical result format as before.
+
+## Control Flow
+
+1. Execution-time Preflight checks source binding and actual CLI capabilities.
+2. Compatibility unknown/fail closes Entry Gate before normal PHASE 3 use.
+3. During a Codex task, Adapter re-probes or consumes a same-run fresh capability record; stale/mismatched manifest fails closed.
+4. Valid contract executes once; there is no automatic CLI retry.
+5. CLI runtime/contract failure becomes existing manual fallback plus explicit failure taxonomy.
+6. Runtime smoke tests validate direct backend diagnostic, isolated action, fallback and Provider Separation independently.
+7. Regression and evidence closure feed final Entry Gate.
+
+## State Transitions
+
+| Current State | Event | Next State | Failure State |
+|---|---|---|---|
+| `UNVERIFIED` | capability probe complete | `COMPATIBILITY_VERIFIED` | `BACKEND_LAUNCHER_COMPATIBILITY_FAILED` |
+| `COMPATIBILITY_VERIFIED` | invocation resolved | `LAUNCH_READY` | `BACKEND_LAUNCHER_COMPATIBILITY_FAILED` |
+| `LAUNCH_READY` | CLI execution succeeds + structured result valid | `WORKER_RESULT_READY` | `MANUAL_FALLBACK_REQUIRED` |
+| `WORKER_RESULT_READY` | normalization succeeds | `NORMALIZED` | `MANUAL_FALLBACK_REQUIRED` |
+| `NORMALIZED` | collection/fan-in/gate convergence validated | `SMOKE_PASS` | `REMEDIATION_REQUIRED` |
+| `SMOKE_PASS` | regressions + evidence complete | `ENTRY_GATE_EVALUATION` | `REMEDIATION_REQUIRED` |
+| `ENTRY_GATE_EVALUATION` | all mandatory predicates + 10/10 YES | `GO` | `NO_GO` |
+
+Manual fallback is not a state upgrade from compatibility failure; it is recovery evidence only.
+
+---
+
+# EC-05 IMPLEMENTATION TASKS
+
+## LOSSLESS SOURCE PROJECTION — TASKS / DEPENDENCIES / EXECUTION STRUCTURE
+# ID-11 Implementation Tasks
+
+## TASK-015 — Capture Execution-Start Preflight Baseline
+
+Purpose: Satisfy the Plan-mandated pre-implementation Execution Backend Preflight against the approved repository and actual installed runtime before any PHASE 3 source modification.
+
+Related Requirements:
+- REQ-901, REQ-903, REQ-910
+- NFR-902
+- OPS-901, OPS-907, OPS-909
+
+Related Architecture:
+- ARC-002, ARC-011, ARC-013, ARC-016
+
+Related Components:
+- current repository/source contracts and actual installed Runtime/CLI; this task intentionally does not depend on newly implemented CMP-108.
+
+Dependencies:
+- EXTERNAL: corrected approved Planning authority is bound; repository baseline and installed Runtime/CLI are accessible.
+- PRECEDENCE: must complete and pass GATE-001 before TASK-001, TASK-002, TASK-003, TASK-004, TASK-005, or TASK-006 may modify source.
+
+Change Targets:
+- none in tracked repository; execution evidence only under the approved evidence root during the execution project.
+
+Inputs:
+- approved identity/baseline
+- current tracked HEAD/status
+- current `codex --version` and `codex exec --help`
+- current tracked Codex Adapter launcher construction
+- current prompt/cwd/input/output, stdout/stderr/exit, timeout/retry/cancel, fallback, normalization/fan-in/gate source contracts
+- Graphify PHASE 2 Known Issue history
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- shell
+- filesystem_write
+
+Expected Output:
+- pre-change `preflight.json`/capability baseline recording actual executable/version/options and current generated legacy launcher shape
+- explicit classification that the current launcher is incompatible but deterministically remediable inside approved Adapter/Launcher scope
+- prompt/cwd/input/output/process/fallback/result-flow observations required by REQ-901
+- Known Issue baseline reference with Graphify PHASE 2 history preserved
+- no tracked source mutation
+
+Completion Validation:
+- TEST-019
+
+Downstream / Regression Validation:
+- TEST-001, TEST-002, TEST-018 after implementation and final evidence closure
+
+Ownership Boundary:
+- read-only source/runtime inspection plus execution-evidence record only.
+
+Preserved Areas:
+- all tracked source; Graphify PHASE 2 completion history; Provider Router and Core authority semantics.
+
+Forbidden Areas:
+- implementing remediation before GATE-001
+- treating the observed incompatible legacy launcher as compatibility PASS
+- deleting or promoting existing untracked runtime evidence
+
+Completion Condition:
+- GATE-001 can deterministically decide whether bounded approved remediation may begin, with all REQ-901 baseline fields recorded and no tracked source change.
+
+## TASK-001 — Implement Codex Launcher Capability Contract
+
+Purpose: Replace static legacy command assumptions with an actual-runtime capability manifest and supported invocation resolver.
+
+Related Requirements:
+- REQ-901, REQ-902, REQ-903, REQ-909
+- NFR-901, NFR-902, NFR-903
+
+Related Architecture:
+- ARC-001, ARC-002, ARC-003, ARC-004, ARC-005, ARC-007, ARC-008
+
+Related Components:
+- CMP-101, CMP-102
+
+Dependencies:
+- EXTERNAL: installed Codex CLI available for live validation; unit tests use injected probe outputs.
+
+Change Targets:
+- CT-101
+
+Inputs:
+- actual `codex --version`
+- actual `codex exec --help`
+- project root/output dir/required capabilities
+- optional existing `CODEX_CLI_COMMAND`
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+- test
+
+Expected Output:
+- bounded capability manifest
+- launcher resolver
+- process executor with timeout/cancel/no-retry policy
+- failure taxonomy
+
+Validation:
+- TEST-001, TEST-002, TEST-003
+
+Ownership Boundary:
+- `runtime/orchestrator/codex_launcher.py` only.
+
+Preserved Areas:
+- Provider Router decision semantics except approved capability precedence handled separately.
+- result normalization/fan-in/gate.
+- App Server dynamic transport/readiness.
+
+Forbidden Areas:
+- new provider abstraction framework
+- dynamic router/benchmark/cost optimizer
+- dangerous Codex bypass flags
+
+Completion Condition:
+- current supported contract can be resolved from capability evidence; legacy/ambiguous commands fail closed; process policy is bounded.
+
+## TASK-002 — Integrate Launcher Contract into Codex Adapter
+
+Purpose: Make `run_task_prompt` use the resolved current launcher while preserving manual fallback and canonical output behavior.
+
+Related Requirements:
+- REQ-902, REQ-903, REQ-904, REQ-906
+- NFR-904
+- OPS-904
+
+Related Architecture:
+- ARC-004, ARC-007, ARC-008, ARC-009, ARC-010
+
+Related Components:
+- CMP-103, CMP-110
+
+Dependencies:
+- SEQUENTIAL: TASK-001
+
+Change Targets:
+- CT-001
+
+Inputs:
+- prompt file
+- output dir
+- optional project root
+- provider-neutral required capabilities
+- launcher manifest/resolution
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+- test
+
+Expected Output:
+- backward-compatible adapter API
+- stdin prompt handling
+- generated output schema
+- final-message validation
+- canonical result/handoff files
+- explicit launcher log/taxonomy
+- existing manual fallback on failure
+
+Validation:
+- TEST-004, TEST-005
+
+Ownership Boundary:
+- `codex_adapter.py` plus calls to CMP-101/102/110 only.
+
+Preserved Areas:
+- manual artifact format unless minimal taxonomy field addition is needed.
+- Worker Result v1 semantics.
+
+Forbidden Areas:
+- treating manual fallback as compatibility PASS
+- prompt text in argv/logs
+
+Completion Condition:
+- adapter no longer generates legacy default invocation; valid structured CLI result normalizes; all failure classes preserve manual fallback.
+
+## TASK-003 — Enforce Approved State-Changing Capability Precedence
+
+Purpose: Close the observed `read_only + integration` safety gap without transferring Provider Router authority or expanding routing.
+
+Related Requirements:
+- REQ-907
+- SEC-902
+- OPS-902, OPS-903
+
+Related Architecture:
+- ARC-006
+
+Related Components:
+- CMP-104
+
+Dependencies:
+- none; may execute in parallel with TASK-001/002 if ownership isolation is respected.
+
+Change Targets:
+- CT-002
+
+Inputs:
+- existing mode/capability tuple
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+- test
+
+Expected Output:
+- state-changing set includes `implementation` and `integration`
+- contradictory read-only metadata never makes those tasks NVIDIA-eligible
+
+Validation:
+- TEST-006
+
+Ownership Boundary:
+- state-changing capability classification inside `provider_router.py` only.
+
+Preserved Areas:
+- Provider Router remains decision authority.
+- no new provider, scoring, health, fallback or dynamic routing.
+
+Forbidden Areas:
+- changing Planner to assign providers
+- adding NVIDIA→Codex failure fallback
+
+Completion Condition:
+- all approved state-changing capabilities have precedence over `read_only`; existing standard routes remain stable.
+
+## TASK-004 — Wire Provider-Neutral Runtime Context through Existing Callsites
+
+Purpose: Supply project root and capabilities to the adapter without leaking CLI details upward.
+
+Related Requirements:
+- REQ-902, REQ-907
+- NFR-901, NFR-904
+
+Related Architecture:
+- ARC-001, ARC-005, ARC-010
+
+Related Components:
+- CMP-105, CMP-106, CMP-107
+
+Dependencies:
+- SEQUENTIAL: TASK-002, TASK-003
+
+Change Targets:
+- CT-003, CT-004, CT-005
+
+Inputs:
+- existing TaskSlice/project root/stage-gate context
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+- integration
+- test
+
+Expected Output:
+- Provider Executor passes task capabilities + project root.
+- direct CODEX_CLI Engine path passes same context.
+- Stage Gate Codex path passes explicit read-only/evidence-analysis capabilities.
+- no CLI string appears in these modules.
+
+Completion Validation:
+- TEST-007
+
+Downstream / Regression Validation:
+- TEST-012 during TASK-010
+
+Ownership Boundary:
+- adapter call arguments only.
+
+Preserved Areas:
+- orchestration task decomposition, Provider selection authority, fan-in/gate meaning.
+
+Forbidden Areas:
+- new CLI-specific conditionals in Engine/Stage Gate.
+
+Completion Condition:
+- all Codex Adapter callsites provide sufficient provider-neutral context and remain free of command syntax.
+
+## TASK-005 — Implement Future Preflight Contract and Entry Gate Evaluators
+
+Purpose: Implement the reusable future-run Preflight contract and final Entry Gate evaluator after the execution-start baseline has already closed GATE-001; this task does not own the pre-change Preflight execution.
+
+Related Requirements:
+- REQ-901, REQ-903, REQ-908, REQ-910
+- NFR-902
+- OPS-901, OPS-905, OPS-907, OPS-908, OPS-909
+
+Related Architecture:
+- ARC-011, ARC-012, ARC-013, ARC-014
+
+Related Components:
+- CMP-108, CMP-109
+
+Dependencies:
+- SEQUENTIAL: TASK-015 / GATE-001
+- FAN_IN: TASK-001, TASK-003
+
+Change Targets:
+- CT-102, CT-103
+
+Inputs:
+- TASK-015 pre-change preflight baseline
+- identity/baseline
+- launcher capability manifest
+- current source contract
+- smoke/regression/evidence records
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+- test
+
+Expected Output:
+- preflight schema/evaluator
+- Entry Gate schema/evaluator
+- deterministic missing-evidence failure
+- 10-question YES evaluation
+- Core change classification slot
+
+Completion Validation:
+- TEST-017
+
+Downstream / Regression Validation:
+- TEST-008 is consumed later by GATE-003 and is not a TASK-005 completion dependency.
+- TEST-018 validates final source/baseline binding in TASK-014.
+
+Ownership Boundary:
+- new PHASE 3-specific evaluator modules; no generic Stage Gate replacement.
+
+Preserved Areas:
+- existing Stage Gate implementation and authority.
+
+Forbidden Areas:
+- using Entry Gate evaluator to alter Provider Router or Stage Gate authority.
+
+Completion Condition:
+- unit tests prove future preflight/entry-gate schemas are fail-closed and every mandatory predicate independently closes the final gate when absent/false.
+
+## TASK-006 — Add Focused Unit/Module Contract Tests
+
+Purpose: Prove launcher capability parsing/resolution, adapter structured output, fallback, router precedence and Entry Gate logic before live smoke.
+
+Related Requirements:
+- REQ-901, REQ-903, REQ-906, REQ-907, REQ-909
+- NFR-902, NFR-904
+- SEC-902
+
+Related Architecture:
+- ARC-002~ARC-012
+
+Related Components:
+- CMP-101~CMP-109
+
+Dependencies:
+- FAN_IN: TASK-001, TASK-002, TASK-003, TASK-004, TASK-005
+
+Change Targets:
+- CT-011, CT-012, CT-013, CT-014, CT-104, CT-105, CT-106
+
+Inputs:
+- deterministic help/version/process fixtures
+- synthetic structured final output
+- route matrix
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+- test
+
+Expected Output:
+- focused L1/L2 test coverage
+
+Completion Validation:
+- TEST-001~TEST-007, TEST-017, TEST-020
+
+Downstream / Regression Validation:
+- TEST-016 is the later Known Issue closure completeness validation owned by TASK-012/013, not a TASK-006 completion dependency.
+
+Ownership Boundary:
+- listed tests only.
+
+Preserved Areas:
+- no live product/core mutation.
+
+Forbidden Areas:
+- mocking live smoke as final runtime evidence.
+
+Completion Condition:
+- focused tests cover success, unsupported, override, timeout, abnormal-success, fallback and contradictory capability cases.
+
+## TASK-007 — Execute Read-Only Backend Diagnostic Smoke
+
+Purpose: Prove the actual installed CLI can execute a real Worker diagnostic and produce a normalized result without normal HYBRID routing.
+
+Related Requirements:
+- REQ-904
+- OPS-901, OPS-907
+
+Related Architecture:
+- ARC-003~ARC-005, ARC-010, ARC-011
+
+Related Components:
+- CMP-113, CMP-103
+
+Dependencies:
+- SEQUENTIAL: TASK-006
+- EXTERNAL: current Codex auth/runtime available.
+
+Change Targets:
+- CT-107 (test/harness definition); runtime evidence only under `_workspace/...` during execution.
+
+Inputs:
+- temporary read-only fixture
+- `reasoning`, `read_only`, `evidence_analysis` diagnostic capabilities
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- shell
+- test
+- integration
+
+Expected Output:
+- live invocation evidence
+- structured final response
+- normalized `result.json`/handoff evidence
+- zero fixture/product mutation
+
+Validation:
+- TEST-008
+
+Ownership Boundary:
+- temp fixture + evidence directory only.
+
+Preserved Areas:
+- normal HYBRID read-only route is not bypassed for workload execution; this is backend diagnostic only.
+
+Forbidden Areas:
+- repository product/core writes.
+
+Completion Condition:
+- actual CLI success + structured output + normalization PASS, with mutation scan clean.
+
+## TASK-008 — Execute Isolated State-Changing and Failure/Fallback Smokes
+
+Purpose: Prove actual action-capable Worker compatibility in isolation and preserve manual fallback on deliberate CLI failure.
+
+Related Requirements:
+- REQ-905, REQ-906
+- SEC-901
+- OPS-904
+
+Related Architecture:
+- ARC-005, ARC-008, ARC-009
+
+Related Components:
+- CMP-113, CMP-103
+
+Dependencies:
+- SEQUENTIAL: TASK-006
+- EXTERNAL: current Codex auth/runtime available.
+
+Change Targets:
+- CT-107
+
+Inputs:
+- temporary state-changing fixture copied outside protected repo source
+- deterministic intentional CLI failure case at launcher process boundary
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- shell
+- test
+- integration
+
+Expected Output:
+- one designated fixture change and before/after hash evidence
+- protected repo/core diff = zero for smoke fixture
+- deliberate failure → `manual_fallback` + manual artifact + taxonomy
+
+Validation:
+- TEST-009, TEST-010, TEST-015
+
+Ownership Boundary:
+- temp fixture/evidence only.
+
+Preserved Areas:
+- actual product/core source.
+
+Forbidden Areas:
+- use of dangerous sandbox bypass
+- manual fallback bypass
+
+Completion Condition:
+- isolated action smoke PASS and fallback smoke PASS.
+
+## TASK-009 — Execute Provider Separation Smoke
+
+Purpose: Prove approved HYBRID policy in actual routing and close the contradictory metadata defect.
+
+Related Requirements:
+- REQ-907
+- SEC-902
+- OPS-902, OPS-903
+
+Related Architecture:
+- ARC-006
+
+Related Components:
+- CMP-104, CMP-105, CMP-113
+
+Dependencies:
+- SEQUENTIAL: TASK-003, TASK-004, TASK-006
+- EXTERNAL: configured read-only provider credentials/runtime for live HYBRID leg.
+
+Change Targets:
+- CT-012, CT-013, CT-107
+
+Inputs:
+- provider-neutral task capability cases
+- safe read-only live task
+- isolated state-changing live task
+- contradictory `read_only + integration`
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- shell
+- test
+- integration
+
+Expected Output:
+- actual route evidence for safe read-only and state-changing tasks
+- explicit proof that `filesystem_write`, `shell`, `test`, `git`, `implementation`, `integration` never execute on NVIDIA
+- proof of no NVIDIA→Codex automatic fallback
+- no Planner provider hardcoding
+
+Validation:
+- TEST-011
+
+Ownership Boundary:
+- test harness and isolated runtime evidence.
+
+Preserved Areas:
+- Provider Router remains authority.
+
+Forbidden Areas:
+- forcing provider labels into task definitions.
+
+Completion Condition:
+- Provider Separation smoke PASS including contradictory metadata case.
+
+## TASK-010 — Validate Result-Flow Convergence and Core-Preservation Integration
+
+Purpose: Prove launcher remediation still converges through canonical normalization, Collector, Fan-in and Stage Gate without authority changes.
+
+Related Requirements:
+- REQ-908
+- NFR-901, NFR-904
+- OPS-905
+
+Related Architecture:
+- ARC-010, ARC-014, ARC-015
+
+Related Components:
+- CMP-106, CMP-107, CMP-110, CMP-111, CMP-112
+
+Dependencies:
+- FAN_IN: TASK-007, TASK-008, TASK-009
+
+Change Targets:
+- CT-006~CT-010, CT-013~CT-016
+
+Inputs:
+- normalized live smoke outputs
+- current fan-in/stage-gate contracts
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- integration
+- test
+
+Expected Output:
+- integration evidence showing common result flow
+- Core authority classification `NO_CORE_AUTHORITY_CHANGE`, semantics-preserving Controlled Change record, or `PLAN_REVISION_REQUIRED` if authority/WHAT meaning would change
+
+Validation:
+- TEST-012, TEST-015
+
+Ownership Boundary:
+- integration validation; preserved modules are not modified unless a semantics-preserving Controlled Change is separately authorized. Any authority/WHAT meaning change is not eligible for this branch and requires Planning revision first.
+
+Preserved Areas:
+- Completion/Worker Authority, Fan-in, Stage Gate governance meaning.
+
+Forbidden Areas:
+- silently fixing a Core semantic defect inside normal adapter remediation.
+
+Completion Condition:
+- common result flow PASS and Core authority change classification is explicit.
+
+## TASK-011 — Run Graphify and Full Plan Regressions
+
+Purpose: Verify no regression to Graphify PHASE 2 or Full Plan core after backend remediation.
+
+Related Requirements:
+- OPS-906, OPS-909
+- NFR-904
+
+Related Architecture:
+- ARC-010, ARC-013~ARC-015
+
+Related Components:
+- preserved core + Graphify regression surfaces
+
+Dependencies:
+- SEQUENTIAL: TASK-010
+
+Change Targets:
+- CT-015~CT-018 as regression targets; no source change expected from this task.
+
+Inputs:
+- focused compatible source state
+- baseline test selections equivalent to prior Graphify 58 PASS and selected Full Plan core 147 PASS / 1 skipped, updated only if test inventory change is itself explained and coverage-equivalent.
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- shell
+- test
+- integration
+
+Expected Output:
+- Full Plan regression record
+- Graphify regression record
+- protected-core mutation scan
+
+Validation:
+- TEST-013, TEST-014, TEST-015
+
+Ownership Boundary:
+- test execution/evidence only.
+
+Preserved Areas:
+- Graphify historical completion status.
+
+Forbidden Areas:
+- changing Graphify PHASE 2 status to explain PHASE 3 defect.
+
+Completion Condition:
+- both regressions PASS and protected-core unexpected mutation = 0.
+
+## TASK-012 — Finalize Launcher Contract Documentation and Known Issue Closure
+
+Purpose: Make the technical contract and PHASE 2 defect lineage durable and auditable.
+
+Related Requirements:
+- REQ-902, REQ-910
+- OPS-907, OPS-909
+
+Related Architecture:
+- ARC-001, ARC-013
+
+Related Components:
+- CMP-114
+
+Dependencies:
+- PARALLEL_SAFE after TASK-006; final closure content depends on TASK-010/011 evidence references.
+
+Change Targets:
+- CT-108
+
+Inputs:
+- final launcher contract
+- observed PHASE 2 mismatch facts
+- manual recovery/no-core-modification history
+- PHASE 3 closure evidence references
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- implementation
+
+Expected Output:
+- documented architecture boundary
+- supported current contract semantics
+- fail-closed/fallback rules
+- Known Issue observed phase / temporary recovery / no core modification / required action / closure references
+
+Validation:
+- TEST-016
+
+Ownership Boundary:
+- documentation only.
+
+Preserved Areas:
+- historical PHASE 2 status.
+
+Forbidden Areas:
+- declaring runtime evidence before it exists.
+
+Completion Condition:
+- documentation matches implemented contract and evidence lineage.
+
+## TASK-013 — Independent Core/Scope/HYBRID Review
+
+Purpose: Independently verify that the implementation remains Adapter/Launcher-bounded and does not introduce unauthorized WHAT, provider or Core governance changes.
+
+Related Requirements:
+- REQ-908
+- NFR-901, NFR-903
+- OPS-902, OPS-903, OPS-905
+
+Related Architecture:
+- ARC-001, ARC-014, ARC-015
+
+Related Components:
+- all changed components + preserved Core surfaces
+
+Dependencies:
+- FAN_IN: TASK-010, TASK-011, TASK-012
+
+Change Targets:
+- none; evidence/review output only.
+
+Inputs:
+- diff/change list
+- tests/evidence
+- Approved Development Plan
+- this Approved Implementation Design once approved
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+
+Expected Output:
+- independent review verdict
+- Core change classification confirmation
+- unauthorized provider/routing expansion check
+
+Validation:
+- TEST-015, TEST-016
+
+Ownership Boundary:
+- read-only independent review.
+
+Preserved Areas:
+- all source.
+
+Forbidden Areas:
+- reviewer remediation edits.
+
+Completion Condition:
+- PASS with no unresolved blocker/major; otherwise recovery loop.
+
+## TASK-014 — Assemble Final Evidence Package and Evaluate PHASE 3 Entry Gate
+
+Purpose: Bind all evidence into the approved conjunction and exact approved Q01~Q10 closure.
+
+Exact Question Binding:
+- `final_validation_questions.json` MUST contain exactly Q01~Q10 from the Approved Design Revision Overlay, in order and with exact text identity.
+- Each question MUST record answer (`YES`/`NO`/`UNKNOWN`) and per-question evidence references.
+- Missing, reordered, rephrased, `NO`, or `UNKNOWN` question state is fail-closed.
+
+Related Requirements:
+- OPS-901, OPS-907, OPS-908
+- all SC-BACKEND criteria
+
+Related Architecture:
+- ARC-011, ARC-012
+
+Related Components:
+- CMP-108, CMP-109
+
+Dependencies:
+- FAN_IN: TASK-007~TASK-013
+
+Change Targets:
+- runtime evidence only during approved execution.
+
+Inputs:
+- preflight
+- smokes A/B/C/D
+- fallback/routing/core records
+- regressions
+- changed file/protected-core records
+- Known Issue closure
+- independent review
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+- filesystem_write
+- integration
+
+Expected Output:
+- `evidence_package.json`
+- `final_validation_questions.json`
+- `entry_gate_decision.json`
+
+Validation:
+- TEST-017, TEST-018
+
+Ownership Boundary:
+- evidence directory only.
+
+Preserved Areas:
+- source implementation.
+
+Forbidden Areas:
+- manual override of a failed predicate.
+
+Completion Condition:
+- all required predicates PASS + 10/10 YES → GO; anything else → NO_GO and recovery.
+
+---
+
+# ID-12 Task Dependencies
+
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-015 | EXTERNAL / PRECEDENCE | approved Plan + current repo/runtime | mandatory pre-change Preflight; GATE-001 must close before tracked source modification |
+| TASK-001 | SEQUENTIAL after GATE-001 | TASK-015 | launcher implementation begins only after pre-change classification |
+| TASK-002 | SEQUENTIAL | TASK-001 | adapter consumes launcher contract |
+| TASK-003 | PARALLEL_SAFE after GATE-001 | TASK-015 | isolated provider-router ownership after preflight gate |
+| TASK-004 | FAN_IN | TASK-002, TASK-003 | callsites require final adapter and capability semantics |
+| TASK-005 | FAN_IN | TASK-015, TASK-001, TASK-003 | future preflight/gate implementation binds the observed baseline, launcher, and policy facts |
+| TASK-006 | FAN_IN | TASK-001~TASK-005 | focused tests cover completed implementation design targets |
+| TASK-007 | SEQUENTIAL | TASK-006 | live diagnostic only after focused tests |
+| TASK-008 | SEQUENTIAL | TASK-006 | live mutation/failure only after focused tests |
+| TASK-009 | SEQUENTIAL | TASK-006, TASK-003, TASK-004 | provider smoke after route/callsite readiness |
+| TASK-010 | FAN_IN | TASK-007, TASK-008, TASK-009 | convergence review consumes all live smoke types |
+| TASK-011 | SEQUENTIAL | TASK-010 | broad regression only after focused/live integration |
+| TASK-012 | PARALLEL_SAFE | TASK-006; closure refs from TASK-010/011 | docs ownership separate; final closure waits for evidence |
+| TASK-013 | FAN_IN | TASK-010, TASK-011, TASK-012 | independent review of complete change set |
+| TASK-014 | FAN_IN | TASK-007~TASK-013 | final evidence and gate closure |
+
+## Execution Order
+
+1. TASK-015 captures the read-only execution-start Preflight baseline; GATE-001 must be GO before any tracked source modification.
+2. TASK-001 and TASK-003 may proceed in parallel only after GATE-001.
+3. TASK-002 follows TASK-001.
+4. TASK-004 and TASK-005 fan in launcher/policy changes.
+5. TASK-006 focused validation.
+6. TASK-007, TASK-008 and TASK-009 may run as isolated smoke work units when external runtime prerequisites are available; they must not overlap writable fixture roots.
+7. TASK-010 integration/core-preservation review.
+8. TASK-011 regression; TASK-012 documentation can proceed in parallel but closes only after final evidence refs are known.
+9. TASK-013 independent review.
+10. TASK-014 final evidence package and Entry Gate.
+
+---
+
+# ID-20 Full Plan Execution Structure
+
+This section defines execution structure only and does not execute the Full Plan.
+
+## Execution Sequence
+
+PRE-IMPLEMENTATION PREFLIGHT BASELINE  
+→ GATE-001  
+→ IMPLEMENT LAUNCHER/POLICY/ADAPTER  
+→ FOCUSED TEST  
+→ ACTUAL RUNTIME SMOKE  
+→ RESULT-FLOW INTEGRATION  
+→ TARGETED + PROGRAM REGRESSION  
+→ DOCUMENT / KNOWN ISSUE CLOSURE  
+→ INDEPENDENT REVIEW  
+→ FINAL EVIDENCE PACKAGE  
+→ PHASE 3 ENTRY GATE
+
+## Phase / Task Mapping
+
+| Execution Phase | Tasks | Required Capabilities | Validation | Gate |
+|---|---|---|---|---|
+| PRE-IMPLEMENTATION PREFLIGHT | TASK-015 | reasoning, read_only, evidence_analysis, shell, filesystem_write | TEST-019 | GATE-001 |
+| IMPLEMENT | TASK-001~TASK-005 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, integration, test | TEST-001~007, TEST-017, TEST-020 | GATE-002 |
+| FOCUSED TEST | TASK-006 | reasoning, read_only, evidence_analysis, filesystem_write, implementation, test | TEST-001~007, TEST-017, TEST-020 | GATE-002 |
+| ACTUAL RUNTIME SMOKE | TASK-007~TASK-009 | reasoning, read_only, evidence_analysis, filesystem_write where needed, shell, test, integration | TEST-008~011 | GATE-003 |
+| INTEGRATION | TASK-010 | reasoning, read_only, evidence_analysis, integration, test | TEST-012/015 | GATE-003 |
+| TARGETED / PROGRAM REGRESSION | TASK-011 | reasoning, read_only, evidence_analysis, shell, test, integration | TEST-013~015 | GATE-004 |
+| DOCUMENT CLOSURE | TASK-012 | reasoning, read_only, evidence_analysis, filesystem_write, implementation | TEST-016 | GATE-004 |
+| INDEPENDENT REVIEW | TASK-013 | reasoning, read_only, evidence_analysis | TEST-015/016 | GATE-004 |
+| STAGE GATE / EVIDENCE CLOSURE | TASK-014 | reasoning, read_only, evidence_analysis, filesystem_write, integration | TEST-017/018 | GATE-005 |
+
+No phase assigns a concrete Provider to an implementation task.
+
+---
+
+# EC-06 VALIDATION
+
+## LOSSLESS SOURCE PROJECTION — VALIDATION / TEST DESIGN
+# ID-13 Validation / Test Design
+
+## Validation Strategy
+
+Validation uses only levels necessary for the approved risk: L1 for deterministic contract logic, L2 for adapter/module behavior, L3 for cross-boundary integration and gate/evidence logic, L4 for actual runtime smoke, and L6 for Full Plan/Graphify regression. No L5 pilot is required.
+
+## Test Contracts
+
+| ID | Level | Target | Related Requirements | Related Tasks | Pass Condition |
+|---|---|---|---|---|---|
+| TEST-001 | L1 | CLI help/version capability parser | REQ-901/903/909 | TASK-001/006 | current fixture resolves; missing/ambiguous required options fail closed; version recorded not pinned |
+| TEST-002 | L1 | launcher resolver + override validation | REQ-903/909, NFR-902 | TASK-001/006 | legacy/unsupported `CODEX_CLI_COMMAND` rejected; no silent fix; valid compatible override accepted |
+| TEST-003 | L1 | process timeout/cancel/no-retry | REQ-901/903 | TASK-001/006 | timeout 600 default, retry 0, terminate→5s→kill behavior and taxonomy deterministic |
+| TEST-004 | L2 | Adapter structured output path | REQ-902/904, NFR-904 | TASK-002/006 | stdin prompt; valid structured final output → canonical Worker Result + handoff |
+| TEST-005 | L2 | Adapter failure/manual fallback | REQ-903/906, OPS-904 | TASK-002/006 | compatibility/nonzero/timeout/invalid-output failures all produce manual fallback artifact with taxonomy |
+| TEST-006 | L1 | Provider Router capability matrix | REQ-907, SEC-902, OPS-902/903 | TASK-003/006 | all state-changing capabilities including `implementation`,`integration`, and contradictory `read_only+integration` are never NVIDIA-eligible |
+| TEST-007 | L3 | callsite boundary | REQ-902, NFR-901 | TASK-004/006 | Engine/Provider Executor/Stage Gate pass context only; no CLI strings outside launcher/adapter |
+| TEST-008 | L4 | actual read-only backend diagnostic | REQ-904, OPS-901 | TASK-007 | real CLI invocation, normalized result/handoff, no mutation |
+| TEST-009 | L4 | actual isolated state-changing smoke | REQ-905, SEC-901 | TASK-008 | only designated temp fixture change; protected product/core mutation 0 |
+| TEST-010 | L4 | actual CLI failure/manual fallback smoke | REQ-906, OPS-904 | TASK-008 | deliberate bounded process failure → manual fallback artifact/status |
+| TEST-011 | L4 | actual Provider Separation smoke | REQ-907, SEC-902, OPS-902/903 | TASK-009 | live HYBRID read-only/state-changing legs obey policy; no NVIDIA→Codex automatic fallback; no Planner provider hardcoding |
+| TEST-012 | L3 | normalization→Collector→Fan-in→Stage Gate convergence | REQ-908, NFR-904 | TASK-010 | no provider-specific downstream branch; existing authority semantics unchanged |
+| TEST-013 | L6 | selected Full Plan core regression | OPS-906, SC-BACKEND-008 | TASK-011 | current equivalent core suite PASS; any changed test selection explicitly coverage-equivalent |
+| TEST-014 | L6 | Graphify PHASE 2 regression | OPS-906/909, SC-BACKEND-008 | TASK-011 | Graphify regression PASS; historical status unchanged |
+| TEST-015 | L3/L6 | changed-file/core-authority/protected mutation scan | REQ-908, OPS-905, SEC-901 | TASK-008/010/011/013 | no unauthorized Core semantic change; smoke protected mutation 0; semantics-preserving Controlled Change is documented if used, while any authority/WHAT meaning change yields `PLAN_REVISION_REQUIRED` |
+| TEST-016 | L3 | Known Issue closure + final contract/evidence completeness | REQ-902/910, OPS-907/909 | TASK-012/013 | historical fields, closure references, final contract and evidence references are complete and consistent |
+| TEST-017 | L3 | Entry Gate conjunction + 10-question matrix | OPS-901/907/908 | TASK-005/006/014 | every required predicate independently closes gate when missing/false; only all PASS + 10/10 YES yields GO |
+| TEST-018 | L6 | final baseline/source binding | REQ-901, OPS-907 | TASK-014 | evidence package records implementation baseline/current head/change list and no unresolved source drift |
+| TEST-019 | L3/L4 | execution-start Preflight baseline | REQ-901/903/910, NFR-902, OPS-901/907/909 | TASK-015 | before tracked source modification, actual repo/runtime/current launcher/process/fallback/result-flow facts are recorded; incompatibility is classifiable and not treated as PASS |
+| TEST-020 | L2/L3 | Known Issue/evidence schema contract | REQ-910, OPS-907/909 | TASK-006 | deterministic fixtures prove required Known Issue and evidence-schema fields without claiming final closure evidence |
+
+### TEST-017 Exact Question Identity Binding
+
+Before answer evaluation, TEST-017 MUST verify that the final question matrix contains exactly Q01~Q10 from the Approved Design Revision Overlay, in order, with exact text identity. Only all mandatory Entry Gate predicates PASS plus exact Q01~Q10 = `10/10 YES` yields GO. Any missing, reordered, rephrased, `NO`, or `UNKNOWN` item yields NO_GO.
+
+## Regression Requirements
+
+- Preserve `mock`, `manual`, `codex-cli`, `nvidia`, `hybrid` mode contracts unless directly affected by approved compatibility fix.
+- Preserve `orchestration.worker.result.v1` normalization semantics.
+- Preserve Codex→manual fallback.
+- Preserve no NVIDIA→Codex automatic fallback.
+- Preserve Graphify backend independence and PHASE 2 COMPLETE/GO/no-core-modification historical semantics.
+- Preserve App Server dynamic transport/readiness unless a semantics-preserving Controlled Change is approved; any authority/WHAT meaning change requires Planning revision first.
+
+## Manual Verification
+
+Manual source review is required for:
+- changed-file list vs CT set;
+- absence of concrete Provider assignments in implementation task ownership;
+- absence of CLI strings outside Codex Adapter/Launcher boundary;
+- absence of dangerous Codex bypass flags;
+- Known Issue historical wording;
+- Core classification: no authority change vs semantics-preserving Controlled Change vs `PLAN_REVISION_REQUIRED` for authority/WHAT meaning change.
+
+---
+
+# EC-07 SECURITY
+
+## LOSSLESS SOURCE PROJECTION — SECURITY DESIGN
+# ID-14 Security Design
+
+## Security Design Rules
+
+| ID | Approved SEC Requirement | Security Design Rule | Related Task | Validation |
+|---|---|---|---|---|
+| SEC-D-001 | SEC-901 | state-changing live smoke uses a newly created temporary fixture root outside tracked product/core source; before/after hashes and changed paths are recorded | TASK-008 | TEST-009/015 |
+| SEC-D-002 | SEC-901 | launcher sandbox for state-changing smoke is `workspace-write` scoped to its explicit project/fixture root; no dangerous bypass flags | TASK-001/008 | TEST-002/009 |
+| SEC-D-003 | SEC-902 | state-changing capability set includes `filesystem_write`, `shell`, `test`, `git`, `implementation`, `integration`; any one overrides `read_only` | TASK-003/009 | TEST-006/011 |
+| SEC-D-004 | SEC-902 | Provider Separation live smoke must prove no state-changing task executes on NVIDIA and no automatic NVIDIA→Codex failure reroute exists | TASK-009 | TEST-011 |
+| SEC-D-005 | SEC-901/902 | evidence/logs record bounded argv shape, return codes and taxonomy; prompt content/secrets are not written into command line evidence | TASK-001/002/005 | TEST-002/004/016 |
+
+## Security Constraints to Preserve
+
+- state-changing smoke only in isolated fixture.
+- protected product/core mutation = 0 during smoke.
+- NVIDIA has no state-changing capability.
+- runtime evidence must not serialize secrets/raw environment.
+- CLI command execution uses argv with `shell=False`.
+
+## Prohibited Security Changes
+
+- `--dangerously-bypass-approvals-and-sandbox`
+- `--dangerously-bypass-hook-trust`
+- NVIDIA tool/write/shell/test/git/implementation/integration execution
+- provider-fallback behavior that bypasses approved separation
+- using product/core source as smoke mutation fixture
+
+---
+
+# EC-08 PERMISSIONS / CAPABILITIES
+
+## LOSSLESS SOURCE PROJECTION — PERMISSION / CAPABILITY DESIGN
+# ID-15 Permission / Capability Design
+
+## Allowed Within Approved Scope
+
+| ID | Action / Capability | Reason |
+|---|---|---|
+| PERM-001 | read repository source/tests/config relevant to backend contract | required for source verification and implementation |
+| PERM-002 | modify only approved source/test/doc change targets after execution approval | required to implement approved HOW |
+| PERM-003 | execute current Codex CLI help/version/preflight probes | explicitly required by REQ-901 |
+| PERM-004 | execute focused tests and isolated smoke fixture | explicitly required by REQ-904~907 |
+| PERM-005 | write execution evidence under `_workspace/execution-backend-contract/<run-id>/` | required by OPS-907; keeps runtime evidence separate from source |
+| PERM-006 | execute Graphify and Full Plan regressions | required by OPS-906 |
+
+## Planning Revision Required — Not Authorized by This Design
+
+| ID | Action | Required Handling |
+|---|---|---|
+| PERM-101 | change Stage Gate/Completion/Worker/Fan-in governance meaning | stop execution → `PLAN_REVISION_REQUIRED` → Planning revision + diagnosis + user approval; only then may an approved Controlled Change sequence execute |
+| PERM-102 | transfer/redefine Provider Router authority or approved provider-policy meaning | stop execution → `PLAN_REVISION_REQUIRED` before any implementation continuation |
+| PERM-103 | add provider/dynamic router/benchmark/cost optimizer/automatic routing | OUT OF SCOPE; requires Planning revision and explicit user approval before redesign |
+
+## Separate Approval Required
+
+| ID | Action | Why Separate Approval Is Required |
+|---|---|---|
+| PERM-104 | install/upgrade/downgrade Codex CLI or other package to make tests pass | changes execution environment rather than validating actual installed runtime |
+
+## Prohibited Actions
+
+- PERM-105: use dangerous sandbox/approval bypass flags.
+- PERM-106: mutate product/core source as smoke fixture.
+- NVIDIA state-changing execution.
+- NVIDIA→Codex automatic fallback.
+- concrete Provider/model assignment in implementation task ownership.
+- silent launcher auto-fix/guessing.
+- generalized runtime abstraction framework.
+- implementation, deployment, merge, Git push or runtime evidence generation during this Implementation Design project.
+
+## Provider-Neutral Capability Rule
+
+Required Capabilities are execution needs, not Provider assignments. State-changing capability overrides `read_only`. Provider Router remains selection authority.
+
+---
+
+# EC-09 EVIDENCE
+
+## LOSSLESS SOURCE PROJECTION — EVIDENCE REQUIREMENTS
+# ID-16 Evidence Requirements
+
+| ID | Purpose | Source | Related Requirement | Related Task / Test | Expected Proof |
+|---|---|---|---|---|---|
+| EVD-001 | execution-start source/runtime preflight binding | current repo + actual CLI | REQ-901/903/910, OPS-901/907/909 | TASK-015 / TEST-019 | pre-change baseline/current head, executable/version/options, current generated launcher mismatch, prompt/cwd/I/O/process/fallback/result-flow classification |
+| EVD-002 | launcher contract compatibility | CMP-101/102 | REQ-902/903/909 | TASK-001/006 / TEST-001~003 | supported invocation resolution; legacy/unknown fail closed |
+| EVD-003 | adapter structured result flow | CMP-103/110 | REQ-904, NFR-904 | TASK-002/007 / TEST-004/008 | final output → canonical result/handoff |
+| EVD-004 | read-only live diagnostic | actual runtime | REQ-904 | TASK-007 / TEST-008 | real invocation success, normalization, no mutation |
+| EVD-005 | isolated state-changing live smoke | temp fixture | REQ-905, SEC-901 | TASK-008 / TEST-009/015 | allowed change only; protected mutation 0 |
+| EVD-006 | Codex failure/manual fallback | actual process boundary | REQ-906, OPS-904 | TASK-008 / TEST-010 | manual fallback state/artifact/taxonomy |
+| EVD-007 | Provider Separation | Provider Router + live HYBRID smoke | REQ-907, SEC-902, OPS-902/903 | TASK-009 / TEST-006/011 | safe read-only vs state-changing route evidence; no NVIDIA mutation/fallback |
+| EVD-008 | result-flow/core preservation | normalizer/collector/fan-in/stage gate | REQ-908, NFR-904 | TASK-010 / TEST-012/015 | provider-neutral convergence; authority semantics unchanged |
+| EVD-009 | Core change classification | independent diff/authority review | REQ-908, OPS-905 | TASK-010/013 / TEST-015 | `NO_CORE_AUTHORITY_CHANGE`, semantics-preserving Controlled Change record, or `PLAN_REVISION_REQUIRED` for authority/WHAT meaning change |
+| EVD-010 | Full Plan regression | selected core suite | OPS-906 | TASK-011 / TEST-013 | PASS |
+| EVD-011 | Graphify regression | Graphify suite | OPS-906/909 | TASK-011 / TEST-014 | PASS; historical PHASE 2 status preserved |
+| EVD-012 | changed-file/protected mutation record | git/source scan | SEC-901, OPS-907 | TASK-011/013 / TEST-015 | only approved targets changed; smoke protected mutation 0 |
+| EVD-013 | Known Issue closure | contract doc + evidence refs | REQ-910, OPS-909 | TASK-012 / TEST-016 | observed phase, temporary recovery, no core modification, required action, closure refs |
+| EVD-014 | final evidence package | all evidence | OPS-907 | TASK-014 / TEST-017/018 | complete required fields and references |
+| EVD-015 | final 10-question record | final evaluator | OPS-908 | TASK-014 / TEST-017 | 10/10 YES |
+| EVD-016 | final Entry Gate decision | CMP-109 | OPS-901 | TASK-014 / TEST-017 | GO only if every mandatory predicate PASS |
+
+EVD-015 MUST contain the exact Q01~Q10 text set from the Approved Design Revision Overlay, per-question evidence references, and the final 10/10 answer record. It MUST NOT synthesize replacement questions.
+
+This section defines required evidence only. No runtime evidence is claimed by this design artifact.
+
+---
+
+# EC-10 FAN-OUT / FAN-IN
+
+## LOSSLESS SOURCE PROJECTION — FAN-OUT / FAN-IN DESIGN
+# ID-17 Fan-Out / Fan-In Design
+
+## Fan-Out Decision
+
+FAN_OUT: ALLOWED
+
+Reason: Core source changes have mostly distinct ownership, and live smoke tasks can be isolated by separate temporary fixture/evidence roots. Fan-out is limited where merge/input dependencies are explicit.
+
+## Parallel Work Units
+
+| Work Unit | Tasks | Ownership Boundary | Input | Expected Output | Forbidden Overlap |
+|---|---|---|---|---|---|
+| FW-001 | TASK-001 | `codex_launcher.py` | CLI contract requirements | launcher resolver/process executor | Provider Router files |
+| FW-002 | TASK-003 | `provider_router.py` | approved capability precedence | routing safety fix | launcher/adapter files |
+| FW-003 | TASK-007 | read-only temp fixture/evidence | focused PASS build | read-only live smoke record | state-changing fixture |
+| FW-004 | TASK-008 | state-changing/failure temp fixtures | focused PASS build | action + fallback smoke records | product/core source; FW-003 fixture |
+| FW-005 | TASK-009 | provider separation fixture/evidence | route fix + focused PASS build | separation record | direct provider hardcoding in task ownership |
+| FW-006 | TASK-012 | documentation file | final contract + history | durable contract/issue doc | runtime code |
+
+## Fan-In / Merge Points
+
+| Merge Point | Inputs | Required Validation |
+|---|---|---|
+| FI-001 | FW-001 + FW-002 → TASK-004/005 | TEST-001/002/006/007 |
+| FI-002 | TASK-001~005 → TASK-006 | focused L1/L2/L3 suite |
+| FI-003 | FW-003 + FW-004 + FW-005 → TASK-010 | TEST-008~012 |
+| FI-004 | TASK-010 + TASK-011 + TASK-012 → TASK-013 | TEST-013~016 + independent review |
+| FI-005 | all evidence → TASK-014 | TEST-017/018 |
+
+Parallel tasks must use distinct writable roots. Any overlap in `codex_adapter.py`, `provider_router.py`, or shared test file ownership converts those tasks to sequential execution.
+
+---
+
+# EC-11 GATES / REVIEW
+
+## LOSSLESS SOURCE PROJECTION — GATE DESIGN
+# ID-18 Gate Design
+
+## GATE-001 — Source / Runtime Preflight Gate
+
+Purpose: Ensure implementation starts from the approved source identity and a classifiable actual CLI state.
+
+Required Tasks:
+- TASK-015
+
+Required Validation:
+- TEST-019
+
+Required Evidence:
+- EVD-001
+
+Required Review:
+- repository identity/baseline review
+
+Decision States:
+- GO
+- CONDITIONAL_GO
+- NO_GO
+
+GO Condition: approved Planning authority and source baseline are valid, all REQ-901 pre-change facts are recorded, and the actual runtime/current launcher state is deterministically classifiable. An observed incompatible legacy launcher may authorize only the already-approved bounded remediation path; it is explicitly **not** launcher compatibility PASS.  
+CONDITIONAL_GO Condition: not used for the mandatory pre-change authority/preflight predicates; any unresolved Planning authority metadata or unknown runtime state keeps implementation closed.  
+NO_GO Condition: Planning authority start condition not satisfied, source drift affecting Plan authority, missing REQ-901 baseline fields, unknown/unclassifiable executable/capability state, or `PLAN_REVISION_REQUIRED`.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-002 — Focused Compatibility Gate
+
+Purpose: Allow live smoke only after launcher/adapter/router/callsite contracts pass focused validation.
+
+Required Tasks:
+- TASK-001~TASK-006
+
+Required Validation:
+- TEST-001~TEST-007, TEST-016/017 unit portions
+
+Required Evidence:
+- EVD-002, EVD-003
+
+Required Review:
+- change-target and CLI-boundary review
+
+GO Condition: all focused tests PASS and no CLI strings leak above Adapter/Launcher boundary.  
+CONDITIONAL_GO Condition: NOT PERMITTED for live state-changing smoke; treat as NO_GO.  
+NO_GO Condition: any focused failure or unresolved compatibility ambiguity.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-003 — Actual Runtime Smoke Gate
+
+Purpose: Prove real Worker-level behavior and provider separation.
+
+Required Tasks:
+- TASK-007, TASK-008, TASK-009, TASK-010
+
+Required Validation:
+- TEST-008~TEST-012, TEST-015 smoke portion
+
+Required Evidence:
+- EVD-004~EVD-009
+
+Required Review:
+- isolated fixture/protected mutation review
+- Provider Separation review
+
+GO Condition: all four smoke categories PASS, protected mutation=0, common result flow PASS, no Core authority change required.  
+CONDITIONAL_GO Condition: NOT PERMITTED; an unavailable external live prerequisite keeps the gate closed until re-run.  
+NO_GO Condition: any smoke unavailable/fail, NVIDIA state-changing behavior, manual fallback failure, or core semantic regression.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-004 — Regression / Core Preservation Gate
+
+Purpose: Ensure compatibility remediation does not regress Graphify or Full Plan Core.
+
+Required Tasks:
+- TASK-011, TASK-012, TASK-013
+
+Required Validation:
+- TEST-013~TEST-016
+
+Required Evidence:
+- EVD-009~EVD-013
+
+Required Review:
+- independent Core/scope/HYBRID review
+
+GO Condition: both regression families PASS, Known Issue closure complete, no unresolved blocker/major, no unauthorized Core/Provider expansion.  
+CONDITIONAL_GO Condition: only non-gating editorial documentation minor after all mandatory evidence PASS; must be fixed before GATE-005.  
+NO_GO Condition: regression/core/scope/HYBRID finding unresolved.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-005 — Final PHASE 3 Entry Gate
+
+Purpose: Evaluate the approved mandatory Entry Gate conjunction and 10/10 final questions.
+
+Required Tasks:
+- TASK-014
+
+Required Validation:
+- TEST-017, TEST-018
+
+Required Evidence:
+- EVD-001~EVD-016
+
+Required Review:
+- final evidence completeness and independent review reference
+
+Required conjunction:
+- Codex CLI detected
+- Codex CLI version recorded
+- supported invocation verified
+- launcher compatibility PASS
+- Codex read-only backend diagnostic smoke PASS
+- isolated state-changing smoke PASS
+- Codex→manual fallback PASS
+- Provider Separation smoke PASS
+- NVIDIA→Codex automatic fallback absent
+- Provider Router authority preserved
+- Full Plan Core regression PASS
+- Graphify PHASE 2 regression PASS
+- final 10 validation questions = exact approved Q01~Q10, in order, text-identical, 10/10 YES
+
+Exact Question Rule: GATE-005 MUST evaluate the exact Q01~Q10 set defined in the Approved Design Revision Overlay. Missing, reordered, rephrased, `NO`, or `UNKNOWN` question state is `NO_GO`; replacement/synthesized questions are prohibited.
+
+GO Condition: every conjunction item PASS, all evidence references resolve, and exact Q01~Q10 = 10/10 YES.  
+CONDITIONAL_GO Condition: NONE — any conditional state is treated as NO_GO.  
+NO_GO Condition: any FAIL/UNKNOWN/MISSING/CONDITIONAL predicate.  
+Gate Bypass: NOT ALLOWED
+
+---
+
+# EC-12 RECOVERY
+
+## LOSSLESS SOURCE PROJECTION — RECOVERY DESIGN
+# ID-19 Recovery Design
+
+## RCV-001 — Source Drift / Authority Conflict
+
+Trigger: current tracked source materially differs from approved baseline in a way that affects requirement/scope/constraint/success/deliverable/identity.  
+Affected Tasks: any.  
+Recovery Flow: Failure → Diagnose drift → classify WHAT/HOW impact → if WHAT/identity affected return Planning revision; otherwise re-verify source and revise design as needed → Focused Validation → Regression → Independent Review → Same Gate Re-evaluation.  
+Recovery Validation: TEST-018.  
+Recovery Gate: GATE-001.  
+Prohibited Bypass: implementing against unknown material drift.
+
+## RCV-002 — Launcher Compatibility Failure
+
+Trigger: required CLI capability missing/ambiguous, invalid override, unsupported invocation, abnormal-success ambiguity.  
+Affected Tasks: TASK-001/002/005/007/008.  
+Recovery Flow: Failure → Diagnose capability/contract mismatch → remediate only Adapter/Launcher boundary → TEST-001~005 → targeted regression → independent review → same GATE-002/003 re-evaluation.  
+Recovery Validation: TEST-001~005.  
+Recovery Gate: GATE-002/GATE-003.  
+Prohibited Bypass: version guess, silent command substitution, forcing manual recovery to count as compatibility PASS.
+
+## RCV-003 — State-Changing Smoke Safety Failure
+
+Trigger: write outside isolated fixture, protected mutation detected, dangerous flag required.  
+Affected Tasks: TASK-008.  
+Recovery Flow: Failure → stop smoke → diagnose fixture/sandbox boundary → remediate isolation → focused TEST-009/015 → regression → independent review → GATE-003 re-evaluation.  
+Recovery Validation: TEST-009/015.  
+Recovery Gate: GATE-003.  
+Prohibited Bypass: accepting product/core mutation or increasing sandbox privilege.
+
+## RCV-004 — Provider Separation Failure
+
+Trigger: state-changing capability routes/executes on NVIDIA, contradictory metadata becomes NVIDIA-eligible, or NVIDIA failure auto-reroutes to Codex.  
+Affected Tasks: TASK-003/009.  
+Recovery Flow: Failure → diagnose capability/router conformance → if the defect is an implementation bug and approved Provider Router authority/policy meaning is unchanged, remediate within approved scope → TEST-006/011 → regression → independent review → same GATE-003 re-evaluation. If Provider Router authority or approved policy meaning must change, stop with `PLAN_REVISION_REQUIRED`; Planning revision + diagnosis + user re-approval must occur before any Controlled Change or implementation continuation.  
+Recovery Validation: TEST-006/011.  
+Recovery Gate: GATE-003.  
+Prohibited Bypass: Planner provider hardcoding or fallback addition.
+
+## RCV-005 — Core Authority / Regression Failure
+
+Trigger: Stage Gate/Completion/Worker/Fan-in semantics change, core regression fail, App Server contract unexpectedly impacted.  
+Affected Tasks: TASK-010/011/013.  
+Recovery Flow: Failure → diagnose → if the change is semantics-preserving and remains inside approved WHAT, use the approved Change Request → Impact Analysis → Controlled Change → Focused Validation → Regression → Independent Review → Baseline Reconfirmation → same GATE-004 re-evaluation. If Stage Gate/Completion/Worker/Fan-in governance meaning or any approved WHAT/authority meaning must change, stop with `PLAN_REVISION_REQUIRED`; return to Planning revision + diagnosis + user re-approval before a new Implementation Design/Controlled Change path is authorized.  
+Recovery Validation: TEST-012~015.  
+Recovery Gate: GATE-004.  
+Prohibited Bypass: hiding Core changes inside compatibility patch.
+
+## RCV-006 — Evidence / Final Gate Incompleteness
+
+Trigger: missing evidence field, unresolved reference, final question NO/UNKNOWN, regression evidence absent.  
+Affected Tasks: TASK-014.  
+Recovery Flow: Failure → diagnose missing proof → return to originating task/test → focused validation → regression if source changed → independent review → same GATE-005 re-evaluation.  
+Recovery Validation: TEST-016~018.  
+Recovery Gate: GATE-005.  
+Prohibited Bypass: manual GO override or `CONDITIONAL_GO` final entry.
+
+---
+
+# EC-13 TRACEABILITY
+
+## LOSSLESS SOURCE PROJECTION — DESIGN TRACEABILITY
+# ID-21 Design Traceability
+
+| Requirement | Success Criterion | Architecture | Component | Task | Required Capability | Validation | Evidence | Gate | Deliverable |
+|---|---|---|---|---|---|---|---|---|---|
+| REQ-901 | SC-BACKEND-001/002 | ARC-002/003/008/011/016 | CMP-101/102/108 | TASK-015/001/005 | reasoning,read_only,evidence_analysis,shell,filesystem_write,implementation,test | TEST-019/001/003/018 | EVD-001/002 | GATE-001/002 | DEL-001/002 |
+| REQ-902 | SC-BACKEND-001/007 | ARC-001/004/010 | CMP-101/103/105/106/107/114 | TASK-001/002/004/012 | reasoning,read_only,evidence_analysis,implementation,integration | TEST-004/007/012/016 | EVD-002/003/008/013 | GATE-002/004 | DEL-002 |
+| REQ-903 | SC-BACKEND-002 | ARC-002/003/007/008/009/016 | CMP-101/102/103/108 | TASK-015/001/002/005/008 | reasoning,read_only,evidence_analysis,filesystem_write,implementation,test,shell | TEST-019/001/002/003/005/010 | EVD-001/002/006 | GATE-001/002/003 | DEL-001/003 |
+| REQ-904 | SC-BACKEND-003 | ARC-004/005/010 | CMP-103/113 | TASK-007 | reasoning,read_only,evidence_analysis,shell,test,integration | TEST-008 | EVD-004 | GATE-003 | DEL-003 |
+| REQ-905 | SC-BACKEND-003 | ARC-005/008 | CMP-103/113 | TASK-008 | reasoning,read_only,evidence_analysis,filesystem_write,shell,test,integration | TEST-009/015 | EVD-005/012 | GATE-003 | DEL-003 |
+| REQ-906 | SC-BACKEND-004 | ARC-008/009 | CMP-103/113 | TASK-002/008 | reasoning,read_only,evidence_analysis,shell,test,integration | TEST-005/010 | EVD-006 | GATE-003 | DEL-003 |
+| REQ-907 | SC-BACKEND-005/006 | ARC-006 | CMP-104/105/113 | TASK-003/009 | reasoning,read_only,evidence_analysis,shell,test,integration | TEST-006/011 | EVD-007 | GATE-003 | DEL-003 |
+| REQ-908 | SC-BACKEND-007 | ARC-001/010/014/015 | CMP-110/111/112 | TASK-010/013 | reasoning,read_only,evidence_analysis,integration,test | TEST-012/015 | EVD-008/009 | GATE-004 | DEL-004 |
+| REQ-909 | SC-BACKEND-001/007 | ARC-002/003 | CMP-101 | TASK-001 | reasoning,read_only,evidence_analysis,implementation,test | TEST-001/002 | EVD-002 | GATE-002 | DEL-002 |
+| REQ-910 | SC-BACKEND-008 | ARC-013/016 | CMP-108/114 | TASK-015/005/012 | reasoning,read_only,evidence_analysis,shell,filesystem_write,implementation | TEST-019/020/016 | EVD-001/013 | GATE-001/004/005 | DEL-001/007 |
+| NFR-901 | SC-BACKEND-007 | ARC-001/010 | CMP-103/105/106/107 | TASK-002/004/010 | reasoning,read_only,evidence_analysis,implementation,integration,test | TEST-007/012/015 | EVD-008/012 | GATE-002/004 | DEL-002/004 |
+| NFR-902 | SC-BACKEND-002 | ARC-002/007/009/012/016 | CMP-101/108/109 | TASK-015/001/005/014 | reasoning,read_only,evidence_analysis,shell,filesystem_write,implementation,test,integration | TEST-019/002/005/017 | EVD-001/002/014/016 | GATE-001/002/005 | DEL-001/007 |
+| NFR-903 | SC-BACKEND-007 | ARC-001/015 | CMP-101/112 | TASK-001/013 | reasoning,read_only,evidence_analysis,implementation | TEST-007/015 | EVD-009/012 | GATE-004 | DEL-002/004 |
+| NFR-904 | SC-BACKEND-007/008 | ARC-004/010 | CMP-103/110/111 | TASK-002/004/010/011 | reasoning,read_only,evidence_analysis,implementation,integration,test | TEST-004/012/013/014 | EVD-003/008/010/011 | GATE-003/004 | DEL-002/005 |
+| SEC-901 | SC-BACKEND-003 | ARC-005 | CMP-102/113 | TASK-008 | reasoning,read_only,evidence_analysis,filesystem_write,shell,test,integration | TEST-009/015 | EVD-005/012 | GATE-003 | DEL-003 |
+| SEC-902 | SC-BACKEND-005/006 | ARC-006 | CMP-104/113 | TASK-003/009 | reasoning,read_only,evidence_analysis,shell,test,integration | TEST-006/011 | EVD-007 | GATE-003 | DEL-003 |
+| OPS-901 | SC-BACKEND-001~008 | ARC-011/012/016 | CMP-108/109 | TASK-015/005/014 | reasoning,read_only,evidence_analysis,shell,filesystem_write,integration | TEST-019/017/018 | EVD-001/014/016 | GATE-001/005 | DEL-007 |
+| OPS-902 | SC-BACKEND-006 | ARC-006 | CMP-104/105 | TASK-003/009/013 | reasoning,read_only,evidence_analysis,integration,test | TEST-006/011/015 | EVD-007/009 | GATE-003/004 | DEL-003/004 |
+| OPS-903 | SC-BACKEND-005 | ARC-006/012 | CMP-104/109/113 | TASK-009/014 | reasoning,read_only,evidence_analysis,test,integration | TEST-011/017 | EVD-007/016 | GATE-003/005 | DEL-003/007 |
+| OPS-904 | SC-BACKEND-004 | ARC-009 | CMP-103/113 | TASK-002/008 | reasoning,read_only,evidence_analysis,shell,test,integration | TEST-005/010 | EVD-006 | GATE-003 | DEL-003 |
+| OPS-905 | SC-BACKEND-007 | ARC-014 | CMP-109 | TASK-010/013/014 | reasoning,read_only,evidence_analysis,integration | TEST-015/017 | EVD-009/016 | GATE-004/005 | DEL-004/007 |
+| OPS-906 | SC-BACKEND-008 | ARC-010/013/015 | preserved regression surfaces | TASK-011 | reasoning,read_only,evidence_analysis,shell,test,integration | TEST-013/014/015 | EVD-010/011/012 | GATE-004/005 | DEL-005 |
+| OPS-907 | SC-BACKEND-001~008 | ARC-011/012/016 | CMP-108/109 | TASK-015/005/014 | reasoning,read_only,evidence_analysis,shell,filesystem_write,integration | TEST-019/020/016/017/018 | EVD-001/014 | GATE-001/005 | DEL-006 |
+| OPS-908 | SC-BACKEND-001~008 | ARC-012 | CMP-109 | TASK-014 | reasoning,read_only,evidence_analysis,integration | TEST-017 | EVD-015/016 | GATE-005 | DEL-007 |
+| OPS-909 | SC-BACKEND-008 | ARC-013/016 | CMP-108/114 | TASK-015/005/011/012 | reasoning,read_only,evidence_analysis,shell,filesystem_write,implementation,test | TEST-019/014/020/016 | EVD-001/011/013 | GATE-001/004/005 | DEL-001/005/007 |
+
+Coverage count: 25/25 approved MUST requirements have Architecture → Component → Task → Required Capability → Validation → Evidence → Gate → Deliverable coverage.
+
+---
+
+# EC-14 PROJECTION INTEGRITY
+
+NO_SEMANTIC_EXPANSION: CONFIRMED
+NO_SEMANTIC_LOSS: CONFIRMED
+NO_UNAUTHORIZED_SCOPE_CHANGE: CONFIRMED
+PROJECT_IDENTITY_INTEGRITY: PASS
+VERSION_IDENTITY_INTEGRITY: PASS
+REQUIRED_CAPABILITY_INTEGRITY: PASS
+HYBRID_POLICY_INTEGRITY: PASS
+SOURCE_DRIFT_STATUS: CLEAR
+
+requirements_coverage: PASS — 25/25 approved MUST requirements
+tasks_coverage: PASS — 15/15
+required_capabilities_coverage: PASS — 15/15 provider-neutral
+validations_coverage: PASS — 20/20
+security_coverage: PASS — SEC 2/2; security design rules 5/5 projected
+permissions_coverage: PASS — allowed / planning-revision / separate-approval / prohibited classes projected
+evidence_coverage: PASS — 16/16
+gates_coverage: PASS — 5/5
+recovery_coverage: PASS — 6/6
+traceability_coverage: PASS — 25/25
+source_section_projection: PASS — ID-00 through ID-28 each projected exactly once
+
+HANDOFF_RESULT: READY_FOR_CONTRACT_DIAGNOSIS
+
+## LOSSLESS SOURCE PROJECTION — CURRENT STATE / PLAN BOUNDARY / ASSUMPTIONS
+# ID-03 Current State Verification
+
+## Verification Snapshot
+
+Verification date: 2026-09-14  
+Verified repository root: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+Verified branch: `main`  
+Verified tracked HEAD: `fc015712d94cc46916608ac2a956d1251562b464`  
+Verified installed executable: `/home/ywjo/.local/bin/codex`  
+Verified CLI version: `codex-cli 0.150.1`  
+Verified non-interactive family: `codex exec`
+
+Observed untracked runtime evidence remains present and is not treated as tracked source drift:
+- `runtime/handoff_report.md`
+- `runtime/orchestrator_runs/`
+- `runtime/stage_gate.json`
+- `runtime/stage_gate_request.json`
+- `runtime/worker_handoff.md`
+
+## Current Architecture Summary
+
+Current Full Plan execution path relevant to this project is:
+
+`OrchestrationEngine`
+→ `TaskSlice.required_capabilities`
+→ `provider_router.route_provider(...)`
+→ `provider_executor.execute_provider_task(...)`
+→ `codex_adapter.run_task_prompt(...)` for the Codex execution path
+→ `_build_command(...)`
+→ actual CLI process
+→ `result_normalizer.normalize_worker_result(...)`
+→ `result_collector`
+→ `fanin`
+→ `stage_gate`
+
+The current defect is inside `codex_adapter._build_command()`: default command generation uses legacy `codex run --prompt-file <...> --output-dir <...>`, while the installed CLI exposes `codex exec` with prompt argument/stdin, `-C/--cd`, `--json`, `--output-schema`, and `-o/--output-last-message`.
+
+A separate `codex_dynamic_transport.py` / `codex_readiness.py` App Server contract exists and is version-pinned for a different production transport. That path is not the Full Plan automatic Worker launcher targeted by this project and is therefore preserved, not generalized into the new CLI launcher contract.
+
+## Relevant Components
+
+| ID | Component / Module | Current Responsibility | Verification Status |
+|---|---|---|---|
+| CMP-001 | `runtime/orchestrator/engine.py` | orchestration run loop and mode-specific worker dispatch | VERIFIED |
+| CMP-002 | `runtime/orchestrator/task_router.py` | derives provider-neutral task capabilities | VERIFIED |
+| CMP-003 | `runtime/orchestrator/provider_router.py` | HYBRID provider decision from mode + capabilities | VERIFIED |
+| CMP-004 | `runtime/orchestrator/provider_executor.py` | dispatches selected backend adapter | VERIFIED |
+| CMP-005 | `runtime/orchestrator/codex_adapter.py` | Codex CLI command build, execution, normalize, manual fallback | VERIFIED — DEFECT PRESENT |
+| CMP-006 | `runtime/orchestrator/result_normalizer.py` | canonical Worker Result v1 normalization | VERIFIED |
+| CMP-007 | `runtime/orchestrator/result_collector.py` | collects result/handoff artifacts | VERIFIED |
+| CMP-008 | `runtime/orchestrator/fanin.py` | provider-agnostic result fan-in | VERIFIED |
+| CMP-009 | `runtime/orchestrator/stage_gate.py` | independent stage gate flow | VERIFIED |
+| CMP-010 | `runtime/orchestrator/codex_dynamic_transport.py` | separate App Server dynamic-tool transport | VERIFIED / PRESERVE |
+| CMP-011 | `runtime/orchestrator/codex_readiness.py` | separate App Server readiness evidence | VERIFIED / PRESERVE |
+
+## Relevant Interfaces
+
+| ID | Interface | Current Behavior | Verification Status |
+|---|---|---|---|
+| IF-001 | `run_task_prompt(task_prompt_path, output_dir, mode)` | CLI unavailable/failure becomes manual fallback | VERIFIED |
+| IF-002 | `_build_command(task_prompt_path, output_dir)` | defaults to legacy `codex run --prompt-file ... --output-dir ...` | VERIFIED — INCOMPATIBLE |
+| IF-003 | `route_provider(mode, required_capabilities)` | safe read-only routes read-only path; state-changing set currently excludes `implementation`/`integration` | VERIFIED — POLICY GAP |
+| IF-004 | `execute_provider_task(...)` | selected Codex path calls `run_task_prompt` | VERIFIED |
+| IF-005 | `normalize_worker_result(...)` | provider-neutral canonical schema v1 | VERIFIED |
+| IF-006 | `collect_run_outputs(...)` → fan-in | completion eligibility and common result consumption | VERIFIED |
+| IF-007 | `run_stage_gate(...)` | Codex CLI mode delegates through `run_task_prompt` | VERIFIED |
+
+## Relevant Runtime Flow
+
+1. Task materialization produces provider-neutral `required_capabilities`.
+2. Provider Router selects execution path in HYBRID.
+3. Codex-routed work reaches `codex_adapter.run_task_prompt`.
+4. Existing adapter only detects executable presence or an override string, not supported subcommands/options.
+5. Default command builds a legacy invocation that the current CLI does not support.
+6. Process failure is caught and converted to existing manual fallback.
+7. If a canonical result exists, existing normalization/fan-in/gate flow remains provider-agnostic.
+
+## Relevant Dependencies
+
+| Dependency | Purpose | Current Status |
+|---|---|---|
+| Installed Codex CLI / PATH | state-changing execution backend | VERIFIED: 0.150.1 / `codex exec` |
+| Python `subprocess` | CLI execution | VERIFIED |
+| Worker Result v1 normalization | downstream provider-agnostic contract | VERIFIED |
+| Provider Router capability contract | HYBRID separation | VERIFIED with `integration` precedence defect |
+| existing manual fallback | Codex failure recovery | VERIFIED |
+| Graphify PHASE 2 test surface | regression baseline | VERIFIED existing tests |
+
+## Existing Tests
+
+| Test / Test Area | Purpose | Status |
+|---|---|---|
+| `tests/test_codex_adapter_manual_mode.py` | CLI fallback and normalization | VERIFIED; contains legacy command fixture |
+| `tests/test_codex_runtime_flow.py` | manual/run/fan-in/gate lifecycle | VERIFIED |
+| `tests/test_provider_router.py` | basic HYBRID split | VERIFIED; missing contradictory integration case |
+| `tests/test_hybrid_runtime_flow.py` | backend dispatch by route | VERIFIED |
+| `tests/test_result_normalizer.py` | canonical schema | VERIFIED |
+| `tests/test_fanout_fanin.py` | fan-out/fan-in result flow | VERIFIED |
+| `tests/test_graphify_backend_independence.py` | Graphify backend independence | VERIFIED regression target |
+| `tests/test_graphify_entry_gate.py` | Graphify fail-closed gate behavior | VERIFIED regression target |
+
+## Current Limitations
+
+- CLI presence is treated as compatibility; command/option capability is not validated.
+- `CODEX_CLI_COMMAND` may point to an unsupported command and is currently trusted without compatibility validation.
+- prompt transport is modeled as a file option that current CLI does not expose.
+- output directory is modeled as a CLI option that current CLI does not expose.
+- result production depends on a result file appearing rather than a formal launcher-level structured output transport.
+- subprocess execution has no explicit timeout/cancellation contract.
+- abnormal-success ambiguity is not classified separately from valid Worker completion.
+- Provider Router state-changing set currently lacks `implementation` and `integration`; contradictory `read_only + integration` can route to NVIDIA.
+- no PHASE 3-specific backend Preflight/Entry Gate evaluator currently binds live smoke + regression + evidence completeness.
+
+## Source Drift Status
+
+SOURCE_DRIFT_STATUS: CLEAR
+
+Tracked HEAD still equals approved `BASELINE_REF`. Runtime evidence artifacts are untracked and preserved. No requirement/scope/constraint/success/deliverable/identity-impacting source drift was found.
+
+---
+
+# ID-22 Plan Boundary Check
+
+## Requirement Changes
+UNAUTHORIZED_REQUIREMENT_CHANGE: NONE  
+Details: approved IDs and acceptance conditions are preserved.
+
+## Scope Changes
+UNAUTHORIZED_SCOPE_CHANGE: NONE  
+Details: new modules/tests/docs are implementation HOW within approved minimum compatibility layer.
+
+## Constraint Changes
+UNAUTHORIZED_CONSTRAINT_CHANGE: NONE  
+Details: actual runtime authority, fail-closed behavior, isolated smoke, HYBRID constraints are preserved.
+
+## Success Criteria Changes
+UNAUTHORIZED_SUCCESS_CRITERIA_CHANGE: NONE
+
+## Deliverable Changes
+UNAUTHORIZED_DELIVERABLE_CHANGE: NONE
+
+## Project Identity Changes
+UNAUTHORIZED_PROJECT_IDENTITY_CHANGE: NONE
+
+## Lifecycle / Root / Version Changes
+UNAUTHORIZED_LIFECYCLE_VERSION_CHANGE: NONE
+
+## HYBRID Policy Changes
+UNAUTHORIZED_HYBRID_POLICY_CHANGE: NONE  
+Details: Provider Router authority and approved state-changing precedence are enforced; no new Provider/fallback/routing system is introduced.
+
+PLAN_REVISION_REQUIRED: NO
+PLAN_AUTHORITY_CORRECTION_REQUIRED: NO — clerical authority metadata normalization completed before this revision; no WHAT/identity/root/version/HYBRID change.
+
+---
+
+# ID-23 Design Assumptions / Open Issues
+
+## Verified Facts
+
+- VF-D-001: tracked `main` HEAD equals approved baseline `fc015712d94cc46916608ac2a956d1251562b464` at design verification time.
+- VF-D-002: actual installed CLI is `codex-cli 0.150.1` and supports `codex exec`.
+- VF-D-003: current CLI help advertises stdin prompt, `-C`, `--sandbox`, `--json`, `--output-schema`, and `-o/--output-last-message`.
+- VF-D-004: current `codex_adapter._build_command` generates legacy `codex run --prompt-file ... --output-dir ...` by default.
+- VF-D-005: current Adapter preserves manual fallback on CLI missing/failure.
+- VF-D-006: current Provider Router state-changing set is `{filesystem_write, shell, test, git}` and therefore does not cover approved `implementation`/`integration` precedence.
+- VF-D-007: current Result Normalizer/Fan-in flow is provider-agnostic.
+- VF-D-008: separate App Server dynamic transport/readiness is present and version-pinned; it is not the target Worker CLI launcher.
+- VF-D-009: The as-received Plan had stale approval-control fields. A clerical metadata-only normalization aligned `PLAN_STATUS`, approved filename, approved version, and approved date with its pre-existing explicit user approval/current-approved declarations; the as-received copy and correction record are retained for audit. No WHAT/identity/root/version/HYBRID field changed.
+
+## Technical Assumptions
+
+- ASM-D-001: `--output-schema` + `-o` continues to be the preferred current CLI structured-result contract only when execution-time capability probe confirms both. If either disappears, compatibility fails closed; implementation does not invent an alternate unapproved transport silently.
+- ASM-D-002: existing Worker prompts can continue to describe task-side file work; Adapter structured final output replaces reliance on the CLI itself creating canonical `result.json`.
+- ASM-D-003: 600s timeout / 5s terminate grace / retry 0 are sufficient bounded defaults for automatic Worker launch; values may be runtime-configurable without changing these default semantics.
+- ASM-D-004: live Provider Separation smoke requires already-configured approved external provider credentials/access; absence keeps GATE-003 closed but does not change the design.
+- ASM-D-005: no native project version scheme will be introduced.
+
+## Open Design Questions
+
+N/A — no unresolved HOW decision is required before user approval.
+
+## Design Blockers
+
+N/A — no design blocker remains.
+
+## Deferred Technical Decisions
+
+- DD-D-001: exact live external read-only provider model/endpoint values remain runtime configuration and evidence, not source constants.
+- DD-D-002: exact run-id naming for `_workspace/execution-backend-contract/<run-id>/` may follow existing run-id conventions as long as evidence schema/binding is unchanged.
+- DD-D-003: if implementation proves the CLI lacks a currently verified required capability, the design does not silently choose an alternative; it enters RCV-002 and requires design revision if a different transport is needed.
+
+---
+
+<!-- SEMANTIC_BODY_END -->
+
+# EC-15 CONTRACT DIAGNOSIS RESULT
+
+DIAGNOSIS_DECISION: PASS
+DIAGNOSIS_READINESS: READY_FOR_USER_EXECUTION_REAPPROVAL
+BLOCKER_COUNT: 0
+MAJOR_COUNT: 0
+MINOR_COUNT: 0
+DIAGNOSED_CONTRACT_BODY_SHA256: aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0
+
+PASS means:
+`CONTRACT_STATUS: DIAGNOSED_PASS`
+
+PASS does not mean user approval and does not authorize READY_FOR_CODEX.
+
+# EC-16 FINAL EXECUTION APPROVAL
+
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-15
+USER_APPROVAL_EVIDENCE: "위험 확인 후 승인"
+ACTIVATION_APPROVAL_SCOPE: Execution Contract reprojection activation + TASK-014 final evidence + TEST-017/TEST-018 + GATE-005 re-evaluation; fail-closed semantics and all existing safety boundaries preserved.
+FINAL_CONTRACT_BODY_SHA256: aa2954a917ccbf4d87b206c36128f86459251fac88bd7cd1eaba7e4541a57df0
+
+Required:
+`FINAL_CONTRACT_BODY_SHA256 == DIAGNOSED_CONTRACT_BODY_SHA256` after explicit new execution-contract approval
+
+If mismatch:
+`POST_DIAGNOSIS_MUTATION_DETECTED`
+
+Successful promotion after explicit user final approval and post-diagnosis semantic-integrity PASS:
+`CONTRACT_STATUS: READY_FOR_CODEX`
+
+# EC-17 EXTERNAL HANDOFF REFERENCES
+
+APPROVED_CONTRACT_ARTIFACT: docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_APPROVED_FULL_PLAN_EXECUTION_CONTRACT_R2.txt
+CODEX_EXECUTION_INSTRUCTION_ARTIFACT: docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_CODEX_EXECUTION_INSTRUCTION_R2.md
+EXECUTION_APPROVAL_RESULT_ARTIFACT: docs/history/upgrades/2026-09-14-UPGRADE-002/GCH-EXEC-BACKEND_NO_NATIVE_VERSION_EXECUTION_APPROVAL_RESULT_R2.md
+TARGET_CANONICAL_PATH: /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering/docs/DEVELOPMENT_PLAN.txt
+FULL_FILE_SHA256_BINDING: EXTERNAL
+
+`APPROVED_CONTRACT_SHA256` is calculated only after the approved contract artifact is finalized and is stored externally in the Codex Execution Instruction and Execution Approval Result. It is not embedded into this file.

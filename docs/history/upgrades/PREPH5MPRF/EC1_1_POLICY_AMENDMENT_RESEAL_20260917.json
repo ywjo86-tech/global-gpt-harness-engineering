@@ -1,0 +1,19 @@
+{
+  "schema_version": "preph5mprf.contract-reseal.v1",
+  "date": "2026-09-17",
+  "authority": "USER_DIRECTIVE_2026-09-17_NVIDIA_PRIMARY_FULL_MCP_PATTERN + current continue directive",
+  "reason": "reconcile EC1.1 semantic-body integrity metadata after the already-authorized execution-policy amendment",
+  "semantic_body_sha256": "c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b",
+  "prior_amended_body_sha256": "1e1b8e2b88107a50f801c8532306d7dccc2d95198c51526d67fdd1251a802174",
+  "pre_amendment_semantic_body_sha256": "34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995",
+  "what_change": "NONE",
+  "provider_authority_change": "NONE",
+  "gate_order_change": "NONE",
+  "scope_change": "NONE",
+  "result": "RESEALED_REGRESSION_PASS",
+  "focused_provider_policy_regression": "36/36 PASS",
+  "preph_runtime_regression": "42/42 PASS",
+  "full_mcp_regression": "78/78 PASS",
+  "current_hash_fields_match": true,
+  "pre_amendment_history_preserved": true
+}

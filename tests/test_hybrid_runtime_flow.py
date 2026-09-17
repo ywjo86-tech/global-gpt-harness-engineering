@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runtime.orchestrator.engine import OrchestrationEngine
+from runtime.orchestrator.nvidia_adapter import run_nvidia_reasoning_task
 from runtime.orchestrator.provider_executor import execute_provider_task
 from runtime.orchestrator.provider_router import (
     ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2,
@@ -24,6 +25,19 @@ def _write_model_pool(project: Path, model: str = "nvidia/router-model") -> Path
         "default_role": "primary_heavy",
         "models": {"primary_heavy": {"model": model, "status": "ACTIVE"}},
         "policy": {"automatic_provider_fallback": False, "state_changing_execution": False},
+    }), encoding="utf-8")
+    return path
+
+
+def _write_codex_policy(project: Path, model: str = "codex/router-model") -> Path:
+    path = project / "runtime" / "test-pre-mprf-provider-policy.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "schema_version": "gch.pre-mprf.provider-policy.v1",
+        "policy_profile": GOVERNED_POLICY_V1,
+        "providers": {
+            "codex": {"model": model, "status": "ACTIVE", "approval_ref": "TEST-APPROVAL"}
+        },
     }), encoding="utf-8")
     return path
 
@@ -145,6 +159,53 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                 self.assertEqual(checkpoint["current_stage"], "ACTION")
                 self.assertEqual(checkpoint["execution_state"], "ACTION_PROVIDER_BLOCKED")
                 self.assertEqual(checkpoint["next_action"], "GPT_AUTHORIZED_MANUAL_ACTION_OR_QUEUE_BLOCK")
+
+    def test_gpt_operator_action_uses_file_backed_codex_model_when_approved_policy_exists(self) -> None:
+        with cloned_sample_project() as project:
+            pool = _write_model_pool(project)
+            codex_policy = _write_codex_policy(project)
+            with patch.dict(
+                os.environ, {
+                    "NVIDIA_API_KEY": "test-key",
+                    "NVIDIA_MODEL": "nvidia/environment-must-not-control-router",
+                    "CODEX_MODEL": "codex/environment-must-not-control-router",
+                    "GCH_NVIDIA_MODEL_POOL": str(pool),
+                    "GCH_PRE_MPRF_PROVIDER_POLICY": str(codex_policy),
+                }, clear=False
+            ), patch("runtime.orchestrator.engine.detect_codex_cli", return_value=True), patch(
+                "runtime.orchestrator.provider_executor.run_nvidia_reasoning_task",
+                return_value={"status": "completed", "summary": "prepared", "findings": [], "warnings": [], "errors": []},
+            ), patch(
+                "runtime.orchestrator.provider_executor.run_task_prompt",
+                return_value={"status": "completed", "summary": "applied", "findings": [], "warnings": [], "errors": []},
+            ) as codex:
+                engine = OrchestrationEngine(project)
+                first = engine.run(mode="hybrid", run_id="operator-action-approved-codex")
+                prepared = [item for item in first["completed_workers"] if item.get("status") == "prepared"]
+                self.assertTrue(prepared)
+                thread_id = str(prepared[0]["thread_id"])
+
+                action = engine.operator_action("operator-action-approved-codex", thread_id)
+                self.assertEqual(action["status"], "completed")
+                self.assertEqual(action["provider"], "codex")
+                self.assertEqual(action["model"], "codex/router-model")
+                self.assertEqual(codex.call_args.kwargs["model_ref"], "codex/router-model")
+                self.assertNotEqual(codex.call_args.kwargs["model_ref"], os.environ["CODEX_MODEL"])
+
+                checkpoint = json.loads(Path(action["continuation_checkpoint"]).read_text(encoding="utf-8"))
+                self.assertEqual(checkpoint["execution_state"], "VERIFY_PENDING")
+                self.assertEqual(checkpoint["next_action"], "GPT_OPERATOR_VERIFY_REQUIRED")
+
+    def test_governed_adapter_cannot_use_environment_model_as_substitute(self) -> None:
+        with patch.dict(
+            os.environ, {"NVIDIA_API_KEY": "test-key", "NVIDIA_MODEL": "environment-model"}, clear=True
+        ):
+            result = run_nvidia_reasoning_task(
+                prompt="hello", project_root=".", model=None, require_explicit_model=True
+            )
+        self.assertEqual(result["status"], "provider_failed")
+        self.assertEqual(result["provider_error_class"], "nvidia_config_error")
+        self.assertNotEqual(result.get("model"), "environment-model")
 
     def test_governed_executor_uses_router_bound_nvidia_model(self) -> None:
         snapshot = ProviderEligibilitySnapshotV1(

@@ -2,7 +2,7 @@
 
 TARGET_RUNTIME_FILE: docs/DEVELOPMENT_PLAN.txt
 CONTRACT_TYPE: FULL_PLAN_EXECUTION_CONTRACT
-CONTRACT_VERSION: EC1.1
+CONTRACT_VERSION: EC1.0
 CONTRACT_STATUS: READY_FOR_EXECUTION
 FINAL_EXECUTION_APPROVAL: APPROVED
 FINAL_APPROVAL_DATE: 2026-09-17
@@ -12,9 +12,9 @@ DIAGNOSIS_STANDARD: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
 DIAGNOSIS_STANDARD_SHA256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
 DIAGNOSIS_RUN_VERSION: EDP-EC-FINAL-2.0
 PRE_REDIAGNOSIS_CONTRACT_FULL_FILE_SHA256: 8cd6d4ad38fe1b2d68c1dfbf42e1b79e619e2d702aa52231537f89da6c6e7b03
-DIAGNOSED_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+DIAGNOSED_CONTRACT_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
 SEMANTIC_BODY_HASH_CONVENTION: SHA-256 over exact UTF-8 bytes beginning with the first byte after the LF that terminates the unique semantic-body BEGIN marker line and ending with the LF immediately before the unique semantic-body END marker line; marker lines are excluded.
-FINAL_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+FINAL_CONTRACT_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
 FINAL_REDIAGNOSIS_STATUS: PASS
 
 <!-- SEMANTIC_BODY_BEGIN -->
@@ -60,19 +60,9 @@ CODEX_USAGE_POLICY: CONSERVE
 
 NVIDIA_STATE_CHANGING_EXECUTION: PROHIBITED
 NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED
-CODEX_MANUAL_FALLBACK_ARTIFACT: GPT_AUTHORIZED_MANUAL_ACTION_ENABLED_WHEN_CODEX_UNAVAILABLE
-CODEX_UNAVAILABLE_BEHAVIOR: GPT_AUTHORIZED_MANUAL_ACTION_OR_QUEUE_BLOCK_STATE_CHANGING_STAGE
-NVIDIA_SAFE_WORK_WHILE_CODEX_BLOCKED: ALLOWED_WHEN_DEPENDENCY_SAFE
-MANUAL_ACTION_AUTHORITY: GPT_OPERATOR_ONLY
-MANUAL_ACTION_PROVIDER_STATUS: NOT_A_PROVIDER
-MANUAL_ACTION_SCOPE: EXACT_BOUNDED_STATE_CHANGING_ACTION_PACKAGE_ONLY
-MANUAL_ACTION_PROVIDER_MODEL_SELECTION: PROHIBITED
-MANUAL_ACTION_SCOPE_EXPANSION: PROHIBITED
-MANUAL_ACTION_GATE_AUTHORITY: PROHIBITED
-NORMAL_EXECUTION_PATTERN: GPT_OPERATOR -> NVIDIA_PREPARE_GENERATE -> CODEX_ACTION_IF_AVAILABLE_ELSE_GPT_AUTHORIZED_MANUAL_ACTION -> NVIDIA_GPT_VERIFY -> GPT_GATE
-EXECUTION_POLICY_AMENDMENT_AUTHORITY: USER_DIRECTIVE_2026-09-17_NVIDIA_PRIMARY_FULL_MCP_PATTERN
-PRE_AMENDMENT_CONTRACT_SHA256: a842f48574385cc9ba322d0f608b04e1a72f1b61b3642d089e628c0d2ec6e439
-PRE_AMENDMENT_SEMANTIC_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
+CODEX_MANUAL_FALLBACK_ARTIFACT: NON_EXECUTING_DIAGNOSTIC_ONLY
+CODEX_UNAVAILABLE_BEHAVIOR: QUEUE_OR_BLOCK_STATE_CHANGING_STAGE
+NVIDIA_SAFE_WORK_WHILE_CODEX_BLOCKED: ALLOWED_ONLY_WHEN_DEPENDENCY_SAFE
 UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
 DYNAMIC_ROUTING_EXPANSION: PROHIBITED
 BENCHMARK_ROUTER: OUT_OF_SCOPE
@@ -87,7 +77,7 @@ GPT_OPERATOR_CONTROL_PATH_REQUIRED: TRUE
 NVIDIA_PRIMARY_CODEX_SECONDARY_ROUTING_REQUIRED: TRUE
 PROVIDER_HANDOFF_RESULT_RETURN_REQUIRED: TRUE
 CODEX_ACTION_BOUNDARY_MINIMIZATION_REQUIRED: TRUE
-QUOTA_EXHAUSTION_CONTROLLED_MANUAL_OR_FAIL_CLOSED_QUEUE_BLOCK_REQUIRED: TRUE
+QUOTA_EXHAUSTION_FAIL_CLOSED_QUEUE_BLOCK_REQUIRED: TRUE
 OPERATOR_ROUTER_MIGRATION_FIRST_MUTATING_TASK: TASK-017
 GENERAL_IMPLEMENTATION_BEFORE_TASK_017_PASS: PROHIBITED
 RUNTIME_COMPATIBILITY_RULE: GATE-001 may issue CONDITIONAL_GO only for TASK-017 while mismatch persists. TASK-002/TASK-003 and all general project implementation remain blocked until TASK-017 validation passes and GATE-001 is re-evaluated to GO.
@@ -159,7 +149,7 @@ DESIGN_DIAGNOSIS_STANDARD_SHA256: `7a74df80220143f3b5aaad9d7d67285f955156b95df88
 
 구현과 검증이 완료되면 `PCA-001 PASS + EXEC-AUTH-EXT-001 PASS + PCA-002 CLOSED + MCP_STABLE_BASELINE RECONFIRMED`가 먼저 성립하고, 그 후에만 MPRF Foundation이 활성화된다. 최종적으로 Router authority, Full MCP action/effect authority, failure/recovery order, observability source-of-truth separation, security negative space, integrated E2E가 모두 PASS해야 `MULTI_PROVIDER_FOUNDATION_BASELINE` 선언 가능 상태가 된다.
 
-현재 설계 시점의 중요한 상태는 `RUNTIME_POLICY_MISMATCH`다. 기존 runtime은 HYBRID에서 read-only를 NVIDIA, state-changing을 Codex로 라우팅하지만, 승인 정책이 요구하는 GPT Operator control contract, NVIDIA prepare → Codex action의 explicit planned handoff, Router-owned model binding, Codex unavailable 시 GPT-authorized Manual Action 또는 operator-visible queue/block를 완전하게 표현하지 않는다. 이 불일치는 계획 범위 내 bounded prerequisite remediation인 TASK-017로 설계하며, GATE-001은 TASK-017 검증 전까지 실행 NO_GO다.
+현재 설계 시점의 중요한 상태는 `RUNTIME_POLICY_MISMATCH`다. 기존 runtime은 HYBRID에서 read-only를 NVIDIA, state-changing을 Codex로 라우팅하지만, 승인 정책이 요구하는 GPT Operator control contract, NVIDIA prepare → Codex action의 explicit planned handoff, Router-owned model binding, Codex unavailable 시 operator-visible queue/block를 완전하게 표현하지 않는다. 이 불일치는 계획 범위 내 bounded prerequisite remediation인 TASK-017로 설계하며, GATE-001은 TASK-017 검증 전까지 실행 NO_GO다.
 
 ---
 
@@ -344,7 +334,7 @@ No tests were executed during this design phase.
 - **RTMISMATCH-003 — Provider Router contract is too narrow.** It accepts mode/capabilities only, not MPRF provider/model eligibility, failure classification, failover request, lifecycle/health/quota evidence, or versioned decision evidence.
 - **RTMISMATCH-004 — Model selection is not fully Router-bound.** NVIDIA adapter reads `NVIDIA_MODEL` when no model is passed; no equivalent Router-selected Codex model binding was found. This violates the approved Router-only model selection authority if left unchanged.
 - **RTMISMATCH-005 — Capability taxonomy conflates generation and mutation.** Current state-changing set uses legacy `test` and `implementation`; approved design policy requires logical separation of `test_design` vs `test_execution` and `implementation_generation` vs state-changing apply, or an explicit `state_change_required` flag.
-- **RTMISMATCH-006 — Provider-unavailable action-boundary state is incomplete.** Runtime does not yet explicitly represent GPT-authorized Manual Action versus `PROVIDER_ACTION_BLOCKED/QUEUED` for Codex unavailable/quota cases while NVIDIA-safe work continues.
+- **RTMISMATCH-006 — Provider-unavailable queue state is incomplete.** Task queue has generic pending/failed/approval states but no explicit mutation-boundary `PROVIDER_ACTION_BLOCKED/QUEUED` state for Codex unavailable/quota cases while NVIDIA-safe work continues.
 - **RTMISMATCH-007 — Git publication authority absent.** Full MCP has no `git_stage`, `git_commit`, `git_push` operations and no branch/remote/freshness/NFF/protected-branch publication policy binding.
 - **RTMISMATCH-008 — MPRF modules do not exist.** This is expected approved implementation scope, not drift.
 
@@ -354,8 +344,8 @@ RUNTIME_COMPATIBILITY_STATUS: `RUNTIME_POLICY_MISMATCH`
 REMEDIATION_PATH: `TASK-017 — Full Plan GPT Operator / HYBRID Runtime Compatibility Remediation`  
 EXECUTION_RULE: TASK-017 may be executed only as the separately controlled GATE-001 prerequisite remediation authorized by the approved plan. TASK-002/TASK-003 and all controlled-change tracks remain blocked until remediation validation passes.  
 UNSAFE_AUTO_FALLBACK: PROHIBITED  
-CODEX_UNAVAILABLE_BEHAVIOR: GPT-authorized Manual Action when an exact bounded action package is approved; otherwise queue/block mutation boundary; continue dependency-safe NVIDIA work  
-MANUAL_FALLBACK_ARTIFACT: may execute only as a GPT-authorized exact bounded Manual Action; it must not select provider/model, expand scope, or advance task/gate state automatically.
+CODEX_UNAVAILABLE_BEHAVIOR: queue/block mutation boundary; continue only NVIDIA-safe independent work  
+MANUAL_FALLBACK_ARTIFACT: may be preserved as a non-executing diagnostic artifact, but must not advance task/gate state automatically.
 
 ## Source Drift Status
 
@@ -448,8 +438,8 @@ Rules:
 - NVIDIA state-changing execution: PROHIBITED.
 - NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED.
 - A planned NVIDIA→Codex transition is permitted only as a new `ACTION` stage after an accepted PREPARE artifact and GPT Operator directive; it is not a retry/fallback of the failed NVIDIA call.
-- Codex unavailable/quota: GPT Operator may authorize the existing Manual Action path for an exact bounded action package; otherwise mutation stage becomes blocked/queued. Dependency-safe NVIDIA work may continue.
-- Existing Manual Action artifacts may execute only under explicit GPT Operator authority for an exact bounded action package. Manual Action is not a provider/model, cannot select provider/model, cannot expand scope, and cannot satisfy a Gate automatically.
+- Codex unavailable/quota: mutation stage becomes blocked/queued; safe independent NVIDIA work may continue.
+- Existing Codex manual fallback artifact may be retained only as a non-executing diagnostic/manual handoff record and cannot satisfy action completion automatically.
 - UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED.
 - DYNAMIC_ROUTING_EXPANSION: PROHIBITED.
 - BENCHMARK_ROUTER / COST_OPTIMIZER / AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE.
@@ -712,7 +702,7 @@ Preserved Behavior: adapter-specific transport remains behind provider executor.
 
 Responsibility: persist task/stage status and deterministic fan-in readiness.  
 New states: `PREPARE_PENDING`, `PREPARE_RUNNING`, `PREPARED`, `ACTION_PENDING`, `ACTION_PROVIDER_BLOCKED`, `ACTION_RUNNING`, `ACTION_RECONCILE`, `ACTION_COMPLETED`, `VERIFY_PENDING`, `VERIFIED`, `RECOVERY_REQUIRED`, plus existing approval/gate states.  
-Error Behavior: Codex unavailable/quota routes the state-changing boundary to GPT Operator. An exact bounded Manual Action may be authorized; otherwise set `ACTION_PROVIDER_BLOCKED/QUEUED`. It never marks success or switches provider automatically.  
+Error Behavior: Codex unavailable/quota sets `ACTION_PROVIDER_BLOCKED`; it does not mark success or switch provider.  
 Compatibility: existing pending/completed/failed projections remain derivable.
 
 ### CMP-D-005 — NVIDIA Adapter
@@ -725,7 +715,7 @@ Preserved Behavior: context sanitizer, retries for allowed transient NVIDIA call
 ### CMP-D-006 — Codex Adapter / Launcher
 
 Responsibility: state-changing action provider boundary.  
-Change: accept Router-bound provider/model/action package and return explicit availability/failure taxonomy; when Codex is unavailable, emit a GPT-reviewable exact Manual Action package that cannot execute or advance without explicit GPT Operator authorization.  
+Change: accept Router-bound provider/model/action package and return explicit availability/failure taxonomy; preserve manual artifact generation only as blocked/manual record.  
 Error Behavior: CLI unavailable/auth/quota/transport failure cannot advance action state.  
 Security: action package is immutable/digest-bound before launch.
 
@@ -1142,7 +1132,7 @@ GPT Operator
   → GPT Gate decision
 ```
 
-Provider handoff rules: NVIDIA PREPARE→ACTION is a planned boundary, not automatic fallback. Codex remains the secondary action provider when available. When Codex is unavailable/quota-limited, GPT Operator may authorize the existing Manual Action path for an exact bounded action package; otherwise action work is queued/blocked. Manual Action is not a provider. Independent NVIDIA-safe tasks may continue when dependencies allow.
+Provider handoff rules: NVIDIA→Codex is a planned PREPARE→ACTION boundary, not automatic fallback. Codex unavailable/quota-limited action work is queued/blocked; independent NVIDIA-safe tasks may continue only when dependencies allow. Codex quota scarcity never authorizes a different mutation provider.
 
 ## Phase / Task Mapping
 
@@ -1203,7 +1193,7 @@ Completion Condition: All identity/source/baseline checks are either VERIFIED or
 
 ## TASK-017 — Full Plan GPT Operator / HYBRID Runtime Compatibility Remediation
 
-Purpose: Implement the bounded prerequisite needed to express GPT Operator control, Router-owned provider/model decision, NVIDIA prepare→ACTION planned handoff, capability/state-change split, and Codex-unavailable GPT-authorized Manual Action or queue/block semantics.
+Purpose: Implement the bounded prerequisite needed to express the already-approved GPT Operator, Router-owned provider/model decision, NVIDIA prepare→Codex action planned handoff, capability/state-change split, and Codex-unavailable queue/block semantics.
 
 Related Requirements: OPS-003, OPS-004, OPS-005, REQ-003, REQ-005, REQ-018, NFR-001, NFR-004
 
@@ -1229,7 +1219,7 @@ Validation: TEST-002, TEST-003, TEST-004, TEST-005, TEST-006
 
 Ownership Boundary: Only the bounded orchestration/runtime compatibility layer required to honor the approved execution contract.
 
-Preserved Areas: Router remains sole provider/model selector; Full MCP action authority unchanged; NVIDIA cannot execute state changes; Manual Action executes only an exact GPT-authorized bounded action package and is never a provider/model or Gate authority.
+Preserved Areas: Router remains sole provider/model selector; Full MCP action authority unchanged; NVIDIA cannot execute state changes; existing manual fallback is non-advancing diagnostic only.
 
 Forbidden Areas: No MPRF implementation; no Git publication authority implementation; no new provider; no same-stage NVIDIA→Codex fallback; no task-level provider/model hardcoding.
 
@@ -1803,7 +1793,7 @@ Validation is layered and fail-closed. Contract/unit checks prove versioned sche
 | TEST-003 | L2 | Provider-neutral task contract | OPS-003~004 | TASK-017 | Task contract rejects provider/model fields; state_change_required and canonical capability split are represented. |
 | TEST-004 | L2 | RouterRequest/Decision v2 contract | REQ-004~005, NFR-001 | TASK-017, TASK-002 | Versioned request/decision validates eligibility/failure/capability input and deterministic evidence. |
 | TEST-005 | L3 | Router-only model selection and adapter binding | REQ-005, OPS-004 | TASK-017, TASK-002 | Adapters consume Router-selected provider/model; environment/default model cannot override a bound decision. |
-| TEST-006 | L3 | HYBRID compatibility / no auto fallback | REQ-018, NFR-001 | TASK-017, TASK-002 | Existing compatible calls still work; NVIDIA failure never directly invokes Codex same-stage; Codex unavailable permits only GPT-authorized exact Manual Action or blocked/queued state. |
+| TEST-006 | L3 | HYBRID compatibility / no auto fallback | REQ-018, NFR-001 | TASK-017, TASK-002 | Existing compatible calls still work; NVIDIA failure never directly invokes Codex same-stage; Codex unavailable becomes blocked/queued. |
 | TEST-007 | L2 | Public execution authorization/result contract | REQ-009~010, SEC-001 | TASK-003, TASK-004, TASK-005 | Public DTOs are versioned, exact-bound and contain no Full MCP internal object exposure. |
 | TEST-008 | L3 | PCA-002 internal access negative space | REQ-010, SEC-005 | TASK-004, TASK-005 | Static/runtime dependency checks show MPRF consumer has zero import/access to forbidden Full MCP internals. |
 | TEST-009 | L2 | git_stage exact-scope safety | REQ-006~008, SEC-001~003 | TASK-003, TASK-005 | Only approved pathspecs stage; unrelated/stale candidate or digest mismatch is blocked; stage evidence seals index/staged diff digests. |
@@ -2304,8 +2294,7 @@ Details: Existing Full MCP approved repository/root and upgrade sequence are pre
 
 ## HYBRID Policy Changes
 UNAUTHORIZED_HYBRID_POLICY_CHANGE: NONE
-AUTHORIZED_EXECUTION_POLICY_AMENDMENT: USER_DIRECTIVE_2026-09-17_NVIDIA_PRIMARY_FULL_MCP_PATTERN
-Details: GPT Operator, Router authority, NVIDIA-primary/Codex-secondary and no automatic NVIDIA→Codex fallback remain authoritative. While Codex is unavailable/quota-exhausted, GPT Operator may authorize the existing Manual Action path for an exact bounded state-changing action package. Manual Action is not a provider/model and cannot expand scope or advance a Gate automatically.
+Details: GPT Operator, Router authority, NVIDIA-primary/Codex-secondary, CONSERVE and no automatic NVIDIA→Codex fallback remain authoritative.
 
 PLAN_REVISION_REQUIRED: NO for the current design. Any future material source drift or WHAT/root/version/authority change invokes RCV-007 and changes this disposition.
 
@@ -2346,8 +2335,8 @@ N/A for Implementation Design approval. `RUNTIME_POLICY_MISMATCH` is a **runtime
 
 ## EXECUTION APPROVAL BOUNDARY
 
-This semantic body is the Approved Implementation Design execution projection plus the explicit user-authorized 2026-09-17 execution-policy amendment for NVIDIA-primary operation with GPT-authorized Manual Action when Codex is unavailable. The amendment changes no project WHAT, provider/model selection authority, NVIDIA mutation prohibition, Gate order, or scope boundary.
-Execution remains controlled by the recorded user approval, task authority and Stage Gates; diagnosis PASS alone cannot bypass them.
+This semantic body is a lossless execution projection of the Approved Implementation Design. It does not itself constitute user final execution approval.
+No target repository mutation, provider worker execution, test execution, Git stage/commit/push, activation, merge, deployment, baseline freeze, or implementation task may begin merely because this contract body is diagnosed PASS.
 
 HANDOFF_RESULT: READY_FOR_CONTRACT_DIAGNOSIS
 <!-- SEMANTIC_BODY_END -->
@@ -2364,7 +2353,7 @@ UNRESOLVED_MINOR_COUNT: 0
 MAJOR_COUNT: 0
 MINOR_COUNT: 0
 COUNT_SEMANTICS: EC-15 BLOCKER_COUNT/MAJOR_COUNT/MINOR_COUNT are current unresolved counts; historical resolved findings are preserved in the external Diagnosis report.
-DIAGNOSED_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+DIAGNOSED_CONTRACT_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
 MUST_REQUIREMENT_COVERAGE: 100%
 MUST_TRACEABILITY_COVERAGE: 100%
 DOMAIN_EVIDENCE_COVERAGE: 100%
@@ -2392,9 +2381,9 @@ USER_APPROVAL_EVIDENCE: User explicitly stated `최종 실행승인` in the exec
 ACTIVATION_APPROVAL_SCOPE: UPGRADE contract activation + Runtime Preflight + approved bounded TASK-017-first remediation path when mismatch persists; subsequent approved tasks may proceed only through contract Gates.
 
 POST_DIAGNOSIS_INTEGRITY: PASS
-DIAGNOSED_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
-FINAL_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
-SEMANTIC_BODY_MUTATION_AFTER_DIAGNOSIS: USER_AUTHORIZED_EXECUTION_POLICY_AMENDMENT_REDIAGNOSED_AND_RESEALED
+DIAGNOSED_CONTRACT_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
+FINAL_CONTRACT_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
+SEMANTIC_BODY_MUTATION_AFTER_DIAGNOSIS: NONE
 
 Required equality:
 `FINAL_CONTRACT_BODY_SHA256 == DIAGNOSED_CONTRACT_BODY_SHA256`
