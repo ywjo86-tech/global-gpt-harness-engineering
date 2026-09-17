@@ -66,8 +66,11 @@ def _failure_class(reason: object) -> str:
         "LV preview requires an active canonical Gate state",
         "canonical binding mismatch",
     )
-    provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_",
-                        "Codex readiness", "nvidia_timeout", "provider readiness")
+    provider_markers = (
+        "BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_FAILURE",
+        "provider_failed", "Codex readiness", "nvidia_timeout", "provider readiness",
+        "canonical Worker authority blocked: pre-collected Codex readiness evidence is required",
+    )
     if any(marker in text for marker in artifact_markers):
         return "ARTIFACT_CONTRACT_FAILURE"
     if any(marker in text for marker in provider_markers):

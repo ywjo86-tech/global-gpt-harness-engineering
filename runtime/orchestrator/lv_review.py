@@ -2160,6 +2160,78 @@ def _verify_legacy_lineage(
                 "preflight_evidence_sha256": expected_values["preflight_evidence_sha256"],
                 "worker_result_sha256": worker_hash,
             }
+    if context["review_attempt"] == 3:
+        review_parent = context["results_root"].parent
+        production_prior = review_parent / "review-attempt-02"
+        if production_prior.is_dir() and not production_prior.is_symlink():
+            base_context = dict(context)
+            base_context["review_attempt"] = 2
+            lineage = _verify_legacy_lineage(
+                base_context, worker_hash, contract=contract, prior_attempt_contract=prior_attempt_contract,
+            )
+            if not isinstance(lineage, dict):
+                raise LVReviewError("verified attempt-01 review lineage is required")
+            required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
+            entries = list(production_prior.iterdir())
+            if {entry.name for entry in entries} != required or not all(
+                entry.is_file() and not entry.is_symlink() for entry in entries
+            ):
+                raise LVReviewError("attempt-02 review artifacts are incomplete or unsafe")
+            hashes = {entry.name: _sha256(entry.read_bytes()) for entry in entries}
+            report_hash = hashes["reviewer.report.json"]
+            if (production_prior / "reviewer.report.sha256").read_text(encoding="ascii").strip() != report_hash:
+                raise LVReviewError("attempt-02 reviewer sidecar does not match report")
+            if (production_prior / "worker.result.sha256").read_text(encoding="ascii").strip() != worker_hash:
+                raise LVReviewError("attempt-02 worker sidecar does not match current worker result")
+            if hashes["worker.result.json"] != worker_hash:
+                raise LVReviewError("attempt-02 worker result does not match current worker result")
+            prior_report = _canonical_json(production_prior / "reviewer.report.json")
+            prior_status = _canonical_json(production_prior / "review.status")
+            if frozenset(prior_report) not in {frozenset(REVIEW_REPORT_FIELDS), frozenset(LEGACY_REVIEW_REPORT_FIELDS)}:
+                raise LVReviewError("attempt-02 reviewer report schema mismatch")
+            if set(prior_status) != REVIEW_STATUS_FIELDS:
+                raise LVReviewError("attempt-02 review status schema mismatch")
+            prior_verdict = prior_report.get("verdict")
+            if prior_verdict not in {"FAIL", "BLOCKED"} or prior_status.get("verdict") != prior_verdict:
+                raise LVReviewError("attempt-02 retry lineage requires a terminal non-PASS verdict")
+            expected_values = {
+                "run_id": context["run_id"],
+                "review_attempt": 2,
+                "worker_attempt": 1,
+                "hard_stop": True,
+                "review_only_reexecution": True,
+                "reran_worker": False,
+                "package_manifest_sha256": _sha256(context["manifest_path"].read_bytes()),
+                "preflight_evidence_sha256": context["preflight_evidence_sha256"],
+                "worker_result_sha256": worker_hash,
+            }
+            for field, expected_value in expected_values.items():
+                if prior_report.get(field) != expected_value or prior_status.get(field) != expected_value:
+                    raise LVReviewError(f"attempt-02 review contract mismatch: {field}")
+            if prior_status.get("reviewer_report_sha256") != report_hash:
+                raise LVReviewError("attempt-02 status does not match reviewer report")
+            if prior_report.get("prior_review_lineage") != lineage:
+                raise LVReviewError("attempt-02 prior review lineage mismatch")
+            lineage = dict(lineage)
+            lineage["immediate_prior_review"] = {
+                "location_kind": "review-attempt-directory",
+                "review_attempt": 2,
+                "verdict": prior_verdict,
+                "hard_stop": True,
+                "artifacts": [
+                    {
+                        "path": f"_workspace/orchestration-results/{context['run_id']}/review-attempt-02/{name}",
+                        "sha256": hashes[name],
+                    }
+                    for name in sorted(required)
+                ],
+                "prior_reviewer_report_sha256": report_hash,
+                "package_manifest_sha256": expected_values["package_manifest_sha256"],
+                "preflight_evidence_sha256": expected_values["preflight_evidence_sha256"],
+                "worker_result_sha256": worker_hash,
+            }
+            return lineage
+
     expected = contract if contract is not None else LEGACY_REVIEW_CONTRACTS.get(context["run_id"])
     required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
     if not expected or set(expected) != required:

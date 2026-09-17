@@ -10,6 +10,7 @@ from pathlib import Path
 from runtime.orchestrator.production_full_plan_runner import (
     DurableFullPlanSupervisor,
     ProductionFullPlanError,
+    _failure_class,
     run_production_full_plan,
 )
 
@@ -112,6 +113,17 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             sup.resume_wait("WAITING_PROVIDER")
             resumed = self.supervisor(d, gates=["G1"]).run(completed)
             self.assertEqual(resumed.status, "COMPLETED")
+
+    def test_07a_project_name_does_not_misclassify_review_failure_as_provider(self):
+        reason = (
+            "REVIEW verdict is FAIL at /tmp/MULTI_PROVIDER_FOUNDATION/TASK-015: "
+            "owned Python test/module scope is missing"
+        )
+        self.assertEqual(_failure_class(reason), "EXECUTION_FAILURE")
+
+    def test_07b_canonical_codex_readiness_is_provider_failure(self):
+        reason = "registered worker failed (production): canonical Worker authority blocked: pre-collected Codex readiness evidence is required"
+        self.assertEqual(_failure_class(reason), "PROVIDER_FAILURE")
 
     def test_08_user_approval_wait_is_not_bypassed(self):
         with tempfile.TemporaryDirectory() as d:
