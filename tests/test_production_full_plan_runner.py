@@ -91,6 +91,18 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             self.assertEqual(out.state["queue"][0]["attempt"], 2)
             self.assertTrue(out.state["queue"][0]["resume"])
 
+    def test_completed_queue_item_clears_prior_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup = self.supervisor(d, gates=["G1"])
+            first = sup.run(provider_wait)
+            self.assertEqual(first.status, "WAITING_PROVIDER")
+            self.assertTrue(first.state["queue"][0]["last_error"])
+            sup.resume_wait("WAITING_PROVIDER")
+            completed_run = self.supervisor(d, gates=["G1"]).run(completed)
+            self.assertEqual(completed_run.status, "COMPLETED")
+            self.assertIsNone(completed_run.state["queue"][0]["last_error"])
+            self.assertIsNone(completed_run.state["last_error"])
+
     def test_05_retry_exhaustion_is_dead_letter_blocked_not_silent(self):
         with tempfile.TemporaryDirectory() as d:
             out = self.supervisor(d, gates=["G1"], retry_budget=0).run(always_fail)

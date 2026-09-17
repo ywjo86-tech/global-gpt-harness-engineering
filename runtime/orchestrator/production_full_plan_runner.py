@@ -588,6 +588,7 @@ class DurableFullPlanSupervisor:
             # one canonical state generation.  A crash after this write cannot
             # lose the next eligible Gate.
             item["status"] = "COMPLETED"
+            item["last_error"] = None
             if item["gate_id"] not in state["completed_gates"]:
                 state["completed_gates"].append(item["gate_id"])
             executed.append(item["gate_id"])
