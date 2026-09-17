@@ -59,7 +59,7 @@ def _failure_class(reason: object) -> str:
         "no persistent checkpoint exists", "CHECKPOINT_ADOPTION_HEAD_MISMATCH",
         "CHECKPOINT_ADOPTION_TREE_MISMATCH", "product-completion.json",
         "product completion replay conflict", "source snapshot mismatch",
-        "post-result recovery checkpoint",
+        "post-result recovery checkpoint", "verified prior review lineage",
     )
     provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_",
                         "Codex readiness", "nvidia_timeout", "provider readiness")

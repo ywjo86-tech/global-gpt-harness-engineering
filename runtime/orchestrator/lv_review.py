@@ -2065,7 +2065,10 @@ def _verify_legacy_lineage(
     if context["review_attempt"] > 3:
         raise LVReviewError("review attempts above 3 are not supported")
     if context["review_attempt"] == 2:
-        prior_root = context["results_root"].parent / "attempt-01"
+        review_parent = context["results_root"].parent
+        production_prior = review_parent / "review-attempt-01"
+        legacy_prior = review_parent / "attempt-01"
+        prior_root = production_prior if production_prior.is_dir() and not production_prior.is_symlink() else legacy_prior
         if prior_root.is_dir() and not prior_root.is_symlink():
             required = {"reviewer.report.json", "reviewer.report.sha256", "review.status", "worker.result.json", "worker.result.sha256"}
             entries = list(prior_root.iterdir())
@@ -2087,11 +2090,13 @@ def _verify_legacy_lineage(
                 raise LVReviewError("attempt-01 reviewer report schema mismatch")
             if set(prior_status) != REVIEW_STATUS_FIELDS:
                 raise LVReviewError("attempt-01 review status schema mismatch")
+            prior_verdict = prior_report.get("verdict")
+            if prior_verdict not in {"PASS", "FAIL", "BLOCKED"} or prior_status.get("verdict") != prior_verdict:
+                raise LVReviewError("attempt-01 review terminal verdict is invalid")
             expected_values = {
                 "run_id": context["run_id"],
                 "review_attempt": 1,
                 "worker_attempt": 1,
-                "verdict": "PASS",
                 "hard_stop": True,
                 "review_only_reexecution": False,
                 "reran_worker": False,
@@ -2113,7 +2118,8 @@ def _verify_legacy_lineage(
             ]
             return {
                 "prior_review_location_kind": "attempt_directory",
-                "prior_review_contract_status": "verified_pass_hard_stop",
+                "prior_review_contract_status": f"verified_{str(prior_verdict).lower()}_hard_stop",
+                "prior_review_verdict": prior_verdict,
                 "review_attempt": 1,
                 "artifacts": artifacts,
                 "prior_reviewer_report_sha256": report_hash,
