@@ -1,6 +1,6 @@
-# TASK-004 PCA-002 Rollback Package
+# TASK-004 Rollback Package
 
-Rollback anchor: TASK-003 commit `a59b6b4`.
-Controlled TASK-004 scope: `runtime/orchestrator/public_execution_contract.py`, `runtime/mprf/execution_client.py`, the PCA-002 additions in `tests/full_mcp/test_adapter_contract.py`, and TASK-004 evidence files.
+Rollback parent: TASK-003 commit `a59b6b4`.
+Rollback scope: TASK-004 public execution contract/client/test/evidence only.
 
-Rollback/remediation must not remove or rewrite unrelated working-tree changes, activate MPRF runtime ownership, import Full MCP internals into the consumer client, or bypass the public execution boundary. Re-run TEST-007/008 boundary checks before TASK-005 application.
+If TASK-004 qualification is rejected, preserve evidence and restore only TASK-004-owned files. Do not reset unrelated working-tree changes, do not modify Full MCP action authority, and do not activate MPRF runtime/provider lifecycle behavior.
