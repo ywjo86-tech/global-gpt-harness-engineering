@@ -17,6 +17,7 @@ class GateApprovalError(ValueError):
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _HEAD = re.compile(r"[0-9a-f]{40,64}\Z")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,254}\Z")
 _EVIDENCE_FIELDS = {
     "schema_version", "approval_id", "project_id", "gate_id", "requirements_sha256",
     "plan_sha256", "branch", "head", "scope", "issued_at", "expires_at", "status",
@@ -46,6 +47,14 @@ def _id(value: object, label: str) -> str:
     return value
 
 
+def _branch(value: object) -> str:
+    if (not isinstance(value, str) or not _BRANCH.fullmatch(value) or value.endswith("/")
+            or value.startswith(".") or ".." in value or "//" in value or "@{" in value
+            or any(part.endswith(".lock") for part in value.split("/"))):
+        raise GateApprovalError("invalid branch")
+    return value
+
+
 def seal_approval_evidence(payload: Mapping[str, object]) -> dict[str, object]:
     value = dict(payload)
     _validate_schema(value)
@@ -55,8 +64,9 @@ def seal_approval_evidence(payload: Mapping[str, object]) -> dict[str, object]:
 def _validate_schema(payload: Mapping[str, object]) -> None:
     if set(payload) != _EVIDENCE_FIELDS or payload.get("schema_version") != "orchestration.gate-approval.v1":
         raise GateApprovalError("approval evidence schema mismatch")
-    for field in ("approval_id", "project_id", "gate_id", "branch"):
+    for field in ("approval_id", "project_id", "gate_id"):
         _id(payload.get(field), field)
+    _branch(payload.get("branch"))
     for field in ("requirements_sha256", "plan_sha256"):
         if not isinstance(payload.get(field), str) or not _SHA256.fullmatch(payload[field]):
             raise GateApprovalError(f"invalid {field}")

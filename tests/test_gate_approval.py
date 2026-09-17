@@ -79,6 +79,15 @@ class GateApprovalTests(unittest.TestCase):
         value = payload(); value["authorization"] = "forged"
         with self.assertRaisesRegex(GateApprovalError, "schema mismatch"): seal_approval_evidence(value)
 
+
+    def test_branch_with_slash_is_valid_and_malformed_refs_fail_closed(self):
+        branch = "preph5mprf/multi-provider-foundation"
+        envelope = seal_approval_evidence(payload(branch=branch))
+        self.assertEqual(validate(envelope, branch=branch)["branch"], branch)
+        for invalid in ("bad//branch", "bad..branch", ".hidden", "bad.lock", "bad/"):
+            with self.subTest(invalid=invalid), self.assertRaises(GateApprovalError):
+                seal_approval_evidence(payload(branch=invalid))
+
     def test_system_transition_is_bounded_and_not_approval_reuse(self):
         approved = validate(seal_approval_evidence(payload()))
         authority = derive_system_transition(approved, lv_id="G1-LV3-2")
