@@ -326,6 +326,7 @@ class OrchestrationEngine:
             os.getenv("GCH_NVIDIA_MODEL_POOL", str(Path.home() / ".config" / "gch" / "nvidia-model-pool.json"))
         ).expanduser()
         nvidia_model = ""
+        nvidia_fallbacks: tuple[str, ...] = ()
         evidence_refs: list[str] = ["pre-mprf-cli-probe"]
         if pool_path.is_file() and not pool_path.is_symlink():
             try:
@@ -344,6 +345,11 @@ class OrchestrationEngine:
                 )
                 if valid_policy:
                     nvidia_model = str(record.get("model", "")).strip()
+                    raw_fallbacks = record.get("fallback_models", [])
+                    if policy.get("automatic_model_failover") is True and isinstance(raw_fallbacks, list):
+                        candidates = tuple(str(item).strip() for item in raw_fallbacks if str(item).strip())
+                        if len(candidates) == len(set(candidates)) and nvidia_model not in candidates:
+                            nvidia_fallbacks = candidates
                     evidence_refs.append(f"nvidia-model-pool-sha256:{hashlib.sha256(raw).hexdigest()}")
             except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, AttributeError):
                 nvidia_model = ""
@@ -394,6 +400,7 @@ class OrchestrationEngine:
             provider_eligible={"nvidia": nvidia_eligible, "codex": codex_eligible},
             model_refs=model_refs,
             evidence_refs=tuple(evidence_refs),
+            model_fallback_refs={"nvidia": nvidia_fallbacks} if nvidia_fallbacks else None,
         )
 
     @staticmethod

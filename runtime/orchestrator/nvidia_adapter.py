@@ -62,6 +62,7 @@ def run_nvidia_reasoning_task(
     retry_backoff_seconds: float | None = None,
     max_tokens: int | None = None,
     require_explicit_model: bool = False,
+    fallback_models: list[str] | tuple[str, ...] | None = None,
     urlopen: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     try:
@@ -85,69 +86,106 @@ def run_nvidia_reasoning_task(
         return _failure("nvidia_config_error", model=selected_model)
     endpoint = endpoint_base + "/chat/completions"
 
+    raw_fallbacks = tuple(str(item).strip() for item in (fallback_models or ()) if str(item).strip())
+    if len(raw_fallbacks) != len(set(raw_fallbacks)) or selected_model in raw_fallbacks:
+        return _failure("nvidia_config_error", model=selected_model)
+    candidate_models = (selected_model,) + raw_fallbacks
+
     messages = [{"role": "user", "content": context.prompt}]
     for item in context.files:
         messages.append({"role": "user", "content": f"File: {item['path']}\n{item['content']}"})
-    body = json.dumps(
-        {
-            "model": selected_model,
-            "messages": messages,
-            "temperature": 0,
-            "stream": False,
-            "max_tokens": configured_max_tokens,
-        }
-    ).encode("utf-8")
     opener = urlopen or urllib.request.urlopen
     last_error = "nvidia_network_error"
-    attempts = 1 + configured_retries
     attempts_used = 0
-    for attempt in range(1, attempts + 1):
-        attempts_used = attempt
-        req = urllib.request.Request(
-            endpoint,
-            data=body,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with opener(req, timeout=configured_timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            content = payload["choices"][0]["message"]["content"]
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("empty provider content")
-            return {
-                "status": "completed",
-                "mode": "nvidia",
-                "provider": "nvidia",
-                "model": selected_model,
-                "route_reason": "nvidia_read_only",
-                "summary": str(content),
-                "findings": [],
-                "warnings": [],
-                "errors": [],
-                "provider_attempts": attempt,
-                "context_metadata": context.metadata,
-            }
-        except urllib.error.HTTPError as exc:
-            if exc.code in {401, 403}:
-                last_error = "nvidia_auth_error"
-            elif exc.code == 408:
+    model_attempts: dict[str, int] = {candidate: 0 for candidate in candidate_models}
+    failover_trace: list[dict[str, Any]] = []
+    retryable_errors = {"nvidia_timeout", "nvidia_rate_limit", "nvidia_server_error", "nvidia_network_error"}
+
+    # One round touches each approved model once before another round begins.
+    # This preserves the configured retry budget while avoiding repeated stalls
+    # on one model when another NVIDIA model is healthy.
+    for retry_round in range(1 + configured_retries):
+        for candidate_model in candidate_models:
+            attempts_used += 1
+            model_attempts[candidate_model] += 1
+            body = json.dumps(
+                {
+                    "model": candidate_model,
+                    "messages": messages,
+                    "temperature": 0,
+                    "stream": False,
+                    "max_tokens": configured_max_tokens,
+                }
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                endpoint,
+                data=body,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with opener(req, timeout=configured_timeout) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                content = payload["choices"][0]["message"]["content"]
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("empty provider content")
+                return {
+                    "status": "completed",
+                    "mode": "nvidia",
+                    "provider": "nvidia",
+                    "model": candidate_model,
+                    "routed_model": selected_model,
+                    "model_failover_used": candidate_model != selected_model,
+                    "model_failover_trace": failover_trace,
+                    "model_attempts": model_attempts,
+                    "provider_attempts": attempts_used,
+                    "route_reason": "nvidia_read_only",
+                    "summary": str(content),
+                    "findings": [],
+                    "warnings": [],
+                    "errors": [],
+                    "context_metadata": context.metadata,
+                }
+            except urllib.error.HTTPError as exc:
+                if exc.code in {401, 403}:
+                    last_error = "nvidia_auth_error"
+                elif exc.code == 408:
+                    last_error = "nvidia_timeout"
+                elif exc.code == 429:
+                    last_error = "nvidia_rate_limit"
+                elif 500 <= exc.code <= 599:
+                    last_error = "nvidia_server_error"
+                else:
+                    last_error = "nvidia_client_error"
+            except (TimeoutError, socket.timeout):
                 last_error = "nvidia_timeout"
-            elif exc.code == 429:
-                last_error = "nvidia_rate_limit"
-            elif 500 <= exc.code <= 599:
-                last_error = "nvidia_server_error"
-            else:
-                last_error = "nvidia_client_error"
-            if exc.code not in {408, 429} and not 500 <= exc.code <= 599:
-                break
-        except (TimeoutError, socket.timeout):
-            last_error = "nvidia_timeout"
-        except urllib.error.URLError as exc:
-            last_error = "nvidia_timeout" if isinstance(exc.reason, (TimeoutError, socket.timeout)) else "nvidia_network_error"
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
-            last_error = "nvidia_invalid_response"
-            break
-        if attempt < attempts:
-            time.sleep(configured_backoff * (2 ** (attempt - 1)))
-    return _failure(last_error, model=selected_model, attempts=attempts_used)
+            except urllib.error.URLError as exc:
+                last_error = "nvidia_timeout" if isinstance(exc.reason, (TimeoutError, socket.timeout)) else "nvidia_network_error"
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
+                last_error = "nvidia_invalid_response"
+
+            failover_trace.append({
+                "model": candidate_model,
+                "error_class": last_error,
+                "model_attempt": model_attempts[candidate_model],
+            })
+            if last_error not in retryable_errors:
+                result = _failure(last_error, model=selected_model, attempts=attempts_used)
+                result.update({
+                    "routed_model": selected_model,
+                    "model_failover_used": any(item["model"] != selected_model for item in failover_trace),
+                    "model_failover_trace": failover_trace,
+                    "model_attempts": model_attempts,
+                })
+                return result
+        if retry_round < configured_retries:
+            time.sleep(configured_backoff * (2 ** retry_round))
+
+    result = _failure(last_error, model=selected_model, attempts=attempts_used)
+    result.update({
+        "routed_model": selected_model,
+        "model_failover_used": any(item["model"] != selected_model for item in failover_trace),
+        "model_failover_trace": failover_trace,
+        "model_attempts": model_attempts,
+    })
+    return result

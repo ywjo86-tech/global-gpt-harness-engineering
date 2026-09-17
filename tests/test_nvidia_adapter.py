@@ -142,6 +142,47 @@ class NvidiaAdapterTest(unittest.TestCase):
                 self.assertEqual(result["provider_attempts"], expected_calls)
                 self.assertEqual(calls, expected_calls)
 
+    def test_timeout_rotates_to_approved_fallback_model(self) -> None:
+        calls: list[str] = []
+
+        def opener(request, timeout):
+            body = json.loads(request.data)
+            calls.append(body["model"])
+            if body["model"] == "primary-model":
+                raise TimeoutError()
+            return _Response({"choices": [{"message": {"content": "fallback answer"}}]})
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            "os.environ", {"NVIDIA_API_KEY": "secret"}, clear=True
+        ), patch("runtime.orchestrator.nvidia_adapter.time.sleep"):
+            result = run_nvidia_reasoning_task(
+                prompt="hello", project_root=temp_dir, model="primary-model", require_explicit_model=True,
+                fallback_models=("fallback-model",), urlopen=opener, max_retries=0,
+            )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["model"], "fallback-model")
+        self.assertEqual(result["routed_model"], "primary-model")
+        self.assertTrue(result["model_failover_used"])
+        self.assertEqual(calls, ["primary-model", "fallback-model"])
+
+    def test_auth_error_never_rotates_to_fallback_model(self) -> None:
+        calls: list[str] = []
+
+        def opener(request, timeout):
+            body = json.loads(request.data)
+            calls.append(body["model"])
+            raise urllib.error.HTTPError(request.full_url, 401, "Unauthorized", {}, io.BytesIO())
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            "os.environ", {"NVIDIA_API_KEY": "secret"}, clear=True
+        ):
+            result = run_nvidia_reasoning_task(
+                prompt="hello", project_root=temp_dir, model="primary-model", require_explicit_model=True,
+                fallback_models=("fallback-model",), urlopen=opener, max_retries=2,
+            )
+        self.assertEqual(result["provider_error_class"], "nvidia_auth_error")
+        self.assertEqual(calls, ["primary-model"])
+
 
 if __name__ == "__main__":
     unittest.main()

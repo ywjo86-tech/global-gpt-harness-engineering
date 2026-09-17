@@ -133,6 +133,7 @@ def normalize_worker_result(
     model = str(_first_non_empty(payload, ("model", "provider_model"), task_payload.get("model", ""))).strip()
     route_reason = str(_first_non_empty(payload, ("route_reason", "route_reason_code"), task_payload.get("route_reason", ""))).strip()
     provider_error_class = str(_first_non_empty(payload, ("provider_error_class",), "")).strip()
+    routed_model = str(_first_non_empty(payload, ("routed_model",), "")).strip()
     runtime_stage = str(_first_non_empty(payload, ("runtime_stage",), task_payload.get("runtime_stage", ""))).strip()
     action_state = str(_first_non_empty(payload, ("action_state",), "")).strip()
     router_decision_digest = str(_first_non_empty(payload, ("router_decision_digest",), "")).strip()
@@ -182,6 +183,10 @@ def normalize_worker_result(
             "model": model,
             "route_reason": route_reason,
             "provider_error_class": provider_error_class,
+            "routed_model": routed_model,
+            "model_failover_used": payload.get("model_failover_used") if payload.get("model_failover_used") is not None else "",
+            "model_failover_trace": payload.get("model_failover_trace") or "",
+            "model_attempts": payload.get("model_attempts") or "",
         }.items()
         if value
     }

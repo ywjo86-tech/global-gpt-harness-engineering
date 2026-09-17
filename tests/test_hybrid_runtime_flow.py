@@ -17,14 +17,20 @@ from runtime.orchestrator.schemas import TaskSlice
 from tests.helpers import cloned_sample_project
 
 
-def _write_model_pool(project: Path, model: str = "nvidia/router-model") -> Path:
+def _write_model_pool(project: Path, model: str = "nvidia/router-model", fallback_models: tuple[str, ...] = ()) -> Path:
     path = project / "runtime" / "test-nvidia-model-pool.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "schema_version": "gch.nvidia.model-pool.v1",
         "default_role": "primary_heavy",
-        "models": {"primary_heavy": {"model": model, "status": "ACTIVE"}},
-        "policy": {"automatic_provider_fallback": False, "state_changing_execution": False},
+        "models": {"primary_heavy": {
+            "model": model, "status": "ACTIVE", "fallback_models": list(fallback_models),
+        }},
+        "policy": {
+            "automatic_provider_fallback": False,
+            "automatic_model_failover": bool(fallback_models),
+            "state_changing_execution": False,
+        },
     }), encoding="utf-8")
     return path
 
@@ -256,6 +262,39 @@ class HybridRuntimeFlowTest(unittest.TestCase):
             self.assertEqual(result["next_step"], "GPT_OPERATOR_REVIEW_REQUIRED")
             nvidia.assert_not_called()
             codex.assert_not_called()
+
+    def test_governed_router_binds_nvidia_model_fallbacks(self) -> None:
+        snapshot = ProviderEligibilitySnapshotV1(
+            schema_version=ELIGIBILITY_SCHEMA_V1, snapshot_id="S-FALLBACK",
+            provider_eligible={"nvidia": True, "codex": False},
+            model_refs={"nvidia": "nvidia/primary"}, evidence_refs=("E1",),
+            model_fallback_refs={"nvidia": ("nvidia/fallback-a", "nvidia/fallback-b")},
+        )
+        request = RouterRequestV2(
+            schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id="R-FALLBACK", project_id="P1", run_id="RUN1",
+            task_id="T1", task_execution_id="E-FALLBACK", directive_digest="f" * 64, stage="PREPARE",
+            required_capabilities=("read_only", "reasoning"), state_change_required=False,
+            policy_profile=GOVERNED_POLICY_V1, eligibility_snapshot=snapshot,
+        )
+        decision = route_request(request)
+        self.assertEqual(decision.model_ref, "nvidia/primary")
+        self.assertEqual(decision.model_fallback_refs, ("nvidia/fallback-a", "nvidia/fallback-b"))
+
+        with patch(
+            "runtime.orchestrator.provider_executor.run_nvidia_reasoning_task",
+            return_value={
+                "status": "completed", "summary": "ok", "model": "nvidia/fallback-a",
+                "routed_model": "nvidia/primary", "model_failover_used": True,
+            },
+        ) as nvidia:
+            result = execute_provider_task(
+                _task(["read_only", "reasoning"]), mode="hybrid", project_root=".",
+                local_worker=lambda task: {}, router_decision=decision,
+            )
+        self.assertEqual(nvidia.call_args.kwargs["fallback_models"], decision.model_fallback_refs)
+        self.assertEqual(result["provider_trace"]["model"], "nvidia/fallback-a")
+        self.assertEqual(result["provider_trace"]["routed_model"], "nvidia/primary")
+        self.assertTrue(result["provider_trace"]["model_failover_used"])
 
 
 if __name__ == "__main__":

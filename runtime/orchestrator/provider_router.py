@@ -109,6 +109,7 @@ class ProviderEligibilitySnapshotV1:
     model_refs: Mapping[str, str]
     evidence_refs: tuple[str, ...] = ()
     failure_classes: Mapping[str, str] | None = None
+    model_fallback_refs: Mapping[str, tuple[str, ...]] | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != ELIGIBILITY_SCHEMA_V1 or not self.snapshot_id:
@@ -117,9 +118,19 @@ class ProviderEligibilitySnapshotV1:
             raise ProviderRouterContractError("unapproved provider in eligibility snapshot")
         if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in self.model_refs):
             raise ProviderRouterContractError("unapproved provider model binding")
+        fallbacks = self.model_fallback_refs or {}
+        if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in fallbacks):
+            raise ProviderRouterContractError("unapproved provider fallback binding")
+        for provider, refs in fallbacks.items():
+            normalized = tuple(str(ref).strip() for ref in refs)
+            if any(not ref for ref in normalized) or len(normalized) != len(set(normalized)):
+                raise ProviderRouterContractError("invalid provider fallback model binding")
+            primary = str(self.model_refs.get(provider, "")).strip()
+            if primary and primary in normalized:
+                raise ProviderRouterContractError("primary model cannot repeat in fallback binding")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "snapshot_id": self.snapshot_id,
             "provider_eligible": dict(self.provider_eligible),
@@ -127,6 +138,11 @@ class ProviderEligibilitySnapshotV1:
             "evidence_refs": list(self.evidence_refs),
             "failure_classes": dict(self.failure_classes or {}),
         }
+        if self.model_fallback_refs:
+            payload["model_fallback_refs"] = {
+                provider: list(refs) for provider, refs in self.model_fallback_refs.items() if refs
+            }
+        return payload
 
     @property
     def snapshot_digest(self) -> str:
@@ -242,6 +258,7 @@ class RouterDecisionV2:
     eligibility_evidence_refs: tuple[str, ...]
     policy_version: str
     action_state: str
+    model_fallback_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema_version != ROUTER_DECISION_SCHEMA_V2:
@@ -251,9 +268,15 @@ class RouterDecisionV2:
                 raise ProviderRouterContractError("eligible RouterDecision requires provider/model binding")
         elif self.provider_ref or self.model_ref:
             raise ProviderRouterContractError("blocked RouterDecision cannot bind a provider/model")
+        if self.model_fallback_refs and self.provider_ref != NVIDIA_PROVIDER:
+            raise ProviderRouterContractError("model failover is only approved inside NVIDIA provider")
+        if len(self.model_fallback_refs) != len(set(self.model_fallback_refs)):
+            raise ProviderRouterContractError("duplicate RouterDecision fallback model")
+        if self.model_ref and self.model_ref in self.model_fallback_refs:
+            raise ProviderRouterContractError("RouterDecision fallback repeats primary model")
 
     def unsigned_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version, "decision_id": self.decision_id,
             "request_digest": self.request_digest, "stage": self.stage,
             "provider_ref": self.provider_ref, "model_ref": self.model_ref,
@@ -261,6 +284,9 @@ class RouterDecisionV2:
             "eligible": self.eligible, "eligibility_evidence_refs": list(self.eligibility_evidence_refs),
             "policy_version": self.policy_version, "action_state": self.action_state,
         }
+        if self.model_fallback_refs:
+            payload["model_fallback_refs"] = list(self.model_fallback_refs)
+        return payload
 
     @property
     def decision_digest(self) -> str:
@@ -316,6 +342,7 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
     if request.stage == "ACTION" and not STATE_CHANGING_CAPABILITIES.intersection(request.required_capabilities):
         return _blocked_decision(request, "action_stage_without_state_change_capability", "ACTION_PROVIDER_BLOCKED")
 
+    fallback_refs = tuple((request.eligibility_snapshot.model_fallback_refs or {}).get(provider, ()))
     reason = "governed_action_to_codex" if provider == CODEX_PROVIDER else "governed_read_stage_to_nvidia"
     action_state = "ACTION_PENDING" if request.stage == "ACTION" else f"{request.stage}_PENDING"
     return RouterDecisionV2(
@@ -325,4 +352,5 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
         required_capabilities=request.required_capabilities, eligible=True,
         eligibility_evidence_refs=tuple(request.eligibility_snapshot.evidence_refs),
         policy_version=GOVERNED_POLICY_V1, action_state=action_state,
+        model_fallback_refs=fallback_refs,
     )

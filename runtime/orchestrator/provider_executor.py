@@ -55,6 +55,7 @@ def _execute_governed(
             input_files=task.input_files,
             model=decision.model_ref,
             require_explicit_model=True,
+            fallback_models=decision.model_fallback_refs,
         )
     elif decision.provider_ref == CODEX_PROVIDER:
         payload = run_task_prompt(
@@ -84,9 +85,11 @@ def _execute_governed(
             "next_step": "GPT_AUTHORIZED_MANUAL_ACTION_OR_QUEUE_BLOCK",
         }
 
+    actual_model = str(payload.get("model", "")).strip() if decision.provider_ref == NVIDIA_PROVIDER else decision.model_ref
     payload.update({
         "provider": decision.provider_ref,
-        "model": decision.model_ref,
+        "model": actual_model or decision.model_ref,
+        "routed_model": decision.model_ref,
         "route_reason": decision.reason_code,
         "router_decision_digest": decision.decision_digest,
         "runtime_stage": decision.stage,
