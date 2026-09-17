@@ -61,6 +61,7 @@ def run_nvidia_reasoning_task(
     max_retries: int | None = None,
     retry_backoff_seconds: float | None = None,
     max_tokens: int | None = None,
+    require_explicit_model: bool = False,
     urlopen: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     try:
@@ -69,7 +70,7 @@ def run_nvidia_reasoning_task(
         return _failure("context_security_rejected")
 
     api_key = os.environ.get("NVIDIA_API_KEY", "")
-    selected_model = (model or os.environ.get("NVIDIA_MODEL", "")).strip()
+    selected_model = ((model if require_explicit_model else (model or os.environ.get("NVIDIA_MODEL", ""))) or "").strip()
     endpoint_base = (base_url or os.environ.get("NVIDIA_ENDPOINT", DEFAULT_BASE_URL)).strip().rstrip("/")
     try:
         configured_timeout = _float_config("NVIDIA_TIMEOUT_SECONDS", timeout_seconds, DEFAULT_TIMEOUT_SECONDS)

@@ -133,6 +133,10 @@ def normalize_worker_result(
     model = str(_first_non_empty(payload, ("model", "provider_model"), task_payload.get("model", ""))).strip()
     route_reason = str(_first_non_empty(payload, ("route_reason", "route_reason_code"), task_payload.get("route_reason", ""))).strip()
     provider_error_class = str(_first_non_empty(payload, ("provider_error_class",), "")).strip()
+    runtime_stage = str(_first_non_empty(payload, ("runtime_stage",), task_payload.get("runtime_stage", ""))).strip()
+    action_state = str(_first_non_empty(payload, ("action_state",), "")).strip()
+    router_decision_digest = str(_first_non_empty(payload, ("router_decision_digest",), "")).strip()
+    handoff_digest = str(_first_non_empty(payload, ("handoff_digest",), "")).strip()
 
     normalized = {
         "schema_version": SCHEMA_VERSION,
@@ -162,7 +166,15 @@ def normalize_worker_result(
         "manual_execution_path": manual_execution_path,
         "task_purpose": str(_first_non_empty(payload, ("task_purpose",), task_payload.get("input", ""))).strip(),
         "task": task_payload,
+        "runtime_stage": runtime_stage,
+        "action_state": action_state,
+        "router_decision_digest": router_decision_digest,
+        "handoff_digest": handoff_digest,
     }
+    if payload.get("manual_action_candidate") is not None:
+        normalized["manual_action_candidate"] = payload.get("manual_action_candidate")
+    if payload.get("manual_action_authorization_ref") is not None:
+        normalized["manual_action_authorization_ref"] = payload.get("manual_action_authorization_ref")
     provider_trace = {
         key: value
         for key, value in {

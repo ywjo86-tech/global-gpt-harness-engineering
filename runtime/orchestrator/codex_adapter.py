@@ -193,6 +193,7 @@ def run_codex_cli(
     *,
     project_root: str | Path | None = None,
     required_capabilities: Iterable[str] = (),
+    model_ref: str | None = None,
 ) -> dict[str, Any]:
     prompt_path = Path(task_prompt_path)
     target_dir = Path(output_dir)
@@ -209,6 +210,7 @@ def run_codex_cli(
         target_dir,
         required_capabilities=required_capabilities,
         output_schema_path=schema_path,
+        model_ref=model_ref,
     )
     prompt_text = prompt_path.read_text(encoding="utf-8")
     process = execute_codex_invocation(invocation, prompt_text)
@@ -240,6 +242,7 @@ def run_task_prompt(
     *,
     project_root: str | Path | None = None,
     required_capabilities: Iterable[str] = (),
+    model_ref: str | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_execution_mode(mode)
     if normalized == MOCK:
@@ -264,6 +267,7 @@ def run_task_prompt(
             output_dir,
             project_root=project_root,
             required_capabilities=required_capabilities,
+            model_ref=model_ref,
         )
     except CodexLauncherError as exc:
         target_dir = Path(output_dir)

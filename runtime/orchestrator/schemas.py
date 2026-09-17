@@ -254,6 +254,9 @@ class TaskSlice:
     manual_execution_path: str = ""
     required_capabilities: list[str] = field(default_factory=list)
     input_files: list[str] = field(default_factory=list)
+    state_change_required: bool = False
+    runtime_stage: str = ""
+    task_execution_id: str = ""
 
     def as_request_payload(self) -> dict[str, Any]:
         return asdict(self)
@@ -376,6 +379,11 @@ class RuntimeState:
     collection_report: dict[str, Any] = field(default_factory=dict)
     planning_artifact: dict[str, Any] = field(default_factory=dict)
     authority_review: dict[str, Any] = field(default_factory=dict)
+    operator_stage: str = ""
+    provider_action_state: str = ""
+    continuation_checkpoint: str = ""
+    last_router_decision_digest: str = ""
+    last_handoff_digest: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

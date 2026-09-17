@@ -403,7 +403,7 @@ def _option_positions(argv: Sequence[str], names: frozenset[str]) -> set[int]:
 
 
 def _unexpected_prompt_args(argv: Sequence[str]) -> tuple[str, ...]:
-    option_names = frozenset({"-C", "--cd", "-s", "--sandbox", "--output-schema", "-o", "--output-last-message"})
+    option_names = frozenset({"-C", "--cd", "-s", "--sandbox", "--output-schema", "-o", "--output-last-message", "-m", "--model"})
     value_positions = _option_positions(argv, option_names)
     allowed_flags = option_names.union({"--json"})
     unexpected: list[str] = []
@@ -484,6 +484,7 @@ def resolve_codex_launcher(
     final_output_path: str | Path | None = None,
     override_command: str | None = None,
     include_json_events: bool | None = None,
+    model_ref: str | None = None,
 ) -> CodexLauncherInvocation:
     _assert_manifest_compatible(manifest)
     project_root_path = Path(project_root)
@@ -507,6 +508,10 @@ def resolve_codex_launcher(
             final_path,
             manifest.json_events_option,
         )
+        if model_ref is not None:
+            bound_model = _option_value(argv, frozenset({"-m", "--model"}))
+            if bound_model != model_ref:
+                raise CodexLauncherError(COMPATIBILITY_FAILED, "Codex override model does not match Router-selected model binding.")
         output_schema = _option_value(argv, frozenset({"--output-schema"})) or str(schema_path)
         final_output = _option_value(argv, frozenset({"-o", "--output-last-message"})) or str(final_path)
         return CodexLauncherInvocation(
@@ -530,6 +535,10 @@ def resolve_codex_launcher(
         "-o",
         str(final_path),
     ]
+    if model_ref is not None:
+        if not str(model_ref).strip():
+            raise CodexLauncherError(COMPATIBILITY_FAILED, "Router-selected Codex model binding is empty.")
+        argv_list.extend(["--model", str(model_ref)])
     if json_events:
         argv_list.append("--json")
     argv_list.append("-")

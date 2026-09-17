@@ -33,6 +33,8 @@ class TaskQueueItem:
     next_step: str = ""
     worker_request_path: str = ""
     output_dir: str = ""
+    runtime_stage: str = ""
+    state_change_required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -83,6 +85,8 @@ def build_task_queue(state: RuntimeState, tasks: list[TaskSlice], *, project_roo
                 next_step=task.merge_point,
                 worker_request_path=task.worker_request_path,
                 output_dir=task.output_dir,
+                runtime_stage=task.runtime_stage,
+                state_change_required=task.state_change_required,
             )
         )
     return items
