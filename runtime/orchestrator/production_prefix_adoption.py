@@ -123,6 +123,9 @@ def validate_prefix_adoption(
     if _git(root, "status", "--porcelain=v1", "-uall"):
         raise PrefixAdoptionError("prefix adoption requires a clean worktree")
 
+    all_gate_scopes: list[str] = []
+    for lv_id in lv_order:
+        all_gate_scopes.extend(list(owned_files_by_lv.get(lv_id, ())))
     adopted_scopes: list[str] = []
     for lv_id in adopted:
         adopted_scopes.extend(list(owned_files_by_lv.get(lv_id, ())))
@@ -131,7 +134,7 @@ def validate_prefix_adoption(
     for index, (lv_id, entry) in enumerate(zip(adopted, entries)):
         if not isinstance(entry, Mapping):
             raise PrefixAdoptionError("prefix adoption entry is invalid")
-        entry_required = {"lv_id", "checkpoint_commit", "checkpoint_parent", "owned_files", "changed_files",
+        entry_required = {"lv_id", "checkpoint_commit", "range_start", "owned_files", "changed_files",
                           "validation_ids", "validation_results", "review_verdict", "evidence_sha256"}
         if set(entry) != entry_required or entry.get("lv_id") != lv_id:
             raise PrefixAdoptionError("prefix adoption entry schema/order mismatch")
@@ -139,26 +142,29 @@ def validate_prefix_adoption(
         if entry.get("evidence_sha256") != _digest(entry_unsigned):
             raise PrefixAdoptionError("prefix adoption entry digest mismatch")
         checkpoint = entry.get("checkpoint_commit")
-        parent = entry.get("checkpoint_parent")
-        if not isinstance(checkpoint, str) or not _SHA40.fullmatch(checkpoint) or not isinstance(parent, str) or not _SHA40.fullmatch(parent):
-            raise PrefixAdoptionError("prefix adoption checkpoint is invalid")
-        if _git(root, "rev-parse", f"{checkpoint}^") != parent:
-            raise PrefixAdoptionError("prefix adoption checkpoint parent mismatch")
-        if previous_checkpoint is not None and parent != previous_checkpoint:
-            raise PrefixAdoptionError("prefix adoption checkpoints are not contiguous")
+        range_start = entry.get("range_start")
+        if not isinstance(checkpoint, str) or not _SHA40.fullmatch(checkpoint) or not isinstance(range_start, str) or not _SHA40.fullmatch(range_start):
+            raise PrefixAdoptionError("prefix adoption checkpoint range is invalid")
+        if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", range_start, checkpoint], check=False).returncode != 0:
+            raise PrefixAdoptionError("prefix adoption checkpoint range is not ancestral")
+        if previous_checkpoint is not None and range_start != previous_checkpoint:
+            raise PrefixAdoptionError("prefix adoption ranges are not contiguous")
         if previous_checkpoint is None:
-            if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", approval_head, parent], check=False).returncode != 0:
+            if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", approval_head, range_start], check=False).returncode != 0:
                 raise PrefixAdoptionError("first adopted checkpoint is outside approved ancestry")
-            prelude = [p for p in _git(root, "diff", "--name-only", f"{approval_head}..{parent}").splitlines() if p]
-            if any(_within(path, adopted_scopes) for path in prelude):
-                raise PrefixAdoptionError("pre-adoption governance commits modified adopted scope")
+            prelude = [p for p in _git(root, "diff", "--name-only", f"{approval_head}..{range_start}").splitlines() if p]
+            if any(_within(path, all_gate_scopes) for path in prelude):
+                raise PrefixAdoptionError("pre-adoption governance commits modified Gate-owned scope")
         expected_owned = list(owned_files_by_lv.get(lv_id, ()))
         owned = _paths(entry.get("owned_files"), label="adopted owned scope")
         if owned != expected_owned:
             raise PrefixAdoptionError("prefix adoption owned scope mismatch")
         changed = _paths(entry.get("changed_files"), label="adopted changed files")
-        actual_changed = sorted(p for p in _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines() if p)
-        if sorted(changed) != actual_changed or any(not _within(path, owned) for path in changed):
+        range_changed = sorted(p for p in _git(root, "diff", "--name-only", f"{range_start}..{checkpoint}").splitlines() if p)
+        actual_gate_changed = sorted(path for path in range_changed if _within(path, all_gate_scopes))
+        if any(not _within(path, owned) for path in actual_gate_changed):
+            raise PrefixAdoptionError("adopted checkpoint range modified another Gate-owned scope")
+        if sorted(changed) != actual_gate_changed:
             raise PrefixAdoptionError("adopted checkpoint changed-file scope mismatch")
         expected_validation_ids = list(validation_ids_by_lv.get(lv_id, ()))
         if entry.get("validation_ids") != expected_validation_ids or not expected_validation_ids:

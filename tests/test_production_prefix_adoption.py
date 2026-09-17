@@ -52,13 +52,13 @@ class PrefixAdoptionTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def entry(self, lv, checkpoint, validation_id):
-        parent = run(self.root, "rev-parse", checkpoint + "^")
-        changed = sorted(x for x in run(self.root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines() if x)
+    def entry(self, lv, checkpoint, validation_id, range_start):
+        changed = sorted(x for x in run(self.root, "diff", "--name-only", f"{range_start}..{checkpoint}").splitlines()
+                         if x and any(x == scope.rstrip("/") or (scope.endswith("/") and x.startswith(scope)) for scope in self.owned[lv]))
         value = {
             "lv_id": lv,
             "checkpoint_commit": checkpoint,
-            "checkpoint_parent": parent,
+            "range_start": range_start,
             "owned_files": self.owned[lv],
             "changed_files": changed,
             "validation_ids": [validation_id],
@@ -79,7 +79,8 @@ class PrefixAdoptionTests(unittest.TestCase):
             "approval_head": self.approval,
             "adopted_lvs": ["TASK-010", "TASK-011"],
             "adoption_head": self.adoption_head,
-            "entries": [self.entry("TASK-010", self.t10, "TEST-019"), self.entry("TASK-011", self.t11, "TEST-020")],
+            "entries": [self.entry("TASK-010", self.t10, "TEST-019", run(self.root, "rev-parse", self.t10 + "^")),
+                        self.entry("TASK-011", self.t11, "TEST-020", self.t10)],
         }
         value["record_sha256"] = digest(value)
         return value
