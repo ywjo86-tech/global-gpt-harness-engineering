@@ -1564,7 +1564,8 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         # create a smaller gate-local READY document first: that would make
         # preflight_run treat it as an idempotent result and drop interpreter
         # fingerprints from the persisted evidence.
-        published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json", project_root=root)
+        published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json", project_root=root,
+                                  allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")))
         if published.get("status") != "READY" and not (isinstance(published.get("status"), dict) and published["status"].get("status") == "READY"):
             raise GateControllerError(f"PREFLIGHT publication failed: {published}")
         state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
