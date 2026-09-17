@@ -1,4 +1,4 @@
-"""Public MPRF registry/admission foundation."""
+"""Public MPRF provider-runtime foundation contracts."""
 from .contracts import (
     ADMISSION_ADMITTED,
     ADMISSION_DISABLED,
@@ -15,6 +15,31 @@ from .contracts import (
     MPRFContractError,
     ProviderRecordV1,
 )
+from .lifecycle import (
+    CAPABILITY_MISSING,
+    HEALTHY,
+    LIFECYCLE_FACT_SCHEMA_V1,
+    LIFECYCLE_OK,
+    LIFECYCLE_STATE_SCHEMA_V1,
+    QUOTA_AVAILABLE,
+    QUOTA_EXHAUSTED,
+    QUOTA_EXHAUSTED_REASON,
+    QUOTA_UNKNOWN,
+    RATE_AVAILABLE,
+    RATE_LIMITED,
+    RATE_LIMITED_REASON,
+    RATE_UNKNOWN,
+    STALE,
+    STALE_HEALTH,
+    STALE_LIFECYCLE_VERSION,
+    UNKNOWN,
+    UNKNOWN_HEALTH,
+    UNKNOWN_QUOTA,
+    UNKNOWN_RATE,
+    LifecycleFactV1,
+    LifecycleStateV1,
+    evaluate_lifecycle,
+)
 from .registry import REGISTRY_SCHEMA_V1, ProviderModelRegistryV1
 from .runtime import RUNTIME_SCHEMA_V1, MPRFRuntimeV1
 
@@ -24,5 +49,11 @@ __all__ = [
     "MODEL_RECORD_SCHEMA_V1", "NVIDIA_PROVIDER", "PROVIDER_RECORD_SCHEMA_V1",
     "AdmissionRecordV1", "EligibilityFactV1", "ModelRecordV1", "MPRFContractError",
     "ProviderRecordV1", "REGISTRY_SCHEMA_V1", "ProviderModelRegistryV1",
-    "RUNTIME_SCHEMA_V1", "MPRFRuntimeV1",
+    "RUNTIME_SCHEMA_V1", "MPRFRuntimeV1", "LIFECYCLE_FACT_SCHEMA_V1",
+    "LIFECYCLE_STATE_SCHEMA_V1", "LifecycleFactV1", "LifecycleStateV1",
+    "evaluate_lifecycle", "HEALTHY", "STALE", "UNKNOWN", "QUOTA_AVAILABLE",
+    "QUOTA_EXHAUSTED", "QUOTA_UNKNOWN", "RATE_AVAILABLE", "RATE_LIMITED",
+    "RATE_UNKNOWN", "LIFECYCLE_OK", "STALE_LIFECYCLE_VERSION", "STALE_HEALTH",
+    "UNKNOWN_HEALTH", "QUOTA_EXHAUSTED_REASON", "UNKNOWN_QUOTA",
+    "RATE_LIMITED_REASON", "UNKNOWN_RATE", "CAPABILITY_MISSING",
 ]
