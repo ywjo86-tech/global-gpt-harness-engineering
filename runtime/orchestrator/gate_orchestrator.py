@@ -1775,7 +1775,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 if verdict["status"] != "PASS":
                     raise GateControllerError(f"product completion verification failed: {verdict['reasons']}")
                 evidence["product_verdict_sha256"] = hashlib.sha256(canonical_json_bytes(verdict)).hexdigest()
-                _atomic_json(Path(state["recovery_outcome"]["attempt_root"]) / "product-completion.json", evidence)
+                product_path = Path(state["recovery_outcome"]["attempt_root"]) / "product-completion.json"
+                product_bytes = canonical_json_bytes(evidence)
+                if product_path.exists() or product_path.is_symlink():
+                    if product_path.is_symlink() or not product_path.is_file() or product_path.read_bytes() != product_bytes:
+                        raise GateControllerError("product completion replay conflict")
+                else:
+                    _atomic_json(product_path, evidence)
             return {"status":value["verdict"],"exit_code":0,"evidence_sha256":value["review_sha256"],"hard_stop":True}
         prior = resumed("REVIEW", "PASS")
         if prior:
