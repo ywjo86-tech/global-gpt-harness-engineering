@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .schemas import RuntimeState, TaskSlice
+from .durable_io import atomic_write_json, atomic_write_text
 
 
 def _utc_now() -> str:
@@ -122,7 +123,7 @@ def write_task_queue(run_root: str | Path, queue: list[TaskQueueItem]) -> Path:
     queue_dir.mkdir(parents=True, exist_ok=True)
     payload = [item.to_dict() for item in queue]
     json_path = queue_dir / "task_queue.json"
-    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(json_path, payload)
     md_path = queue_dir / "task_queue.md"
     lines = [
         "# Task Queue",
@@ -138,5 +139,5 @@ def write_task_queue(run_root: str | Path, queue: list[TaskQueueItem]) -> Path:
             )
     else:
         lines.append("- none")
-    md_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    atomic_write_text(md_path, "\n".join(lines).rstrip() + "\n")
     return json_path

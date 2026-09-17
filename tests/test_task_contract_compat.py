@@ -252,3 +252,41 @@ class TaskContractCompatibilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TaskDependencyDeadlockTests(unittest.TestCase):
+    def test_dependency_cycle_is_runtime_blocker(self) -> None:
+        text = '''
+## TASK-001 — one
+Dependencies: TASK-002
+Required Capabilities: reasoning
+Change Targets: CT-001
+## TASK-002 — two
+Dependencies: TASK-001
+Required Capabilities: reasoning
+Change Targets: CT-002
+## GATE-001 — gate
+Required Tasks: TASK-001, TASK-002
+'''
+        analysis = analyze_task_stage_gate_contract(text, "GATE-001")
+        self.assertIsNotNone(analysis)
+        self.assertIn("TASK dependency graph contains a cycle", analysis["blockers"])
+        self.assertTrue(analysis["dependency_cycles"])
+        self.assertFalse(analysis["runtime_projection_ready"])
+
+    def test_dependency_on_unstaged_task_is_runtime_blocker(self) -> None:
+        text = '''
+## TASK-001 — one
+Dependencies: TASK-002
+Required Capabilities: reasoning
+Change Targets: CT-001
+## TASK-002 — two
+Dependencies: NONE
+Required Capabilities: reasoning
+Change Targets: CT-002
+## GATE-001 — gate
+Required Tasks: TASK-001
+'''
+        analysis = analyze_task_stage_gate_contract(text, "GATE-001")
+        self.assertIsNotNone(analysis)
+        self.assertIn("TASK dependency exists but is not staged by any Gate", analysis["blockers"])
+        self.assertEqual(analysis["unstaged_dependencies"], [{"task_id": "TASK-001", "dependency": "TASK-002"}])
