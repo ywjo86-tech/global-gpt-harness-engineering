@@ -1919,6 +1919,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  dry_run_capability_resolution: bool = False,
                  legacy_test_only_capability: bool = False,
                  canonical_capability_sources: Mapping[str, Any] | None = None,
+                 adopted_prefix_evidence: Mapping[str, Any] | None = None,
                  codex_auth_readiness: Any | None = None,
                  codex_readiness_recheck_probes: Any | None = None) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
@@ -1942,9 +1943,28 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             )
     completed: list[str] = []
     completed_evidence: dict[str, str] = {}
+    adopted_count = 0
+    if adopted_prefix_evidence is not None:
+        from .production_prefix_adoption import PrefixAdoptionError, validate_prefix_adoption
+        try:
+            adoption = validate_prefix_adoption(
+                root, adopted_prefix_evidence, project_id=plan.project_id, gate_id=gate_id,
+                plan_sha256=plan.canonical_plan_sha256, branch=branch, approval_head=head,
+                lv_order=[item.lv_id for item in plan.lvs],
+                owned_files_by_lv=auth.owned_files_by_lv,
+                validation_ids_by_lv={item.lv_id: item.tests for item in plan.lvs},
+                require_adoption_head=not resume,
+            )
+        except PrefixAdoptionError as exc:
+            raise GateOrchestrationError(f"Full Plan prefix adoption blocked: {exc}") from exc
+        completed = list(adoption["adopted_lvs"])
+        completed_evidence = dict(adoption["evidence_by_lv"])
+        adopted_count = len(completed)
     if resume:
         gap_found = False
         for index, item in enumerate(plan.lvs):
+            if index < adopted_count:
+                continue
             prior_run = run_id if index == 0 else f"{run_id}-{item.lv_id.lower()}"
             handoff_path = namespace_root(harness_root, plan.project_id, "artifact") / f"{prior_run}.handoff.json"
             if not handoff_path.exists():

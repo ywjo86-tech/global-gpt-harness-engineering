@@ -57,6 +57,9 @@ def load_job(path: str | Path) -> dict[str, Any]:
                 raise FullPlanJobError(f"Gate job field is missing: {field}")
         if gate.get("full_plan_opt_in") is not True or gate.get("project_final_validation") is not True:
             raise FullPlanJobError("Gate job requires explicit FULL_PLAN opt-in and final validation")
+        adoption_path = gate.get("adopted_prefix_evidence_path")
+        if adoption_path is not None and (not isinstance(adoption_path, str) or not adoption_path):
+            raise FullPlanJobError("Gate job adopted_prefix_evidence_path is invalid")
         evidence_paths_by_lv = gate.get("requirement_evidence_paths_by_lv")
         if evidence_paths_by_lv is not None:
             if (not isinstance(evidence_paths_by_lv, dict) or not evidence_paths_by_lv
@@ -140,6 +143,10 @@ def build_gate_executor(job: Mapping[str, Any]):
         evidence_path = spec.get("requirement_evidence_path")
         if evidence_path:
             requirement_evidence = _load_json(evidence_path)
+        adopted_prefix_evidence = None
+        adoption_path = spec.get("adopted_prefix_evidence_path")
+        if adoption_path:
+            adopted_prefix_evidence = _load_json(adoption_path)
         project_requirement_evidence_by_lv = None
         evidence_paths_by_lv = spec.get("requirement_evidence_paths_by_lv")
         if evidence_paths_by_lv is not None:
@@ -166,6 +173,7 @@ def build_gate_executor(job: Mapping[str, Any]):
             project_final_validation=spec["project_final_validation"],
             requirement_evidence=requirement_evidence,
             project_requirement_evidence_by_lv=project_requirement_evidence_by_lv,
+            adopted_prefix_evidence=adopted_prefix_evidence,
         )
     return execute
 
