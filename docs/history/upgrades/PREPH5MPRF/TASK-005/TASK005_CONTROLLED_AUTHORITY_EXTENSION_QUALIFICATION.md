@@ -22,7 +22,7 @@ The public DTO layer projects only public arguments/status/effect/reconciliation
 HOST-GATEWAY wire code remains unchanged.
 
 ## Validation
-Focused suite: `tests.test_public_execution_contract`, `tests.test_full_mcp_publication`, `tests.full_mcp.test_git`, `tests.full_mcp.test_observability_recovery`.
+Focused suite: `tests.test_public_execution_contract`, `tests.full_mcp.test_git_publication`, `tests.full_mcp.test_git`, `tests.full_mcp.test_observability_recovery`.
 Result: 17 PASS, 0 FAIL, 0 ERROR.
 Python compile for controlled modules: PASS.
 `git diff --check` for controlled modules/tests: PASS.

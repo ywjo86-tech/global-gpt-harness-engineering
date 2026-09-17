@@ -157,6 +157,19 @@ class SecurityBoundaryTests(unittest.TestCase):
         self.assertNotIn("stdout", durable_text)
         self.assertNotIn("stderr", durable_text)
 
+    def test_publication_catalog_is_exact_and_has_no_generic_git_escape(self) -> None:
+        base = {item.operation_class_id for item in operation_definitions()}
+        extended = {item.operation_class_id for item in operation_definitions(include_publication=True)}
+        self.assertEqual(extended - base, {"git_stage", "git_commit", "git_push"})
+        repo = Path(__file__).resolve().parents[2]
+        text = "\n".join((repo / rel).read_text(encoding="utf-8") for rel in (
+            "runtime/full_mcp/git_service.py", "runtime/full_mcp/runtime.py",
+            "runtime/orchestrator/public_execution_contract.py",
+        ))
+        for forbidden in ("git_force", "git_reset", "git_rebase", "git_delete_ref", "--force", "force-with-lease", "push --delete"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text)
+
     def test_no_memory_jarvis_provider_or_network_bypass_surface(self) -> None:
         repo = Path(__file__).resolve().parents[2]
         targets = list((repo / "runtime/full_mcp").glob("*.py"))
