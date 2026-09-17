@@ -1517,7 +1517,20 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if context.get("resume"):
             records = store.verify()
             if not records:
-                raise GateControllerError("no persistent checkpoint exists")
+                # A package can be durably sealed before the first ResumeStore
+                # event is appended.  If no later execution evidence exists,
+                # replay the PACKAGE seal into the store and continue as fresh
+                # work.  Any partial preflight/worker/review evidence without a
+                # ResumeStore record remains ambiguous and therefore fail-closed.
+                execution_evidence = [
+                    package_root / "preflight" / "preflight.evidence.json",
+                    package_root / "worker.request.json",
+                    package_root / "worker.result.json",
+                    *sorted(package_root.glob("production.review-request-*.json")),
+                ]
+                if any(path.exists() or path.is_symlink() for path in execution_evidence):
+                    raise GateControllerError("no persistent checkpoint exists")
+                return sealed("PACKAGE", "SEALED", digest)
             # PACKAGE/PREFLIGHT/WORKER events are durable continuation points
             # even before the later CHECKPOINT lifecycle stage is reached.
             latest = [record for record in records if record.get("checkpoint")] or records
