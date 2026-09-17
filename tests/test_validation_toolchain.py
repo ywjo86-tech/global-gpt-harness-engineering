@@ -89,11 +89,11 @@ class ValidationToolchainTests(unittest.TestCase):
                     plan=resolve_validation_commands(
                         root, ['docs/history/upgrades/PROJECT/'], allow_deferred=True
                     )
-                self.assertEqual(plan.profile_ids, ('PROJECT_NATIVE_UNRESOLVED',))
-                self.assertTrue(plan.deferred)
+                self.assertEqual(plan.profile_ids, ('DOCUMENT_EVIDENCE',))
+                self.assertFalse(plan.deferred)
                 with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=str(tool)):
-                    with self.assertRaisesRegex(ValidationToolchainError, 'no project-native'):
-                        resolve_validation_commands(root, ['docs/history/upgrades/PROJECT/'], allow_deferred=False)
+                    resolved=resolve_validation_commands(root, ['docs/history/upgrades/PROJECT/'], allow_deferred=False)
+                self.assertEqual(resolved.profile_ids, ('DOCUMENT_EVIDENCE',))
             finally:
                 tool.unlink(missing_ok=True)
 
