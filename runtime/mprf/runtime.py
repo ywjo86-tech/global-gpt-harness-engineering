@@ -92,3 +92,6 @@ class MPRFRuntimeV1:
             evidence_refs=tuple(str(item) for item in evidence_refs),
             failure_classes=None,
         )
+    def failure_disposition(self, failure, prerequisites, *, permission_related_auth: bool = False):
+        from .failure import evaluate_failover
+        return evaluate_failover(failure, prerequisites, permission_related_auth=permission_related_auth)
