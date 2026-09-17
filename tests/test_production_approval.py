@@ -78,6 +78,16 @@ class ProductionApprovalSchemaV2Tests(unittest.TestCase):
         )
         self.assertEqual(approved["owned_file_scope"], {"G1-LV3-7": []})
 
+    def test_slash_separated_git_branch_is_valid(self):
+        value = event(branch="feature/full-plan")
+        approved = validate_v2_schema(value, now=NOW)
+        self.assertEqual(approved["branch"], "feature/full-plan")
+
+    def test_unsafe_git_branch_forms_are_blocked(self):
+        for branch in ("feature//bad", ".hidden", "feature/../bad", "feature/x.lock", "feature/@{bad"):
+            with self.subTest(branch=branch), self.assertRaisesRegex(ProductionApprovalError, "invalid branch"):
+                validate_v2_schema(event(branch=branch), now=NOW)
+
     def test_missing_branch_baseline_mode_and_time_are_blocked(self):
         for field in ("branch", "baseline_head", "approval_mode", "approved_at", "recorded_at"):
             value = event(); del value[field]

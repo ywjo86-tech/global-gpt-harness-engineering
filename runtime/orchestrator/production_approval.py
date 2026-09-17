@@ -21,6 +21,7 @@ EVENT_TYPES = {"APPROVED", "CORRECTION"}
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _HEAD = re.compile(r"[0-9a-f]{40,64}\Z")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,254}\Z")
 _SECRET = re.compile(
     r"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
     r"\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,})\b|"
@@ -80,6 +81,14 @@ def _identifier(value: object, field: str) -> str:
     return value
 
 
+def _branch(value: object) -> str:
+    if (not isinstance(value, str) or not _BRANCH.fullmatch(value) or value.endswith("/")
+            or value.startswith(".") or ".." in value or "//" in value or "@{" in value
+            or any(part.endswith(".lock") for part in value.split("/"))):
+        raise ProductionApprovalError("invalid branch")
+    return value
+
+
 def _relative_path(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or "\\" in value or Path(value).is_absolute():
         raise ProductionApprovalError(f"invalid {field}")
@@ -104,8 +113,9 @@ def validate_v2_schema(event: Mapping[str, Any], *, now: datetime | None = None)
         raise ProductionApprovalError("production approval v2 schema mismatch")
     if _contains_secret(event):
         raise ProductionApprovalError("approval event contains secret-like material")
-    for field in ("event_id", "project_id", "gate_id", "branch", "authorization_source"):
+    for field in ("event_id", "project_id", "gate_id", "authorization_source"):
         _identifier(event.get(field), field)
+    _branch(event.get("branch"))
     if event.get("event_type") not in EVENT_TYPES:
         raise ProductionApprovalError("invalid event_type")
     for field in ("plan_sha256", "completion_conditions_sha256", "record_hash"):
