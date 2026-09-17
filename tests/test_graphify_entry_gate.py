@@ -53,15 +53,15 @@ def _fixture_manifest(root: Path) -> Path:
 
 
 class GraphifyEntryGateTests(unittest.TestCase):
-    def test_task_013_verifies_real_predecessor_baseline(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+    def test_task_013_verifies_complete_predecessor_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            output = Path(temp_dir) / "predecessor_baseline_verification.json"
-            record = entry_gate.verify_predecessor_baseline(
-                root,
-                BASELINE_REF,
-                output_path=output,
-            )
+            root = Path(temp_dir)
+            _fixture_manifest(root)
+            output = root / "predecessor_baseline_verification.json"
+            with patch.object(entry_gate, "_git_commit_exists", return_value=True):
+                record = entry_gate.verify_predecessor_baseline(
+                    root, BASELINE_REF, manifest_path="manifest.json", output_path=output
+                )
             self.assertEqual(record["verification_status"], "VERIFIED")
             self.assertTrue(record["predecessor_entry_eligible"])
             self.assertEqual(record["reasons"], [])

@@ -61,17 +61,27 @@ def _extract_current_phase(plan_text: str, state_text: str) -> str:
 
 
 def _is_engine_host(root: Path) -> bool:
-    if root.name != "global-gpt-harness-engineering":
-        return False
     try:
         git_root = subprocess.check_output(
             ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
+        git_common_dir = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
     except (OSError, subprocess.CalledProcessError):
         return False
     if Path(git_root).resolve() != root:
+        return False
+    common = Path(git_common_dir)
+    if not common.is_absolute():
+        common = (root / common).resolve()
+    canonical_checkout = root.name == "global-gpt-harness-engineering"
+    canonical_worktree = common.name == ".git" and common.parent.name == "global-gpt-harness-engineering"
+    if not (canonical_checkout or canonical_worktree):
         return False
     return all((root / anchor).is_file() for anchor in ENGINE_HOST_ANCHORS)
 
