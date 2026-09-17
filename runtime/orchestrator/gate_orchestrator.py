@@ -473,6 +473,12 @@ def validate_capability_handoff_projection(
     review = handoff.get("review")
     sealed = review.get("capability") if isinstance(review, Mapping) else None
     if not isinstance(sealed, Mapping):
+        canonical_none = {
+            "capability_requirements": [], "capability_gaps": [], "discovery_required": False,
+            "candidate_use_authorized": False, "used_assets": [], "runtime_selections": [],
+        }
+        if all(capability_projection.get(key) == value for key, value in canonical_none.items()) and set(capability_projection).issubset(canonical_none):
+            return
         raise GateOrchestrationError("capability evidence is missing from sealed HANDOFF")
     fields = (
         "capability_requirements", "capability_gaps", "discovery_required",
@@ -2475,10 +2481,22 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                         or capability_result.gate_passed is not False):
                     raise GateControllerError("canonical capability prerequisite blocked: " + capability_result.blocked_reason)
                 worker_result = dict(original_worker(worker_context))
-                worker_result["capability_projection"] = capability_result.ledger_projection()
+                capability_projection = capability_result.ledger_projection()
+                worker_result["capability_projection"] = capability_projection
                 worker_result["capability_requirement_digest"] = requirement_digest
                 if capability_result.runtime_selection is not None:
                     worker_result["runtime_selection"] = asdict(capability_result.runtime_selection)
+                # The production HANDOFF adapter reads the closure-owned canonical
+                # worker payload rather than this lifecycle envelope.  Keep the
+                # process-local state aligned without mutating the immutable
+                # worker.result.json artifact, including on resumed WORKER stages.
+                if isinstance(persisted_state, dict) and isinstance(persisted_state.get("worker_payload"), dict):
+                    handoff_worker = dict(persisted_state["worker_payload"])
+                    handoff_worker["capability_projection"] = capability_projection
+                    handoff_worker["capability_requirement_digest"] = requirement_digest
+                    if capability_result.runtime_selection is not None:
+                        handoff_worker["runtime_selection"] = asdict(capability_result.runtime_selection)
+                    persisted_state["worker_payload"] = handoff_worker
                 return worker_result
 
             selected_adapters = GateControllerAdapters(
