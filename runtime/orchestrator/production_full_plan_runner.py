@@ -58,7 +58,7 @@ def _failure_class(reason: object) -> str:
         "worker.request.json", "package manifest", "evidence lineage", "recovery binding",
         "no persistent checkpoint exists", "CHECKPOINT_ADOPTION_HEAD_MISMATCH",
         "CHECKPOINT_ADOPTION_TREE_MISMATCH", "product-completion.json",
-        "product completion replay conflict",
+        "product completion replay conflict", "source snapshot mismatch",
     )
     provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_")
     if any(marker in text for marker in artifact_markers):
