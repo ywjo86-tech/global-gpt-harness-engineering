@@ -4,7 +4,7 @@ Status: SUCCESSOR_GATE_READY
 
 ```json
 {
-  "approval_record_hash": "a8d0d76c7a403e613df896682738be2937043ac121c0c0d880a38c3f0fabc6f5",
+  "approval_record_hash": "d17776dccc4bc03c2454dcbb1e9dc3250264a83c2bb9472d0f71d7f8ce5578e7",
   "closure_status": "PREDECESSOR_CLOSED",
   "gate_id": "GATE-010",
   "gate_status": "READY_FOR_TRANSITION",
