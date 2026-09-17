@@ -51,6 +51,20 @@ def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
+def _failure_class(reason: object) -> str:
+    text = str(reason or "")
+    artifact_markers = (
+        "EVIDENCE_PUBLICATION_INVALID", "WORKER_REQUEST_REQUIRED",
+        "worker.request.json", "package manifest", "evidence lineage",
+    )
+    provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_")
+    if any(marker in text for marker in artifact_markers):
+        return "ARTIFACT_CONTRACT_FAILURE"
+    if any(marker in text for marker in provider_markers):
+        return "PROVIDER_FAILURE"
+    return "EXECUTION_FAILURE"
+
+
 def _unsigned(state: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in state.items() if key != "state_sha256"}
 
@@ -378,14 +392,29 @@ class DurableFullPlanSupervisor:
         item["last_error"] = reason
         state["last_error"] = reason
         state["lease"] = None
+        failure_class = _failure_class(reason)
         if wait_state in WAIT_STATES:
             item["status"] = "READY"
             item["resume"] = True
             state["state"] = wait_state
-            state = self._persist(state, {"event": wait_state, "gate_id": item["gate_id"], "reason": reason})
+            state = self._persist(state, {"event": wait_state, "gate_id": item["gate_id"],
+                                          "reason": reason, "failure_class": failure_class})
             self._alert(wait_state, state, gate_id=item["gate_id"], reason=reason)
             return state
         attempt = int(item.get("attempt", 1))
+        # Artifact/evidence contract failures must never blindly rerun a worker.
+        # They require an explicit evidence-preserving recovery path.
+        if failure_class == "ARTIFACT_CONTRACT_FAILURE":
+            item["status"] = "BLOCKED"
+            dead = {"gate_id": item["gate_id"], "gate_run_id": item["gate_run_id"],
+                    "attempt": attempt, "reason": reason, "failure_class": failure_class,
+                    "idempotency_key": item["idempotency_key"], "quarantined_at": _now()}
+            state.setdefault("dead_letter", []).append(dead)
+            state["state"] = "BLOCKED"
+            state["terminal_reason"] = "ARTIFACT_CONTRACT_RECOVERY_REQUIRED"
+            state = self._persist(state, {"event": "ARTIFACT_CONTRACT_BLOCKED", **dead})
+            self._alert("ARTIFACT_CONTRACT_BLOCKED", state, gate_id=item["gate_id"], reason=reason)
+            return state
         if attempt <= self.retry_budget:
             item["attempt"] = attempt + 1
             item["resume"] = True
@@ -393,11 +422,12 @@ class DurableFullPlanSupervisor:
             state["state"] = "RECOVERING"
             state["recovery_count"] = int(state.get("recovery_count", 0)) + 1
             return self._persist(state, {"event": "RETRY_ENQUEUED", "gate_id": item["gate_id"],
-                                         "reason": reason, "next_attempt": item["attempt"]})
+                                         "reason": reason, "failure_class": failure_class,
+                                         "next_attempt": item["attempt"]})
         item["status"] = "BLOCKED"
         dead = {"gate_id": item["gate_id"], "gate_run_id": item["gate_run_id"],
-                "attempt": attempt, "reason": reason, "idempotency_key": item["idempotency_key"],
-                "quarantined_at": _now()}
+                "attempt": attempt, "reason": reason, "failure_class": failure_class,
+                "idempotency_key": item["idempotency_key"], "quarantined_at": _now()}
         state.setdefault("dead_letter", []).append(dead)
         state["state"] = "BLOCKED"
         state["terminal_reason"] = "RETRY_BUDGET_EXHAUSTED"
@@ -554,6 +584,37 @@ class DurableFullPlanSupervisor:
                                           "completed_gate": item["gate_id"], "next_gate": next_gate,
                                           "next_idempotency_key": state["queue"][-1]["idempotency_key"]})
         return FullPlanResult(str(state["state"]), state, tuple(executed), recovered)
+
+    def resume_recoverable_block(self, *, expected_failure_class: str = "ARTIFACT_CONTRACT_FAILURE") -> dict[str, Any]:
+        """Explicitly reopen a blocked run only after an evidence-preserving repair exists."""
+        if expected_failure_class != "ARTIFACT_CONTRACT_FAILURE":
+            raise ProductionFullPlanError("unsupported blocked recovery class")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if state.get("state") != "BLOCKED":
+                raise ProductionFullPlanError("Full Plan run is not blocked")
+            reason = str(state.get("last_error") or "")
+            if _failure_class(reason) != expected_failure_class:
+                raise ProductionFullPlanError("blocked failure class mismatch")
+            candidates = [item for item in state.get("queue", []) if item.get("status") == "BLOCKED"]
+            if len(candidates) != 1:
+                raise ProductionFullPlanError("blocked recovery requires exactly one quarantined queue item")
+            item = candidates[0]
+            item["status"] = "READY"
+            item["resume"] = True
+            item["attempt"] = int(item.get("attempt", 1)) + 1
+            item["last_error"] = None
+            state["state"] = "RECOVERING"
+            state["terminal_reason"] = None
+            state["last_error"] = None
+            state["lease"] = None
+            state["recovery_count"] = int(state.get("recovery_count", 0)) + 1
+            return self._persist(state, {"event":"EXPLICIT_ARTIFACT_RECOVERY_RESUME",
+                                         "gate_id":item["gate_id"], "attempt":item["attempt"],
+                                         "failure_class":expected_failure_class})
+        finally:
+            self._release_run_lock(handle)
 
     def resume_wait(self, expected_state: str) -> dict[str, Any]:
         handle = self._acquire_run_lock()

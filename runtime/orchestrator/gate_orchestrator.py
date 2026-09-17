@@ -1315,34 +1315,62 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     harness_root, project_id=plan.project_id, run_id=run_id,
                     gate_id=plan.gate_id, lv_id=lv_id,
                 )
-                canonical_extra = _canonical_worker_authority_extra(
-                    canonical_worker_authority_provider, mode="recovery",
-                    project_root=root, harness_root=harness_root,
-                    package_root=attempt_root, parent_package_root=parent_package_root,
-                    manifest=None, recovery_package=recovery_package,
-                    recovery_preflight=recovery_preflight, context=context,
-                    plan=plan, lv_id=lv_id, run_id=run_id,
-                )
-                retry_execution_request_id = _recovery_gateway_retry_id(
-                    attempt_root, str(recovery_package.get("recovery_id") or recovery_id)
-                )
+                post_result_request_gap = recovery_package.get("recovery_reason_code") == "REJECTED_POST_RESULT_REQUEST_MISSING"
+                canonical_extra = {}
+                retry_execution_request_id = ""
+                if not post_result_request_gap:
+                    canonical_extra = _canonical_worker_authority_extra(
+                        canonical_worker_authority_provider, mode="recovery",
+                        project_root=root, harness_root=harness_root,
+                        package_root=attempt_root, parent_package_root=parent_package_root,
+                        manifest=None, recovery_package=recovery_package,
+                        recovery_preflight=recovery_preflight, context=context,
+                        plan=plan, lv_id=lv_id, run_id=run_id,
+                    )
+                    retry_execution_request_id = _recovery_gateway_retry_id(
+                        attempt_root, str(recovery_package.get("recovery_id") or recovery_id)
+                    )
+                actual_head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                             capture_output=True, text=True, check=True).stdout.strip()
                 request = WorkerRequest(project_root=str(root), task=task,
                     contract_summary={"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,
                                       "canonical_plan_sha256":plan.canonical_plan_sha256},
-                    state_snapshot={"branch":"sealed","head":str(context.get("head", ""))},
-                    extra_context={"execution_mode":"production","execution_backend":"HOST_GATEWAY","run_id":run_id,"run_root":str(attempt_root),
-                                   "task_effect_requirement":"MUTATION_REQUIRED","change_target_count":len(selected.owned_files),
+                    state_snapshot={"branch":"sealed","head":actual_head},
+                    extra_context={"execution_mode":"production",
+                                   "execution_backend":"GPT_OPERATOR_RECOVERY_VERIFICATION" if post_result_request_gap else "HOST_GATEWAY",
+                                   "run_id":run_id,"run_root":str(attempt_root),
+                                   "task_effect_requirement":"NONE_SATISFIED" if post_result_request_gap else "MUTATION_REQUIRED",
+                                   "allow_verification_only":post_result_request_gap,
+                                   "change_target_count":0 if post_result_request_gap else len(selected.owned_files),
                                    "package_manifest_sha256":recovery_package["package_sha256"],
                                    "preflight_evidence_sha256":recovery_preflight["preflight_sha256"],
                                    "attempt":attempt,"gate_id":plan.gate_id,"lv_id":lv_id,
                                    "approval_event_id":recovery_package["approval_event_id"],
                                    "pre_result_partial_recovery": recovery_package.get("recovery_reason_code") == "REJECTED_PRE_RESULT_PARTIAL",
+                                   "post_result_request_gap_recovery":post_result_request_gap,
                                    "recovery_id": recovery_package.get("recovery_id"),
                                    "recovery_source_kind": recovery_package.get("recovery_source_kind"),
-                                   "source_snapshot":{"source_head":str(context.get("head", ""))},
+                                   "source_snapshot":{"source_head":actual_head},
                                    **({"execution_request_id": retry_execution_request_id} if retry_execution_request_id else {}),
                                    **canonical_extra})
-                request_path.write_bytes(canonical_json_bytes(request.to_dict()))
+                request_bytes = canonical_json_bytes(request.to_dict())
+                if request_path.exists() or request_path.is_symlink():
+                    if request_path.is_symlink() or request_path.read_bytes() != request_bytes:
+                        raise GateControllerError("recovery worker request replay conflict")
+                else:
+                    fd = os.open(request_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                    with os.fdopen(fd, "wb") as handle:
+                        handle.write(request_bytes); handle.flush(); os.fsync(handle.fileno())
+                if post_result_request_gap:
+                    from .recovery_contract import verify_post_result_checkpoint_recovery
+                    verified = verify_post_result_checkpoint_recovery(
+                        project_root=root, source_worker_path=parent_package_root / "worker.result.json",
+                        package_manifest_path=parent_package_root / "package.manifest.json")
+                    data = canonical_json_bytes(verified)
+                    fd = os.open(result, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                    with os.fdopen(fd, "wb") as handle:
+                        handle.write(data); handle.flush(); os.fsync(handle.fileno())
+                    return verified
                 action = seal_action_manifest(requirements_sha256=str(context["requirements_sha256"]),
                     project_id=plan.project_id, gate_id=plan.gate_id, lv_id=lv_id, run_id=run_id,
                     branch=str(context["branch"]), head=str(context["head"]), owned_files=list(selected.owned_files),
@@ -2278,9 +2306,28 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 codex_auth_readiness=codex_auth_readiness,
                 readiness_recheck_probes=codex_readiness_recheck_probes,
             )
+            incident_recovery = None
+            if resume:
+                from .canonical_paths import canonical_lv_path
+                incident_root = canonical_lv_path(
+                    harness_root, project_id=plan.project_id, run_id=lv_run_id,
+                    gate_id=plan.gate_id, lv_id=lv_id)
+                incident_manifest = incident_root / "package.manifest.json"
+                incident_preflight = incident_root / "preflight" / "preflight.evidence.json"
+                incident_worker = incident_root / "worker.result.json"
+                incident_request = incident_root / "worker.request.json"
+                review_requests = sorted(incident_root.glob("production.review-request-*.json")) if incident_root.is_dir() else []
+                if (incident_manifest.is_file() and incident_preflight.is_file() and incident_worker.is_file()
+                        and not incident_request.exists() and not incident_request.is_symlink() and len(review_requests) == 1):
+                    from .recovery_contract import prepare_post_result_missing_request_recovery
+                    incident_recovery = prepare_post_result_missing_request_recovery(
+                        harness_root, project_root=root, package_manifest_path=incident_manifest,
+                        preflight_path=incident_preflight, worker_result_path=incident_worker,
+                        review_request_path=review_requests[0], approval_event_id=str(incident_manifest and json.loads(incident_manifest.read_text(encoding="utf-8")).get("approval_id", "")),
+                        branch=branch)
             selected_adapters = _production_adapters(
                 root, plan, auth, lv_id, lv_run_id, harness_root,
-                diagnostic_run_id=run_id,
+                recovery=incident_recovery, diagnostic_run_id=run_id,
                 canonical_worker_authority_provider=production_provider,
                 manual_action_package=(manual_action_packages_by_lv or {}).get(lv_id),
                 manual_action_authorization=(manual_action_authorizations_by_lv or {}).get(lv_id),

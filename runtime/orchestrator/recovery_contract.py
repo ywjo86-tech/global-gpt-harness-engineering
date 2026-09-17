@@ -129,7 +129,7 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
         raise RecoveryError("invalid recovery attempt or hard-stop binding")
     if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes, source_binding_kind)) or not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, branch, supersedes, source_binding_kind)):
         raise RecoveryError("recovery binding is incomplete")
-    if source_binding_kind not in {"ACTIVE_TRANSITION", "PRE_RESULT_PARTIAL_SOURCE"}:
+    if source_binding_kind not in {"ACTIVE_TRANSITION", "PRE_RESULT_PARTIAL_SOURCE", "POST_RESULT_MISSING_REQUEST_SOURCE"}:
         raise RecoveryError("unsupported recovery source binding kind")
     for path, digest in {**rejected_artifacts, **source_shas}.items():
         p = Path(path)
@@ -522,6 +522,196 @@ def prepare_pre_result_partial_recovery(
         "recovery": record, "checkpoint": checkpoint, "next_attempt": next_attempt,
         "source": source, "source_path": str(source_path), "completion_evidence": [], "hard_stop": True,
     }
+
+
+
+def _run_checkpoint_verification_command(project: Path, argv: list[str], *, timeout: int = 300) -> dict[str, Any]:
+    if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+        raise RecoveryError("checkpoint recovery validation command is invalid")
+    executable = Path(argv[0]).name
+    if executable in {"python", "python3"}:
+        if argv[1:3] not in (["-m", "unittest"], ["-m", "compileall"]):
+            raise RecoveryError("checkpoint recovery Python command is not approved")
+    elif executable == "git":
+        if argv[1:3] != ["diff", "--check"]:
+            raise RecoveryError("checkpoint recovery Git command is not approved")
+    else:
+        raise RecoveryError("checkpoint recovery command executable is not approved")
+    try:
+        completed = subprocess.run(argv, cwd=project, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   check=False, timeout=timeout)
+        timed_out = False
+        stdout, stderr, exit_code = completed.stdout, completed.stderr, completed.returncode
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        stdout, stderr, exit_code = exc.stdout or b"", exc.stderr or b"", None
+    return {"command": list(argv), "exit_code": exit_code, "timeout": timed_out,
+            "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+            "stderr_sha256": hashlib.sha256(stderr).hexdigest()}
+
+
+def prepare_post_result_missing_request_recovery(
+    harness_root: str | Path, *, project_root: str | Path,
+    package_manifest_path: str | Path, preflight_path: str | Path,
+    worker_result_path: str | Path, review_request_path: str | Path,
+    approval_event_id: str, branch: str,
+) -> dict[str, Any]:
+    """Reject a completed result whose pre-execution WorkerRequest is absent.
+
+    The missing request is never reconstructed.  Instead, the original result
+    is retained as immutable incident evidence and attempt N+1 is authorized
+    only for checkpoint adoption + verification.
+    """
+    root = Path(harness_root).resolve(); project = Path(project_root).resolve()
+    paths = [Path(value) for value in (package_manifest_path, preflight_path, worker_result_path, review_request_path)]
+    if not project.is_dir() or project.is_symlink():
+        raise RecoveryError("post-result recovery project root is unsafe")
+    for path in paths:
+        if not path.is_file() or path.is_symlink() or root not in path.resolve().parents:
+            raise RecoveryError("post-result recovery source artifact is unsafe")
+    package_root = paths[0].parent
+    request_path = package_root / "worker.request.json"
+    if request_path.exists() or request_path.is_symlink():
+        raise RecoveryError("post-result recovery requires the original worker request to be absent")
+    try:
+        manifest, preflight, worker, review_request = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RecoveryError("post-result recovery source artifact is malformed") from exc
+    if not all(isinstance(value, dict) for value in (manifest, preflight, worker, review_request)):
+        raise RecoveryError("post-result recovery source artifact must be an object")
+    expected = {key: manifest.get(key) for key in ("project_id", "gate_id", "lv_id", "run_id")}
+    if not all(isinstance(value, str) and value for value in expected.values()):
+        raise RecoveryError("post-result recovery manifest binding is incomplete")
+    if any(preflight.get(key) != value for key, value in expected.items()):
+        raise RecoveryError("post-result recovery preflight binding mismatch")
+    if any(worker.get(key) != value for key, value in expected.items()):
+        raise RecoveryError("post-result recovery worker binding mismatch")
+    if any(review_request.get(key) != value for key, value in expected.items()):
+        raise RecoveryError("post-result recovery review request binding mismatch")
+    package_sidecar = paths[0].with_suffix('.sha256'); preflight_sidecar = paths[1].with_suffix('.sha256')
+    package_sha = hashlib.sha256(paths[0].read_bytes()).hexdigest(); preflight_sha = hashlib.sha256(paths[1].read_bytes()).hexdigest()
+    if not package_sidecar.is_file() or package_sidecar.is_symlink() or package_sidecar.read_text(encoding='ascii').strip() != package_sha:
+        raise RecoveryError("post-result recovery package sidecar mismatch")
+    if not preflight_sidecar.is_file() or preflight_sidecar.is_symlink() or preflight_sidecar.read_text(encoding='ascii').strip() != preflight_sha:
+        raise RecoveryError("post-result recovery preflight sidecar mismatch")
+    plan_sha = manifest.get("canonical_plan_sha256")
+    worker_plan_sha = worker.get("plan_sha256") or worker.get("canonical_plan_sha256")
+    worker_sha = hashlib.sha256(paths[2].read_bytes()).hexdigest()
+    if (not isinstance(plan_sha, str) or not _SHA.fullmatch(plan_sha) or worker_plan_sha != plan_sha
+            or preflight.get("package_manifest_sha256") != package_sha
+            or worker.get("preflight_evidence_sha256") != preflight_sha
+            or review_request.get("package_manifest_sha256") != package_sha
+            or review_request.get("worker_result_sha256") != worker_sha
+            or review_request.get("canonical_plan_sha256") != plan_sha):
+        raise RecoveryError("post-result recovery evidence lineage mismatch")
+    if worker.get("status") != "completed" or worker.get("completion_mode") != "GPT_OPERATOR_MANUAL_ACTION" or worker.get("hard_stop") is not True:
+        raise RecoveryError("post-result recovery requires completed GPT manual-action evidence")
+    rejected_attempt = worker.get("attempt")
+    if not isinstance(rejected_attempt, int) or isinstance(rejected_attempt, bool) or rejected_attempt <= 0:
+        raise RecoveryError("post-result recovery attempt is invalid")
+    checkpoint = worker.get("checkpoint_commit"); baseline = worker.get("baseline_head")
+    if not isinstance(checkpoint, str) or not re.fullmatch(r"[0-9a-f]{40,64}", checkpoint or ""):
+        raise RecoveryError("post-result recovery checkpoint is invalid")
+    if not isinstance(baseline, str) or not re.fullmatch(r"[0-9a-f]{40,64}", baseline or ""):
+        raise RecoveryError("post-result recovery baseline is invalid")
+    current_head = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    if subprocess.run(["git", "-C", str(project), "merge-base", "--is-ancestor", checkpoint, current_head], check=False).returncode != 0:
+        raise RecoveryError("post-result recovery checkpoint is not an ancestor")
+    owned = manifest.get("owned_files"); changed = worker.get("changed_files")
+    if not isinstance(owned, list) or not owned or not isinstance(changed, list) or not changed:
+        raise RecoveryError("post-result recovery scope evidence is incomplete")
+    if any(not isinstance(item, str) or not _within_owned_scope(item, owned) for item in changed):
+        raise RecoveryError("post-result recovery changed-file scope mismatch")
+    checkpoint_files = set(filter(None, subprocess.run(["git", "-C", str(project), "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint], capture_output=True, text=True, check=True).stdout.splitlines()))
+    if not set(changed).issubset(checkpoint_files):
+        raise RecoveryError("post-result recovery checkpoint file evidence mismatch")
+    later = set(filter(None, subprocess.run(["git", "-C", str(project), "diff", "--name-only", f"{checkpoint}..{current_head}"], capture_output=True, text=True, check=True).stdout.splitlines()))
+    if any(_within_owned_scope(path, owned) for path in later):
+        raise RecoveryError("post-result recovery checkpoint was invalidated by later owned-scope changes")
+    relative_sources = [path.resolve().relative_to(root).as_posix() for path in paths]
+    source_shas = {rel: hashlib.sha256(path.read_bytes()).hexdigest() for rel, path in zip(relative_sources, paths)}
+    source = {"schema_version":"orchestration.post-result-missing-request-source.v1", **expected,
+              "attempt":rejected_attempt, "canonical_plan_sha256":plan_sha,
+              "approval_event_id":approval_event_id, "branch":branch,
+              "baseline_head":baseline, "checkpoint_commit":checkpoint, "current_head":current_head,
+              "owned_files":list(owned), "changed_files":list(changed),
+              "package_manifest_sha256":package_sha, "preflight_evidence_sha256":preflight_sha,
+              "worker_result_sha256":worker_sha, "review_request_sha256":source_shas[relative_sources[3]],
+              "missing_bindings":["worker.request.json"], "completion_eligible":False, "hard_stop":True}
+    source["source_payload_sha256"] = hashlib.sha256(_bytes(source)).hexdigest()
+    source_path = package_root / "post-result-missing-request-source.json"; _write_once(source_path, source)
+    source_rel = source_path.resolve().relative_to(root).as_posix(); source_file_sha = hashlib.sha256(source_path.read_bytes()).hexdigest(); source_shas[source_rel] = source_file_sha
+    next_attempt = rejected_attempt + 1; recovery_id = f"{expected['run_id']}-recovery-{next_attempt:02d}"
+    record = write_recovery_record(
+        root, project_id=expected["project_id"], gate_id=expected["gate_id"], lv_id=expected["lv_id"], run_id=expected["run_id"],
+        rejected_attempt=rejected_attempt, rejected_artifacts={source_rel:source_file_sha},
+        reason_code="REJECTED_POST_RESULT_REQUEST_MISSING", missing_bindings=["worker.request.json"],
+        recovery_attempt=next_attempt, approval_event_id=approval_event_id, plan_sha256=plan_sha,
+        branch=branch, baseline_head=baseline, current_head=current_head,
+        active_transition_sha256=source_file_sha, source_shas=source_shas, predecessor=None,
+        supersedes=worker_sha, hard_stop=True, recovery_id=recovery_id,
+        source_binding_kind="POST_RESULT_MISSING_REQUEST_SOURCE")
+    checkpoint_payload = {"schema_version":"orchestration.production-recovery-checkpoint.v1", **expected,
+        "recovery_id":record["recovery_id"], "rejected_attempt":rejected_attempt, "next_attempt":next_attempt,
+        "recovery_record_hash":record["record_hash"], "completion_evidence":[],
+        "status":"REJECTED_POST_RESULT_REQUEST_MISSING", "source_binding_kind":"POST_RESULT_MISSING_REQUEST_SOURCE", "hard_stop":True}
+    checkpoint_payload["checkpoint_sha256"] = hashlib.sha256(_bytes(checkpoint_payload)).hexdigest()
+    recovery_root = root / "_workspace" / "global-gate" / expected["project_id"] / "recovery"
+    _write_once(recovery_root / f"{record['recovery_id']}.checkpoint.json", checkpoint_payload)
+    return {"classification":{"status":"REJECTED_POST_RESULT_REQUEST_MISSING","completion_eligible":False,
+            "missing_bindings":["worker.request.json"]}, "recovery":record, "checkpoint":checkpoint_payload,
+            "next_attempt":next_attempt, "source":source, "source_path":str(source_path), "completion_evidence":[], "hard_stop":True}
+
+
+def verify_post_result_checkpoint_recovery(*, project_root: str | Path,
+                                           source_worker_path: str | Path,
+                                           package_manifest_path: str | Path) -> dict[str, Any]:
+    """Verify an already-committed worker checkpoint without mutating project files."""
+    project = Path(project_root).resolve(); worker_path = Path(source_worker_path); manifest_path = Path(package_manifest_path)
+    if not project.is_dir() or project.is_symlink() or not worker_path.is_file() or worker_path.is_symlink() or not manifest_path.is_file() or manifest_path.is_symlink():
+        raise RecoveryError("checkpoint adoption recovery source is unsafe")
+    worker = json.loads(worker_path.read_text(encoding="utf-8")); manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(worker, dict) or not isinstance(manifest, dict):
+        raise RecoveryError("checkpoint adoption recovery source is malformed")
+    checkpoint = worker.get("checkpoint_commit"); baseline = worker.get("baseline_head")
+    current_head = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    if not isinstance(checkpoint, str) or subprocess.run(["git", "-C", str(project), "merge-base", "--is-ancestor", checkpoint, current_head], check=False).returncode != 0:
+        raise RecoveryError("checkpoint adoption recovery checkpoint is invalid")
+    owned = list(manifest.get("owned_files") or []); changed = list(worker.get("changed_files") or [])
+    later = set(filter(None, subprocess.run(["git", "-C", str(project), "diff", "--name-only", f"{checkpoint}..{current_head}"], capture_output=True, text=True, check=True).stdout.splitlines()))
+    if any(_within_owned_scope(path, owned) for path in later):
+        raise RecoveryError("checkpoint adoption recovery owned scope was invalidated")
+    source_commands = worker.get("commands")
+    if not isinstance(source_commands, Mapping):
+        raise RecoveryError("checkpoint adoption recovery command evidence is missing")
+    commands: dict[str, Any] = {}
+    provenance = subprocess.run(["git", "-C", str(project), "rev-parse", checkpoint], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    commands["checkpoint_provenance"] = {"command":["git","rev-parse",checkpoint], "exit_code":provenance.returncode, "timeout":False,
+        "stdout_sha256":hashlib.sha256(provenance.stdout).hexdigest(), "stderr_sha256":hashlib.sha256(provenance.stderr).hexdigest()}
+    if provenance.returncode != 0:
+        raise RecoveryError("checkpoint adoption provenance verification failed")
+    for key in ("focused_test", "full_regression", "compile_import", "git_diff_check"):
+        item = source_commands.get(key); argv = item.get("command") if isinstance(item, Mapping) else None
+        if not isinstance(argv, list):
+            raise RecoveryError(f"checkpoint adoption command is missing: {key}")
+        commands[key] = _run_checkpoint_verification_command(project, list(argv))
+        if commands[key]["exit_code"] != 0 or commands[key]["timeout"]:
+            raise RecoveryError(f"checkpoint adoption validation failed: {key}")
+    status = subprocess.run(["git", "-C", str(project), "status", "--porcelain=v1", "-uall"], capture_output=True, text=True, check=True).stdout.strip()
+    if status:
+        raise RecoveryError("checkpoint adoption recovery requires a clean worktree")
+    current_tree = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD^{tree}"], capture_output=True, text=True, check=True).stdout.strip()
+    return {"status":"completed", "plan_sha256":manifest.get("canonical_plan_sha256"),
+            "completion_mode":"VERIFIED_CHECKPOINT_ADOPTION", "tests":list(worker.get("tests") or []),
+            "owned_files":owned, "changed_files":changed, "baseline_head":baseline,
+            "baseline_tree":worker.get("baseline_tree"), "current_head":current_head, "current_tree":current_tree,
+            "checkpoint_commit":checkpoint, "commands":commands, "staged_changes":False, "unstaged_changes":False,
+            "adoption":{"schema_version":"orchestration.verified-checkpoint-adoption.v1",
+                        "checkpoint_commit":checkpoint, "approval_record_hash":manifest.get("approval_record_hash", "")},
+            "artifact_sha_chain":{"source_worker":hashlib.sha256(worker_path.read_bytes()).hexdigest(),
+                                  "package_manifest":hashlib.sha256(manifest_path.read_bytes()).hexdigest()},
+            "executor":{"identity":"gpt-operator-recovery-verifier","version":"1"},
+            "validation_events":["POST_RESULT_REQUEST_GAP_REJECTED","CHECKPOINT_PROVENANCE_VERIFIED","RECOVERY_VALIDATION_COMPLETED"]}
 
 
 def prepare_completion_recovery(harness_root: str | Path, *, prior_record_path: str | Path,

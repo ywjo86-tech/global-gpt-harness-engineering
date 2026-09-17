@@ -58,10 +58,18 @@ class AttentionOutbox:
             "gate_id": _safe_text(gate_id, limit=160) if gate_id else None,
             "state_sha256": _safe_text(state_sha256, limit=64) if state_sha256 else None,
         }
-        event_id = _digest(identity)
+        # One runtime incident may surface first as DEAD_LETTER and later as
+        # terminal BLOCKED during reconciliation.  Correlate by root cause, not
+        # by presentation state, so the user receives one notification.
+        incident_identity = {
+            "project_id": self.project_id, "run_id": self.run_id,
+            "gate_id": identity["gate_id"], "reason": identity["reason"],
+        }
+        event_id = _digest(incident_identity)
         payload = {
             "schema_version": SCHEMA_VERSION,
             "event_id": event_id,
+            "incident_key": event_id,
             **identity,
             "details": dict(details or {}),
             "created_at": _now(),
@@ -78,6 +86,9 @@ class AttentionOutbox:
             existing = json.loads(target.read_text(encoding="utf-8"))
             if existing.get("event_id") != event_id or existing.get("schema_version") != SCHEMA_VERSION:
                 raise AttentionOutboxError("attention outbox identity drift")
+            # Kind/state may evolve while the root cause remains identical.
+            # Preserve the first immutable notification record instead of
+            # producing duplicate user-facing events.
             return existing
         atomic_write_json(target, payload)
         return payload

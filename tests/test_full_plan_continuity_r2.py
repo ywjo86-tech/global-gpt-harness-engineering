@@ -123,6 +123,15 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
             self.assertEqual(seen[0]["control_authority"], "NONE")
             self.assertEqual(outbox.pending(), [])
 
+    def test_attention_coalesces_same_root_cause_across_terminal_kinds(self):
+        with tempfile.TemporaryDirectory() as d:
+            outbox = AttentionOutbox(Path(d) / "run", project_id="proj", run_id="run")
+            first = outbox.publish(kind="DEAD_LETTER", state="BLOCKED", reason="same-root", gate_id="G1")
+            second = outbox.publish(kind="BLOCKED", state="BLOCKED", reason="same-root", gate_id="G1")
+            self.assertEqual(first["event_id"], second["event_id"])
+            self.assertEqual(len(outbox.pending()), 1)
+            self.assertEqual(outbox.pending()[0]["kind"], "DEAD_LETTER")
+
     def test_periodic_reconcile_timer_is_persistent(self):
         text = systemd_user_timer(interval_seconds=60)
         self.assertIn("OnBootSec=30s", text)
@@ -209,6 +218,28 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
             self.assertEqual(len(pending), 1)
             self.assertEqual(pending[0]["kind"], "BLOCKED")
             self.assertEqual(pending[0]["reason"], "SIMULATED_SILENT_BLOCK")
+
+
+
+    def test_artifact_contract_failure_never_blindly_retries_and_can_be_explicitly_reopened(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup = DurableFullPlanSupervisor(
+                d, project_id="proj", run_id="artifact-run", gates=["G1"], retry_budget=5,
+                gate_timeout_seconds=1, heartbeat_seconds=.03, lease_seconds=.08,
+                min_disk_free_bytes=0, min_inode_free=0, min_memory_available_bytes=0,
+            )
+            def broken(_gate_id, _gate_run_id, _resume):
+                raise RuntimeError("EVIDENCE_PUBLICATION_INVALID: worker.request.json missing")
+            out = sup.run(broken)
+            self.assertEqual(out.status, "BLOCKED")
+            self.assertEqual(out.state["terminal_reason"], "ARTIFACT_CONTRACT_RECOVERY_REQUIRED")
+            self.assertEqual(out.state["queue"][0]["attempt"], 1)
+            self.assertEqual(out.state["dead_letter"][-1]["failure_class"], "ARTIFACT_CONTRACT_FAILURE")
+            reopened = sup.resume_recoverable_block()
+            self.assertEqual(reopened["state"], "RECOVERING")
+            self.assertEqual(reopened["queue"][0]["status"], "READY")
+            self.assertTrue(reopened["queue"][0]["resume"])
+            self.assertEqual(reopened["queue"][0]["attempt"], 2)
 
 
 
