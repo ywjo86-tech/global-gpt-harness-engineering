@@ -3,7 +3,9 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.orchestrator.tool_authorization import TOOL_AUTH_CONTRACT_VERSION, ToolAuthorizationContract
 from runtime.full_mcp.contracts import (
@@ -11,7 +13,7 @@ from runtime.full_mcp.contracts import (
     GIT_STAGE_INTENT_SCHEMA_V1, INVOCATION_CONTEXT_SCHEMA_V2,
     GitPublicationAuthorizationV1, InvocationContext, scope_digest,
 )
-from runtime.full_mcp.git_service import GitService
+from runtime.full_mcp.git_service import GitService, GitServiceError
 from runtime.full_mcp.path_policy import WorkspacePathPolicy
 from runtime.full_mcp.runtime import build_default_runtime, operation_definitions
 from runtime.full_mcp.validation_profiles import default_validation_catalog
@@ -81,8 +83,9 @@ class FullMCPPublicationTest(unittest.TestCase):
             mutable_scopes=mutable, read_scope_sha256=scope_digest((".",)), mutable_scope_sha256=mutable_digest,
             validation_profile_digests=catalog.digests(), operation_policy_digests=(self.authorization.policy_digest,),
         ).sealed()
+        self.contracts = tuple(contracts); self.catalog = catalog
         self.runtime = build_default_runtime(
-            self.context, tuple(contracts), catalog=catalog, publication_authorizations=(self.authorization,)
+            self.context, self.contracts, catalog=catalog, publication_authorizations=(self.authorization,)
         )
 
     def tearDown(self) -> None:
@@ -158,6 +161,95 @@ class FullMCPPublicationTest(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertEqual(result["error"]["code"], "GIT_REMOTE_STALE")
         self.assertEqual(_git(self.remote, "rev-parse", "refs/heads/main"), before)
+
+    def test_security_candidate_digest_mismatch_blocks_before_index_mutation(self):
+        (self.root / "owned/a.txt").write_text("changed\n", encoding="utf-8")
+        preview = self.runtime.services.git.publication_preview(["owned/a.txt"])
+        before = self.runtime.services.git.publication_index_digest()
+        result = self.runtime.call("git_stage", {
+            "intent_schema_version": GIT_STAGE_INTENT_SCHEMA_V1, "paths": ["owned/a.txt"],
+            "expected_worktree_digest": preview["worktree_digest"], "expected_head": preview["head_sha"],
+            "candidate_diff_digest": "0" * 64, "publication_policy_digest": self.authorization.policy_digest,
+        }, _meta(self.context, "pub-candidate-drift"))
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["error"]["code"], "GIT_CANDIDATE_DRIFT")
+        self.assertEqual(self.runtime.services.git.publication_index_digest(), before)
+
+    def test_security_preexisting_index_delta_blocks_stage(self):
+        (self.root / "owned/a.txt").write_text("changed\n", encoding="utf-8")
+        preview = self.runtime.services.git.publication_preview(["owned/a.txt"])
+        subprocess.check_call(["git", "add", "owned/a.txt"], cwd=self.root)
+        result = self.runtime.call("git_stage", {
+            "intent_schema_version": GIT_STAGE_INTENT_SCHEMA_V1, "paths": ["owned/a.txt"],
+            "expected_worktree_digest": preview["worktree_digest"], "expected_head": preview["head_sha"],
+            "candidate_diff_digest": preview["candidate_diff_digest"],
+            "publication_policy_digest": self.authorization.policy_digest,
+        }, _meta(self.context, "pub-index-dirty"))
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["error"]["code"], "GIT_INDEX_NOT_CLEAN")
+
+    def test_security_protected_branch_policy_without_allow_prefix_blocks_before_mutation(self):
+        blocked_auth = replace(self.authorization, protected_branch_policy_ref="BLOCK-PROTECTED")
+        context = replace(
+            self.context, operation_policy_digests=(blocked_auth.policy_digest,), invocation_context_id=""
+        ).sealed()
+        runtime = build_default_runtime(
+            context, self.contracts, catalog=self.catalog, publication_authorizations=(blocked_auth,)
+        )
+        (self.root / "owned/a.txt").write_text("changed\n", encoding="utf-8")
+        preview = runtime.services.git.publication_preview(["owned/a.txt"])
+        result = runtime.call("git_stage", {
+            "intent_schema_version": GIT_STAGE_INTENT_SCHEMA_V1, "paths": ["owned/a.txt"],
+            "expected_worktree_digest": preview["worktree_digest"], "expected_head": preview["head_sha"],
+            "candidate_diff_digest": preview["candidate_diff_digest"],
+            "publication_policy_digest": blocked_auth.policy_digest,
+        }, _meta(context, "pub-protected"))
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["error"]["code"], "AUTHORIZATION_DENIED")
+        self.assertEqual(runtime.services.git.publication_staged_paths(), [])
+
+    def test_safety_non_fast_forward_is_blocked_before_push(self):
+        stage = self._stage(); data = stage["data"]
+        commit = self.runtime.call("git_commit", {
+            "intent_schema_version": GIT_COMMIT_INTENT_SCHEMA_V1,
+            "expected_staged_diff_digest": data["staged_diff_digest"], "expected_index_digest": data["index_digest_after"],
+            "expected_head": self.baseline, "expected_parent": self.baseline, "subject": "bounded publication",
+            "publication_policy_digest": self.authorization.policy_digest,
+        }, _meta(self.context, "pub-commit-nff"))
+        service = self.runtime.services.git; real_run = service._run; pushes = []
+        def controlled_run(args, *, allow_nonzero=False):
+            if args and args[0] == "merge-base":
+                return subprocess.CompletedProcess(["git", *args], 1, "", "")
+            if args and args[0] == "push": pushes.append(tuple(args))
+            return real_run(args, allow_nonzero=allow_nonzero)
+        with patch.object(service, "_run", side_effect=controlled_run):
+            with self.assertRaises(GitServiceError) as caught:
+                service.push_publication(remote="origin", branch="main", local_commit_sha=commit["data"]["commit_sha"], expected_remote_head=self.baseline)
+        self.assertEqual(caught.exception.code, "GIT_NON_FAST_FORWARD")
+        self.assertEqual(pushes, [])
+
+    def test_safety_ambiguous_push_reconciles_once_and_never_auto_replays(self):
+        stage = self._stage(); data = stage["data"]
+        commit = self.runtime.call("git_commit", {
+            "intent_schema_version": GIT_COMMIT_INTENT_SCHEMA_V1,
+            "expected_staged_diff_digest": data["staged_diff_digest"], "expected_index_digest": data["index_digest_after"],
+            "expected_head": self.baseline, "expected_parent": self.baseline, "subject": "bounded publication",
+            "publication_policy_digest": self.authorization.policy_digest,
+        }, _meta(self.context, "pub-commit-amb"))
+        service = self.runtime.services.git; real_run = service._run; push_count = 0
+        def controlled_run(args, *, allow_nonzero=False):
+            nonlocal push_count
+            if args and args[0] == "push":
+                push_count += 1
+                return subprocess.CompletedProcess(["git", *args], 1, "", "transport failure")
+            return real_run(args, allow_nonzero=allow_nonzero)
+        with patch.object(service, "_run", side_effect=controlled_run), patch.object(
+            service, "remote_head", side_effect=[self.baseline, "f" * 40]
+        ):
+            with self.assertRaises(GitServiceError) as caught:
+                service.push_publication(remote="origin", branch="main", local_commit_sha=commit["data"]["commit_sha"], expected_remote_head=self.baseline)
+        self.assertEqual(caught.exception.code, "ACTION_SIDE_EFFECT_AMBIGUOUS")
+        self.assertEqual(push_count, 1)
 
 
 if __name__ == "__main__":
