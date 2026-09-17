@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .schemas import RuntimeState
+from .durable_io import atomic_write_text, durable_json_load, durable_json_save
 
 
 def _utc_now() -> str:
@@ -22,15 +23,19 @@ class StateStore:
         self.state = self.load()
 
     def load(self) -> RuntimeState:
-        if self.state_path.exists():
-            return RuntimeState.from_dict(json.loads(self.state_path.read_text(encoding="utf-8")))
+        if self.state_path.exists() or self.state_path.with_suffix(self.state_path.suffix + ".prev").exists():
+            payload, recovered = durable_json_load(self.state_path)
+            state = RuntimeState.from_dict(payload)
+            if recovered:
+                state.next_step = "RECOVERED_PREVIOUS_GOOD_STATE"
+            return state
         return RuntimeState()
 
     def save(self, state: RuntimeState | dict[str, Any]) -> RuntimeState:
         runtime_state = state if isinstance(state, RuntimeState) else RuntimeState.from_dict(state)
         runtime_state.last_updated = _utc_now()
         payload = runtime_state.to_dict()
-        self.state_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        durable_json_save(self.state_path, payload)
         self._write_markdown(runtime_state)
         self.state = runtime_state
         return runtime_state
@@ -107,7 +112,7 @@ class StateStore:
                 f"Last Updated: {state.last_updated}",
             ]
         )
-        self.markdown_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+        atomic_write_text(self.markdown_path, "\n".join(lines).rstrip() + "\n")
 
     def update(self, **changes: Any) -> RuntimeState:
         payload = self.state.to_dict()
@@ -121,4 +126,4 @@ def append_log_line(log_path: str | Path, record_type: str, project: str, phase:
     path.parent.mkdir(parents=True, exist_ok=True)
     line = f"{_utc_now()} | {record_type} | {project} | {phase} | {decision} | {evidence} | {next_step}"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    path.write_text((existing + ("\n" if existing else "") + line).rstrip() + "\n", encoding="utf-8")
+    atomic_write_text(path, (existing + ("\n" if existing else "") + line).rstrip() + "\n")

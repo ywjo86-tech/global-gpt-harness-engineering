@@ -147,6 +147,37 @@ def analyze_task_stage_gate_contract(text: str, requested_gate_id: str) -> dict[
     if forward_dependencies:
         blockers.append("TASK depends on work first staged behind its required Stage Gate")
 
+    unstaged_dependencies: list[dict[str, str]] = []
+    for task_id, task in tasks.items():
+        for dependency in task["dependencies"]:
+            if dependency in tasks and dependency not in first_gate:
+                unstaged_dependencies.append({"task_id": task_id, "dependency": dependency})
+    if unstaged_dependencies:
+        blockers.append("TASK dependency exists but is not staged by any Gate")
+
+    dependency_cycles: list[list[str]] = []
+    visiting: list[str] = []
+    visited: set[str] = set()
+    def walk(task_id: str) -> None:
+        if task_id in visiting:
+            start = visiting.index(task_id)
+            cycle = visiting[start:] + [task_id]
+            if cycle not in dependency_cycles:
+                dependency_cycles.append(cycle)
+            return
+        if task_id in visited:
+            return
+        visiting.append(task_id)
+        for dependency in tasks.get(task_id, {}).get("dependencies", []):
+            if dependency in tasks:
+                walk(dependency)
+        visiting.pop()
+        visited.add(task_id)
+    for task_id in tasks:
+        walk(task_id)
+    if dependency_cycles:
+        blockers.append("TASK dependency graph contains a cycle")
+
     missing_capabilities = [task_id for task_id, task in tasks.items() if not task["required_capabilities"]]
     if missing_capabilities:
         blockers.append("TASK Required Capabilities are missing")
@@ -163,6 +194,8 @@ def analyze_task_stage_gate_contract(text: str, requested_gate_id: str) -> dict[
         "forward_dependency_violations": forward_dependencies,
         "unknown_required_tasks": unknown_required,
         "unknown_dependencies": unknown_dependencies,
+        "unstaged_dependencies": unstaged_dependencies,
+        "dependency_cycles": dependency_cycles,
         "missing_required_capabilities": missing_capabilities,
         "runtime_projection_ready": not blockers,
     }
