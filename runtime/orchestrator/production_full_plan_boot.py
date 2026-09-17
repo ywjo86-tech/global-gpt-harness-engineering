@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -101,13 +102,17 @@ def systemd_user_unit(*, harness_root: str | Path, python_executable: str = "/us
     return f'''[Unit]\nDescription=Global GPT Harness Full Plan boot reconciliation\nAfter=default.target\n\n[Service]\nType=oneshot\nWorkingDirectory={root}\nExecStart={python_executable} -m runtime.orchestrator.production_full_plan_boot --harness-root {root}\n\n[Install]\nWantedBy=default.target\n'''
 
 
-def install_user_unit(*, harness_root: str | Path, unit_name: str = "global-gpt-harness-full-plan-reconcile.service") -> Path:
+def install_user_unit(*, harness_root: str | Path, unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
+                      python_executable: str | None = None) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_.@-]+\.service", unit_name):
         raise FullPlanBootError("unsafe boot reconcile unit name")
+    interpreter = str(Path(python_executable or sys.executable).resolve())
+    if not Path(interpreter).is_file() or not os.access(interpreter, os.X_OK):
+        raise FullPlanBootError("boot reconcile Python executable is invalid")
     target = Path.home() / ".config" / "systemd" / "user" / unit_name
     target.parent.mkdir(parents=True, exist_ok=True)
     from .durable_io import atomic_write_text
-    atomic_write_text(target, systemd_user_unit(harness_root=harness_root))
+    atomic_write_text(target, systemd_user_unit(harness_root=harness_root, python_executable=interpreter))
     env = _systemd_env()
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=20, env=env)
     subprocess.run(["systemctl", "--user", "enable", unit_name], check=True, timeout=20, env=env)

@@ -94,5 +94,18 @@ class ProductionFullPlanBootTests(unittest.TestCase):
             self.assertIn("WantedBy=default.target", text)
             self.assertNotIn("Restart=always", text)
 
+    def test_install_unit_binds_calling_python_interpreter(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            fake_home = root / "home"; fake_home.mkdir()
+            python = root / "venv-python"; python.write_text("#!/bin/sh\nexit 0\n"); python.chmod(0o755)
+            with patch("pathlib.Path.home", return_value=fake_home), \
+                 patch("runtime.orchestrator.production_full_plan_boot.subprocess.run") as run:
+                from runtime.orchestrator.production_full_plan_boot import install_user_unit
+                target = install_user_unit(harness_root=root, python_executable=str(python))
+            content = target.read_text()
+            self.assertIn(f"ExecStart={python.resolve()} -m runtime.orchestrator.production_full_plan_boot", content)
+            self.assertEqual(run.call_count, 2)
+
 
 if __name__ == "__main__": unittest.main()
