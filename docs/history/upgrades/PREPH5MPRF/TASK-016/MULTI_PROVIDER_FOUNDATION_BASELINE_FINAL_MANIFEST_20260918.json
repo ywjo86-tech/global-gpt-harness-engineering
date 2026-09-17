@@ -1,0 +1,53 @@
+{
+  "approval_record": {
+    "path": "MULTI_PROVIDER_FOUNDATION_BASELINE_FINAL_APPROVAL_20260918.json",
+    "sha256": "d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539"
+  },
+  "baseline_commit_sha": "211b8bb10eaec8a7e43dbee0cefd4884d2f55417",
+  "baseline_id": "MULTI_PROVIDER_FOUNDATION_BASELINE",
+  "baseline_parent_sha": "83c51e881ff4b5fc0607b4e79616e72736efb0e1",
+  "branch": "preph5mprf/multi-provider-foundation",
+  "completion_status": "VERIFIED_COMPLETE",
+  "final_baseline_approval_status": "APPROVED_SEALED",
+  "gate010_status": "COMPLETED",
+  "gate_range": "GATE-001..GATE-010",
+  "new_functional_regressions": 0,
+  "operational_boundary": {
+    "administrative_closure_commit_authorized": true,
+    "deployment_authorized": false,
+    "main_merge_authorized": false,
+    "main_push_authorized": false,
+    "phase5_execution_authorized": false,
+    "phase7_execution_authorized": false,
+    "provider_expansion_authorized": false,
+    "upgrade_branch_push_authorized": true
+  },
+  "project_id": "MULTI_PROVIDER_FOUNDATION",
+  "project_owner_declaration_status": "DECLARED",
+  "qa_record": {
+    "path": "MULTI_PROVIDER_FOUNDATION_FINAL_QA_20260918.json",
+    "sha256": "e8a8363beb2f9c9ec13435ee11c58d1e3e157c19e0e7a95484ec8855806367d5"
+  },
+  "recorded_at_utc": "2026-09-17T23:54:53.701729Z",
+  "schema_version": "gch.multi-provider-foundation.baseline-final-manifest.v1",
+  "source_records": [
+    {
+      "path": "MULTI_PROVIDER_FOUNDATION_BASELINE_CLOSURE.md",
+      "sha256": "1aea45bd638991c64e88525ae73f16315cae4417eca20e91325d65983492fa31"
+    },
+    {
+      "path": "_workspace/production-full-plan/MULTI_PROVIDER_FOUNDATION/preph5mprf-gate010-task016-fullplan-r2/state.json",
+      "sha256": "d9baedac221c21028c51a654f41a242b993177e0530d94597c4020d636975ff6"
+    },
+    {
+      "path": "_workspace/orchestration-runs/preph5mprf-gate010-task016-fullplan-r2--gate-010/TASK-016/review-attempt-01/reviewer.report.json",
+      "sha256": "2f47f2f5fafc19635ac5ae960d3fdb6aa17d30d79782b6575129f99d8ba04d8b"
+    },
+    {
+      "path": "_workspace/global-gate/MULTI_PROVIDER_FOUNDATION/artifact/preph5mprf-gate010-task016-fullplan-r2--gate-010.handoff.json",
+      "sha256": "83f02fbaa5945cfba3c085d2d0264c17f98970da38038707a0b6705eab3ed64a"
+    }
+  ],
+  "test032_status": "PASS",
+  "working_tree_clean_at_declaration": true
+}

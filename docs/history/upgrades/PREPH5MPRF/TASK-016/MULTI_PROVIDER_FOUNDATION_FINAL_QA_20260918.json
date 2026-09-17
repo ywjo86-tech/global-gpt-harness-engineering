@@ -1,0 +1,59 @@
+{
+  "baseline_commit_sha": "211b8bb10eaec8a7e43dbee0cefd4884d2f55417",
+  "baseline_id": "MULTI_PROVIDER_FOUNDATION_BASELINE",
+  "branch": "preph5mprf/multi-provider-foundation",
+  "full_plan": {
+    "GATE-008": {
+      "state_file_sha256": "09cdb7c8c465c02ce45c31160d44686c3d9c55a2bc9ed72ae0f73a15be528da0",
+      "status": "COMPLETED"
+    },
+    "GATE-009": {
+      "state_file_sha256": "76da1dd1ba3eea5dd7ab9632fa32431528abf0acb6fb8e4aa282e94f9446ea4b",
+      "status": "COMPLETED"
+    },
+    "GATE-010": {
+      "state_file_sha256": "d9baedac221c21028c51a654f41a242b993177e0530d94597c4020d636975ff6",
+      "status": "COMPLETED"
+    }
+  },
+  "project_id": "MULTI_PROVIDER_FOUNDATION",
+  "recorded_at_utc": "2026-09-17T23:54:53.701729Z",
+  "regression": {
+    "broad_unittest": {
+      "excluded": [
+        "tests/test_lv_review.py"
+      ],
+      "exclusion_reason": "known argparse-hostile bundled runner behavior; reviewer behavior covered by focused tests",
+      "skipped": 15,
+      "status": "PASS",
+      "tests": 1358
+    },
+    "compileall": {
+      "status": "PASS",
+      "targets": [
+        "runtime/mprf",
+        "runtime/orchestrator"
+      ]
+    },
+    "focused_integrated_closure": {
+      "status": "PASS",
+      "tests": 75
+    },
+    "git_diff_check": "PASS",
+    "mprf_suite": {
+      "status": "PASS",
+      "tests": 30
+    },
+    "new_functional_regressions": 0
+  },
+  "schema_version": "gch.multi-provider-foundation.final-qa.v1",
+  "task016": {
+    "handoff_sha256": "83f02fbaa5945cfba3c085d2d0264c17f98970da38038707a0b6705eab3ed64a",
+    "handoff_status": "PASS_SEALED",
+    "independent_review": "PASS",
+    "reviewer_report_sha256": "2f47f2f5fafc19635ac5ae960d3fdb6aa17d30d79782b6575129f99d8ba04d8b",
+    "test032": "PASS",
+    "worker_result_sha256": "58925b1835a48b686ce73aa365dc0e7cbdb94a4fe75c5cbbfd5b0583fdfd8748"
+  },
+  "working_tree_clean_before_declaration": true
+}
