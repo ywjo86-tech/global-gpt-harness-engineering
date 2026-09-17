@@ -56,6 +56,7 @@ def _failure_class(reason: object) -> str:
     artifact_markers = (
         "EVIDENCE_PUBLICATION_INVALID", "WORKER_REQUEST_REQUIRED",
         "worker.request.json", "package manifest", "evidence lineage", "recovery binding",
+        "no persistent checkpoint exists",
     )
     provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_")
     if any(marker in text for marker in artifact_markers):

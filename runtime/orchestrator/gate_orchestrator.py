@@ -2289,9 +2289,18 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         lv_id = transition["to_lv"]
         lv_index = [item.lv_id for item in plan.lvs].index(lv_id)
         lv_run_id = run_id if lv_index == 0 else f"{run_id}-{lv_id.lower()}"
+        from .canonical_paths import canonical_lv_path
+        lv_package_root = canonical_lv_path(
+            harness_root, project_id=plan.project_id, run_id=lv_run_id, gate_id=gate_id, lv_id=lv_id
+        )
+        # A Gate-level resume applies only to an LV that actually has persisted
+        # lifecycle/package evidence.  Once the recovered LV completes, later
+        # LVs in the same invocation are fresh work and must not inherit a
+        # synthetic resume requirement.
+        lv_resume = bool(resume and (lv_package_root / "package.manifest.json").is_file())
         context = {"project_id": plan.project_id, "gate_id": gate_id, "lv_id": lv_id, "run_id": lv_run_id,
                    "plan_sha256": plan.canonical_plan_sha256, "requirements_sha256": requirements_sha256,
-                   "branch": branch, "head": head, "resume": resume,
+                   "branch": branch, "head": head, "resume": lv_resume,
                    "owned_files": list(auth.owned_files_by_lv.get(lv_id, [])),
                    "owned_file_scope": {key: list(value) for key, value in auth.owned_files_by_lv.items()},
                    "canonical_lv_scope": list(auth.approved_lvs),
@@ -2307,8 +2316,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 readiness_recheck_probes=codex_readiness_recheck_probes,
             )
             incident_recovery = None
-            if resume:
-                from .canonical_paths import canonical_lv_path
+            if lv_resume:
                 incident_root = canonical_lv_path(
                     harness_root, project_id=plan.project_id, run_id=lv_run_id,
                     gate_id=plan.gate_id, lv_id=lv_id)
