@@ -125,6 +125,20 @@ class PublicExecutionBoundaryTests(unittest.TestCase):
         self.assertEqual(result.status, "COMPLETED")
         self.assertEqual(result.operation_request_id, request.operation_request_id)
 
+    def test_public_execution_request_projects_to_adapter_tool_call_without_internal_exposure(self) -> None:
+        request = PublicExecutionRequestV1(
+            schema_version=PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, operation_class="git_stage",
+            public_arguments={"paths": ["owned/a.txt"], "publication_policy_digest": "a" * 64},
+            authorization_ref="AUTH-PUB-ADAPTER", operation_request_id="pub-adapter-1",
+            correlation_id="corr-pub-adapter", policy_digests=("a" * 64,),
+            expected_effect_semantics="STATE_CHANGING",
+        )
+        call = AdapterToolCall.from_public_execution_request(request)
+        self.assertEqual(call.operation, "git_stage")
+        self.assertEqual(call.operation_request_id, "pub-adapter-1")
+        self.assertEqual(call.arguments["publication_policy_digest"], "a" * 64)
+        self.assertNotIn("authorization_ref", call.arguments)
+
     def test_public_contract_rejects_full_mcp_internal_exposure(self) -> None:
         with self.assertRaises(PublicExecutionContractError):
             PublicExecutionRequestV1(

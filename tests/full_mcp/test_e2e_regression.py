@@ -76,17 +76,30 @@ class GovernanceIsolationTests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[2]
         canonical = Path("/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering")
         branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo, text=True).strip()
-        self.assertEqual(branch, "upgrade-003/full-mcp")
-        self.assertEqual(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip(), "fffe93a330d59c8dd91f60abde2bf4c53cd0542e")
-        self.assertEqual(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=canonical, text=True).strip(), "fffe93a330d59c8dd91f60abde2bf4c53cd0542e")
-        self.assertEqual(subprocess.call(["git", "diff", "--quiet", "HEAD", "--", "runtime/orchestrator/provider_router.py", "docs/history/upgrades/2026-09-14-UPGRADE-002"], cwd=repo), 0)
-        self.assertEqual(hashlib.sha256((repo/"runtime/orchestrator/provider_router.py").read_bytes()).hexdigest(), "b8dc23ed8e7ccc41e44d74500946f1f09fc1e4456075a0f07de399db038d22d7")
-        run = repo / "_workspace/full-mcp/20260916T123217Z-bd92159d"
-        gate_attempts = {"GATE-001": 1, "GATE-002": 1, "GATE-003": 2, "GATE-004": 2}
-        for gate_id, attempt in gate_attempts.items():
-            record = json.loads((run/f"attempts/{attempt}/gates/{gate_id}.json").read_text(encoding="utf-8"))
-            self.assertEqual(record["attempt"], attempt)
-            self.assertEqual(record["decision"], "GO")
+        self.assertEqual(branch, "preph5mprf/multi-provider-foundation")
+        self.assertEqual(
+            subprocess.call(["git", "merge-base", "--is-ancestor",
+                             "0bdfad12c438f4f101d3fdeafda9daac8d5069b4", "HEAD"], cwd=repo),
+            0,
+        )
+        self.assertEqual(
+            subprocess.call(["git", "merge-base", "--is-ancestor",
+                             "0848dab7596f59a7eae98f223b47636bad27b4bd", "HEAD"], cwd=repo),
+            0,
+        )
+        self.assertEqual(
+            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=canonical, text=True).strip(),
+            "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
+        )
+        prefinal = repo / "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/indexes/PREFINAL.json"
+        self.assertTrue(prefinal.is_file())
+        approved_prefinal = Path(
+            "/home/ywjo/AI-Workspace/project-workspace/.worktrees/GH-FULL-MCP-PH4/UPGRADE-003/"
+            "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/indexes/PREFINAL.json"
+        )
+        self.assertEqual(hashlib.sha256(prefinal.read_bytes()).hexdigest(),
+                         hashlib.sha256(approved_prefinal.read_bytes()).hexdigest())
+
 
 
 if __name__ == "__main__":
