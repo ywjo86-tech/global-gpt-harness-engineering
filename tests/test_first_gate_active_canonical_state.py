@@ -165,6 +165,21 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
             self.assertTrue(state["transition_authorized"])
             self.assertEqual(state["active_scope"], successor_scope)
             self.assertEqual(state["owned_files"], ["tests/test_integrated_e2e.py"])
+            from runtime.orchestrator.gate_orchestrator import (
+                GateAuthorization, GateLV, GatePlan, create_gate_authorization, project_lv_execution_state,
+            )
+            gate_plan = GatePlan(
+                root.name, str(root), successor_gate, "docs/DEVELOPMENT_PLAN.txt", event["plan_sha256"],
+                [GateLV(successor_gate, "TASK-015", 1, "integrated", [], ["tests/test_integrated_e2e.py"],
+                        ["qualified"], "test_execution", ["TEST-029"])],
+            )
+            authorization = create_gate_authorization(
+                gate_plan, event["event_id"], mode="FULL_PLAN", full_plan_opt_in=True, project_final_validation=True,
+            )
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                projected = project_lv_execution_state(root, gate_plan, authorization, "TASK-015")
+            self.assertEqual(projected["state"], "GATE1_RESUME_READY")
+            self.assertEqual(projected["active_scope"], ["TASK-015"])
 
     def test_uncommitted_activation_tamper_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
