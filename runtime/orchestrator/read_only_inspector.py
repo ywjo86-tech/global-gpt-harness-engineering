@@ -138,33 +138,52 @@ def inspect_read_only(project_root: str | Path, *, role: str = MANAGED_PROJECT_R
             }
         )
         gate_text = _read(mapping.gate_state_path)
-        closures = re.findall(r"Gate closure:\s*`([^`]+)`", gate_text)
-        lv3_results = re.findall(r"G0-LV3-8:\s*`([^`]+)`", gate_text)
-        gate_one_not_started = bool(re.search(r"Gate 1:\s*(?:`)?(?:시작하지 않음|대기)", gate_text))
-        gate_one_active = canonical_state["state"] == "GATE1_ACTIVE"
-        gate_errors: list[str] = []
-        if not gate_text:
-            gate_errors.append("gate evidence is missing")
-        if not closures:
-            gate_errors.append("Gate closure is missing")
-        if not lv3_results:
-            gate_errors.append("G0-LV3-8 status is missing")
-        if not gate_one_not_started and not gate_one_active:
-            gate_errors.append("Gate 1 non-started evidence is missing")
-        gate_report.update(
-            {
-                "source": _relative(root, mapping.gate_state_path),
-                "status": "static_evidence_valid" if not gate_errors else "invalid_static_evidence",
-                "gate_closure": closures[-1] if closures else "unknown",
-                "g0_lv3_8": lv3_results[-1] if lv3_results else "unknown",
-                "transition_authorized": bool(canonical_state.get("transition_authorized", False)),
-                "gate_1_started": gate_one_active,
-                "errors": gate_errors,
-            }
-        )
-        if gate_one_active:
-            gate_report["activation_commit"] = canonical_state["activation_commit"]
-            gate_report["activation_committed_at"] = canonical_state["activation_committed_at"]
+        successor_state = canonical_state["state"] in {"GATE1_APPROVAL_READY", "GATE1_RESUME_READY"}
+        if successor_state:
+            # Canonical v2 state is already schema-, commit-, approval-, and
+            # predecessor-closure validated by evaluate_canonical_state().
+            gate_report.update(
+                {
+                    "source": _relative(root, mapping.gate_state_path),
+                    "status": "static_evidence_valid",
+                    "gate_closure": "PREDECESSOR_CLOSED",
+                    "g0_lv3_8": "not_applicable",
+                    "transition_authorized": bool(canonical_state.get("transition_authorized", False)),
+                    "gate_1_started": False,
+                    "errors": [],
+                    "activation_commit": canonical_state.get("activation_commit"),
+                    "activation_committed_at": canonical_state.get("activation_committed_at"),
+                }
+            )
+        else:
+            closures = re.findall(r"Gate closure:\s*`([^`]+)`", gate_text)
+            lv3_results = re.findall(r"G0-LV3-8:\s*`([^`]+)`", gate_text)
+            gate_one_not_started = bool(re.search(r"Gate 1:\s*(?:`)?(?:시작하지 않음|대기)", gate_text))
+            gate_one_active = canonical_state["state"] == "GATE1_ACTIVE"
+            gate_errors: list[str] = []
+            if not gate_text:
+                gate_errors.append("gate evidence is missing")
+            if not closures:
+                gate_errors.append("Gate closure is missing")
+            if not lv3_results:
+                gate_errors.append("G0-LV3-8 status is missing")
+            if not gate_one_not_started and not gate_one_active:
+                gate_errors.append("Gate 1 non-started evidence is missing")
+            gate_report.update(
+                {
+                    "source": _relative(root, mapping.gate_state_path),
+                    "status": "static_evidence_valid" if not gate_errors else "invalid_static_evidence",
+                    "gate_closure": closures[-1] if closures else "unknown",
+                    "g0_lv3_8": lv3_results[-1] if lv3_results else "unknown",
+                    "transition_authorized": bool(canonical_state.get("transition_authorized", False)),
+                    "gate_1_started": gate_one_active,
+                    "errors": gate_errors,
+                }
+            )
+            if gate_one_active:
+                gate_report["activation_commit"] = canonical_state["activation_commit"]
+                gate_report["activation_committed_at"] = canonical_state["activation_committed_at"]
+
 
     report = {
         "inspection_mode": "read_only_no_write",

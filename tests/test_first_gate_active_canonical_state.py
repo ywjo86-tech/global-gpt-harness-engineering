@@ -180,6 +180,12 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
                 projected = project_lv_execution_state(root, gate_plan, authorization, "TASK-015")
             self.assertEqual(projected["state"], "GATE1_RESUME_READY")
             self.assertEqual(projected["active_scope"], ["TASK-015"])
+            from runtime.orchestrator.read_only_inspector import inspect_read_only
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                inspected = inspect_read_only(root)
+            self.assertEqual(inspected["contract_mapping"]["canonical_state"], "GATE1_RESUME_READY")
+            self.assertEqual(inspected["business_gate_state"]["status"], "static_evidence_valid")
+            self.assertTrue(inspected["business_gate_state"]["transition_authorized"])
 
     def test_uncommitted_activation_tamper_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
