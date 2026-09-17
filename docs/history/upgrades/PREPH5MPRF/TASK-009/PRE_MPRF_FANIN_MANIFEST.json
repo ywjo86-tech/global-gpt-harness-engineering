@@ -1,0 +1,109 @@
+{
+  "schema_version": "preph5mprf.pre-mprf-fanin.v1",
+  "project_id": "PRE-PHASE-5-MPRF-INTEGRATED-001",
+  "task_id": "TASK-009",
+  "gate_id": "GATE-007",
+  "test_id": "TEST-018",
+  "evidence_id": "EVD-010",
+  "captured_at_utc": "2026-09-17T06:53:08.035095Z",
+  "execution_branch": "preph5mprf/multi-provider-foundation",
+  "input_head": "241a628d6f03654237f4fb7bc12f997a0fb6622a",
+  "required_gate_states": {
+    "GATE-002": "GO",
+    "GATE-005": "GO",
+    "GATE-006": "GO",
+    "MCP_STABLE_BASELINE": "RECONFIRMED"
+  },
+  "public_contract_versions": {
+    "router_request": "RouterRequest.v2",
+    "router_decision": "RouterDecision.v2",
+    "public_execution_request": "PublicExecutionRequest.v1",
+    "public_execution_result": "PublicExecutionResult.v1"
+  },
+  "authority_invariants": [
+    "Provider Router remains sole provider/model selection authority",
+    "Full MCP remains canonical action/effect truth authority",
+    "MPRF is inactive before GATE-007 GO",
+    "NVIDIA to Codex same-task automatic fallback remains prohibited"
+  ],
+  "baseline_refs": {
+    "mcp_stable_baseline": "0848dab7596f59a7eae98f223b47636bad27b4bd",
+    "full_mcp_final_approval": "0bdfad12c438f4f101d3fdeafda9daac8d5069b4"
+  },
+  "sources": [
+    {
+      "id": "EVD-003_ROUTER",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-002/PCA001_ROUTER_V2_QUALIFICATION.md",
+      "sha256": "79b60e406b1eca6d9a008cf0f594fd3ba53d041c996378e9b92614c56e594b0e",
+      "required_tokens": [
+        "Status: PASS_CANDIDATE_FOR_GATE002",
+        "RouterRequest.v2",
+        "RouterDecision.v2"
+      ]
+    },
+    {
+      "id": "GATE-002",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-002/GATE002_PCA001_DECISION.md",
+      "sha256": "e338ca94c1cd5c5628aa96cd389fcbdc368651f4ab5859755b5b1585b57732f1",
+      "required_tokens": [
+        "Decision: GO",
+        "GATE-002 = GO",
+        "39/39 PASS"
+      ]
+    },
+    {
+      "id": "EVD-008_DIFF",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-007/CONTROLLED_DIFF_MANIFEST.md",
+      "sha256": "7a7622a4e6d895844d4deb3db8c7c5baa7044a85c29c3164d7ee5714921ec996",
+      "required_tokens": [
+        "CONTROLLED_DIFF_PASS",
+        "Full MCP stable baseline ancestor check: PASS"
+      ]
+    },
+    {
+      "id": "EVD-008_BASELINE",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-007/GATE005_FULL_MCP_BASELINE_DECISION.md",
+      "sha256": "8af6eb9046c1da3e5914d44c74c95977057c08776319c837973fa850190c0c27",
+      "required_tokens": [
+        "Decision: GO",
+        "MCP_STABLE_BASELINE: RECONFIRMED",
+        "GATE-005 = GO"
+      ]
+    },
+    {
+      "id": "EVD-009_EXEC_AUTH",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-008/EXEC_AUTH_EXT_001_FINAL_QUALIFICATION.md",
+      "sha256": "98e6cfda135a38fe7279a8e1ecd008dcb220fc33dee88bea7c124b71479bfc71",
+      "required_tokens": [
+        "Status: PASS",
+        "PCA-002: PASS / CLOSED",
+        "Blocker: 0",
+        "Major: 0"
+      ]
+    },
+    {
+      "id": "GATE-006",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-008/GATE006_EXEC_AUTH_FINAL_DECISION.md",
+      "sha256": "cd38451f7d665f5b18d0edaa0d7e284bf2bdd37e7b1910ecd34da7f8f4083a53",
+      "required_tokens": [
+        "Decision: GO",
+        "GATE-006 = GO",
+        "Blocker count: 0",
+        "Major count: 0"
+      ]
+    },
+    {
+      "id": "PCA-002_PUBLIC",
+      "path": "docs/history/upgrades/PREPH5MPRF/TASK-004/PCA002_PUBLIC_EXECUTION_CONTRACT_QUALIFICATION.md",
+      "sha256": "102309f7dcc1523ea2e7ee6e01261ad0170bed1acb7d704142a8a2a1be3de1ab",
+      "required_tokens": [
+        "PublicExecutionRequest.v1",
+        "PublicExecutionResult.v1",
+        "Status: PASS_CANDIDATE_FOR_GATE003"
+      ]
+    }
+  ],
+  "blocker_count": 0,
+  "major_count": 0,
+  "decision_rule": "PASS only when every source exists, every digest and required token matches, both baseline refs are ancestors of input_head, required gate states are GO/RECONFIRMED, public contract versions are compatible, and blocker/major counts are zero."
+}
