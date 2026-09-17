@@ -1,0 +1,78 @@
+{
+  "schema_version": "edp.full-plan-continuity.rediagnosis.v2",
+  "protocol": "EDP-1.0",
+  "remediation_document": "docs/history/governance/2026-09-17/FULL_PLAN_CONTINUITY_EDP_REMEDIATION_R1.md",
+  "remediation_sha256": "9ad90176c83aadbf3c5723c724be732f886d26a0c7d9aeee8d0ead26cc7190c3",
+  "authority_status": "VALID_WITH_CANDIDATE_BOUNDARY",
+  "pre_remediation_material_findings": 16,
+  "contract": {
+    "must_count": 18,
+    "defined_test_ce_count": 18,
+    "silent_stop_prohibited": true,
+    "authority_boundaries_preserved": true
+  },
+  "implementation": {
+    "durable_io": true,
+    "atomic_state_store": true,
+    "atomic_task_queue_same_schema": true,
+    "cross_gate_production_full_plan_supervisor": true,
+    "gate_completion_successor_same_generation": true,
+    "typed_wait_states": true,
+    "bounded_worker_timeout": true,
+    "lease_epoch_heartbeat": true,
+    "retry_dead_letter": true,
+    "dependency_cycle_blocker": true,
+    "unstaged_dependency_blocker": true,
+    "git_common_dir_identity": true,
+    "python_module_preflight": true,
+    "disk_inode_memory_cpu_io_queue_backpressure": true,
+    "authorized_job_registry": true,
+    "boot_reconciler_implemented": true,
+    "boot_reconciler_installed_on_active_preph5mprf": false,
+    "legacy_single_gate_runner_still_rejects_full_plan_by_design": true,
+    "legacy_generic_engine_unbounded_waits_remain_but_are_contained_by_bounded_full_plan_child": true
+  },
+  "verification": {
+    "compileall": "PASS",
+    "focused_continuity_regression": "PASS",
+    "systemd_transient_smoke": "PASS",
+    "full_repository_regression_before_last_two_focused_cases": "1390 tests / OK / 15 skipped / 0 failures / 0 errors",
+    "full_repository_regression_final": "1392 tests / OK / 15 skipped / 0 failures / 0 errors",
+    "final_regression_environment": "/home/ywjo/AI-Workspace/project-workspace/.worktrees/GH-FULL-MCP-PH4/UPGRADE-003/.venv/bin/python",
+    "final_regression_log": "/tmp/fpce_final2_full_regression.log"
+  },
+  "test_ce": {
+    "controlled_integration_pass": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7,
+      8,
+      9,
+      11,
+      13,
+      14,
+      15,
+      17,
+      18
+    ],
+    "final_stable_baseline_pending": [
+      6,
+      10,
+      12,
+      16
+    ],
+    "notes": {
+      "9": "implementation proven; active-worktree boot service installation pending integration",
+      "16": "24-hour soak intentionally not claimed in current response"
+    }
+  },
+  "decision": {
+    "design": "PASS",
+    "continuity_remediation": "PASS_FOR_CONTROLLED_INTEGRATION_AND_FULL_PLAN_RESUME",
+    "future_final_production_stable_baseline": "NOT_YET_DECLARED",
+    "edp_exhaustion_for_available_current_evidence": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE"
+  }
+}
