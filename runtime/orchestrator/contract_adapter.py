@@ -752,6 +752,25 @@ def evaluate_canonical_state(mapping: ContractMapping) -> dict[str, Any]:
     first_gate_state = _evaluate_first_gate_activation(mapping, gate_text)
     if first_gate_state is not None:
         return first_gate_state
+    # Successor Gates use the canonical v2 Gate-state + production-approval
+    # path.  Resolve that path before applying the legacy Gate-0 checkpoint
+    # parser; newly onboarded projects intentionally have no Gate-0 markers.
+    if gate_text:
+        try:
+            current_ledger = _ledger_payload(gate_text)
+        except ContractMappingError:
+            current_ledger = None
+        if isinstance(current_ledger, dict) and current_ledger.get("schema_version") == "orchestration.canonical-gate-state.v2":
+            ledger_state = validate_gate_state_ledger(mapping, [])
+            if ledger_state is None:
+                raise ContractMappingError("canonical Gate state ledger is unavailable")
+            return {
+                **ledger_state,
+                "selected_source": mapping.canonical_source,
+                "checkpoint_commit": ledger_state.get("activation_commit"),
+                "transition_authorized": ledger_state["state"] == "GATE1_RESUME_READY",
+                "gate_1_started": False,
+            }
     approval_text = mapping.business_approval_path.read_text(encoding="utf-8") if mapping.business_approval_path.is_file() else ""
     closure_matches = re.findall(r"Gate closure:\s*`(OPEN|CLOSED)`", gate_text)
     exit_matches = re.findall(r"G0-LV3-8:\s*`(PASS|FAIL)`", gate_text)

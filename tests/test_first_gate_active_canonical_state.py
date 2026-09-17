@@ -121,6 +121,51 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
                 "feature/full-plan",
             )
 
+
+    def test_successor_canonical_v2_state_is_resolved_without_legacy_gate0_markers(self) -> None:
+        from runtime.orchestrator.production_approval import write_production_approval
+        with tempfile.TemporaryDirectory() as directory:
+            root, mapping_dir, _, _, _, _, _ = self._fixture(Path(directory))
+            successor_gate = "GATE-009"
+            successor_scope = ["TASK-015"]
+            successor_owned = {"TASK-015": ["tests/test_integrated_e2e.py"]}
+            result = write_production_approval(
+                project_root=root,
+                output_path="docs/APPROVAL_LOG.md",
+                gate_id=successor_gate,
+                plan_sha256=hashlib.sha256((root / "docs" / "DEVELOPMENT_PLAN.txt").read_bytes()).hexdigest(),
+                approval_mode="GATE_BY_GATE",
+                canonical_lv_scope=successor_scope,
+                owned_file_scope=successor_owned,
+                completion_conditions_sha256="c" * 64,
+                authorization_source="USER_CONTINUE",
+            )
+            event = result["event"]
+            ledger = {
+                "schema_version": "orchestration.canonical-gate-state.v2",
+                "project_id": root.name,
+                "gate_id": successor_gate,
+                "phase": "INTEGRATED_E2E",
+                "plan_sha256": event["plan_sha256"],
+                "gate_status": "READY_FOR_TRANSITION",
+                "closure_status": "PREDECESSOR_CLOSED",
+                "approval_record_hash": event["record_hash"],
+            }
+            (root / "docs" / "GATE_STATE.md").write_text(
+                "# Gate State Ledger\n\n```json\n" + json.dumps(ledger, sort_keys=True, indent=2) + "\n```\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "activate successor gate")
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                mapping = load_project_mapping(root)
+                state = evaluate_canonical_state(mapping)
+            self.assertEqual(state["state"], "GATE1_RESUME_READY")
+            self.assertEqual(state["gate_id"], successor_gate)
+            self.assertEqual(state["approval_id"], event["event_id"])
+            self.assertTrue(state["transition_authorized"])
+            self.assertEqual(state["active_scope"], successor_scope)
+            self.assertEqual(state["owned_files"], ["tests/test_integrated_e2e.py"])
+
     def test_uncommitted_activation_tamper_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             _, _, mapping, activation_path, activation, _, _ = self._fixture(Path(directory))
