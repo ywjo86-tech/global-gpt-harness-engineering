@@ -3,8 +3,9 @@ from __future__ import annotations
 import unittest
 
 from runtime.orchestrator.provider_router import (
-    ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2,
-    ProviderEligibilitySnapshotV1, RouterRequestV2, route_provider, route_request,
+    ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, LEGACY_REQUEST_SOURCE_V1,
+    ROUTER_REQUEST_SCHEMA_V2, ProviderEligibilitySnapshotV1, ProviderRouterContractError,
+    RouterRequestV2, normalize_legacy_hybrid_request, route_provider, route_request,
 )
 
 
@@ -105,6 +106,88 @@ class ProviderRouterV2Test(unittest.TestCase):
         self.assertFalse(decision.eligible)
         self.assertEqual(decision.provider_ref, "")
         self.assertEqual(decision.reason_code, "read_provider_unavailable")
+
+
+class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
+    def _snapshot(self, *, nvidia=True, codex=True):
+        return ProviderEligibilitySnapshotV1(
+            schema_version=ELIGIBILITY_SCHEMA_V1, snapshot_id="QUAL-S1",
+            provider_eligible={"nvidia": nvidia, "codex": codex},
+            model_refs={"nvidia": "nvidia/qualified", "codex": "codex/qualified"},
+            evidence_refs=("eligibility-evidence",),
+        )
+
+    def _request(self, **changes):
+        values = dict(
+            schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id="QUAL-REQ", project_id="P1", run_id="R1",
+            task_id="T1", task_execution_id="E1", directive_digest="d" * 64, stage="PREPARE",
+            required_capabilities=("reasoning", "read_only"), state_change_required=False,
+            policy_profile=GOVERNED_POLICY_V1, eligibility_snapshot=self._snapshot(),
+        )
+        values.update(changes)
+        return RouterRequestV2(**values)
+
+    def test_snapshot_ref_and_digest_are_bound_and_mismatch_fails_closed(self):
+        request = self._request()
+        self.assertEqual(request.eligibility_snapshot_ref, request.eligibility_snapshot.snapshot_id)
+        self.assertEqual(request.eligibility_snapshot_digest, request.eligibility_snapshot.snapshot_digest)
+        tampered = self._request(eligibility_snapshot_digest="0" * 64)
+        decision = route_request(tampered)
+        self.assertFalse(decision.eligible)
+        self.assertEqual(decision.reason_code, "eligibility_snapshot_binding_mismatch")
+        self.assertEqual(decision.provider_ref, "")
+        self.assertEqual(decision.model_ref, "")
+
+    def test_failure_class_is_closed_and_reroute_stays_fail_closed_pre_mprf(self):
+        with self.assertRaises(ProviderRouterContractError):
+            self._request(failure_class="NOT_A_FAILURE_CLASS")
+        prohibited = route_request(self._request(
+            failure_class="POLICY_REJECTION", failover_request_ref="REROUTE-1"
+        ))
+        self.assertFalse(prohibited.eligible)
+        self.assertEqual(prohibited.reason_code, "reroute_failure_class_prohibited")
+        eligible_but_not_activated = route_request(self._request(
+            failure_class="PROVIDER_FAILURE", failover_request_ref="REROUTE-2"
+        ))
+        self.assertFalse(eligible_but_not_activated.eligible)
+        self.assertEqual(eligible_but_not_activated.reason_code, "reroute_policy_not_activated_pre_mprf")
+        self.assertEqual(eligible_but_not_activated.provider_ref, "")
+
+    def test_legacy_hybrid_contract_normalizes_to_v2_without_failure_context(self):
+        snapshot = self._snapshot()
+        read_request = normalize_legacy_hybrid_request(
+            required_capabilities=("reasoning", "read_only"), eligibility_snapshot=snapshot,
+            request_id="LEGACY-R", project_id="P1", run_id="R1", task_id="T1",
+            task_execution_id="E1", directive_digest="a" * 64,
+        )
+        self.assertEqual(read_request.request_source, LEGACY_REQUEST_SOURCE_V1)
+        self.assertEqual(read_request.stage, "PREPARE")
+        self.assertFalse(read_request.state_change_required)
+        self.assertEqual(read_request.failure_class, "")
+        self.assertEqual(route_request(read_request).provider_ref, "nvidia")
+
+        action_request = normalize_legacy_hybrid_request(
+            required_capabilities=("reasoning", "test", "implementation"), eligibility_snapshot=snapshot,
+            request_id="LEGACY-A", project_id="P1", run_id="R1", task_id="T2",
+            task_execution_id="E2", directive_digest="b" * 64,
+        )
+        self.assertEqual(action_request.stage, "ACTION")
+        self.assertTrue(action_request.state_change_required)
+        self.assertEqual(
+            action_request.required_capabilities,
+            ("implementation_apply", "reasoning", "test_execution"),
+        )
+        self.assertEqual(route_request(action_request).provider_ref, "codex")
+
+    def test_router_decision_evidence_is_deterministic(self):
+        request1 = self._request()
+        request2 = self._request()
+        decision1 = route_request(request1)
+        decision2 = route_request(request2)
+        self.assertEqual(request1.request_digest, request2.request_digest)
+        self.assertEqual(decision1.decision_digest, decision2.decision_digest)
+        self.assertIn("eligibility-evidence", decision1.eligibility_evidence_refs)
+
 
 
 if __name__ == "__main__":

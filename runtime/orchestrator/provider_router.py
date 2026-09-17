@@ -63,6 +63,23 @@ ROUTER_REQUEST_SCHEMA_V2 = "orchestration.router-request.v2"
 ROUTER_DECISION_SCHEMA_V2 = "orchestration.router-decision.v2"
 ELIGIBILITY_SCHEMA_V1 = "orchestration.provider-eligibility-snapshot.v1"
 GOVERNED_POLICY_V1 = "NVIDIA_PRIMARY_CODEX_SECONDARY_V1"
+ROUTER_REQUEST_SOURCE_V2 = "governed_v2"
+LEGACY_REQUEST_SOURCE_V1 = "legacy_v1_mode_capabilities"
+MPRF_REROUTE_SOURCE_V1 = "mprf_reroute_v1"
+
+FAILURE_CLASSES_V1 = frozenset({
+    "TASK_FAILURE", "MODEL_FAILURE", "PROVIDER_FAILURE", "AUTH_FAILURE", "RATE_LIMIT",
+    "QUOTA_EXHAUSTION", "NETWORK_FAILURE", "INVALID_RESPONSE", "POLICY_REJECTION",
+    "CHECKPOINT_FAILURE", "EXECUTION_BACKEND_FAILURE", "ACTION_SIDE_EFFECT_AMBIGUOUS",
+    "RECOVERY_REQUIRED", "UNKNOWN_FAILURE",
+})
+REROUTE_ELIGIBLE_FAILURE_CLASSES_V1 = frozenset({
+    "MODEL_FAILURE", "PROVIDER_FAILURE", "RATE_LIMIT", "QUOTA_EXHAUSTION", "NETWORK_FAILURE",
+})
+LEGACY_CAPABILITY_ALIASES_V2 = {
+    "test": "test_execution",
+    "implementation": "implementation_apply",
+}
 
 
 class ProviderRouterContractError(ValueError):
@@ -72,6 +89,16 @@ class ProviderRouterContractError(ValueError):
 def _canonical_digest(value: object) -> str:
     data = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
+
+
+def normalize_capabilities_v2(required_capabilities: Iterable[str] | None) -> tuple[str, ...]:
+    normalized: set[str] = set()
+    for item in required_capabilities or ():
+        capability = str(item).strip()
+        if not capability:
+            continue
+        normalized.add(LEGACY_CAPABILITY_ALIASES_V2.get(capability, capability))
+    return tuple(sorted(normalized))
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +147,9 @@ class RouterRequestV2:
     state_change_required: bool
     policy_profile: str
     eligibility_snapshot: ProviderEligibilitySnapshotV1
+    eligibility_snapshot_ref: str = ""
+    eligibility_snapshot_digest: str = ""
+    request_source: str = ROUTER_REQUEST_SOURCE_V2
     failure_class: str = ""
     failover_request_ref: str = ""
 
@@ -132,8 +162,27 @@ class RouterRequestV2:
             raise ProviderRouterContractError("RouterRequest stage is invalid")
         if self.policy_profile != GOVERNED_POLICY_V1:
             raise ProviderRouterContractError("RouterRequest policy is unsupported")
+        if self.request_source not in {ROUTER_REQUEST_SOURCE_V2, LEGACY_REQUEST_SOURCE_V1, MPRF_REROUTE_SOURCE_V1}:
+            raise ProviderRouterContractError("RouterRequest source is unsupported")
+        normalized_capabilities = normalize_capabilities_v2(self.required_capabilities)
+        object.__setattr__(self, "required_capabilities", normalized_capabilities)
         if self.stage == "ACTION" and not self.state_change_required:
             raise ProviderRouterContractError("ACTION requires state_change_required")
+        if self.failure_class and self.failure_class not in FAILURE_CLASSES_V1:
+            raise ProviderRouterContractError("unknown FailureClass.v1 value")
+        if self.failover_request_ref and not self.failure_class:
+            raise ProviderRouterContractError("failover request requires failure_class")
+        if not self.eligibility_snapshot_ref:
+            object.__setattr__(self, "eligibility_snapshot_ref", self.eligibility_snapshot.snapshot_id)
+        if not self.eligibility_snapshot_digest:
+            object.__setattr__(self, "eligibility_snapshot_digest", self.eligibility_snapshot.snapshot_digest)
+
+    @property
+    def eligibility_binding_valid(self) -> bool:
+        return (
+            self.eligibility_snapshot_ref == self.eligibility_snapshot.snapshot_id
+            and self.eligibility_snapshot_digest == self.eligibility_snapshot.snapshot_digest
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -142,13 +191,41 @@ class RouterRequestV2:
             "task_execution_id": self.task_execution_id, "directive_digest": self.directive_digest,
             "stage": self.stage, "required_capabilities": list(self.required_capabilities),
             "state_change_required": self.state_change_required, "policy_profile": self.policy_profile,
-            "eligibility_snapshot": self.eligibility_snapshot.to_dict(), "failure_class": self.failure_class,
+            "eligibility_snapshot_ref": self.eligibility_snapshot_ref,
+            "eligibility_snapshot_digest": self.eligibility_snapshot_digest,
+            "eligibility_snapshot": self.eligibility_snapshot.to_dict(),
+            "request_source": self.request_source, "failure_class": self.failure_class,
             "failover_request_ref": self.failover_request_ref,
         }
 
     @property
     def request_digest(self) -> str:
         return _canonical_digest(self.to_dict())
+
+
+def normalize_legacy_hybrid_request(
+    *,
+    required_capabilities: Iterable[str] | None,
+    eligibility_snapshot: ProviderEligibilitySnapshotV1,
+    request_id: str,
+    project_id: str,
+    run_id: str,
+    task_id: str,
+    task_execution_id: str,
+    directive_digest: str,
+    policy_profile: str = GOVERNED_POLICY_V1,
+) -> RouterRequestV2:
+    """Normalize the legacy HYBRID capability contract into RouterRequest.v2 without failure context."""
+    capabilities = normalize_capabilities_v2(required_capabilities)
+    state_change_required = bool(STATE_CHANGING_CAPABILITIES.intersection(capabilities))
+    stage = "ACTION" if state_change_required else "PREPARE"
+    return RouterRequestV2(
+        schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id=request_id, project_id=project_id, run_id=run_id,
+        task_id=task_id, task_execution_id=task_execution_id, directive_digest=directive_digest, stage=stage,
+        required_capabilities=capabilities, state_change_required=state_change_required,
+        policy_profile=policy_profile, eligibility_snapshot=eligibility_snapshot,
+        request_source=LEGACY_REQUEST_SOURCE_V1, failure_class="", failover_request_ref="",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +283,20 @@ def _blocked_decision(request: RouterRequestV2, reason: str, state: str) -> Rout
 
 def route_request(request: RouterRequestV2) -> RouterDecisionV2:
     """Governed HYBRID route. Selection authority lives here and never in a task/adapter."""
+    if not request.eligibility_binding_valid:
+        state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
+        return _blocked_decision(request, "eligibility_snapshot_binding_mismatch", state)
+
+    if request.failover_request_ref:
+        if request.failure_class not in REROUTE_ELIGIBLE_FAILURE_CLASSES_V1:
+            state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
+            return _blocked_decision(request, "reroute_failure_class_prohibited", state)
+        # TASK-002 accepts and validates future MPRF reroute context, but does not
+        # implement provider lifecycle/failover policy. TASK-012 activates reroute
+        # only after checkpoint/artifact/effect/auth/policy prerequisites exist.
+        state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
+        return _blocked_decision(request, "reroute_policy_not_activated_pre_mprf", state)
+
     if request.stage == "ACTION":
         provider = CODEX_PROVIDER
         blocked_state = "ACTION_PROVIDER_BLOCKED"
