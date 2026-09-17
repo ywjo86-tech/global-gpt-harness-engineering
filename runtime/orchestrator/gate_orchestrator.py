@@ -1608,6 +1608,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     project_root=root, package_root=package_root, manifest=manifest,
                     preflight_evidence_sha256=str(state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json")),
                     action_package=manual_action_package, authorization=manual_action_authorization,
+                    expected_branch=str(_.get("branch", "")),
                 )
             except Exception as exc:
                 raise GateControllerError(f"GPT_OPERATOR manual action failed: {exc}") from exc

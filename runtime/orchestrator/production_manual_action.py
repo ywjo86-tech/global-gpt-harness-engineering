@@ -198,11 +198,14 @@ def validate_action_package(action: Mapping[str, Any], authorization: Mapping[st
 
 def execute_gpt_operator_manual_action(*, project_root: str | Path, package_root: str | Path,
                                        manifest: Mapping[str, Any], preflight_evidence_sha256: str,
-                                       action_package: Mapping[str, Any], authorization: Mapping[str, Any]) -> dict[str, Any]:
+                                       action_package: Mapping[str, Any], authorization: Mapping[str, Any],
+                                       expected_branch: str) -> dict[str, Any]:
     root = Path(project_root).resolve(); package = Path(package_root).resolve()
     auth, decision = validate_action_package(action_package, authorization, manifest)
     baseline = _git_text(root, "rev-parse", "HEAD")
-    if baseline != action_package["source_head"] or _git_text(root, "branch", "--show-current") != str(manifest.get("branch")):
+    if not isinstance(expected_branch, str) or not expected_branch.strip():
+        raise ProductionManualActionError("manual action approved branch binding is missing")
+    if baseline != action_package["source_head"] or _git_text(root, "branch", "--show-current") != expected_branch:
         raise ProductionManualActionError("manual action source identity drift")
     if _git_text(root, "status", "--porcelain=v1", "-uall"):
         raise ProductionManualActionError("manual action requires a clean product worktree")
