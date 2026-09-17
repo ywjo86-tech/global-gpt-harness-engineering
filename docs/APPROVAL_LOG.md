@@ -40,3 +40,34 @@
   "target_type": "GATE"
 }
 ```
+
+## Production Approval v2 — APR-GATE-009-20260917T225707729747Z
+
+```json
+{
+  "approval_mode": "GATE_BY_GATE",
+  "approved_at": "2026-09-17T22:57:07.729747Z",
+  "authorization_source": "USER_CONTINUE_20260918",
+  "baseline_head": "a5dc5cd181aca9e476712eee4f856f603c22a8f2",
+  "branch": "preph5mprf/multi-provider-foundation",
+  "canonical_lv_scope": [
+    "TASK-015"
+  ],
+  "completion_conditions_sha256": "5fd52947931f00c98f7aaf0d7f95ef3e8c4fc5ab56e4bbbd32be610e5a0d3198",
+  "event_id": "APR-GATE-009-20260917T225707729747Z",
+  "event_type": "APPROVED",
+  "gate_id": "GATE-009",
+  "owned_file_scope": {
+    "TASK-015": [
+      "tests/test_preph5mprf_integrated_e2e.py"
+    ]
+  },
+  "plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+  "predecessor": "25b0fa868af0e73f119349bb138691c4a8bb999f395d586753908c3dce21f63b",
+  "project_id": "MULTI_PROVIDER_FOUNDATION",
+  "record_hash": "4729645328160da90f711585ab29c4c10a052ee5c805fac6876649dfa0050f23",
+  "recorded_at": "2026-09-17T22:57:07.729747Z",
+  "schema_version": "orchestration.production-approval.v2",
+  "supersedes": null
+}
+```
