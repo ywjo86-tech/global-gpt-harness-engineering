@@ -542,7 +542,7 @@ def _run_checkpoint_verification_command(project: Path, argv: list[str], *, time
     if not argv or any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
         raise RecoveryError("checkpoint recovery validation command is invalid")
     executable = Path(argv[0]).name
-    if executable in {"python", "python3"}:
+    if re.fullmatch(r"python(?:3(?:\.\d+)?)?", executable):
         if argv[1:3] not in (["-m", "unittest"], ["-m", "compileall"]):
             raise RecoveryError("checkpoint recovery Python command is not approved")
     elif executable == "git":

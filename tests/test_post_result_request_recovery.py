@@ -10,6 +10,7 @@ from pathlib import Path
 
 from runtime.orchestrator.recovery_contract import (
     RecoveryError,
+    _run_checkpoint_verification_command,
     prepare_post_result_missing_request_recovery,
     verify_post_result_checkpoint_recovery,
 )
@@ -114,6 +115,16 @@ class PostResultRequestRecoveryTests(unittest.TestCase):
         self.assertEqual(verified["current_head"], self.current)
         self.assertEqual(verified["changed_files"], ["owned.py"])
         self.assertEqual(verified["commands"]["git_diff_check"]["exit_code"], 0)
+
+    def test_versioned_python_executable_is_approved_but_shell_is_not(self):
+        ok = _run_checkpoint_verification_command(
+            self.project, [sys.executable, "-m", "unittest", "-q", "test_smoke"]
+        )
+        self.assertEqual(ok["exit_code"], 0)
+        with self.assertRaisesRegex(RecoveryError, "executable is not approved"):
+            _run_checkpoint_verification_command(
+                self.project, ["/bin/sh", "-c", "true"]
+            )
 
     def test_existing_request_blocks_post_result_recovery(self):
         (self.package / "worker.request.json").write_text("{}")
