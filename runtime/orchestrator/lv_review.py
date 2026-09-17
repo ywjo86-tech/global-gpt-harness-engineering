@@ -1378,6 +1378,34 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
         ):
             raise LVReviewError("verification-only provenance is invalid")
         return
+    if payload.get("completion_mode") == "GPT_OPERATOR_MANUAL_ACTION":
+        executor = payload.get("executor")
+        manual = payload.get("manual_action")
+        if not isinstance(executor, Mapping) or executor.get("identity") != "gpt-operator-manual-action" or not isinstance(manual, Mapping):
+            raise LVReviewError("manual production worker provenance is invalid")
+        try:
+            from .operator_control import ManualActionAuthorizationV1
+            from .production_manual_action import command_plan_digest, editable_scope_digest
+            authorization = manual.get("authorization")
+            if not isinstance(authorization, Mapping):
+                raise ValueError("authorization missing")
+            auth = ManualActionAuthorizationV1(**dict(authorization))
+        except Exception as exc:
+            raise LVReviewError("manual production worker authorization is invalid") from exc
+        if (manual.get("schema_version") != "orchestration.production-manual-action-provenance.v1"
+                or manual.get("operator") != "GPT_OPERATOR"
+                or manual.get("authorization_digest") != auth.authorization_digest
+                or manual.get("action_package_digest") != auth.action_package_digest
+                or manual.get("editable_scope_digest") != auth.editable_scope_digest
+                or auth.editable_scope_digest != editable_scope_digest(payload.get("owned_files", []))
+                or not isinstance(manual.get("authorized_commands"), Mapping)
+                or auth.command_digest != command_plan_digest(manual["authorized_commands"])
+                or auth.project_id != payload.get("project_id")
+                or auth.run_id != payload.get("run_id")
+                or auth.task_id != payload.get("lv_id")
+                or auth.gate_id != payload.get("gate_id")):
+            raise LVReviewError("manual production worker authorization binding is invalid")
+        return
     executor = payload.get("executor")
     if not isinstance(executor, Mapping) or executor.get("identity") != "codex-cli-production":
         raise LVReviewError("production worker executor identity is invalid")

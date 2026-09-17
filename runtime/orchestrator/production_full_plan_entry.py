@@ -60,6 +60,11 @@ def load_job(path: str | Path) -> dict[str, Any]:
         adoption_path = gate.get("adopted_prefix_evidence_path")
         if adoption_path is not None and (not isinstance(adoption_path, str) or not adoption_path):
             raise FullPlanJobError("Gate job adopted_prefix_evidence_path is invalid")
+        for field in ("manual_action_package_paths_by_lv", "manual_action_authorization_paths_by_lv"):
+            manual_paths = gate.get(field)
+            if manual_paths is not None:
+                if not isinstance(manual_paths, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not k or not v for k, v in manual_paths.items()):
+                    raise FullPlanJobError(f"Gate job {field} is invalid")
         evidence_paths_by_lv = gate.get("requirement_evidence_paths_by_lv")
         if evidence_paths_by_lv is not None:
             if (not isinstance(evidence_paths_by_lv, dict) or not evidence_paths_by_lv
@@ -147,6 +152,10 @@ def build_gate_executor(job: Mapping[str, Any]):
         adoption_path = spec.get("adopted_prefix_evidence_path")
         if adoption_path:
             adopted_prefix_evidence = _load_json(adoption_path)
+        manual_action_packages_by_lv = {str(lv): _load_json(path) for lv, path in dict(spec.get("manual_action_package_paths_by_lv") or {}).items()}
+        manual_action_authorizations_by_lv = {str(lv): _load_json(path) for lv, path in dict(spec.get("manual_action_authorization_paths_by_lv") or {}).items()}
+        if set(manual_action_packages_by_lv) != set(manual_action_authorizations_by_lv):
+            raise FullPlanJobError("manual action package/authorization LV coverage mismatch")
         project_requirement_evidence_by_lv = None
         evidence_paths_by_lv = spec.get("requirement_evidence_paths_by_lv")
         if evidence_paths_by_lv is not None:
@@ -174,6 +183,8 @@ def build_gate_executor(job: Mapping[str, Any]):
             requirement_evidence=requirement_evidence,
             project_requirement_evidence_by_lv=project_requirement_evidence_by_lv,
             adopted_prefix_evidence=adopted_prefix_evidence,
+            manual_action_packages_by_lv=manual_action_packages_by_lv,
+            manual_action_authorizations_by_lv=manual_action_authorizations_by_lv,
         )
     return execute
 

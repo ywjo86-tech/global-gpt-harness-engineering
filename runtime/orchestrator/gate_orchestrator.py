@@ -1191,7 +1191,9 @@ def _recovery_gateway_retry_id(attempt_root: Path, recovery_id: str) -> str | No
 def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
-                         canonical_worker_authority_provider: Any | None = None) -> GateControllerAdapters:
+                         canonical_worker_authority_provider: Any | None = None,
+                         manual_action_package: Mapping[str, Any] | None = None,
+                         manual_action_authorization: Mapping[str, Any] | None = None) -> GateControllerAdapters:
     from .lv_remediation import review_remediation
     from .lv_review import preflight_run
     state: dict[str, Any] = {}
@@ -1597,6 +1599,27 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             run_id=run_id, run_root=str(package_root), task_prompt_path=str(package_root / "worker_prompt.md"),
             output_dir=str(package_root), result_path=str(result), worker_request_path=str(package_root / "worker.request.json"),
         )
+        if (manual_action_package is None) != (manual_action_authorization is None):
+            raise GateControllerError("manual action package and authorization must be supplied together")
+        if manual_action_package is not None and manual_action_authorization is not None:
+            from .production_manual_action import execute_gpt_operator_manual_action
+            try:
+                worker_payload = execute_gpt_operator_manual_action(
+                    project_root=root, package_root=package_root, manifest=manifest,
+                    preflight_evidence_sha256=str(state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json")),
+                    action_package=manual_action_package, authorization=manual_action_authorization,
+                )
+            except Exception as exc:
+                raise GateControllerError(f"GPT_OPERATOR manual action failed: {exc}") from exc
+            data = canonical_json_bytes(worker_payload)
+            fd = os.open(result, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data); handle.flush(); os.fsync(handle.fileno())
+            if not _private_worker_result_ok(result):
+                raise GateControllerError("WORKER_RESULT_REQUIRED: private manual-action result mode mismatch")
+            state["worker_payload"] = worker_payload
+            state["worker_result_path"] = result
+            return sealed("WORKER", "COMPLETED", _file_sha(result), payload=worker_payload)
         canonical_extra = _canonical_worker_authority_extra(
             canonical_worker_authority_provider, mode="normal",
             project_root=root, harness_root=harness_root,
@@ -1920,6 +1943,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  legacy_test_only_capability: bool = False,
                  canonical_capability_sources: Mapping[str, Any] | None = None,
                  adopted_prefix_evidence: Mapping[str, Any] | None = None,
+                 manual_action_packages_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
+                 manual_action_authorizations_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
                  codex_auth_readiness: Any | None = None,
                  codex_readiness_recheck_probes: Any | None = None) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
@@ -2241,6 +2266,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 root, plan, auth, lv_id, lv_run_id, harness_root,
                 diagnostic_run_id=run_id,
                 canonical_worker_authority_provider=production_provider,
+                manual_action_package=(manual_action_packages_by_lv or {}).get(lv_id),
+                manual_action_authorization=(manual_action_authorizations_by_lv or {}).get(lv_id),
             )
         else:
             selected_adapters = adapters
