@@ -8,6 +8,7 @@ and mutation authority stay in the existing Gate/Full MCP layers.
 from __future__ import annotations
 
 import ctypes
+import fcntl
 import hashlib
 import json
 import multiprocessing as mp
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .durable_io import DurableIOError, atomic_write_bytes, durable_json_save, resource_snapshot
+from .production_attention import AttentionOutbox
 
 
 SCHEMA_VERSION = "orchestration.production-full-plan.v1"
@@ -177,6 +179,8 @@ class DurableFullPlanSupervisor:
         self.state_path = base / "state.json"
         self.events_path = base / "events.jsonl"
         self.alert_path = base / "alerts.jsonl"
+        self.lock_path = base / "supervisor.lock"
+        self.attention_outbox = AttentionOutbox(base, project_id=self.project_id, run_id=self.run_id)
 
     def _queue_item(self, gate_id: str, sequence: int, *, attempt: int = 1, resume: bool = False) -> dict[str, Any]:
         gate_run_id = f"{self.run_id}--{gate_id.lower()}"
@@ -260,8 +264,42 @@ class DurableFullPlanSupervisor:
         return sealed
 
     def _alert(self, kind: str, state: Mapping[str, Any], **extra: Any) -> None:
+        reason = str(extra.get("reason") or state.get("last_error") or kind)
+        gate_id = extra.get("gate_id")
         self._append_line(self.alert_path, {"alert": kind, "run_id": self.run_id,
                                            "state": state.get("state"), **extra})
+        safe_details = {
+            key: value for key, value in extra.items()
+            if key in {"attempt", "next_attempt", "resources", "wait_state"}
+        }
+        self.attention_outbox.publish(
+            kind=kind, state=str(state.get("state") or "UNKNOWN"), reason=reason,
+            gate_id=str(gate_id) if gate_id else None,
+            state_sha256=str(state.get("state_sha256") or "") or None,
+            details=safe_details,
+        )
+
+    def _acquire_run_lock(self):
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(str(self.lock_path), flags, 0o600)
+        except OSError as exc:
+            raise ProductionFullPlanError("unsafe Full Plan supervisor lock") from exc
+        handle = os.fdopen(fd, "a+")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            handle.close()
+            raise ProductionFullPlanError("duplicate Full Plan supervisor is active") from exc
+        return handle
+
+    @staticmethod
+    def _release_run_lock(handle: Any) -> None:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
     def _active_item(self, state: Mapping[str, Any]) -> dict[str, Any] | None:
         for item in state.get("queue", []):
@@ -299,7 +337,14 @@ class DurableFullPlanSupervisor:
         if state.get("state") in {"DISPATCHED", "RUNNING", "VERIFYING"}:
             item = self._active_item(state)
             if item is None:
-                raise ProductionFullPlanError("active Run has no recoverable queue item")
+                state["state"] = "BLOCKED"
+                state["last_error"] = "ACTIVE_RUN_QUEUE_MISSING"
+                state["terminal_reason"] = "STARTUP_RECONCILIATION_BLOCKED"
+                state["lease"] = None
+                state = self._persist(state, {"event": "STARTUP_RECONCILIATION_BLOCKED",
+                                              "reason": "ACTIVE_RUN_QUEUE_MISSING"})
+                self._alert("STARTUP_RECONCILIATION_BLOCKED", state, reason="ACTIVE_RUN_QUEUE_MISSING")
+                return state, True
             item["status"] = "READY"
             item["resume"] = True
             item["attempt"] = int(item.get("attempt", 1)) + 1
@@ -411,6 +456,14 @@ class DurableFullPlanSupervisor:
 
     def run(self, executor: Callable[[str, str, bool], Mapping[str, Any]], *,
             preflight: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> FullPlanResult:
+        handle = self._acquire_run_lock()
+        try:
+            return self._run_locked(executor, preflight=preflight)
+        finally:
+            self._release_run_lock(handle)
+
+    def _run_locked(self, executor: Callable[[str, str, bool], Mapping[str, Any]], *,
+                    preflight: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> FullPlanResult:
         state, recovered = self.reconcile_startup()
         executed: list[str] = []
         while state["state"] not in WAIT_STATES | TERMINAL_STATES:
@@ -421,7 +474,13 @@ class DurableFullPlanSupervisor:
                     state["terminal_reason"] = "ALL_GATES_COMPLETED"
                     state = self._persist(state, {"event": "FULL_PLAN_COMPLETED"})
                     break
-                raise ProductionFullPlanError("eligible successor is missing from durable queue")
+                state["state"] = "BLOCKED"
+                state["last_error"] = "ELIGIBLE_SUCCESSOR_MISSING"
+                state["terminal_reason"] = "DURABLE_SUCCESSOR_MISSING"
+                state = self._persist(state, {"event": "DURABLE_SUCCESSOR_MISSING",
+                                              "completed_gates": list(state["completed_gates"])})
+                self._alert("DURABLE_SUCCESSOR_MISSING", state, reason="ELIGIBLE_SUCCESSOR_MISSING")
+                break
             resources_ok, snapshot = self._resource_gate(state)
             if not resources_ok:
                 state["state"] = "WAITING_RESOURCE"
@@ -444,6 +503,7 @@ class DurableFullPlanSupervisor:
                         state["terminal_reason"] = "PREFLIGHT_BLOCKED"
                         state = self._persist(state, {"event": "PREFLIGHT_BLOCKED", "reason": reason,
                                                       "gate_id": item["gate_id"]})
+                        self._alert("PREFLIGHT_BLOCKED", state, gate_id=item["gate_id"], reason=reason)
                     break
             item["status"] = "DISPATCHED"
             state["state"] = "DISPATCHED"
@@ -496,6 +556,13 @@ class DurableFullPlanSupervisor:
         return FullPlanResult(str(state["state"]), state, tuple(executed), recovered)
 
     def resume_wait(self, expected_state: str) -> dict[str, Any]:
+        handle = self._acquire_run_lock()
+        try:
+            return self._resume_wait_locked(expected_state)
+        finally:
+            self._release_run_lock(handle)
+
+    def _resume_wait_locked(self, expected_state: str) -> dict[str, Any]:
         if expected_state not in WAIT_STATES:
             raise ProductionFullPlanError("resume_wait requires an explicit wait state")
         state, _ = self.load()
@@ -512,6 +579,13 @@ class DurableFullPlanSupervisor:
                                      "gate_id": item["gate_id"]})
 
     def cancel(self, reason: str) -> dict[str, Any]:
+        handle = self._acquire_run_lock()
+        try:
+            return self._cancel_locked(reason)
+        finally:
+            self._release_run_lock(handle)
+
+    def _cancel_locked(self, reason: str) -> dict[str, Any]:
         state, _ = self.load()
         item = self._active_item(state)
         if item is not None:

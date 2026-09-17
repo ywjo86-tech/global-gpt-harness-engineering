@@ -195,6 +195,8 @@ def transient_systemd_command(job_path: str | Path, *, unit_name: str | None = N
         f"--working-directory={Path(str(job['harness_root'])).resolve()}",
         "--property=Restart=on-failure", "--property=RestartSec=5s",
         "--property=RestartPreventExitStatus=2 3",
+        "--property=KillMode=control-group", "--property=SendSIGKILL=yes",
+        "--property=TimeoutStopSec=15s",
         str(job.get("python_executable") or sys.executable), "-m", "runtime.orchestrator.production_full_plan_entry",
         "--job", str(Path(job_path).resolve()),
     ]

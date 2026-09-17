@@ -1037,6 +1037,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "gate-run":
             from .gate_orchestrator import execute_gate, dispatch_requirement_artifact, validate_global_gate_bindings
+            if str(args.mode).upper() == "FULL_PLAN":
+                raise GateOrchestrationError(
+                    "FULL_PLAN_REQUIRES_PRODUCTION_FULL_PLAN_ENTRY: register and launch a durable Full Plan job"
+                )
             validate_global_gate_bindings(
                 args.project_root, args.gate_id, requirements_sha256=args.requirements_sha256,
                 approval_evidence=args.approval_evidence, branch=args.branch, head=args.head,

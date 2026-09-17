@@ -195,8 +195,10 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             sup = self.supervisor(d, gates=["G1", "G2"]); state, _ = sup.load()
             state["completed_gates"] = ["G1"]; state["queue"][0]["status"] = "COMPLETED"; state["current_gate"] = "G2"
             state["state"] = "READY"; sup._persist(state, {"event": "TEST_MISSING_SUCCESSOR"})
-            with self.assertRaisesRegex(ProductionFullPlanError, "eligible successor"):
-                self.supervisor(d, gates=["G1", "G2"]).run(completed)
+            out = self.supervisor(d, gates=["G1", "G2"]).run(completed)
+            self.assertEqual(out.status, "BLOCKED")
+            self.assertEqual(out.state["terminal_reason"], "DURABLE_SUCCESSOR_MISSING")
+            self.assertTrue((Path(d)/"_workspace/production-full-plan/proj/run/alerts.jsonl").is_file())
 
     def test_19_cancel_is_explicit_terminal_state(self):
         with tempfile.TemporaryDirectory() as d:

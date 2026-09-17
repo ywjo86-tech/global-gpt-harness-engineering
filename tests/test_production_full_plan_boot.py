@@ -12,6 +12,7 @@ from runtime.orchestrator.production_full_plan_boot import (
     reconcile_all,
     reconcile_job,
     systemd_user_unit,
+    install_user_unit,
 )
 from runtime.orchestrator.production_full_plan_entry import load_job, register_job
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
@@ -107,6 +108,23 @@ class ProductionFullPlanBootTests(unittest.TestCase):
             content = target.read_text()
             self.assertIn(f"ExecStart={python.resolve()} -m runtime.orchestrator.production_full_plan_boot", content)
             self.assertEqual(run.call_count, 2)
+
+    def test_install_unit_can_bind_stable_runtime_link_instead_of_worktree(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            harness = root / "worktree"; harness.mkdir()
+            fake_home = root / "home"; fake_home.mkdir()
+            python = root / "venv-python"; python.write_text("#!/bin/sh\nexit 0\n"); python.chmod(0o755)
+            runtime_link = fake_home / ".local/share/global-gpt-harness/runtime-current"
+            with patch("pathlib.Path.home", return_value=fake_home), \
+                 patch("runtime.orchestrator.production_full_plan_boot.subprocess.run"):
+                target = install_user_unit(
+                    harness_root=harness, python_executable=str(python), runtime_link=runtime_link)
+            self.assertTrue(runtime_link.is_symlink())
+            self.assertEqual(runtime_link.resolve(), harness.resolve())
+            content = target.read_text()
+            self.assertIn(f"WorkingDirectory={runtime_link.absolute()}", content)
+            self.assertNotIn(f"WorkingDirectory={harness.resolve()}", content)
 
 
 if __name__ == "__main__": unittest.main()

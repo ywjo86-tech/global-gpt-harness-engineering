@@ -125,6 +125,9 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             self.assertIn("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/", joined)
             self.assertIn("Restart=on-failure", joined)
             self.assertIn("RestartPreventExitStatus=2 3", joined)
+            self.assertIn("KillMode=control-group", joined)
+            self.assertIn("SendSIGKILL=yes", joined)
+            self.assertIn("TimeoutStopSec=15s", joined)
             self.assertIn("--working-directory=", joined)
             self.assertIn("production_full_plan_entry", joined)
 

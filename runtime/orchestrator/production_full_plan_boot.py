@@ -12,6 +12,7 @@ from typing import Any
 
 from .production_full_plan_entry import load_job, transient_systemd_command
 from .production_full_plan_runner import ACTIVE_STATES, TERMINAL_STATES, WAIT_STATES, DurableFullPlanSupervisor, ProductionFullPlanError
+from .production_attention import AttentionOutbox
 
 
 class FullPlanBootError(ValueError):
@@ -58,12 +59,29 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
     try:
         state, recovered = supervisor.load()
     except ProductionFullPlanError as exc:
+        AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+            kind="STATE_RECONCILIATION_BLOCKED", state="UNKNOWN", reason=str(exc),
+            details={"source": "boot_reconciler"},
+        )
         return {"job": str(job_path), "action": "BLOCKED", "reason": str(exc), "launched": False}
     status = str(state.get("state"))
     if status in WAIT_STATES:
+        AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+            kind=status, state=status, reason=str(state.get("last_error") or status),
+            gate_id=str(state.get("current_gate") or "") or None,
+            state_sha256=str(state.get("state_sha256") or "") or None,
+            details={"source": "periodic_reconciler"},
+        )
         return {"job": str(job_path), "action": "PRESERVE_WAIT", "state": status,
                 "recovered_previous_generation": recovered, "launched": False}
     if status in TERMINAL_STATES:
+        if status in {"BLOCKED", "FAILED"}:
+            AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+                kind=status, state=status, reason=str(state.get("last_error") or state.get("terminal_reason") or status),
+                gate_id=str(state.get("current_gate") or "") or None,
+                state_sha256=str(state.get("state_sha256") or "") or None,
+                details={"source": "periodic_reconciler"},
+            )
         return {"job": str(job_path), "action": "SKIP_TERMINAL", "state": status,
                 "recovered_previous_generation": recovered, "launched": False}
     if status not in ACTIVE_STATES:
@@ -78,6 +96,12 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         return {"job": str(job_path), "action": "WOULD_RESUME", "state": status,
                 "unit": unit, "command": command, "launched": False}
     completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=20)
+    if completed.returncode != 0:
+        AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+            kind="SUPERVISOR_LAUNCH_FAILED", state=status,
+            reason=(completed.stderr.strip() or f"systemd-run exit {completed.returncode}"),
+            details={"source": "periodic_reconciler"},
+        )
     return {"job": str(job_path), "action": "RESUME_REQUESTED" if completed.returncode == 0 else "LAUNCH_FAILED",
             "state": status, "unit": unit, "returncode": completed.returncode,
             "stdout": completed.stdout.strip(), "stderr": completed.stderr.strip(),
@@ -97,13 +121,75 @@ def reconcile_all(harness_root: str | Path, *, launch: bool = True) -> dict[str,
     }
 
 
-def systemd_user_unit(*, harness_root: str | Path, python_executable: str = "/usr/bin/python3") -> str:
-    root = Path(harness_root).resolve()
+def systemd_user_unit(*, harness_root: str | Path, python_executable: str = "/usr/bin/python3",
+                      preserve_root_path: bool = False) -> str:
+    source = Path(harness_root).expanduser()
+    root = source.absolute() if preserve_root_path else source.resolve()
     return f'''[Unit]\nDescription=Global GPT Harness Full Plan boot reconciliation\nAfter=default.target\n\n[Service]\nType=oneshot\nWorkingDirectory={root}\nExecStart={python_executable} -m runtime.orchestrator.production_full_plan_boot --harness-root {root}\n\n[Install]\nWantedBy=default.target\n'''
 
 
+def _active_jobs_under(root: Path) -> list[str]:
+    active: list[str] = []
+    if not root.is_dir():
+        return active
+    for job_path in discover_jobs(root):
+        try:
+            job = load_job(job_path)
+            gates = [str(item["gate_id"]) for item in job["gates"]]
+            state, _ = DurableFullPlanSupervisor(
+                job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+                **dict(job.get("policy") or {}),
+            ).load()
+        except Exception:
+            active.append(str(job_path))
+            continue
+        if str(state.get("state")) not in TERMINAL_STATES:
+            active.append(str(job_path))
+    return active
+
+
+def ensure_runtime_link(harness_root: str | Path, runtime_link: str | Path) -> Path:
+    target = Path(harness_root).resolve()
+    link = Path(runtime_link).expanduser().absolute()
+    if not target.is_dir() or target.is_symlink():
+        raise FullPlanBootError("runtime link target is unsafe")
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if link.exists() or link.is_symlink():
+        if not link.is_symlink():
+            raise FullPlanBootError("runtime link path is not a symlink")
+        try:
+            current = link.resolve(strict=True)
+        except FileNotFoundError:
+            current = None
+        if current == target:
+            return link
+        if current is not None:
+            active = _active_jobs_under(current)
+            if active:
+                raise FullPlanBootError("cannot retarget runtime link while active Full Plan jobs exist")
+    temporary = link.with_name(link.name + f".tmp-{os.getpid()}")
+    temporary.unlink(missing_ok=True)
+    os.symlink(str(target), str(temporary))
+    os.replace(temporary, link)
+    fd = os.open(str(link.parent), getattr(os, "O_DIRECTORY", 0) | os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    return link
+
+
+def systemd_user_timer(*, service_unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
+                       interval_seconds: int = 60) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]+\.service", service_unit_name):
+        raise FullPlanBootError("unsafe reconcile service unit name")
+    if interval_seconds < 30:
+        raise FullPlanBootError("reconcile interval must be at least 30 seconds")
+    return f'''[Unit]\nDescription=Global GPT Harness Full Plan periodic reconciliation\n\n[Timer]\nOnBootSec=30s\nOnUnitActiveSec={interval_seconds}s\nAccuracySec=10s\nPersistent=true\nUnit={service_unit_name}\n\n[Install]\nWantedBy=timers.target\n'''
+
+
 def install_user_unit(*, harness_root: str | Path, unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
-                      python_executable: str | None = None) -> Path:
+                      python_executable: str | None = None, runtime_link: str | Path | None = None) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_.@-]+\.service", unit_name):
         raise FullPlanBootError("unsafe boot reconcile unit name")
     interpreter = str(Path(python_executable or sys.executable).resolve())
@@ -112,10 +198,32 @@ def install_user_unit(*, harness_root: str | Path, unit_name: str = "global-gpt-
     target = Path.home() / ".config" / "systemd" / "user" / unit_name
     target.parent.mkdir(parents=True, exist_ok=True)
     from .durable_io import atomic_write_text
-    atomic_write_text(target, systemd_user_unit(harness_root=harness_root, python_executable=interpreter))
+    unit_root: str | Path = harness_root
+    preserve_root_path = False
+    if runtime_link is not None:
+        unit_root = ensure_runtime_link(harness_root, runtime_link)
+        preserve_root_path = True
+    atomic_write_text(target, systemd_user_unit(
+        harness_root=unit_root, python_executable=interpreter, preserve_root_path=preserve_root_path))
     env = _systemd_env()
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=20, env=env)
     subprocess.run(["systemctl", "--user", "enable", unit_name], check=True, timeout=20, env=env)
+    return target
+
+
+def install_reconcile_timer(*, service_unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
+                            timer_unit_name: str = "global-gpt-harness-full-plan-reconcile.timer",
+                            interval_seconds: int = 60) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]+\.timer", timer_unit_name):
+        raise FullPlanBootError("unsafe reconcile timer unit name")
+    target = Path.home() / ".config" / "systemd" / "user" / timer_unit_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    from .durable_io import atomic_write_text
+    atomic_write_text(target, systemd_user_timer(
+        service_unit_name=service_unit_name, interval_seconds=interval_seconds))
+    env = _systemd_env()
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=20, env=env)
+    subprocess.run(["systemctl", "--user", "enable", "--now", timer_unit_name], check=True, timeout=20, env=env)
     return target
 
 
@@ -124,9 +232,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--harness-root", required=True)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--install-user-unit", action="store_true")
+    parser.add_argument("--runtime-link")
+    parser.add_argument("--install-reconcile-timer", action="store_true")
+    parser.add_argument("--reconcile-interval-seconds", type=int, default=60)
     args = parser.parse_args(argv)
     if args.install_user_unit:
-        print(install_user_unit(harness_root=args.harness_root))
+        print(install_user_unit(harness_root=args.harness_root, runtime_link=args.runtime_link))
+        return 0
+    if args.install_reconcile_timer:
+        print(install_reconcile_timer(interval_seconds=args.reconcile_interval_seconds))
         return 0
     result = reconcile_all(args.harness_root, launch=not args.dry_run)
     print(json.dumps(result, ensure_ascii=False))
