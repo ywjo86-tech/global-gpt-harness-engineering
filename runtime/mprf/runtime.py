@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 from .contracts import APPROVED_PROVIDER_IDS, EligibilityFactV1, MPRFContractError
 from .lifecycle import (
@@ -12,6 +12,7 @@ from .lifecycle import (
     evaluate_lifecycle,
 )
 from .registry import ProviderModelRegistryV1
+from .observability import ProviderRuntimeEventStoreV1, ProviderRuntimeEventV1
 
 RUNTIME_SCHEMA_V1 = "mprf.runtime.v1"
 
@@ -21,6 +22,7 @@ class MPRFRuntimeV1:
     schema_version: str
     registry: ProviderModelRegistryV1
     lifecycle_state: LifecycleStateV1 | None = None
+    observability_store: ProviderRuntimeEventStoreV1 | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != RUNTIME_SCHEMA_V1:
@@ -29,6 +31,8 @@ class MPRFRuntimeV1:
             raise MPRFContractError("registry contract is required")
         if self.lifecycle_state is not None and not isinstance(self.lifecycle_state, LifecycleStateV1):
             raise MPRFContractError("lifecycle state must use the v1 contract")
+        if self.observability_store is not None and not isinstance(self.observability_store, ProviderRuntimeEventStoreV1):
+            raise MPRFContractError("observability store must use the v1 contract")
 
     def eligibility_fact(self, provider_id: str, model_ref: str = "") -> EligibilityFactV1:
         return self.registry.eligibility_fact(provider_id, model_ref)
@@ -92,6 +96,20 @@ class MPRFRuntimeV1:
             evidence_refs=tuple(str(item) for item in evidence_refs),
             failure_classes=None,
         )
+
+    def record_provider_runtime_event(
+        self, *, project_id: str, task_id: str, task_execution_id: str, correlation_id: str,
+        operation_request_id: str, provider_id: str, model_ref: str, event_type: str,
+        facts: Mapping[str, Any] | None = None,
+    ) -> ProviderRuntimeEventV1:
+        if self.observability_store is None:
+            raise MPRFContractError("provider runtime observability is not configured")
+        return self.observability_store.append(
+            project_id=project_id, task_id=task_id, task_execution_id=task_execution_id,
+            correlation_id=correlation_id, operation_request_id=operation_request_id,
+            provider_id=provider_id, model_ref=model_ref, event_type=event_type, facts=facts,
+        )
+
     def failure_disposition(self, failure, prerequisites, *, permission_related_auth: bool = False):
         from .failure import evaluate_failover
         return evaluate_failover(failure, prerequisites, permission_related_auth=permission_related_auth)
