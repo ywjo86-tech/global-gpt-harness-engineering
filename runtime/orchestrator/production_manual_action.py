@@ -17,6 +17,7 @@ from typing import Any, Mapping, Sequence
 
 from .lv_execution_package import canonical_json_bytes
 from .operator_control import ManualActionAuthorizationV1, OperatorDirectiveV1
+from .schemas import TaskSlice, WorkerRequest
 from .provider_router import (
     ProviderEligibilitySnapshotV1, RouterRequestV2, RouterDecisionV2,
     ELIGIBILITY_SCHEMA_V1, route_request,
@@ -194,6 +195,51 @@ def validate_action_package(action: Mapping[str, Any], authorization: Mapping[st
     if auth.command_digest != command_plan_digest(commands):
         raise ProductionManualActionError("manual action authorization command mismatch")
     return auth, decision
+
+
+def build_manual_worker_request(*, project_root: str | Path, package_root: str | Path,
+                                task: TaskSlice, manifest: Mapping[str, Any],
+                                preflight_evidence_sha256: str, package_manifest_sha256: str,
+                                approval_event_id: str, action_package: Mapping[str, Any]) -> WorkerRequest:
+    """Build the canonical review-visible WorkerRequest for a GPT manual ACTION."""
+    if not isinstance(task, TaskSlice):
+        raise ProductionManualActionError("manual action task slice is invalid")
+    if not _SHA64.fullmatch(str(package_manifest_sha256)) or not _SHA64.fullmatch(str(preflight_evidence_sha256)):
+        raise ProductionManualActionError("manual action request evidence digest is invalid")
+    run_id = str(manifest.get("run_id", ""))
+    if not run_id or run_id != str(action_package.get("run_id", "")):
+        raise ProductionManualActionError("manual action request run binding mismatch")
+    contract_summary = {
+        "project_id": manifest.get("project_id"),
+        "gate_id": manifest.get("gate_id"),
+        "lv_id": manifest.get("lv_id"),
+        "canonical_plan_sha256": manifest.get("canonical_plan_sha256"),
+    }
+    if any(not isinstance(value, str) or not value for value in contract_summary.values()):
+        raise ProductionManualActionError("manual action request contract binding is incomplete")
+    extra_context = {
+        "execution_mode": "production",
+        "execution_backend": "GPT_OPERATOR_MANUAL_ACTION",
+        "run_id": run_id,
+        "run_root": str(Path(package_root).resolve()),
+        "task_effect_requirement": "MUTATION_REQUIRED",
+        "change_target_count": len(manifest.get("owned_files", [])),
+        "package_manifest_sha256": package_manifest_sha256,
+        "preflight_evidence_sha256": preflight_evidence_sha256,
+        "attempt": 1,
+        "source_snapshot": {key: manifest.get(key) for key in (
+            "source_head", "source_tree", "source_index_fingerprint", "source_worktree_fingerprint"
+        )},
+        "gate_id": manifest.get("gate_id"),
+        "lv_id": manifest.get("lv_id"),
+        "approval_event_id": approval_event_id,
+        "manual_action_package_digest": action_package.get("action_package_digest", ""),
+    }
+    return WorkerRequest(
+        project_root=str(Path(project_root).resolve()), task=task, contract_summary=contract_summary,
+        state_snapshot={"branch": "sealed", "head": str(manifest.get("source_head", ""))},
+        extra_context=extra_context,
+    )
 
 
 def execute_gpt_operator_manual_action(*, project_root: str | Path, package_root: str | Path,

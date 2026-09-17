@@ -1602,11 +1602,26 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if (manual_action_package is None) != (manual_action_authorization is None):
             raise GateControllerError("manual action package and authorization must be supplied together")
         if manual_action_package is not None and manual_action_authorization is not None:
-            from .production_manual_action import execute_gpt_operator_manual_action
+            from .production_manual_action import build_manual_worker_request, execute_gpt_operator_manual_action
+            manual_preflight_sha = str(state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"))
             try:
+                manual_request = build_manual_worker_request(
+                    project_root=root, package_root=package_root, task=task, manifest=manifest,
+                    preflight_evidence_sha256=manual_preflight_sha, package_manifest_sha256=package_sha,
+                    approval_event_id=getattr(auth, "authorization_id", ""), action_package=manual_action_package,
+                )
+                request_path = package_root / "worker.request.json"
+                request_bytes = canonical_json_bytes(manual_request.to_dict())
+                if request_path.exists() or request_path.is_symlink():
+                    if request_path.is_symlink() or request_path.read_bytes() != request_bytes:
+                        raise GateControllerError("WORKER_REQUEST_REQUIRED: manual request replay conflict")
+                else:
+                    fd = os.open(request_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                    with os.fdopen(fd, "wb") as handle:
+                        handle.write(request_bytes); handle.flush(); os.fsync(handle.fileno())
                 worker_payload = execute_gpt_operator_manual_action(
                     project_root=root, package_root=package_root, manifest=manifest,
-                    preflight_evidence_sha256=str(state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json")),
+                    preflight_evidence_sha256=manual_preflight_sha,
                     action_package=manual_action_package, authorization=manual_action_authorization,
                     expected_branch=str(_.get("branch", "")), package_manifest_sha256=package_sha,
                 )

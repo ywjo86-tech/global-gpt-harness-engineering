@@ -7,8 +7,9 @@ from pathlib import Path
 
 from runtime.orchestrator.operator_control import MANUAL_ACTION_AUTH_SCHEMA, OPERATOR_DIRECTIVE_SCHEMA, ManualActionAuthorizationV1, OperatorDirectiveV1
 from runtime.orchestrator.provider_router import ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2, ProviderEligibilitySnapshotV1, RouterRequestV2, route_request
-from runtime.orchestrator.production_manual_action import ACTION_SCHEMA, ProductionManualActionError, command_plan_digest, editable_scope_digest, execute_gpt_operator_manual_action
+from runtime.orchestrator.production_manual_action import ACTION_SCHEMA, ProductionManualActionError, build_manual_worker_request, command_plan_digest, editable_scope_digest, execute_gpt_operator_manual_action
 from runtime.orchestrator.lv_review import LVReviewError, _validate_production_provenance
+from runtime.orchestrator.schemas import TaskSlice
 
 
 def digest(value):
@@ -52,6 +53,36 @@ class ProductionManualActionTests(unittest.TestCase):
         action["action_package_digest"] = digest(action)
         auth = ManualActionAuthorizationV1(MANUAL_ACTION_AUTH_SCHEMA,"P","R","T12","E12","G","GPT_OPERATOR",action["action_package_digest"],editable_scope_digest(["a.py"]),command_plan_digest(commands),"AUTH12")
         return action, auth.to_dict()
+
+    def test_manual_worker_request_binds_review_identity(self):
+        action, _ = self.make()
+        task = TaskSlice(
+            thread_id="T12", assigned_agent="implementation_agent", input="manual",
+            expected_output="truthful worker result", validation_criteria=["TEST-X"],
+            editable_scope=["a.py"], forbidden_scope=[], merge_point="GATE_EXIT",
+            required_capabilities=["filesystem_write", "test_execution"],
+            run_id="R", run_root=str(self.root / "pkg"), output_dir=str(self.root / "pkg"),
+            result_path=str(self.root / "pkg" / "worker.result.json"),
+            worker_request_path=str(self.root / "pkg" / "worker.request.json"),
+        )
+        request = build_manual_worker_request(
+            project_root=self.root, package_root=self.root / "pkg", task=task, manifest=self.manifest,
+            preflight_evidence_sha256="f" * 64, package_manifest_sha256="d" * 64,
+            approval_event_id="APR", action_package=action,
+        ).to_dict()
+        self.assertEqual(request["contract_summary"]["project_id"], "P")
+        self.assertEqual(request["contract_summary"]["gate_id"], "G")
+        self.assertEqual(request["contract_summary"]["lv_id"], "T12")
+        self.assertEqual(request["extra_context"]["run_id"], "R")
+        self.assertEqual(request["extra_context"]["package_manifest_sha256"], "d" * 64)
+        self.assertEqual(request["extra_context"]["execution_backend"], "GPT_OPERATOR_MANUAL_ACTION")
+        bad_manifest = dict(self.manifest); bad_manifest["run_id"] = "OTHER"
+        with self.assertRaisesRegex(ProductionManualActionError, "run binding mismatch"):
+            build_manual_worker_request(
+                project_root=self.root, package_root=self.root / "pkg", task=task, manifest=bad_manifest,
+                preflight_evidence_sha256="f" * 64, package_manifest_sha256="d" * 64,
+                approval_event_id="APR", action_package=action,
+            )
 
     def test_executes_only_after_router_action_block_and_seals_checkpoint(self):
         action, auth = self.make()
