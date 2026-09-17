@@ -55,7 +55,7 @@ class ProductionManualActionTests(unittest.TestCase):
 
     def test_executes_only_after_router_action_block_and_seals_checkpoint(self):
         action, auth = self.make()
-        result = execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch)
+        result = execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch, package_manifest_sha256="d"*64)
         self.assertEqual(result["completion_mode"], "GPT_OPERATOR_MANUAL_ACTION")
         self.assertEqual(result["executor"]["identity"], "gpt-operator-manual-action")
         self.assertEqual(result["changed_files"], ["a.py"])
@@ -68,17 +68,17 @@ class ProductionManualActionTests(unittest.TestCase):
     def test_router_eligible_action_cannot_use_manual_bridge(self):
         action, auth = self.make(True)
         with self.assertRaisesRegex(ProductionManualActionError, "ACTION_PROVIDER_BLOCKED"):
-            execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch)
+            execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch, package_manifest_sha256="d"*64)
 
     def test_authorization_scope_tamper_fails_closed(self):
         action, auth = self.make(); auth["editable_scope_digest"] = "0"*64
         with self.assertRaisesRegex(ProductionManualActionError, "scope mismatch"):
-            execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch)
+            execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch, package_manifest_sha256="d"*64)
 
     def test_patch_tamper_fails_closed(self):
         action, auth = self.make(); action["patch"] += "\\n"
         with self.assertRaisesRegex(ProductionManualActionError, "package digest"):
-            execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch)
+            execute_gpt_operator_manual_action(project_root=self.root, package_root=self.root/"pkg", manifest=self.manifest, preflight_evidence_sha256="f"*64, action_package=action, authorization=auth, expected_branch=self.branch, package_manifest_sha256="d"*64)
 
 
 if __name__ == "__main__":

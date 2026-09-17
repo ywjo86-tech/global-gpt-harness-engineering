@@ -199,10 +199,12 @@ def validate_action_package(action: Mapping[str, Any], authorization: Mapping[st
 def execute_gpt_operator_manual_action(*, project_root: str | Path, package_root: str | Path,
                                        manifest: Mapping[str, Any], preflight_evidence_sha256: str,
                                        action_package: Mapping[str, Any], authorization: Mapping[str, Any],
-                                       expected_branch: str) -> dict[str, Any]:
+                                       expected_branch: str, package_manifest_sha256: str) -> dict[str, Any]:
     root = Path(project_root).resolve(); package = Path(package_root).resolve()
     auth, decision = validate_action_package(action_package, authorization, manifest)
     baseline = _git_text(root, "rev-parse", "HEAD")
+    if not _SHA64.fullmatch(str(package_manifest_sha256)):
+        raise ProductionManualActionError("manual action package manifest digest is invalid")
     if not isinstance(expected_branch, str) or not expected_branch.strip():
         raise ProductionManualActionError("manual action approved branch binding is missing")
     if baseline != action_package["source_head"] or _git_text(root, "branch", "--show-current") != expected_branch:
@@ -271,7 +273,7 @@ def execute_gpt_operator_manual_action(*, project_root: str | Path, package_root
         "current_head": head, "current_tree": tree, "checkpoint_commit": head, "commands": commands,
         "staged_changes": False, "unstaged_changes": False, "review_verdict": "PASS",
         "executor": {"identity": EXECUTOR_ID, "version": EXECUTOR_VERSION}, "manual_action": manual,
-        "governed_effect_evidence": [], "package_sha256": manifest["manifest_sha256"],
+        "governed_effect_evidence": [], "package_sha256": package_manifest_sha256,
         "preflight_evidence_sha256": preflight_evidence_sha256,
         "validation_events": ["GPT_OPERATOR_MANUAL_ACTION_AUTHORIZED", "VALIDATION_STARTED", "FOCUSED_TEST_COMPLETED",
                               "FULL_REGRESSION_COMPLETED", "WORKER_RESULT_SEALED"],
