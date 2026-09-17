@@ -730,11 +730,15 @@ def project_lv_execution_state(
 
 def build_project_requirement_contract(
     project_root: str | Path, gate_id: str, lv_id: str, *, mode: str = GATE_BY_GATE,
+    full_plan_opt_in: bool = False, project_final_validation: bool = False,
 ) -> dict[str, Any]:
     """Build a deterministic TASK-scoped requirement contract from canonical plan authority."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
-    authorization = load_approved_authorization(root, gate_id, mode=mode)
+    authorization = load_approved_authorization(
+        root, gate_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
+        project_final_validation=project_final_validation,
+    )
     state = project_lv_execution_state(root, plan, authorization, lv_id)
     mapping = load_project_mapping(root)
     if mapping is None or mapping.task_lv_projection_path is None:
@@ -755,13 +759,17 @@ def build_project_requirement_contract(
 
 def write_project_requirement_contract(
     project_root: str | Path, gate_id: str, lv_id: str, harness_root: str | Path, *, mode: str = GATE_BY_GATE,
+    full_plan_opt_in: bool = False, project_final_validation: bool = False,
 ) -> dict[str, Any]:
     """Seal TASK requirement authority in the Harness artifact namespace, never the source worktree."""
     root, project_id = _safe_project(project_root)
     harness = Path(harness_root)
     if not harness.is_absolute() or not harness.is_dir() or harness.is_symlink() or harness != harness.resolve():
         raise GateOrchestrationError("Harness root must be an existing absolute non-symlink directory")
-    payload = build_project_requirement_contract(root, gate_id, lv_id, mode=mode)
+    payload = build_project_requirement_contract(
+        root, gate_id, lv_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
+        project_final_validation=project_final_validation,
+    )
     artifact_root = namespace_root(harness, project_id, "artifact")
     target = artifact_root / f"{gate_id}.{lv_id}.project-requirements.json"
     sidecar = Path(str(target) + ".sha256")
@@ -1903,6 +1911,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  full_plan_opt_in: bool = False, project_final_validation: bool = False,
                  adapters: GateControllerAdapters | None = None,
                  requirement_evidence: Mapping[str, Mapping[str, Any]] | None = None,
+                 project_requirement_evidence_by_lv: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
                  capability_requirements: Mapping[str, Any] | None = None,
                  capability_prerequisite: Callable[[Mapping[str, Any], Any,
                                                     MutableMapping[str, Mapping[str, Any]]], Any] | None = None,
@@ -1998,6 +2007,54 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 return {"status": "GATE_EXIT", "transition": transition, "lifecycles": [], "resume_noop": True,
                         "next": gate_exit_action(auth, None), "state": state,
                         "ledger_sha256": existing["ledger_sha256"], "hard_stop": True}
+            if project_requirement_evidence_by_lv is not None:
+                expected_lvs = [item.lv_id for item in plan.lvs]
+                if set(project_requirement_evidence_by_lv) != set(expected_lvs):
+                    raise GateOrchestrationError("project requirement evidence LV coverage mismatch")
+                evidence_by_lv = dict(completed_evidence)
+                for lifecycle in lifecycles:
+                    lifecycle_lv = str(lifecycle.get("lv_id", ""))
+                    handoff_sha = str(lifecycle.get("evidence", {}).get("handoff", ""))
+                    if lifecycle_lv not in expected_lvs or not re.fullmatch(r"[0-9a-f]{64}", handoff_sha):
+                        raise GateOrchestrationError("project requirement LV handoff evidence is missing")
+                    evidence_by_lv[lifecycle_lv] = handoff_sha
+                if set(evidence_by_lv) != set(expected_lvs):
+                    raise GateOrchestrationError("project requirement lifecycle evidence is incomplete")
+                mapping = load_project_mapping(root)
+                if mapping is None or mapping.task_lv_projection_path is None:
+                    raise GateOrchestrationError("project requirement evidence requires TASK projection authority")
+                plan_text = mapping.canonical_source.read_text(encoding="utf-8")
+                project_items_by_lv: dict[str, dict[str, Any]] = {}
+                for item in plan.lvs:
+                    supplied = project_requirement_evidence_by_lv.get(item.lv_id)
+                    if not isinstance(supplied, Mapping) or not supplied:
+                        raise GateOrchestrationError(f"project requirement evidence missing for {item.lv_id}")
+                    expected_payload = resolve_task_project_requirement_contract(
+                        plan_text, project_id=plan.project_id, canonical_plan_sha256=plan.canonical_plan_sha256,
+                        gate_id=gate_id, task_id=item.lv_id, owned_files=list(item.owned_files),
+                    )
+                    expected_requirements = expected_payload["requirements"]
+                    if dict(supplied) != expected_requirements:
+                        raise GateOrchestrationError(f"project requirement semantic binding drift: {item.lv_id}")
+                    lv_evidence = evidence_by_lv[item.lv_id]
+                    completed_items: dict[str, Any] = {}
+                    for requirement_id, contract_item in supplied.items():
+                        completed_items[requirement_id] = {
+                            **dict(contract_item), "status": "COMPLETE", "verdict": "PASS",
+                            "lv_evidence_sha256": lv_evidence,
+                            "evidence_sha256": _canonical_hash({
+                                "requirement_id": requirement_id, "lv_id": item.lv_id,
+                                "lv_evidence_sha256": lv_evidence,
+                                "semantic_sha256": contract_item.get("semantic_sha256"),
+                            }),
+                        }
+                    project_items_by_lv[item.lv_id] = completed_items
+                return {
+                    "status": "GATE_EXIT", "transition": transition, "lifecycles": lifecycles,
+                    "project_requirements_by_lv": project_items_by_lv,
+                    "engine_conformance": {"requirements_sha256": requirements_sha256},
+                    "next": gate_exit_action(auth, None), "state": state, "hard_stop": True,
+                }
             if requirement_evidence is None:
                 raise GateOrchestrationError("sealed requirement contract is required")
             project_profile = set(requirement_evidence) != set(REQUIREMENT_IDS)

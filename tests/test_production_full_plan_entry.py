@@ -79,6 +79,25 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             self.assertTrue(call.call_args.kwargs["full_plan_opt_in"])
             self.assertTrue(call.call_args.kwargs["project_final_validation"])
 
+
+    def test_bound_executor_loads_task_scoped_requirement_contracts(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            payload = json.loads(path.read_text())
+            req = root / "task-1.requirements.json"
+            req.write_text(json.dumps({
+                "schema_version": "orchestration.project-requirement-contract.v1",
+                "requirements": {"REQ-001": {"status": "PENDING"}},
+            }))
+            payload["gates"][0]["requirement_evidence_paths_by_lv"] = {"TASK-001": str(req)}
+            path.write_text(json.dumps(payload))
+            job = load_job(path)
+            executor = build_gate_executor(job)
+            with patch("runtime.orchestrator.gate_orchestrator.execute_gate", return_value={"status": "GATE_EXIT"}) as call:
+                executor("G1", "run--g1", False)
+            nested = call.call_args.kwargs["project_requirement_evidence_by_lv"]
+            self.assertEqual(nested, {"TASK-001": {"REQ-001": {"status": "PENDING"}}})
+
     def test_run_job_drives_three_gate_bound_production_path(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); path = self.make_job(root)

@@ -57,6 +57,12 @@ def load_job(path: str | Path) -> dict[str, Any]:
                 raise FullPlanJobError(f"Gate job field is missing: {field}")
         if gate.get("full_plan_opt_in") is not True or gate.get("project_final_validation") is not True:
             raise FullPlanJobError("Gate job requires explicit FULL_PLAN opt-in and final validation")
+        evidence_paths_by_lv = gate.get("requirement_evidence_paths_by_lv")
+        if evidence_paths_by_lv is not None:
+            if (not isinstance(evidence_paths_by_lv, dict) or not evidence_paths_by_lv
+                    or any(not isinstance(k, str) or not k or not isinstance(v, str) or not v
+                           for k, v in evidence_paths_by_lv.items())):
+                raise FullPlanJobError("Gate job requirement_evidence_paths_by_lv is invalid")
     if len(set(ids)) != len(ids):
         raise FullPlanJobError("Full Plan job contains duplicate Gates")
     return job
@@ -134,6 +140,17 @@ def build_gate_executor(job: Mapping[str, Any]):
         evidence_path = spec.get("requirement_evidence_path")
         if evidence_path:
             requirement_evidence = _load_json(evidence_path)
+        project_requirement_evidence_by_lv = None
+        evidence_paths_by_lv = spec.get("requirement_evidence_paths_by_lv")
+        if evidence_paths_by_lv is not None:
+            if not isinstance(evidence_paths_by_lv, dict):
+                raise FullPlanJobError("requirement_evidence_paths_by_lv must be an object")
+            project_requirement_evidence_by_lv = {}
+            for lv_id, evidence_path_by_lv in evidence_paths_by_lv.items():
+                envelope = _load_json(evidence_path_by_lv)
+                if envelope.get("schema_version") != "orchestration.project-requirement-contract.v1" or not isinstance(envelope.get("requirements"), dict):
+                    raise FullPlanJobError(f"invalid project requirement evidence: {lv_id}")
+                project_requirement_evidence_by_lv[str(lv_id)] = dict(envelope["requirements"])
         return execute_gate(
             project_root,
             gate_id,
@@ -148,6 +165,7 @@ def build_gate_executor(job: Mapping[str, Any]):
             full_plan_opt_in=spec["full_plan_opt_in"],
             project_final_validation=spec["project_final_validation"],
             requirement_evidence=requirement_evidence,
+            project_requirement_evidence_by_lv=project_requirement_evidence_by_lv,
         )
     return execute
 
