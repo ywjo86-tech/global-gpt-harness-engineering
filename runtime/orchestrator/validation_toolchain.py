@@ -139,6 +139,19 @@ def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
 
 
 def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow_deferred: bool = False) -> ValidationCommandSet:
+    documentation_only = bool(owned_files) and all(
+        isinstance(path, str) and (path == "docs/" or path.startswith("docs/"))
+        for path in owned_files
+    )
+    if documentation_only:
+        evidence_check = ("git", "diff", "--check")
+        return ValidationCommandSet(
+            ("DOCUMENT_EVIDENCE",),
+            (evidence_check,),
+            (evidence_check,),
+            (evidence_check,),
+            False,
+        )
     android, node, python_scope = _scope_flags(owned_files)
     profiles: list[str] = []
     focused: list[tuple[str, ...]] = []
@@ -200,12 +213,21 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
         if not owned_files:
             return ValidationCommandSet((), (), (), (), False)
         manifest_scopes: list[str] = []
-        try:
-            _android_runner(root)
-        except ValidationToolchainError:
-            pass
-        else:
-            manifest_scopes.append("android-app/")
+        android_markers = (
+            root / "gradlew",
+            root / "settings.gradle", root / "settings.gradle.kts", root / "settings.gradle.dcl",
+            root / "build.gradle", root / "build.gradle.kts", root / "build.gradle.dcl",
+            root / "android-app" / "gradlew",
+            root / "android-app" / "settings.gradle", root / "android-app" / "settings.gradle.kts",
+            root / "android-app" / "build.gradle", root / "android-app" / "build.gradle.kts",
+        )
+        if any(path.exists() or path.is_symlink() for path in android_markers):
+            try:
+                _android_runner(root)
+            except ValidationToolchainError:
+                pass
+            else:
+                manifest_scopes.append("android-app/")
         if (root / "backend" / "package.json").is_file() and not (root / "backend" / "package.json").is_symlink():
             manifest_scopes.append("backend/")
         if manifest_scopes:

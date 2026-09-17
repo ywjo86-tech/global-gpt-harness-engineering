@@ -80,6 +80,23 @@ class ValidationToolchainTests(unittest.TestCase):
             plan=resolve_validation_commands(root,['shared-contracts/curriculum/','tools/content-qa/'])
             self.assertEqual(plan.profile_ids,('ANDROID_GRADLE_WRAPPER','NODE_NPM'))
 
+    def test_document_only_scope_does_not_infer_android_from_system_gradle_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); tool=root.parent/'trusted-gradle-doc-only'; tool.write_text('#!/bin/sh\n')
+            try:
+                from unittest.mock import patch
+                with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=str(tool)):
+                    plan=resolve_validation_commands(
+                        root, ['docs/history/upgrades/PROJECT/'], allow_deferred=True
+                    )
+                self.assertEqual(plan.profile_ids, ('PROJECT_NATIVE_UNRESOLVED',))
+                self.assertTrue(plan.deferred)
+                with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=str(tool)):
+                    with self.assertRaisesRegex(ValidationToolchainError, 'no project-native'):
+                        resolve_validation_commands(root, ['docs/history/upgrades/PROJECT/'], allow_deferred=False)
+            finally:
+                tool.unlink(missing_ok=True)
+
     def test_node_ambiguity_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'backend').mkdir(); (root/'backend/package-lock.json').write_text('{}'); (root/'backend/yarn.lock').write_text('')
@@ -91,6 +108,17 @@ class ValidationToolchainTests(unittest.TestCase):
         validate_profile_resolution(['ANDROID_GRADLE_BOOTSTRAP','NODE_PACKAGE_MANIFEST'],['ANDROID_GRADLE_WRAPPER','NODE_NPM'])
         with self.assertRaises(ValidationToolchainError):
             validate_profile_resolution(['ANDROID_GRADLE_BOOTSTRAP'],['ANDROID_GRADLE_WRAPPER','NODE_NPM'])
+
+
+    def test_documentation_only_scope_does_not_inherit_project_toolchain(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'docs/history').mkdir(parents=True)
+            plan=resolve_validation_commands(root,['docs/history/'])
+            self.assertEqual(plan.profile_ids,('DOCUMENT_EVIDENCE',))
+            self.assertEqual(plan.focused,(('git','diff','--check'),))
+            self.assertEqual(plan.full,(('git','diff','--check'),))
+            self.assertEqual(plan.compile,(('git','diff','--check'),))
+            self.assertFalse(plan.deferred)
 
 
 if __name__ == '__main__': unittest.main()
