@@ -1,0 +1,23 @@
+{
+  "adversarial_new_blocker_major": 0,
+  "attention_path": "DURABLE_OUTBOX_PLUS_CHATGPT_CONDITION_WATCH",
+  "blocker_count": 0,
+  "decision": "PASS_CONTINUITY_REMEDIATION_SCOPE",
+  "focused_status": "PASS",
+  "focused_tests": 158,
+  "full_discovery_new_regressions": 0,
+  "full_discovery_preexisting_errors": 4,
+  "full_discovery_tests": 1432,
+  "implementation_commit": "4759cc8",
+  "legacy_run_state": "BLOCKED_LEGACY_PROGRESS_ADOPTION_REQUIRED",
+  "material_defect_search": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "pass_challenge_open_count": 0,
+  "preexisting_environment_limitation": "system python missing mcp package",
+  "protocol": "EDP-1.0",
+  "protocol_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+  "report": "docs/history/governance/2026-09-17/FULL_PLAN_CONTINUITY_EDP_REDIAGNOSIS_R2.md",
+  "report_sha256": "8a44384d9af0114621140e40ee28a4a50a28beb07919009f337375b9c2a78a96",
+  "runtime_timer": "ACTIVE_60S",
+  "schema_version": "edp.full-plan-continuity.rediagnosis.v3",
+  "unresolved_major_count": 0
+}
