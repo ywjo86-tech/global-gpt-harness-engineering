@@ -18,6 +18,11 @@ from runtime.orchestrator.production_execution_gateway import (
     build_gateway_request, validate_gateway_request,
 )
 from runtime.orchestrator.tool_authorization import TOOL_AUTH_CONTRACT_VERSION, ToolAuthorizationContract
+from runtime.orchestrator.public_execution_contract import (
+    PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, PUBLIC_EXECUTION_RESULT_SCHEMA_V1,
+    PublicExecutionContractError, PublicExecutionRequestV1, PublicExecutionResultV1,
+)
+from runtime.mprf.execution_client import PublicExecutionClient
 from runtime.full_mcp.contracts import InvocationContext, scope_digest
 from runtime.full_mcp.runtime import build_default_runtime, operation_definitions
 from runtime.full_mcp.stdio_entrypoint import run_stdio
@@ -100,6 +105,41 @@ def build_adapter(root: Path, request: dict) -> FullMCPBackendAdapter:
             AdapterToolCall("validate", {"operation_request_id": "adapter-read", "expectations": ["RESULT_PRESENT", "AUDIT_PRESENT", "NO_SECURITY_BLOCK"]}, "adapter-validate"),
         ),
     )
+
+
+class PublicExecutionBoundaryTests(unittest.TestCase):
+    def test_public_dto_roundtrip_and_client_binding(self) -> None:
+        request = PublicExecutionRequestV1(
+            schema_version=PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, operation_class="git_stage",
+            public_arguments={"paths": ["owned/a.txt"]}, authorization_ref="AUTH-PUB-1",
+            operation_request_id="pub-op-1", correlation_id="corr-pub-1",
+            policy_digests=("a" * 64,), expected_effect_semantics="STATE_CHANGING",
+        )
+        raw_result = PublicExecutionResultV1(
+            schema_version=PUBLIC_EXECUTION_RESULT_SCHEMA_V1, operation_request_id="pub-op-1",
+            correlation_id="corr-pub-1", status="COMPLETED", result_digest="b" * 64,
+            effect_ref="effect-1", reconciliation_state="NOT_REQUIRED", error_code="", audit_ref="audit-1",
+        ).to_dict()
+        client = PublicExecutionClient(lambda payload: raw_result)
+        result = client.execute(request)
+        self.assertEqual(result.status, "COMPLETED")
+        self.assertEqual(result.operation_request_id, request.operation_request_id)
+
+    def test_public_contract_rejects_full_mcp_internal_exposure(self) -> None:
+        with self.assertRaises(PublicExecutionContractError):
+            PublicExecutionRequestV1(
+                schema_version=PUBLIC_EXECUTION_REQUEST_SCHEMA_V1, operation_class="git_stage",
+                public_arguments={"journal_path": "/internal/journal"}, authorization_ref="AUTH-PUB-1",
+                operation_request_id="pub-op-2", correlation_id="corr-pub-2",
+                policy_digests=(), expected_effect_semantics="STATE_CHANGING",
+            )
+        repo = Path(__file__).resolve().parents[2]
+        client_source = (repo / "runtime/mprf/execution_client.py").read_text(encoding="utf-8")
+        public_source = (repo / "runtime/orchestrator/public_execution_contract.py").read_text(encoding="utf-8")
+        for source in (client_source, public_source):
+            self.assertNotIn("from runtime.full_mcp", source)
+            self.assertNotIn("import runtime.full_mcp", source)
+        self.assertNotIn("provider_router", client_source)
 
 
 class AdapterContractTests(unittest.TestCase):
