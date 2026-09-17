@@ -64,6 +64,7 @@ def _failure_class(reason: object) -> str:
         "capability evidence is missing from sealed HANDOFF",
         "read-only static validation failed",
         "LV preview requires an active canonical Gate state",
+        "canonical binding mismatch",
     )
     provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_",
                         "Codex readiness", "nvidia_timeout", "provider readiness")

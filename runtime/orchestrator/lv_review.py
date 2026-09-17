@@ -562,7 +562,8 @@ def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
             raise LVReviewError("canonical binding mismatch: production transition identity")
         state = dict(state)
         state.update({"state": "GATE1_ACTIVE", "gate_id": transition["gate_id"], "active_scope": [transition["lv_id"]], "approval_id": transition["approval_event_id"], "approval_record_hash": manifest.get("approval_record_hash"), "checkpoint_commit": transition["current_head"], "owned_files": transition["owned_file_scope"]})
-    if not isinstance(state.get("state"), str) or not state["state"].endswith("_ACTIVE"):
+    canonical_state_name = state.get("state")
+    if not isinstance(canonical_state_name, str) or not (canonical_state_name.endswith("_ACTIVE") or canonical_state_name == "GATE1_RESUME_READY"):
         raise LVReviewError("canonical binding mismatch: gate_state")
     active_scope = state.get("active_scope")
     if (
