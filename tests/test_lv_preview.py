@@ -155,6 +155,19 @@ class LVPreviewTest(unittest.TestCase):
                      self.assertRaisesRegex(LVPreviewValidationError, message):
                     preview_lv_read_only(root, "GATE-1", "G1-LV3-1")
 
+    def test_successor_resume_ready_is_accepted_as_active(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir = self._fixture(Path(directory))
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                mapping = load_project_mapping(root)
+            state = evaluate_canonical_state(mapping)
+            state = dict(state)
+            state["state"] = "GATE1_RESUME_READY"
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), \
+                 patch("runtime.orchestrator.lv_preview.evaluate_canonical_state", return_value=state):
+                preview = preview_lv_read_only(root, "GATE-1", "G1-LV3-1")
+            self.assertEqual(preview["selected_lv"]["lv_id"], "G1-LV3-1")
+
     def test_other_lv_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:
             root, mapping_dir = self._fixture(Path(directory))

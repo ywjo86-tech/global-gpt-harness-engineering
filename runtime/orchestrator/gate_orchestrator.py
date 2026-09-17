@@ -702,7 +702,8 @@ def project_lv_execution_state(
     if mapping is None:
         raise GateOrchestrationError("project declarative mapping is required")
     state = evaluate_canonical_state(mapping)
-    if state.get("state") not in {"GATE1_ACTIVE", "GATE1_RESUME_READY"}:
+    canonical_state_name = state.get("state")
+    if not isinstance(canonical_state_name, str) or not (canonical_state_name.endswith("_ACTIVE") or canonical_state_name == "GATE1_RESUME_READY"):
         raise GateOrchestrationError("canonical Gate state is not active")
     if state.get("transition_authorized") is not True or state.get("gate_id") != plan.gate_id:
         raise GateOrchestrationError("canonical Gate state is not authorized for requested Gate")

@@ -185,7 +185,7 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
     inspection = inspect_read_only(root)
     canonical_state = dict(canonical_state_override) if canonical_state_override is not None else evaluate_canonical_state(mapping)
     state = canonical_state.get("state")
-    if not isinstance(state, str) or not state.endswith("_ACTIVE"):
+    if not isinstance(state, str) or not (state.endswith("_ACTIVE") or state == "GATE1_RESUME_READY"):
         raise LVPreviewValidationError("LV preview requires an active canonical Gate state")
     if canonical_state.get("gate_id") != gate_id:
         raise LVPreviewValidationError(f"requested Gate is not active: {gate_id}")

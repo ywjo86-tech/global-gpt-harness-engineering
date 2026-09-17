@@ -63,6 +63,7 @@ def _failure_class(reason: object) -> str:
         "owned Python test target is missing or unsafe",
         "capability evidence is missing from sealed HANDOFF",
         "read-only static validation failed",
+        "LV preview requires an active canonical Gate state",
     )
     provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_",
                         "Codex readiness", "nvidia_timeout", "provider readiness")
