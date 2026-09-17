@@ -8,6 +8,16 @@ from typing import Any, Mapping
 class RecoveryError(ValueError): pass
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
+_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,254}\Z")
+
+def _valid_git_branch(value: object) -> bool:
+    if not isinstance(value, str) or not _BRANCH.fullmatch(value):
+        return False
+    if value.startswith("/") or value.endswith("/") or value.endswith(".") or value.endswith(".lock"):
+        return False
+    if any(token in value for token in ("..", "//", "@{", "\\", "~", "^", ":", "?", "*", "[")):
+        return False
+    return all(part and not part.startswith(".") and not part.endswith(".lock") for part in value.split("/"))
 
 def attempt_directory(attempt: object) -> str:
     if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt <= 0:
@@ -127,7 +137,10 @@ def write_recovery_record(harness_root: str | Path, *, project_id: str, gate_id:
                           source_binding_kind: str = "ACTIVE_TRANSITION") -> dict[str, Any]:
     if rejected_attempt <= 0 or recovery_attempt != rejected_attempt + 1 or not hard_stop:
         raise RecoveryError("invalid recovery attempt or hard-stop binding")
-    if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes, source_binding_kind)) or not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, branch, supersedes, source_binding_kind)):
+    if not all(isinstance(v, str) and v for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, plan_sha256, branch, baseline_head, current_head, active_transition_sha256, supersedes, source_binding_kind)):
+        raise RecoveryError("recovery binding is incomplete")
+    if (not all(_ID.fullmatch(v) for v in (project_id, gate_id, lv_id, run_id, reason_code, approval_event_id, supersedes, source_binding_kind))
+            or not _valid_git_branch(branch)):
         raise RecoveryError("recovery binding is incomplete")
     if source_binding_kind not in {"ACTIVE_TRANSITION", "PRE_RESULT_PARTIAL_SOURCE", "POST_RESULT_MISSING_REQUEST_SOURCE"}:
         raise RecoveryError("unsupported recovery source binding kind")
@@ -639,15 +652,36 @@ def prepare_post_result_missing_request_recovery(
               "worker_result_sha256":worker_sha, "review_request_sha256":source_shas[relative_sources[3]],
               "missing_bindings":["worker.request.json"], "completion_eligible":False, "hard_stop":True}
     source["source_payload_sha256"] = hashlib.sha256(_bytes(source)).hexdigest()
-    source_path = package_root / "post-result-missing-request-source.json"; _write_once(source_path, source)
+    source_path = package_root / "post-result-missing-request-source.json"
+    if source_path.exists():
+        if source_path.is_symlink() or not source_path.is_file():
+            raise RecoveryError("post-result recovery source snapshot is unsafe")
+        try:
+            existing_source = json.loads(source_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RecoveryError("post-result recovery source snapshot is malformed") from exc
+        stable_keys = ("schema_version", "project_id", "gate_id", "lv_id", "run_id", "attempt",
+                       "canonical_plan_sha256", "approval_event_id", "branch", "baseline_head",
+                       "checkpoint_commit", "owned_files", "changed_files", "package_manifest_sha256",
+                       "preflight_evidence_sha256", "worker_result_sha256", "review_request_sha256",
+                       "missing_bindings", "completion_eligible", "hard_stop")
+        if any(existing_source.get(key) != source.get(key) for key in stable_keys):
+            raise RecoveryError("post-result recovery source snapshot replay conflict")
+        expected_digest = existing_source.get("source_payload_sha256")
+        if expected_digest != hashlib.sha256(_bytes({k:v for k,v in existing_source.items() if k != "source_payload_sha256"})).hexdigest():
+            raise RecoveryError("post-result recovery source snapshot digest mismatch")
+        source = existing_source
+    else:
+        _write_once(source_path, source)
     source_rel = source_path.resolve().relative_to(root).as_posix(); source_file_sha = hashlib.sha256(source_path.read_bytes()).hexdigest(); source_shas[source_rel] = source_file_sha
+    record_current_head = str(source.get("current_head") or current_head)
     next_attempt = rejected_attempt + 1; recovery_id = f"{expected['run_id']}-recovery-{next_attempt:02d}"
     record = write_recovery_record(
         root, project_id=expected["project_id"], gate_id=expected["gate_id"], lv_id=expected["lv_id"], run_id=expected["run_id"],
         rejected_attempt=rejected_attempt, rejected_artifacts={source_rel:source_file_sha},
         reason_code="REJECTED_POST_RESULT_REQUEST_MISSING", missing_bindings=["worker.request.json"],
         recovery_attempt=next_attempt, approval_event_id=approval_event_id, plan_sha256=plan_sha,
-        branch=branch, baseline_head=baseline, current_head=current_head,
+        branch=branch, baseline_head=baseline, current_head=record_current_head,
         active_transition_sha256=source_file_sha, source_shas=source_shas, predecessor=None,
         supersedes=worker_sha, hard_stop=True, recovery_id=recovery_id,
         source_binding_kind="POST_RESULT_MISSING_REQUEST_SOURCE")

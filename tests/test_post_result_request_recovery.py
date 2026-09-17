@@ -99,7 +99,7 @@ class PostResultRequestRecoveryTests(unittest.TestCase):
         return prepare_post_result_missing_request_recovery(
             self.root, project_root=self.project, package_manifest_path=self.manifest_path,
             preflight_path=self.preflight_path, worker_result_path=self.worker_path,
-            review_request_path=self.review_path, approval_event_id="APR", branch="master")
+            review_request_path=self.review_path, approval_event_id="APR", branch="feature/recovery")
 
     def test_missing_request_is_rejected_then_checkpoint_is_verification_only_adoptable(self):
         recovery = self.prepare()
