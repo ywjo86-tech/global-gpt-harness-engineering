@@ -907,7 +907,9 @@ def validate_evidence_binding(evidence: Mapping[str, Any], *, requirement_id: st
         raise GateOrchestrationError(f"{requirement_id} evidence SHA mismatch")
 
 
-def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode: str = GATE_BY_GATE) -> GateAuthorization:
+def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode: str = GATE_BY_GATE,
+                                full_plan_opt_in: bool = False,
+                                project_final_validation: bool = False) -> GateAuthorization:
     """Load the canonical approval/state binding; never fabricate approval scope."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
@@ -932,7 +934,10 @@ def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode:
                 approval_id = None
     if not approval_id:
         raise GateOrchestrationError("canonical Gate approval ID is missing")
-    auth = create_gate_authorization(plan, approval_id, mode=mode)
+    auth = create_gate_authorization(
+        plan, approval_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
+        project_final_validation=project_final_validation,
+    )
     validate_authorization(plan, auth)
     return auth
 
@@ -950,16 +955,22 @@ def activate_first_gate(project_root: str | Path, gate_id: str, approval_evidenc
     payload = envelope["payload"]
     assert isinstance(payload, dict)
     head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if not branch:
+        raise GateOrchestrationError("first Gate activation requires an attached Git branch")
     validated = validate_approval_evidence(
         envelope, project_id=project_id, gate_id=gate_id,
         requirements_sha256=str(payload["requirements_sha256"]), plan_sha256=plan.canonical_plan_sha256,
-        branch="main", head=head, lv_order=[item.lv_id for item in plan.lvs],
+        branch=branch, head=head, lv_order=[item.lv_id for item in plan.lvs],
         owned_files_by_lv={item.lv_id: item.owned_files for item in plan.lvs},
     )
     activation = {"schema_version": "orchestration.first-gate.activation.v1", "project_id": project_id,
                   "gate_id": gate_id, "plan_sha256": plan.canonical_plan_sha256,
                   "approval_id": validated["approval_id"], "approval_record_hash": envelope["record_hash"],
-                  "branch": "main", "head": head, "lv_order": [item.lv_id for item in plan.lvs],
+                  "branch": branch, "head": head, "lv_order": [item.lv_id for item in plan.lvs],
                   "owned_files": plan.lvs[0].owned_files,
                   "state": "ACTIVE", "system_transition": True}
     # Materialize the legacy approval-log event shape so existing readers can
@@ -1889,6 +1900,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
+                 full_plan_opt_in: bool = False, project_final_validation: bool = False,
                  adapters: GateControllerAdapters | None = None,
                  requirement_evidence: Mapping[str, Mapping[str, Any]] | None = None,
                  capability_requirements: Mapping[str, Any] | None = None,
@@ -1906,7 +1918,10 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
     validate_global_gate_bindings(root, gate_id, requirements_sha256=requirements_sha256,
                                   approval_evidence=approval_evidence, branch=branch, head=head,
                                   harness_root=harness_root)
-    auth = load_approved_authorization(root, gate_id, mode=mode)
+    auth = load_approved_authorization(
+        root, gate_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
+        project_final_validation=project_final_validation,
+    )
     if any(value is not None for value in (capability_requirements, capability_prerequisite, capability_checkpoints)):
         if mode != FULL_PLAN or not dry_run_capability_resolution:
             raise GateOrchestrationError("operational capability wiring requires explicit FULL_PLAN dry-run context")

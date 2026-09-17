@@ -26,7 +26,7 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
         )
         return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
 
-    def _fixture(self, base: Path):
+    def _fixture(self, base: Path, branch: str = "main"):
         root = base / "family-like"; root.mkdir()
         (root / "docs" / "harness").mkdir(parents=True)
         plan = root / "docs" / "DEVELOPMENT_PLAN.txt"
@@ -34,7 +34,7 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
         plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
         (root / "docs" / "APPROVAL_LOG.md").write_text("# Approval Log\n", encoding="utf-8")
         (root / "docs" / "GATE_STATE.md").write_text("# Gate State\n\nStatus: FIRST_GATE_WAITING_APPROVAL\n", encoding="utf-8")
-        subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", branch, str(root)], check=True)
         baseline = self._commit(root, "baseline")
 
         gate_id = "GATE-001"
@@ -69,7 +69,7 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
         activation = {
             "schema_version": "orchestration.first-gate.activation.v1", "project_id": root.name,
             "gate_id": gate_id, "plan_sha256": plan_sha, "approval_id": approval_id,
-            "approval_record_hash": sealed_hash, "branch": "main", "head": baseline,
+            "approval_record_hash": sealed_hash, "branch": branch, "head": baseline,
             "lv_order": lv_order, "owned_files": owned_files, "state": "ACTIVE", "system_transition": True,
         }
         activation_path = root / "docs" / "harness" / "first-gate.activation.json"
@@ -105,6 +105,21 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
             self.assertEqual(state["activation_commit"], activation_commit)
             self.assertEqual(state["active_scope"], ["TASK-001", "TASK-002"])
             self.assertEqual(subprocess.run(["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True, check=True).stdout, "")
+
+
+    def test_non_main_worktree_branch_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, _, mapping, _, _, baseline, activation_commit = self._fixture(
+                Path(directory), branch="feature/full-plan"
+            )
+            state = evaluate_canonical_state(mapping)
+            self.assertEqual(state["state"], "GATE1_ACTIVE")
+            self.assertEqual(state["checkpoint_commit"], baseline)
+            self.assertEqual(state["activation_commit"], activation_commit)
+            self.assertEqual(
+                subprocess.check_output(["git", "-C", str(root), "branch", "--show-current"], text=True).strip(),
+                "feature/full-plan",
+            )
 
     def test_uncommitted_activation_tamper_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

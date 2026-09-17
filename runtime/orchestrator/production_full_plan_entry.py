@@ -55,6 +55,8 @@ def load_job(path: str | Path) -> dict[str, Any]:
         for field in ("approval_evidence", "requirements_sha256", "branch", "head"):
             if field not in gate or not isinstance(gate[field], str) or not gate[field]:
                 raise FullPlanJobError(f"Gate job field is missing: {field}")
+        if gate.get("full_plan_opt_in") is not True or gate.get("project_final_validation") is not True:
+            raise FullPlanJobError("Gate job requires explicit FULL_PLAN opt-in and final validation")
     if len(set(ids)) != len(ids):
         raise FullPlanJobError("Full Plan job contains duplicate Gates")
     return job
@@ -143,6 +145,8 @@ def build_gate_executor(job: Mapping[str, Any]):
             head=spec["head"],
             mode=FULL_PLAN,
             resume=resume,
+            full_plan_opt_in=spec["full_plan_opt_in"],
+            project_final_validation=spec["project_final_validation"],
             requirement_evidence=requirement_evidence,
         )
     return execute

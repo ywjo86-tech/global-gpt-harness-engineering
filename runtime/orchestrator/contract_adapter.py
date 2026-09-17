@@ -638,9 +638,14 @@ def _evaluate_first_gate_activation(mapping: ContractMapping, gate_text: str) ->
         or activation.get("plan_sha256") != mapping.canonical_sha256
         or activation.get("state") != "ACTIVE"
         or activation.get("system_transition") is not True
-        or activation.get("branch") != "main"
+        or not isinstance(activation.get("branch"), str)
+        or not activation.get("branch")
     ):
         raise ContractMappingError("first Gate activation binding mismatch")
+    active_branch_raw = _git_output(root, "branch", "--show-current")
+    active_branch = active_branch_raw.decode("utf-8").strip() if active_branch_raw is not None else ""
+    if not active_branch or active_branch != activation["branch"]:
+        raise ContractMappingError("first Gate activation branch mismatch")
     if not isinstance(activation.get("gate_id"), str) or not activation["gate_id"]:
         raise ContractMappingError("first Gate activation gate_id is invalid")
     if not isinstance(activation.get("approval_id"), str) or not activation["approval_id"]:

@@ -1,0 +1,293 @@
+{
+  "canonical_plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+  "change_targets": {
+    "CT-001": {
+      "owned_files": [
+        "docs/DEVELOPMENT_PLAN.txt"
+      ],
+      "source_expression": "."
+    },
+    "CT-002": {
+      "owned_files": [
+        "runtime/orchestrator/provider_router.py"
+      ],
+      "source_expression": "runtime/orchestrator/provider_router.py"
+    },
+    "CT-003": {
+      "owned_files": [
+        "runtime/orchestrator/provider_executor.py"
+      ],
+      "source_expression": "runtime/orchestrator/provider_executor.py"
+    },
+    "CT-004": {
+      "owned_files": [
+        "runtime/orchestrator/engine.py"
+      ],
+      "source_expression": "runtime/orchestrator/engine.py"
+    },
+    "CT-005": {
+      "owned_files": [
+        "runtime/orchestrator/task_queue.py"
+      ],
+      "source_expression": "runtime/orchestrator/task_queue.py"
+    },
+    "CT-006": {
+      "owned_files": [
+        "runtime/orchestrator/schemas.py"
+      ],
+      "source_expression": "runtime/orchestrator/schemas.py"
+    },
+    "CT-007": {
+      "owned_files": [
+        "runtime/orchestrator/result_normalizer.py"
+      ],
+      "source_expression": "runtime/orchestrator/result_normalizer.py"
+    },
+    "CT-008": {
+      "owned_files": [
+        "runtime/orchestrator/nvidia_adapter.py"
+      ],
+      "source_expression": "runtime/orchestrator/nvidia_adapter.py"
+    },
+    "CT-009": {
+      "owned_files": [
+        "runtime/orchestrator/codex_adapter.py"
+      ],
+      "source_expression": "runtime/orchestrator/codex_adapter.py"
+    },
+    "CT-010": {
+      "owned_files": [
+        "runtime/orchestrator/codex_launcher.py"
+      ],
+      "source_expression": "runtime/orchestrator/codex_launcher.py"
+    },
+    "CT-011": {
+      "owned_files": [
+        "runtime/orchestrator/operator_control.py"
+      ],
+      "source_expression": "runtime/orchestrator/operator_control.py"
+    },
+    "CT-012": {
+      "owned_files": [
+        "runtime/orchestrator/provider_handoff.py"
+      ],
+      "source_expression": "runtime/orchestrator/provider_handoff.py"
+    },
+    "CT-013": {
+      "owned_files": [
+        "runtime/orchestrator/public_execution_contract.py"
+      ],
+      "source_expression": "runtime/orchestrator/public_execution_contract.py"
+    },
+    "CT-014": {
+      "owned_files": [
+        "runtime/orchestrator/full_mcp_backend_adapter.py"
+      ],
+      "source_expression": "runtime/orchestrator/full_mcp_backend_adapter.py"
+    },
+    "CT-015": {
+      "owned_files": [
+        "runtime/orchestrator/production_execution_gateway.py"
+      ],
+      "source_expression": "runtime/orchestrator/production_execution_gateway.py"
+    },
+    "CT-016": {
+      "owned_files": [
+        "runtime/full_mcp/contracts.py"
+      ],
+      "source_expression": "runtime/full_mcp/contracts.py"
+    },
+    "CT-017": {
+      "owned_files": [
+        "runtime/full_mcp/authorization.py"
+      ],
+      "source_expression": "runtime/full_mcp/authorization.py"
+    },
+    "CT-018": {
+      "owned_files": [
+        "runtime/full_mcp/git_service.py"
+      ],
+      "source_expression": "runtime/full_mcp/git_service.py"
+    },
+    "CT-019": {
+      "owned_files": [
+        "runtime/full_mcp/runtime.py"
+      ],
+      "source_expression": "runtime/full_mcp/runtime.py"
+    },
+    "CT-020": {
+      "owned_files": [
+        "runtime/full_mcp/operation_registry.py"
+      ],
+      "source_expression": "runtime/full_mcp/operation_registry.py"
+    },
+    "CT-021": {
+      "owned_files": [
+        "runtime/full_mcp/observability.py"
+      ],
+      "source_expression": "runtime/full_mcp/observability.py"
+    },
+    "CT-022": {
+      "owned_files": [
+        "runtime/full_mcp/recovery.py"
+      ],
+      "source_expression": "runtime/full_mcp/recovery.py"
+    },
+    "CT-023": {
+      "owned_files": [
+        "runtime/full_mcp/publication_evidence.py"
+      ],
+      "source_expression": "runtime/full_mcp/publication_evidence.py"
+    },
+    "CT-024": {
+      "owned_files": [
+        "runtime/mprf/__init__.py"
+      ],
+      "source_expression": "runtime/mprf/__init__.py"
+    },
+    "CT-025": {
+      "owned_files": [
+        "runtime/mprf/contracts.py"
+      ],
+      "source_expression": "runtime/mprf/contracts.py"
+    },
+    "CT-026": {
+      "owned_files": [
+        "runtime/mprf/registry.py"
+      ],
+      "source_expression": "runtime/mprf/registry.py"
+    },
+    "CT-027": {
+      "owned_files": [
+        "runtime/mprf/lifecycle.py"
+      ],
+      "source_expression": "runtime/mprf/lifecycle.py"
+    },
+    "CT-028": {
+      "owned_files": [
+        "runtime/mprf/failure.py"
+      ],
+      "source_expression": "runtime/mprf/failure.py"
+    },
+    "CT-029": {
+      "owned_files": [
+        "runtime/mprf/router_client.py"
+      ],
+      "source_expression": "runtime/mprf/router_client.py"
+    },
+    "CT-030": {
+      "owned_files": [
+        "runtime/mprf/checkpoint.py"
+      ],
+      "source_expression": "runtime/mprf/checkpoint.py"
+    },
+    "CT-031": {
+      "owned_files": [
+        "runtime/mprf/observability.py"
+      ],
+      "source_expression": "runtime/mprf/observability.py"
+    },
+    "CT-032": {
+      "owned_files": [
+        "runtime/mprf/runtime.py"
+      ],
+      "source_expression": "runtime/mprf/runtime.py"
+    },
+    "CT-033": {
+      "owned_files": [
+        "runtime/mprf/execution_client.py"
+      ],
+      "source_expression": "runtime/mprf/execution_client.py"
+    },
+    "CT-034": {
+      "owned_files": [
+        "tests/test_provider_router.py"
+      ],
+      "source_expression": "tests/test_provider_router.py"
+    },
+    "CT-035": {
+      "owned_files": [
+        "tests/test_hybrid_runtime_flow.py"
+      ],
+      "source_expression": "tests/test_hybrid_runtime_flow.py"
+    },
+    "CT-036": {
+      "owned_files": [
+        "tests/test_operator_control.py"
+      ],
+      "source_expression": "tests/test_operator_control.py"
+    },
+    "CT-037": {
+      "owned_files": [
+        "tests/test_provider_handoff.py"
+      ],
+      "source_expression": "tests/test_provider_handoff.py"
+    },
+    "CT-038": {
+      "owned_files": [
+        "tests/full_mcp/test_git.py"
+      ],
+      "source_expression": "tests/full_mcp/test_git.py"
+    },
+    "CT-039": {
+      "owned_files": [
+        "tests/full_mcp/test_git_publication.py"
+      ],
+      "source_expression": "tests/full_mcp/test_git_publication.py"
+    },
+    "CT-040": {
+      "owned_files": [
+        "tests/full_mcp/test_security_boundaries.py"
+      ],
+      "source_expression": "tests/full_mcp/test_security_boundaries.py"
+    },
+    "CT-041": {
+      "owned_files": [
+        "tests/full_mcp/test_adapter_contract.py"
+      ],
+      "source_expression": "tests/full_mcp/test_adapter_contract.py"
+    },
+    "CT-042": {
+      "owned_files": [
+        "tests/full_mcp/test_e2e_regression.py"
+      ],
+      "source_expression": "tests/full_mcp/test_e2e_regression.py"
+    },
+    "CT-043": {
+      "owned_files": [
+        "tests/mprf/"
+      ],
+      "source_expression": "tests/mprf/"
+    },
+    "CT-044": {
+      "owned_files": [
+        "tests/test_pre_mprf_integration_gate.py"
+      ],
+      "source_expression": "tests/test_pre_mprf_integration_gate.py"
+    },
+    "CT-045": {
+      "owned_files": [
+        "tests/test_preph5mprf_integrated_e2e.py"
+      ],
+      "source_expression": "tests/test_preph5mprf_integrated_e2e.py"
+    },
+    "CT-046": {
+      "owned_files": [
+        "docs/history/upgrades/PREPH5MPRF/"
+      ],
+      "source_expression": "docs/history/upgrades/PREPH5MPRF/"
+    }
+  },
+  "contract_shape": "TASK_STAGE_GATE",
+  "project_id": "MULTI_PROVIDER_FOUNDATION",
+  "projection_policy": {
+    "completion_criteria": "CANONICAL_TASK_COMPLETION_CONDITION_PLUS_VALIDATION",
+    "dependencies": "CANONICAL_TASK_DEPENDENCIES",
+    "execution": "CANONICAL_TASK_DEPENDENCY_TYPE",
+    "gate_membership": "CANONICAL_GATE_REQUIRED_TASKS",
+    "lv_identity": "TASK_ID",
+    "operational_capability": "DECLARED_NONE",
+    "provider_capabilities": "CANONICAL_TASK_REQUIRED_CAPABILITIES"
+  },
+  "schema_version": "orchestration.task-lv-authority-projection.v1"
+}

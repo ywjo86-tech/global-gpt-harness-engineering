@@ -30,7 +30,8 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             "git_common_dir": str(common_path), "required_executables": ["git"],
             "gates": [
                 {"gate_id": gate, "approval_evidence": str(root / f"{gate}.approval.json"),
-                 "requirements_sha256": "a" * 64, "branch": "main", "head": "b" * 40}
+                 "requirements_sha256": "a" * 64, "branch": "main", "head": "b" * 40,
+                 "full_plan_opt_in": True, "project_final_validation": True}
                 for gate in gates
             ],
             "policy": {"retry_budget": 0, "gate_timeout_seconds": 1,
@@ -43,6 +44,16 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); path = self.make_job(root, ("G1", "G1"))
             with self.assertRaises(FullPlanJobError): load_job(path)
+
+
+    def test_load_job_rejects_missing_full_plan_opt_in(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            payload = json.loads(path.read_text())
+            payload["gates"][0]["full_plan_opt_in"] = False
+            path.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(FullPlanJobError, "explicit FULL_PLAN opt-in"):
+                load_job(path)
 
     def test_preflight_binds_git_common_dir_not_directory_basename(self):
         with tempfile.TemporaryDirectory() as d:
@@ -65,6 +76,8 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             self.assertEqual(out["status"], "GATE_EXIT")
             self.assertEqual(call.call_args.kwargs["mode"], "FULL_PLAN")
             self.assertFalse(call.call_args.kwargs["resume"])
+            self.assertTrue(call.call_args.kwargs["full_plan_opt_in"])
+            self.assertTrue(call.call_args.kwargs["project_final_validation"])
 
     def test_run_job_drives_three_gate_bound_production_path(self):
         with tempfile.TemporaryDirectory() as d:
