@@ -60,6 +60,7 @@ def _failure_class(reason: object) -> str:
         "CHECKPOINT_ADOPTION_TREE_MISMATCH", "product-completion.json",
         "product completion replay conflict", "source snapshot mismatch",
         "post-result recovery checkpoint", "verified prior review lineage",
+        "owned Python test target is missing or unsafe",
     )
     provider_markers = ("BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_",
                         "Codex readiness", "nvidia_timeout", "provider readiness")

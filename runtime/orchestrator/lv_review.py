@@ -1688,8 +1688,33 @@ def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
     }
 
 
+def _owned_python_test_files(root: Path, owned_files: list[str], changed_files: list[str] | None = None) -> list[str]:
+    targets: list[str] = []
+    for path in owned_files:
+        if path.startswith("tests/") and path.endswith(".py"):
+            targets.append(path)
+    for path in changed_files or []:
+        if path.startswith("tests/") and path.endswith(".py") and _path_within_owned_scope(path, owned_files):
+            targets.append(path)
+    for scope in owned_files:
+        if not scope.startswith("tests/") or not scope.endswith("/"):
+            continue
+        base = root / scope.rstrip("/")
+        if not base.is_dir() or base.is_symlink():
+            continue
+        for target in sorted(base.rglob("test*.py")):
+            try:
+                relative = target.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if _path_within_owned_scope(relative, owned_files):
+                targets.append(relative)
+    return list(dict.fromkeys(targets))
+
+
 def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest",
-               allow_test_only: bool = False, expected_profiles: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+               allow_test_only: bool = False, expected_profiles: list[str] | None = None,
+               changed_files: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
     expected_profiles = list(expected_profiles or [])
     native_requested = bool(expected_profiles and expected_profiles != ["PYTHON_PYTEST"])
     if native_requested:
@@ -1712,7 +1737,13 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
                 return results, f"independent project-native validation failed (exit={result.get('exit_code')})"
         return results, None
 
-    test_targets = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
+    changed_test_targets = [
+        path for path in (changed_files or [])
+        if path.startswith("tests/") and path.endswith(".py") and _path_within_owned_scope(path, owned_files)
+    ]
+    explicit_test_targets = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
+    test_targets = list(dict.fromkeys(explicit_test_targets + changed_test_targets))
+    full_test_targets = _owned_python_test_files(root, owned_files, changed_files)
     import_targets = [
         path.removesuffix(".py").replace("/", ".")
         for path in owned_files
@@ -1735,10 +1766,17 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
         if not target.is_file() or target.is_symlink():
             return [], "owned Python test target is missing or unsafe"
     test_runner = runner if runner in {"pytest", "unittest"} else "pytest"
-    commands = [
-        ([str(interpreter), "-B", "-m", test_runner, "-q", *test_targets] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 60),
-        ([str(interpreter), "-B", "-m", test_runner, "-q"] if test_runner == "pytest" else [str(interpreter), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], 180),
-    ]
+    if not full_test_targets:
+        return [], "owned Python test target is missing or unsafe"
+    if test_runner == "pytest":
+        focused_argv = [str(interpreter), "-B", "-m", "pytest", "-q", *test_targets]
+        full_argv = [str(interpreter), "-B", "-m", "pytest", "-q", *full_test_targets]
+    else:
+        focused_modules = [path.removesuffix(".py").replace("/", ".") for path in test_targets]
+        full_modules = [path.removesuffix(".py").replace("/", ".") for path in full_test_targets]
+        focused_argv = [str(interpreter), "-B", "-m", "unittest", "-q", *focused_modules]
+        full_argv = [str(interpreter), "-B", "-m", "unittest", "-q", *full_modules]
+    commands = [(focused_argv, 60), (full_argv, 180)]
     if import_targets:
         commands.append(([str(interpreter), "-B", "-c", "import importlib,sys; [importlib.import_module(name) for name in sys.argv[1:]]", *import_targets], 30))
     results: list[dict[str, Any]] = []
@@ -2568,10 +2606,9 @@ def review_run(
         expected_profiles = (list(toolchain_contract.get("profile_ids", []))
                              if isinstance(toolchain_contract, Mapping) else [])
         native_validation = bool(expected_profiles and expected_profiles != ["PYTHON_PYTEST"])
-        owned_test_files = [
-            path for path in context["manifest"]["owned_files"]
-            if path.startswith("tests/") and path.endswith(".py")
-        ]
+        owned_test_files = _owned_python_test_files(
+            context["project_root"], list(context["manifest"]["owned_files"]), list(actual["changed_files"])
+        )
         verification_only = is_production and payload.get("completion_mode") == "VERIFICATION_ONLY"
         if not native_validation and ((not verification_only and not owned_test_files) or any(
             not (context["project_root"] / path).is_file()
@@ -2597,6 +2634,7 @@ def review_run(
             runner="unittest" if context["manifest"].get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER" else "pytest",
             allow_test_only=verification_only,
             expected_profiles=expected_profiles,
+            changed_files=list(actual["changed_files"]),
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
