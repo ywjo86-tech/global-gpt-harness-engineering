@@ -668,8 +668,9 @@ def validate_global_gate_bindings(project_root: str | Path, gate_id: str, *, req
                                   approval_evidence: str | Path, branch: str, head: str,
                                   harness_root: str | Path) -> dict[str, Any]:
     """Validate the W0-W6 boundary without executing a lifecycle or mutating the project."""
-    root, project_id = _safe_project(project_root)
+    root, root_project_id = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
+    project_id = plan.project_id
     order = [item.lv_id for item in plan.lvs]
     owned = {item.lv_id: item.owned_files for item in plan.lvs}
     evidence = load_approval_evidence(approval_evidence)
