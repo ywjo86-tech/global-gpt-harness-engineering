@@ -1,0 +1,95 @@
+{
+  "authority": {
+    "edp_expected_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "edp_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "gate_closure": "CLOSED",
+    "gate_id": "GATE-010",
+    "plan_expected_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+    "plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f"
+  },
+  "base_commit": "ede7e071279e1f58ece96ff52cc2c485f37827c5",
+  "branch": "remediation/mprf-edp-governance-reconcile-20260918",
+  "edp_closure": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "BLOCKER_COUNT": 0,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "EXHAUSTION_STATUS": "EXHAUSTED_FOR_RECONCILIATION_SCOPE",
+    "FINAL_DECISION": "PASS_FOR_CONTROLLED_INTEGRATION",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REMEDIATION_REGRESSION_STATUS": "PASS",
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0
+  },
+  "findings": [
+    {
+      "finding": "Plan-bound EDP artifact was missing from the final MPRF branch.",
+      "id": "MPRF-GOV-001",
+      "remediation": "Restore exact standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md bytes whose SHA-256 equals the Plan binding.",
+      "severity_before": "BLOCKER",
+      "status": "RESOLVED"
+    },
+    {
+      "finding": "Uninitialized engine.status exposed schema defaults and contract=null instead of an explicitly sourced contract projection.",
+      "id": "MPRF-GOV-002",
+      "remediation": "Load the contract read-only, project contract phase/current Codex readiness only for uninitialized state, and expose source/authority context without persisting runtime state.",
+      "severity_before": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "finding": "Initial broad regression failed after validation worktree basename no longer matched MULTI_PROVIDER_FOUNDATION.",
+      "id": "MPRF-GOV-003",
+      "remediation": "Validation worktree was moved so its basename preserves the approved project identity. No mapping semantics were changed.",
+      "severity_before": "NONE",
+      "status": "NOT_A_DEFECT"
+    }
+  ],
+  "legacy_branch_reconciliation": {
+    "continuity_commit": "e14677bdc71f2da3a168c523af5b8540281f1e4e",
+    "continuity_doc_commit": "d03c2f5062261cad8a001eb7b78e4f0a40e22f90",
+    "continuity_doc_patch_equivalent_in_final_mprf": true,
+    "continuity_patch_equivalent_in_final_mprf": true,
+    "legacy_integrity_commit": "af9e69aab81dcdeba75aec81d8ea6cdfe17b4716",
+    "reason": "later MPRF implementation already contains equivalent continuity patches; legacy evidence/code includes superseded historical material",
+    "wholesale_legacy_merge": "NOT_REQUIRED"
+  },
+  "negative_space": {
+    "approval_log_modified": false,
+    "deployment_performed": false,
+    "development_plan_modified": false,
+    "full_mcp_action_authority_modified": false,
+    "gate_state_modified": false,
+    "main_branch_modified": false,
+    "provider_policy_modified": false,
+    "provider_router_modified": false
+  },
+  "project_id": "MULTI_PROVIDER_FOUNDATION",
+  "recorded_at_utc": "2026-09-18T00:24:14Z",
+  "schema_version": "gch.mprf-edp-governance-reconciliation.v1",
+  "validation": {
+    "broad_repository": {
+      "result": "PASS",
+      "skipped": 15,
+      "tests": 1361
+    },
+    "compileall": "PASS",
+    "focused_governance_tests": {
+      "result": "PASS",
+      "tests": 30
+    },
+    "git_diff_check": "PASS",
+    "live_status_no_write": "PASS",
+    "mapping_source_validation": "PASS",
+    "mprf_full_plan_focused": {
+      "result": "PASS",
+      "tests": 75
+    },
+    "mprf_suite": {
+      "result": "PASS",
+      "tests": 30
+    },
+    "new_functional_regressions": 0
+  }
+}
