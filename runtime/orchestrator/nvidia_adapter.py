@@ -63,6 +63,7 @@ def run_nvidia_reasoning_task(
     max_tokens: int | None = None,
     require_explicit_model: bool = False,
     fallback_models: list[str] | tuple[str, ...] | None = None,
+    json_mode: bool = False,
     urlopen: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     try:
@@ -108,15 +109,19 @@ def run_nvidia_reasoning_task(
         for candidate_model in candidate_models:
             attempts_used += 1
             model_attempts[candidate_model] += 1
-            body = json.dumps(
-                {
-                    "model": candidate_model,
-                    "messages": messages,
-                    "temperature": 0,
-                    "stream": False,
-                    "max_tokens": configured_max_tokens,
-                }
-            ).encode("utf-8")
+            request_body: dict[str, Any] = {
+                "model": candidate_model,
+                "messages": messages,
+                "temperature": 0,
+                "stream": False,
+                "max_tokens": configured_max_tokens,
+            }
+            if json_mode:
+                request_body["response_format"] = {"type": "json_object"}
+                lowered_model = candidate_model.lower()
+                if ("nemotron-3-super" in lowered_model or "nemotron-3.5-lightning" in lowered_model):
+                    request_body["chat_template_kwargs"] = {"enable_thinking": False}
+            body = json.dumps(request_body).encode("utf-8")
             req = urllib.request.Request(
                 endpoint,
                 data=body,

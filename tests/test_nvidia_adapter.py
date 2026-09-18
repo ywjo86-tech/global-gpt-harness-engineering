@@ -33,6 +33,8 @@ class NvidiaAdapterTest(unittest.TestCase):
             self.assertEqual(body["model"], "test-model")
             self.assertEqual(body["max_tokens"], 2048)
             self.assertFalse(body["stream"])
+            self.assertNotIn("response_format", body)
+            self.assertNotIn("chat_template_kwargs", body)
             return _Response({"choices": [{"message": {"content": "answer"}}]})
 
         with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
@@ -42,6 +44,24 @@ class NvidiaAdapterTest(unittest.TestCase):
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["provider"], "nvidia")
             self.assertNotIn("secret", json.dumps(result))
+
+    def test_json_mode_requests_structured_output_and_disables_super_thinking(self) -> None:
+        def opener(request, timeout):
+            body = json.loads(request.data)
+            self.assertEqual(body["response_format"], {"type": "json_object"})
+            self.assertEqual(body["chat_template_kwargs"], {"enable_thinking": False})
+            return _Response({"choices": [{"message": {"content": '{"ok":true}'}}]})
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            "os.environ", {"NVIDIA_API_KEY": "secret"}, clear=True
+        ):
+            result = run_nvidia_reasoning_task(
+                prompt="return json", project_root=temp_dir,
+                model="nvidia/nemotron-3-super-120b-a12b", require_explicit_model=True,
+                json_mode=True, urlopen=opener,
+            )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["summary"], '{"ok":true}')
 
     def test_auth_error_fails_without_retrying_to_codex(self) -> None:
         for status_code in (401, 403):

@@ -1,0 +1,41 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "title": "Provider ACTION NVIDIA JSON Mode",
+  "date": "2026-09-18",
+  "finding": {
+    "id": "MPA-STRUCT-002",
+    "severity": "MAJOR",
+    "status": "RESOLVED",
+    "problem": "Prompt-only JSON contract remained unreliable in production ACTION."
+  },
+  "corrections": [
+    "NVIDIA adapter gains opt-in json_mode using response_format=json_object",
+    "Nemotron 3 Super/3.5 Lightning ACTION JSON mode disables thinking per request",
+    "Provider ACTION enables json_mode; normal READ/REVIEW behavior unchanged",
+    "schema/security/broker validation remains mandatory"
+  ],
+  "evidence": {
+    "real_primary_probe": "completed; starts_json=true; ends_json=true; schema marker present; extraction PASS; write_count=1",
+    "focused_regression": "269 PASS / 6 skipped / RC=0",
+    "full_regression": "1585 PASS / 12 skipped / RC=0",
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "canonical_plan_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d"
+  },
+  "closure_metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS"
+  },
+  "material_defect_search": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "decision": "ALL_PASS"
+}

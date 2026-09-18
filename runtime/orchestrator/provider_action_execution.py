@@ -276,7 +276,7 @@ def execute_provider_action_proposal(
             prompt=prompt if generation_attempt == 1 else _correction_prompt(prompt),
             project_root=request.project_root, input_files=context_files,
             model=decision.model_ref, require_explicit_model=True,
-            fallback_models=decision.model_fallback_refs,
+            fallback_models=decision.model_fallback_refs, json_mode=True,
             timeout_seconds=float(min(timeout, 180)), max_tokens=8192,
         )
         if result.get("status") != "completed":
