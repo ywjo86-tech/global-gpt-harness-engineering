@@ -24,7 +24,9 @@ The original Multi-Provider Foundation baseline approval remains immutable histo
 - Main integration baseline: `23eebd951f67fe5a3f6c27879ef4750ed256c057`
 - Production Worker Provider Router remediation: `04bdc84`
 - Post-integration regression fixture remediation: `d4d69eb`
-- Final EDP ALL PASS seal: `c931be42c3cbdd95ab0393c98f1d289db1e92adb`
+- Legacy Gate NO_GO fail-closed hardening: `1096ce507d067aecf0bd4cc239e8a98da47c7740`
+- Initial EDP ALL PASS seal: `c931be42c3cbdd95ab0393c98f1d289db1e92adb`
+- Post-seal EDP R4 requalification seal: `f810d1f1cba7a81353a17671bc0888b26095c921`
 
 ## 3. Final diagnosis result
 
@@ -43,11 +45,11 @@ The original Multi-Provider Foundation baseline approval remains immutable histo
 - `BROKEN_REFERENCE_COUNT = 0`
 - `REGRESSION_REDIAGNOSIS_STATUS = PASS`
 - `SOURCE_AUTHORITY_STATUS = VALID`
-- Exhaustion status: `MATERIAL_DEFECT_SEARCH_EXHAUSTED_FOR_REQUESTED_PRE_PHASE5_SCOPE`
+- Exhaustion status: `MATERIAL_DEFECT_SEARCH_EXHAUSTED_FOR_REQUESTED_PRE_PHASE5_SCOPE_POST_SEAL`
 
 Final EDP decision:
 
-`ALL_PASS_FOR_EDP_P5_004_P5_005_REMEDIATION_SCOPE`
+`ALL_PASS_REQUALIFIED_POST_SEAL; PHASE5_NOT_STARTED_AND_REMAINS_SEPARATE_AUTHORITY`
 
 ## 4. EDP-P5-004 closure — Production Worker / Provider Router
 
@@ -100,7 +102,7 @@ Final validation:
 
 | Validation domain | Result |
 |---|---|
-| Broad root regression | `1365 OK / 12 skipped` |
+| Broad root regression | `1369 OK / 12 skipped` |
 | Full MCP regression | `78 / 78 PASS` |
 | MPRF regression | `30 / 30 PASS` |
 | Provider / Production focused regression | `245 OK / 1 skipped` |
@@ -157,6 +159,7 @@ Main-branch merge/push of this requalification branch is also not implied by thi
 
 Primary final evidence:
 
+- `docs/history/governance/2026-09-18/PHASE5_PREFLIGHT_EDP_FINAL_ALL_PASS_R4.json`
 - `docs/history/governance/2026-09-18/PHASE5_PREFLIGHT_EDP_FINAL_ALL_PASS_R3.json`
 - `docs/history/governance/2026-09-18/PHASE5_PREFLIGHT_EDP_REDIAGNOSIS_R2.json`
 - `docs/history/governance/2026-09-18/PHASE5_PREFLIGHT_EDP_DIAGNOSIS_R2.json`
