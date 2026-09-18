@@ -1,0 +1,14 @@
+{
+  "activated_at": "2026-09-18T08:13:42+00:00",
+  "active_contract_ref": "docs/DEVELOPMENT_PLAN.txt",
+  "active_contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "approved_contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "archive_ref": "docs/history/upgrades/2026-09-18-AI-OFFICE-HARNESS-PH5/DEVELOPMENT_PLAN.pre-AI-OFFICE-HARNESS-PH5.7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f.txt",
+  "branch": "diagnosis/phase5-preflight-edp-20260918",
+  "previous_contract_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+  "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+  "project_key": "AI-OFFICE-HARNESS-PH5",
+  "schema_version": "ai-office.contract-activation.v1",
+  "source_head": "7c14ce2fd4bbe32bb26ecb7b58252b23b1139d5c",
+  "status": "PASS"
+}

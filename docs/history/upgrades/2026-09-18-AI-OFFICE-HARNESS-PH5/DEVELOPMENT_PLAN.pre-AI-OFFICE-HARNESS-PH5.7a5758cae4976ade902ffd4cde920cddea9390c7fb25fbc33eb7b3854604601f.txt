@@ -1,0 +1,2435 @@
+# PRE-PHASE-5 Controlled Change + MPRF Foundation Integrated Program — FULL PLAN EXECUTION CONTRACT
+
+TARGET_RUNTIME_FILE: docs/DEVELOPMENT_PLAN.txt
+CONTRACT_TYPE: FULL_PLAN_EXECUTION_CONTRACT
+CONTRACT_VERSION: EC1.1
+CONTRACT_STATUS: READY_FOR_EXECUTION
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-17
+APPROVED_CONTRACT_ARTIFACT: PREPH5MPRF_MULTI_PROVIDER_FOUNDATION_BASELINE_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt
+SOURCE_IMPLEMENTATION_DESIGN_SHA256: b96c1cc42f6945ffcc80ad9a74626333b9cd572d37c867e94523e85730578f10
+DIAGNOSIS_STANDARD: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
+DIAGNOSIS_STANDARD_SHA256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
+DIAGNOSIS_RUN_VERSION: EDP-EC-FINAL-2.0
+PRE_REDIAGNOSIS_CONTRACT_FULL_FILE_SHA256: 8cd6d4ad38fe1b2d68c1dfbf42e1b79e619e2d702aa52231537f89da6c6e7b03
+DIAGNOSED_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+SEMANTIC_BODY_HASH_CONVENTION: SHA-256 over exact UTF-8 bytes beginning with the first byte after the LF that terminates the unique semantic-body BEGIN marker line and ending with the LF immediately before the unique semantic-body END marker line; marker lines are excluded.
+FINAL_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+FINAL_REDIAGNOSIS_STATUS: PASS
+
+<!-- SEMANTIC_BODY_BEGIN -->
+# EC-00 CONTRACT IDENTITY
+
+PROJECT_NAME: Pre-PHASE-5 Controlled Change + MPRF Foundation Integrated Program
+PROJECT_ID: PRE-PHASE-5-MPRF-INTEGRATED-001
+PROJECT_KEY: PREPH5MPRF
+
+PROJECT_TYPE: EXISTING
+PROJECT_LIFECYCLE_MODE: UPGRADE
+
+TARGET_PROJECT_ROOT: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`
+CURRENT_VERSION: PHASE 4 Full MCP — FINAL_APPROVED_CLOSED / CURRENT IMPLEMENTATION
+TARGET_VERSION: MULTI_PROVIDER_FOUNDATION_BASELINE
+UPGRADE_SEQUENCE: Full MCP Stable Completion → Integrated Pre-PHASE-5 Controlled Change → MPRF Foundation → Integrated Qualification → MULTI_PROVIDER_FOUNDATION_BASELINE
+
+SOURCE_IMPLEMENTATION_DESIGN_ARTIFACT: `PREPH5MPRF_APPROVED_IMPLEMENTATION_DESIGN.md`
+SOURCE_IMPLEMENTATION_DESIGN_SHA256: `b96c1cc42f6945ffcc80ad9a74626333b9cd572d37c867e94523e85730578f10`
+SOURCE_IMPLEMENTATION_DESIGN_VERSION: D1.3
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_VERSION: D1.3
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_DATE: 2026-09-17
+SOURCE_IMPLEMENTATION_DESIGN_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_HANDOFF_READINESS: READY
+SOURCE_IMPLEMENTATION_DESIGN_DIAGNOSIS_STATUS: PASS
+DESIGN_STATUS: APPROVED
+APPROVAL_STATUS: APPROVED
+HANDOFF_READINESS: READY
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_AUTHORITY: USER — explicit final design approval recorded 2026-09-17
+
+TARGET_REPOSITORY: Existing approved Full MCP repository (`origin=https://github.com/ywjo86-tech/global-gpt-harness-engineering.git`)
+BASELINE_REF: `MCP_STABLE_BASELINE=0848dab7596f59a7eae98f223b47636bad27b4bd`; Full MCP Final Approval Ref `0bdfad12c438f4f101d3fdeafda9daac8d5069b4` on `origin/upgrade-003/full-mcp`
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE: HYBRID
+ORCHESTRATION_OPERATOR: GPT
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER
+PROVIDER_PRIORITY_MODE: NVIDIA_PRIMARY_CODEX_SECONDARY
+PRIMARY_WORK_PROVIDER: NVIDIA
+SECONDARY_ACTION_PROVIDER: CODEX
+CODEX_USAGE_POLICY: CONSERVE
+
+NVIDIA_STATE_CHANGING_EXECUTION: PROHIBITED
+NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED
+CODEX_MANUAL_FALLBACK_ARTIFACT: GPT_AUTHORIZED_MANUAL_ACTION_ENABLED_WHEN_CODEX_UNAVAILABLE
+CODEX_UNAVAILABLE_BEHAVIOR: GPT_AUTHORIZED_MANUAL_ACTION_OR_QUEUE_BLOCK_STATE_CHANGING_STAGE
+NVIDIA_SAFE_WORK_WHILE_CODEX_BLOCKED: ALLOWED_WHEN_DEPENDENCY_SAFE
+MANUAL_ACTION_AUTHORITY: GPT_OPERATOR_ONLY
+MANUAL_ACTION_PROVIDER_STATUS: NOT_A_PROVIDER
+MANUAL_ACTION_SCOPE: EXACT_BOUNDED_STATE_CHANGING_ACTION_PACKAGE_ONLY
+MANUAL_ACTION_PROVIDER_MODEL_SELECTION: PROHIBITED
+MANUAL_ACTION_SCOPE_EXPANSION: PROHIBITED
+MANUAL_ACTION_GATE_AUTHORITY: PROHIBITED
+NORMAL_EXECUTION_PATTERN: GPT_OPERATOR -> NVIDIA_PREPARE_GENERATE -> CODEX_ACTION_IF_AVAILABLE_ELSE_GPT_AUTHORIZED_MANUAL_ACTION -> NVIDIA_GPT_VERIFY -> GPT_GATE
+EXECUTION_POLICY_AMENDMENT_AUTHORITY: USER_DIRECTIVE_2026-09-17_NVIDIA_PRIMARY_FULL_MCP_PATTERN
+PRE_AMENDMENT_CONTRACT_SHA256: a842f48574385cc9ba322d0f608b04e1a72f1b61b3642d089e628c0d2ec6e439
+PRE_AMENDMENT_SEMANTIC_BODY_SHA256: 34faa4dd77881503bc5eeb3276b5da01ce529207a5aa581427bcade1e2ad1995
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+DYNAMIC_ROUTING_EXPANSION: PROHIBITED
+BENCHMARK_ROUTER: OUT_OF_SCOPE
+COST_OPTIMIZER: OUT_OF_SCOPE
+AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE
+
+RUNTIME_COMPATIBILITY_STATUS_AT_APPROVAL_DRAFT: RUNTIME_POLICY_MISMATCH
+RUNTIME_COMPATIBILITY_REMEDIATION_TASK: TASK-017
+RUNTIME_COMPATIBILITY_ENTRY_GATE: GATE-001
+RUNTIME_COMPATIBILITY_APPROVAL_DISPOSITION: APPROVED_FIRST_MIGRATION_TASK_PRESENT
+GPT_OPERATOR_CONTROL_PATH_REQUIRED: TRUE
+NVIDIA_PRIMARY_CODEX_SECONDARY_ROUTING_REQUIRED: TRUE
+PROVIDER_HANDOFF_RESULT_RETURN_REQUIRED: TRUE
+CODEX_ACTION_BOUNDARY_MINIMIZATION_REQUIRED: TRUE
+QUOTA_EXHAUSTION_CONTROLLED_MANUAL_OR_FAIL_CLOSED_QUEUE_BLOCK_REQUIRED: TRUE
+OPERATOR_ROUTER_MIGRATION_FIRST_MUTATING_TASK: TASK-017
+GENERAL_IMPLEMENTATION_BEFORE_TASK_017_PASS: PROHIBITED
+RUNTIME_COMPATIBILITY_RULE: GATE-001 may issue CONDITIONAL_GO only for TASK-017 while mismatch persists. TASK-002/TASK-003 and all general project implementation remain blocked until TASK-017 validation passes and GATE-001 is re-evaluated to GO.
+FIRST_EXECUTION_SEQUENCE_AFTER_ACTIVATION: TASK-001 read-only re-verification → GATE-001 evaluation → if mismatch persists, TASK-017 only under CONDITIONAL_GO → TEST-002~006 / EVD-002 → GATE-001 re-evaluation → only then Track A/B implementation.
+SOURCE_REBIND_RULE: Exact approved R1.0/MPRF v0.7 source must be rebound during TASK-001. Material mismatch triggers SOURCE_DRIFT_DETECTED → PLAN_REVISION_REQUIRED.
+DIRTY_WORKTREE_RULE: Current dirty local `main` is quarantined and must not be cleaned, reset, absorbed, or treated as the implementation baseline.
+
+## EC-00A Authoritative Source Projection — ID-00~03
+
+### SOURCE ID-00
+
+PROJECT_NAME: Pre-PHASE-5 Controlled Change + MPRF Foundation Integrated Program  
+PROJECT_ID: PRE-PHASE-5-MPRF-INTEGRATED-001  
+PROJECT_KEY: PREPH5MPRF  
+DOCUMENT_TYPE: IMPLEMENTATION_DESIGN  
+DESIGN_VERSION: D1.3  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: D1.3  
+APPROVED_DATE: 2026-09-17  
+APPROVAL_AUTHORITY: USER — explicit final approval recorded 2026-09-17  
+CREATED_DATE: 2026-09-17  
+LAST_UPDATED_DATE: 2026-09-17
+
+PROJECT_TYPE: EXISTING  
+PROJECT_LIFECYCLE_MODE: UPGRADE
+
+TARGET_PROJECT_ROOT: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering` — read-only re-verification completed for design; execution must re-confirm identity and cleanliness  
+CURRENT_VERSION: PHASE 4 Full MCP — FINAL_APPROVED_CLOSED / CURRENT IMPLEMENTATION  
+TARGET_VERSION: MULTI_PROVIDER_FOUNDATION_BASELINE  
+UPGRADE_SEQUENCE: Full MCP Stable Completion → Integrated Pre-PHASE-5 Controlled Change → MPRF Foundation → Integrated Qualification → MULTI_PROVIDER_FOUNDATION_BASELINE
+
+APPROVED_PLAN_VERSION: P1.0  
+APPROVED_PLAN_APPROVED_VERSION: P1.0  
+APPROVED_PLAN_APPROVED_DATE: 2026-09-17  
+APPROVED_PLAN_SOURCE_REF: `PREPH5MPRF_APPROVED_DEVELOPMENT_PLAN.md`
+
+TARGET_REPOSITORY: Existing approved Full MCP repository (`origin=https://github.com/ywjo86-tech/global-gpt-harness-engineering.git`)  
+BASELINE_REF: `MCP_STABLE_BASELINE=0848dab7596f59a7eae98f223b47636bad27b4bd`; Full MCP Final Approval Ref `0bdfad12c438f4f101d3fdeafda9daac8d5069b4` on `origin/upgrade-003/full-mcp`  
+ARTIFACT_FILENAME: `PREPH5MPRF_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN  
+EXECUTION_MODE: HYBRID  
+ORCHESTRATION_OPERATOR: GPT  
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER  
+PROVIDER_PRIORITY_MODE: NVIDIA_PRIMARY_CODEX_SECONDARY  
+PRIMARY_WORK_PROVIDER: NVIDIA  
+SECONDARY_ACTION_PROVIDER: CODEX  
+CODEX_USAGE_POLICY: CONSERVE  
+PLANNER_PROVIDER_SELECTION: PROHIBITED  
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+
+DESIGN_DIAGNOSIS_STANDARD: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL  
+DESIGN_DIAGNOSIS_STANDARD_SHA256: `7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf`
+
+---
+
+### SOURCE ID-01
+
+## Purpose
+
+본 구현설계는 승인된 `PREPH5MPRF_APPROVED_DEVELOPMENT_PLAN.md`를 유일한 Planning Authority로 사용하여, Full MCP PHASE 4 승인 baseline 위에서 PCA-001, EXEC-AUTH-EXT-001/PCA-002, MPRF-001을 하나의 통합 프로그램으로 구현하기 위한 구체적 HOW를 정의한다. 실제 코드 변경, test 실행, provider worker 실행, Git mutation 또는 baseline 선언은 수행하지 않는다.
+
+## Design Goal
+
+핵심 설계 목표는 네 가지다. 첫째, GPT를 Full Plan Operator로 유지하면서 Provider Router가 Provider/Model 선택 권한을 독점하도록 현재 HYBRID runtime을 보완한다. 둘째, Provider Router 계약을 MPRF consumer가 필요한 eligibility/failure/failover 입력까지 versioned public contract로 확장한다. 셋째, Full MCP의 closed action authority에 `git_stage`, `git_commit`, `git_push`를 안전한 publication pipeline으로 추가하되 canonical action effect truth와 승인 경계를 보존한다. 넷째, MPRF를 Provider Runtime Foundation으로만 신설하여 registry/lifecycle/health/quota/failover/checkpoint/telemetry를 제공하되 Router 선택 권한과 Full MCP action authority를 흡수하지 않는다.
+
+## Expected Implementation Outcome
+
+구현과 검증이 완료되면 `PCA-001 PASS + EXEC-AUTH-EXT-001 PASS + PCA-002 CLOSED + MCP_STABLE_BASELINE RECONFIRMED`가 먼저 성립하고, 그 후에만 MPRF Foundation이 활성화된다. 최종적으로 Router authority, Full MCP action/effect authority, failure/recovery order, observability source-of-truth separation, security negative space, integrated E2E가 모두 PASS해야 `MULTI_PROVIDER_FOUNDATION_BASELINE` 선언 가능 상태가 된다.
+
+현재 설계 시점의 중요한 상태는 `RUNTIME_POLICY_MISMATCH`다. 기존 runtime은 HYBRID에서 read-only를 NVIDIA, state-changing을 Codex로 라우팅하지만, 승인 정책이 요구하는 GPT Operator control contract, NVIDIA prepare → Codex action의 explicit planned handoff, Router-owned model binding, Codex unavailable 시 GPT-authorized Manual Action 또는 operator-visible queue/block를 완전하게 표현하지 않는다. 이 불일치는 계획 범위 내 bounded prerequisite remediation인 TASK-017로 설계하며, GATE-001은 TASK-017 검증 전까지 실행 NO_GO다.
+
+---
+
+### SOURCE ID-02
+
+## Planning Authority
+
+AUTHORITATIVE_PLAN: `PREPH5MPRF_APPROVED_DEVELOPMENT_PLAN.md`  
+PLAN_VERSION: P1.0  
+APPROVED_VERSION: P1.0  
+APPROVED_DATE: 2026-09-17  
+SOURCE_REF: User-approved integrated Development Plan + approved Full MCP completion authority  
+TARGET_REPOSITORY: Existing approved Full MCP repository  
+BASELINE_REF: `MCP_STABLE_BASELINE@0848dab7596f59a7eae98f223b47636bad27b4bd`; final approval lineage ends at `0bdfad12c438f4f101d3fdeafda9daac8d5069b4`
+
+## Project Identity Binding
+
+PROJECT_NAME: Pre-PHASE-5 Controlled Change + MPRF Foundation Integrated Program  
+PROJECT_ID: PRE-PHASE-5-MPRF-INTEGRATED-001  
+PROJECT_KEY: PREPH5MPRF  
+PROJECT_TYPE: EXISTING  
+PROJECT_LIFECYCLE_MODE: UPGRADE  
+TARGET_PROJECT_ROOT: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+CURRENT_VERSION: PHASE 4 Full MCP — FINAL_APPROVED_CLOSED  
+TARGET_VERSION: MULTI_PROVIDER_FOUNDATION_BASELINE  
+UPGRADE_SEQUENCE: Full MCP Stable Completion → Integrated Pre-PHASE-5 Controlled Change → MPRF Foundation → Integrated Qualification → MULTI_PROVIDER_FOUNDATION_BASELINE  
+IDENTITY_STATUS: VERIFIED
+
+## Preserved Planning Boundaries
+
+본 설계는 다음을 변경하지 않는다.
+
+- User Intent 및 one-program lifecycle.
+- REQ-001~REQ-020, NFR-001~NFR-005, SEC-001~SEC-006, OPS-001~OPS-007.
+- Track A / Track B limited parallelism과 GATE-007 이전 MPRF 금지.
+- PCA-002의 EXEC-AUTH 내부 workstream 지위.
+- Provider Router의 provider/model selection 및 reroute authority.
+- Full MCP의 filesystem/shell/git/build/test authority와 canonical action effect truth.
+- MPRF의 Provider Runtime Foundation 한정 소유권.
+- AI Office / Jarvis의 기존 authority boundary.
+- Security Validation → Git Publication Safety Tests의 내부 순서.
+- MCP_STABLE_BASELINE reconfirmation → EXEC-AUTH final PASS 순서.
+- legacy `NVIDIA failure → Codex same-task automatic fallback = PROHIBITED` 정책.
+- ambiguous action automatic replay 금지.
+- Provider Runtime Event와 Action Runtime Event source-of-truth 분리.
+- Full Plan HYBRID의 GPT Operator / NVIDIA-primary / Codex-secondary / CONSERVE 정책.
+
+## Authority Source Register
+
+| Source | Role | Status | Design Use |
+|---|---|---|---|
+| Current user directive | Highest current decision authority | ACTIVE | Apply EDP-1.0, correct findings, regression re-diagnose, and produce an ALL-PASS design candidate; this does not itself approve design or execution |
+| `PREPH5MPRF_APPROVED_DEVELOPMENT_PLAN.md` | Sole Planning Authority | APPROVED P1.0 | WHAT, scope, requirements, gates, deliverables |
+| `PREPH5MPRF_IMPLEMENTATION_DESIGN_HANDOFF.md` | Transition evidence | FINAL / READY_FOR_HANDOFF | Full MCP completion refs and entry warnings |
+| `GH-FULL-MCP-PH4_IMPLEMENTATION_COMPLETION_APPROVAL_20260917.md` | Full MCP completion authority | FINAL_APPROVED_CLOSED | Stable/final commit lineage |
+| Repository `origin/upgrade-003/full-mcp` | Verified implementation source | `0bdfad...` reachable | Current code architecture verification |
+| `EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md` | Diagnosis standard | EDP-1.0 | Diagnosis and closure gate |
+| MPRF-001 Requirements v0.7 exact body | Upstream approved requirement source | Not present in available attachment/repository search | Not reconstructed; execution TASK-001 re-binding required exactly as Approved Plan mandates |
+
+The absent v0.7 body does not authorize any inferred requirement expansion. This design uses only the approved Development Plan's MPRF scope and semantics; material mismatch discovered during execution preflight triggers `SOURCE_DRIFT_DETECTED → PLAN_REVISION_REQUIRED`.
+
+---
+
+### SOURCE ID-03
+
+## Repository / Baseline Identity Record
+
+Read-only verification produced the following design-time facts.
+
+| Check | Observed State | Result |
+|---|---|---|
+| Repository root | `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering` | VERIFIED |
+| `origin` | `https://github.com/ywjo86-tech/global-gpt-harness-engineering.git` | VERIFIED |
+| Current local branch | `main` | VERIFIED / NOT APPROVED BASELINE |
+| Current local HEAD | `fffe93a330d59c8dd91f60abde2bf4c53cd0542e` | VERIFIED / NOT FULL MCP FINAL |
+| `origin/main` | `fffe93a330d59c8dd91f60abde2bf4c53cd0542e` | VERIFIED |
+| Full MCP remote branch | `origin/upgrade-003/full-mcp` | VERIFIED |
+| Full MCP final approval ref | `0bdfad12c438f4f101d3fdeafda9daac8d5069b4` | VERIFIED |
+| Stable baseline ref | `0848dab7596f59a7eae98f223b47636bad27b4bd` | VERIFIED |
+| Closure ref | `39e0f6a739a4a23e4dbefd290e4c291d87a0645c` | VERIFIED |
+| Ancestry | `0848dab → 39e0f6a → 0bdfad` | PASS |
+| Stable→Final runtime/test diff | Closure/finalization docs only; no runtime/test path change observed | PASS |
+| Current worktree | modified/untracked files present | DIRTY — execution preflight condition |
+
+The current dirty `main` checkout is explicitly not used as the implementation baseline. Any execution package must bind to the approved Full MCP lineage and must not overwrite, absorb, or clean unrelated current worktree changes without separate authority.
+
+Latest read-only re-verification during the D1.3 final EDP re-diagnosis on 2026-09-17 confirmed the same state: `HEAD=fffe93a...`, `branch=main`, `origin/upgrade-003/full-mcp=0bdfad...`, the approved stable/closure refs, the same representative approved blob IDs, and a still-dirty local worktree. No new material repository drift was observed; the dirty `main` checkout remains quarantined from the implementation baseline.
+
+## Current Architecture Summary
+
+현재 relevant architecture는 두 층이다.
+
+1. Orchestration runtime: `runtime/orchestrator/engine.py`가 planning/task materialization을 수행하고 `provider_router.py`와 `provider_executor.py`를 통해 provider를 호출한다. HYBRID mode에서 `read_only`는 NVIDIA, state-changing capability는 Codex로 라우팅된다.
+2. Full MCP runtime: `runtime/full_mcp/runtime.py`가 closed operation registry, authorization contracts, effect journal, filesystem/process/git/validation services, observability를 결합한다. `full_mcp_backend_adapter.py`는 MCP 2026-07-28 stdio로 Full MCP를 호출하며 Provider Router나 concrete gateway를 import하지 않는 dependency-inverted boundary를 갖는다.
+
+## Relevant Components
+
+| ID | Component / Module | Current Responsibility | Verification Status |
+|---|---|---|---|
+| CMP-001 | `runtime/orchestrator/engine.py` | Planning bundle, task execution lifecycle, fan-in, gate flow | VERIFIED at `0bdfad...` |
+| CMP-002 | `runtime/orchestrator/provider_router.py` | Mode/capability based provider selection | VERIFIED at `0bdfad...` |
+| CMP-003 | `runtime/orchestrator/provider_executor.py` | Router decision dispatch to NVIDIA/Codex/local/manual | VERIFIED at `0bdfad...` |
+| CMP-004 | `runtime/orchestrator/task_queue.py` | Pending/completed/failed/approval queue state | VERIFIED at `0bdfad...` |
+| CMP-005 | `runtime/orchestrator/nvidia_adapter.py` | Read-only NVIDIA hosted reasoning call | VERIFIED at `0bdfad...` |
+| CMP-006 | `runtime/orchestrator/codex_adapter.py` / `codex_launcher.py` | Codex CLI state-changing action path and manual fallback artifact | VERIFIED at `0bdfad...` |
+| CMP-007 | `runtime/full_mcp/runtime.py` | Closed action execution, auth, effect journal, result sealing | VERIFIED at `0bdfad...` |
+| CMP-008 | `runtime/full_mcp/git_service.py` | git status/diff/branch/restore/prepare_commit only | VERIFIED at `0bdfad...` |
+| CMP-009 | `runtime/orchestrator/full_mcp_backend_adapter.py` | Contract-only MCP stdio adapter | VERIFIED at `0bdfad...` |
+| CMP-010 | `runtime/orchestrator/production_execution_gateway.py` | Host execution gateway request/binding/transport | VERIFIED at `0bdfad...` |
+| CMP-011 | `runtime/full_mcp/authorization.py` | InvocationContext-bound exact authorization | VERIFIED at `0bdfad...` |
+| CMP-012 | `runtime/full_mcp/observability.py` | Full MCP Action Runtime Event/result source of truth | VERIFIED at `0bdfad...` |
+| CMP-013 | `runtime/full_mcp/recovery.py` | Effect-aware recovery classification | VERIFIED at `0bdfad...` |
+| CMP-014 | `runtime/mprf/*` | MPRF foundation | NOT PRESENT — TO CREATE |
+
+## Relevant Interfaces
+
+| ID | Interface | Current Behavior | Verification Status |
+|---|---|---|---|
+| IF-CUR-001 | `route_provider(mode, required_capabilities)` | HYBRID read-only→NVIDIA; state-changing→Codex | VERIFIED |
+| IF-CUR-002 | `execute_provider_task(...)` | Router decision immediately invokes one provider | VERIFIED |
+| IF-CUR-003 | `TaskSlice.required_capabilities` | List of capability strings; no explicit `state_change_required` or work-stage lineage | VERIFIED |
+| IF-CUR-004 | `InvocationContext v1` | Project/run/gate/LV/scope/auth contract digests; no publication repo/branch/remote policy digest | VERIFIED |
+| IF-CUR-005 | Full MCP operation catalog | Includes read/write/shell/git read/restore/prepare_commit/test/status/validate; no `git_stage/commit/push` | VERIFIED |
+| IF-CUR-006 | Full MCP MCP stdio adapter | Public structured tool contract; closed catalog; correlation/request IDs | VERIFIED |
+
+## Relevant Runtime Flow
+
+```text
+Current HYBRID
+TaskSlice
+  ↓
+route_provider(mode, required_capabilities)
+  ├─ read_only → NVIDIA adapter
+  └─ state-changing capability → Codex adapter/launcher
+  ↓
+normalized result
+  ↓
+fan-in / stage gate
+
+Current Full MCP action path
+Host execution gateway
+  ↓
+FullMCPBackendAdapter (MCP stdio, closed catalog)
+  ↓
+FullMCPRuntime
+  ↓
+Authorization + Effect Journal + Service
+  ↓
+Action Runtime Event / Result
+```
+
+## Relevant Dependencies
+
+| Dependency | Purpose | Current Status |
+|---|---|---|
+| Python runtime / existing orchestrator modules | Full Plan execution core | PRESENT |
+| NVIDIA API adapter | Read-only reasoning | PRESENT |
+| Codex CLI adapter/launcher | State-changing action provider | PRESENT |
+| MCP 2026-07-28 stdio | Full MCP public action transport | PRESENT |
+| Full MCP stable baseline | Canonical controlled-change base | APPROVED / SEALED |
+| MPRF v0.7 exact source | Execution-time authority re-binding | NOT LOCATED; plan-authorized rebind requirement retained |
+
+## Existing Tests
+
+| Test / Test Area | Purpose | Status |
+|---|---|---|
+| `tests/test_provider_router.py` | HYBRID routing and state-changing exclusion | VERIFIED EXISTING |
+| `tests/test_hybrid_runtime_flow.py` | NVIDIA/Codex dispatch split | VERIFIED EXISTING |
+| `tests/test_nvidia_adapter.py` | NVIDIA adapter behavior/failures | VERIFIED EXISTING |
+| `tests/full_mcp/test_git.py` | Git read/restore/prepare-commit safety | VERIFIED EXISTING |
+| `tests/full_mcp/test_security_boundaries.py` | Auth/path/shell/secret/public-boundary security | VERIFIED EXISTING |
+| `tests/full_mcp/test_adapter_contract.py` | MCP stdio/gateway contract isolation | VERIFIED EXISTING |
+| `tests/full_mcp/test_observability_recovery.py` | Append-only action events and no ambiguous replay | VERIFIED EXISTING |
+| `tests/full_mcp/test_e2e_regression.py` | Full MCP E2E regression | VERIFIED EXISTING |
+
+No tests were executed during this design phase.
+
+## Current Limitations / Runtime Compatibility Findings
+
+- **RTMISMATCH-001 — GPT Operator control path absent as an explicit runtime contract.** Current engine controls sequencing internally; no versioned GPT operator directive/acknowledgement boundary was found.
+- **RTMISMATCH-002 — Approved planned handoff semantics absent.** A task is routed directly to one provider; state-changing tasks do not first produce an NVIDIA prepare/patch package and then cross a separate Codex action boundary under GPT control.
+- **RTMISMATCH-003 — Provider Router contract is too narrow.** It accepts mode/capabilities only, not MPRF provider/model eligibility, failure classification, failover request, lifecycle/health/quota evidence, or versioned decision evidence.
+- **RTMISMATCH-004 — Model selection is not fully Router-bound.** NVIDIA adapter reads `NVIDIA_MODEL` when no model is passed; no equivalent Router-selected Codex model binding was found. This violates the approved Router-only model selection authority if left unchanged.
+- **RTMISMATCH-005 — Capability taxonomy conflates generation and mutation.** Current state-changing set uses legacy `test` and `implementation`; approved design policy requires logical separation of `test_design` vs `test_execution` and `implementation_generation` vs state-changing apply, or an explicit `state_change_required` flag.
+- **RTMISMATCH-006 — Provider-unavailable action-boundary state is incomplete.** Runtime does not yet explicitly represent GPT-authorized Manual Action versus `PROVIDER_ACTION_BLOCKED/QUEUED` for Codex unavailable/quota cases while NVIDIA-safe work continues.
+- **RTMISMATCH-007 — Git publication authority absent.** Full MCP has no `git_stage`, `git_commit`, `git_push` operations and no branch/remote/freshness/NFF/protected-branch publication policy binding.
+- **RTMISMATCH-008 — MPRF modules do not exist.** This is expected approved implementation scope, not drift.
+
+## Runtime Compatibility Result
+
+RUNTIME_COMPATIBILITY_STATUS: `RUNTIME_POLICY_MISMATCH`  
+REMEDIATION_PATH: `TASK-017 — Full Plan GPT Operator / HYBRID Runtime Compatibility Remediation`  
+EXECUTION_RULE: TASK-017 may be executed only as the separately controlled GATE-001 prerequisite remediation authorized by the approved plan. TASK-002/TASK-003 and all controlled-change tracks remain blocked until remediation validation passes.  
+UNSAFE_AUTO_FALLBACK: PROHIBITED  
+CODEX_UNAVAILABLE_BEHAVIOR: GPT-authorized Manual Action when an exact bounded action package is approved; otherwise queue/block mutation boundary; continue dependency-safe NVIDIA work  
+MANUAL_FALLBACK_ARTIFACT: may execute only as a GPT-authorized exact bounded Manual Action; it must not select provider/model, expand scope, or advance task/gate state automatically.
+
+## Source Drift Status
+
+SOURCE_DRIFT_STATUS: CLEAR
+
+The verified repository confirms the approved Full MCP completion lineage and the plan-expected gaps. The local `main` branch being dirty and behind the Full MCP approved branch is an execution-baseline alignment condition explicitly anticipated by the Handoff; it is not treated as authority to change WHAT. Material drift discovered when the exact MPRF v0.7 source is rebound remains a fail-closed trigger.
+
+---
+
+# EC-01 SCOPE
+
+## Authoritative Source Projection — ID-05 Approved Scope and Constraints
+
+## IN SCOPE
+
+- Track A PCA-001 versioned Provider Router contract extension.
+- Track B EXEC-AUTH-EXT-001 with PCA-002 as internal public-boundary workstream.
+- Full MCP `git_stage`, `git_commit`, `git_push` authority extension and publication guards.
+- Full MCP controlled public boundary extension required by future MPRF consumer.
+- Full MCP regression and MCP_STABLE_BASELINE reconfirmation.
+- MPRF Provider Runtime Foundation: provider/model registry, admission, lifecycle, health, quota, rate limit, capability transitions, versioned basic failover, checkpoint/resume, Provider Runtime Event, authorization reference validation, telemetry.
+- Failure/recovery, security, negative-space, observability and integrated E2E qualification.
+- Bounded GATE-001 runtime compatibility remediation necessary to honor the already-approved HYBRID execution policy.
+
+## OUT OF SCOPE
+
+- PHASE 5 AI Office Harness Upgrade.
+- PHASE 6 Jarvis Upgrade.
+- PHASE 7 Advanced Multi-Provider Runtime Expansion.
+- Additional Providers or production OmniRoute adoption.
+- Dynamic/cost-aware/latency-aware provider routing.
+- Provider/model benchmarking, scoring, optimizer, automatic multi-model routing.
+- Legacy NVIDIA→Codex same-task automatic fallback policy change.
+- Action authority beyond approved Git publication extension.
+- Multi-Provider Handoff activation.
+
+## Approved Constraints
+
+### Technical
+
+- MPRF ↔ execution uses public contract only.
+- Full MCP internal journal/receipt/operation registry/classes are not MPRF APIs.
+- Public contracts are versioned; incompatible versions fail closed.
+- Full MCP remains canonical action effect truth.
+
+### Compatibility
+
+- Existing Execution Backend Contract stays compatible/final.
+- Existing Full MCP filesystem/shell/git-read/build/test semantics remain regression-safe.
+- Router current consumers retain compatibility through version-adapter/default path; new MPRF inputs must not break old consumers.
+- Legacy failover behavior is unchanged except that the runtime must explicitly represent the already-approved no-auto-fallback policy.
+
+### Security
+
+- Publication actions require authorization, freshness, scope, branch protection, digest and effect-state validity.
+- Force push/history rewrite/destructive reset are not implemented as operations.
+- No reroute/failover expands authorization.
+- Secret/raw output is not added to durable event records.
+
+### Operational
+
+- GATE-001 blocks Track execution until runtime compatibility and baseline binding pass.
+- GATE-007 blocks all MPRF implementation.
+- GATE-005 precedes GATE-006.
+- Design creates no runtime evidence and does not execute tests.
+
+### Business / Cost
+
+- Router owns provider/model choice.
+- Codex usage remains CONSERVE: action-provider calls occur only where state change/integration is required after preparation.
+- No cost optimizer is introduced.
+
+## Full Plan HYBRID Constraints
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN  
+EXECUTION_MODE: HYBRID  
+ORCHESTRATION_OPERATOR: GPT  
+PROVIDER_SELECTION_AUTHORITY: PROVIDER_ROUTER  
+PROVIDER_PRIORITY_MODE: NVIDIA_PRIMARY_CODEX_SECONDARY  
+PRIMARY_WORK_PROVIDER: NVIDIA  
+SECONDARY_ACTION_PROVIDER: CODEX  
+CODEX_USAGE_POLICY: CONSERVE
+
+Rules:
+
+- Task declares Required Capabilities and `state_change_required`; it never assigns provider/model.
+- Canonical NVIDIA-safe capabilities: `reasoning`, `read_only`, `evidence_analysis`, `code_generation`, `patch_generation`, `diagnostics`, `review`, `test_design`, `documentation`, `implementation_generation`.
+- Canonical Codex action capabilities: `filesystem_write`, `shell`, `test_execution`, `git`, `integration`, `activation`, `implementation_apply`.
+- Legacy runtime capability strings (`test`, `implementation`) may be accepted only through an explicit compatibility normalizer. They must not re-collapse generation and apply semantics.
+- NVIDIA state-changing execution: PROHIBITED.
+- NVIDIA_TO_CODEX_AUTOMATIC_FALLBACK: PROHIBITED.
+- A planned NVIDIA→Codex transition is permitted only as a new `ACTION` stage after an accepted PREPARE artifact and GPT Operator directive; it is not a retry/fallback of the failed NVIDIA call.
+- Codex unavailable/quota: GPT Operator may authorize the existing Manual Action path for an exact bounded action package; otherwise mutation stage becomes blocked/queued. Dependency-safe NVIDIA work may continue.
+- Existing Manual Action artifacts may execute only under explicit GPT Operator authority for an exact bounded action package. Manual Action is not a provider/model, cannot select provider/model, cannot expand scope, and cannot satisfy a Gate automatically.
+- UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED.
+- DYNAMIC_ROUTING_EXPANSION: PROHIBITED.
+- BENCHMARK_ROUTER / COST_OPTIMIZER / AUTOMATIC_MULTI_MODEL_ROUTING: OUT_OF_SCOPE.
+
+## Approved Success Criteria
+
+- SC-001: one integrated program lifecycle preserved.
+- SC-002: PCA-001 PASS and Router authority preserved.
+- SC-003: Git publication authority safety/security qualification PASS.
+- SC-004: PCA-002 closed internally; no MPRF direct Full MCP coupling.
+- SC-005: MCP_STABLE_BASELINE and Execution Backend Contract reconfirmed before EXEC-AUTH PASS.
+- SC-006: MPRF foundation scope passes without authority expansion.
+- SC-007: failure/failover/recovery policy including prohibition cases PASS.
+- SC-008: observability source-of-truth separation PASS.
+- SC-009: Integrated E2E and final closure PASS.
+- SC-010: MUST traceability 100%; blocker 0; unresolved major 0.
+- SC-011: security negative-space tests PASS.
+- SC-012: runtime compatibility and Full Plan HYBRID policy integrity PASS.
+
+## Approved Deliverables
+
+- DEL-001: Integrated Authority / Source / Runtime Preflight Evidence.
+- DEL-002: PCA-001 Versioned Router Contract Qualification Package.
+- DEL-003: EXEC-AUTH-EXT-001 + PCA-002 Contract Qualification Package.
+- DEL-004: Security / Git Publication Safety Qualification Report.
+- DEL-005: Full MCP Regression & Baseline Reconfirmation Evidence.
+- DEL-006: Pre-MPRF Integration Gate Evidence.
+- DEL-007: MPRF Registry / Lifecycle Foundation Qualification Package.
+- DEL-008: MPRF Failure / Recovery / Checkpoint Qualification Package.
+- DEL-009: MPRF / Full MCP Observability Separation Evidence.
+- DEL-010: Integrated E2E Qualification Report.
+- DEL-011: MULTI_PROVIDER_FOUNDATION_BASELINE Closure Manifest.
+
+---
+
+# EC-02 REQUIREMENTS / ACCEPTANCE / SUCCESS / DELIVERABLES
+
+## Authoritative Source Projection — ID-04 Approved Requirements
+
+The Approved Development Plan summarizes REQ groups rather than reproducing every canonical requirement sentence. The rows below are **design coverage projections of the approved group semantics**, not replacement requirement text. Exact upstream wording, where not contained in the Plan, is not reconstructed.
+
+## Functional Requirements
+
+| ID | Approved Plan Semantic | Design Acceptance Condition | Priority |
+|---|---|---|---|
+| REQ-001 | REQ-001~003 group: one-program lifecycle | PCA-001 + EXEC-AUTH/PCA-002 + MPRF remain one program and one Gate chain | MUST |
+| REQ-002 | REQ-001~003 group: stable entry | No Track A/B execution before verified Full MCP baseline and runtime compatibility conditions | MUST |
+| REQ-003 | REQ-001~003 group: controlled parallelization | Only approved Track A/Track B parallelism before deterministic fan-in | MUST |
+| REQ-004 | REQ-004~005 group: PCA-001 Router controlled extension | Versioned Router request/decision contract supports MPRF consumer inputs | MUST |
+| REQ-005 | REQ-004~005 group: Router authority preservation | No MPRF/Full MCP/Operator component selects provider/model outside Router | MUST |
+| REQ-006 | REQ-006~008 group: Git publication authority | Full MCP closed registry adds only `git_stage`, `git_commit`, `git_push` publication actions | MUST |
+| REQ-007 | REQ-006~008 group: publication safety | Repo/branch/remote/scope/freshness/NFF/protection/digest guards fail closed | MUST |
+| REQ-008 | REQ-006~008 group: publication prohibitions/evidence | Force/history rewrite/destructive reset/unrelated change prohibited; effect evidence immutable | MUST |
+| REQ-009 | REQ-009~010 group: PCA-002 internal workstream | PCA-002 remains inside EXEC-AUTH and creates public execution contract only | MUST |
+| REQ-010 | REQ-009~010 group: no internal coupling | MPRF imports/uses no Full MCP internal journal/registry/receipt/classes | MUST |
+| REQ-011 | REQ-011~012 group: fixed EXEC-AUTH completion order | Security → Git safety → Full MCP regression → baseline reconfirm → EXEC-AUTH PASS | MUST |
+| REQ-012 | REQ-011~012 group: Pre-MPRF integration gate | MPRF work remains blocked until GATE-007 PASS | MUST |
+| REQ-013 | REQ-013~014 group: MPRF owned scope | Registry/admission/lifecycle/health/quota/rate/capability/failover/checkpoint/events only | MUST |
+| REQ-014 | REQ-013~014 group: cross-domain authority boundary | Router selection, Full MCP effects, AI Office/Jarvis authorities remain external | MUST |
+| REQ-015 | REQ-015~018 group: failure taxonomy | All approved failure classes map deterministically to eligibility/prohibition | MUST |
+| REQ-016 | REQ-015~018 group: failover eligibility | Eligible classes can request Router reroute; prohibited classes cannot | MUST |
+| REQ-017 | REQ-015~018 group: recovery order | Checkpoint/artifact/effect/auth/policy checks precede reroute/resume | MUST |
+| REQ-018 | REQ-015~018 group: legacy policy lock | NVIDIA failure never becomes same-task automatic Codex fallback | MUST |
+| REQ-019 | Observability separation | Provider runtime and action runtime canonical event ownership remain distinct | MUST |
+| REQ-020 | Integrated baseline closure | All qualification items, E2E, traceability, blocker/major zero before closure | MUST |
+
+## Non-Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| NFR-001 | Versioned, regression-testable, rollback-capable public contracts | Router/public execution/MPRF contracts carry schema versions and compatibility tests | MUST |
+| NFR-002 | 100% MUST traceability | Every MUST maps Requirement→SC→Architecture→Component→Task→Capability→Provider-role eligibility→Validation→Evidence→Gate→Deliverable | MUST |
+| NFR-003 | No duplicate authority/source-of-truth | Selection, action effect, provider runtime state each have one canonical owner | MUST |
+| NFR-004 | Deterministic parallel-track join / race-free MPRF gate | GATE-007 consumes immutable Track A/B evidence and cannot open partially | MUST |
+| NFR-005 | Planning-level plan deferred HOW | This document supplies HOW without changing approved WHAT or executing it | MUST |
+
+## Security Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| SEC-001 | Authorization binding | Publication/action request binds approved project/repo/scope and authority reference | MUST |
+| SEC-002 | Publication guards | Branch/remote/freshness/NFF/protection/unrelated-change guards fail closed | MUST |
+| SEC-003 | Digest evidence | Candidate, diff, staged index/tree, commit and push evidence are digest-bound | MUST |
+| SEC-004 | Ambiguous side-effect reconciliation | Ambiguous push/action never auto-replays; canonical remote/effect state is reconciled first | MUST |
+| SEC-005 | MPRF internal Full MCP access prohibited | Import/dependency scan and runtime contract tests prove public-boundary-only access | MUST |
+| SEC-006 | Failover cannot bypass policy/permission denial | AUTH/POLICY failures never create reroute that expands permission | MUST |
+
+## Operational Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| OPS-001 | Required task/gate coverage | Approved TASK-001~016 and GATE-001~010 all have concrete HOW | MUST |
+| OPS-002 | Per-task planning metadata | Purpose/requirements/arch/components/deps/targets/inputs/capabilities/output/validation/ownership/preserve/forbid/completion all present | MUST |
+| OPS-003 | No task-level Provider/Model assignment | Tasks specify capability and state-change need only | MUST |
+| OPS-004 | Full Plan HYBRID governance preserved | GPT Operator + Router authority + NVIDIA-primary/Codex-secondary semantics enforced | MUST |
+| OPS-005 | Runtime Compatibility Gate | Mismatch is explicit; bounded prerequisite remediation required before Track execution | MUST |
+| OPS-006 | Source drift fail closed | Material source mismatch triggers SOURCE_DRIFT_DETECTED / plan revision | MUST |
+| OPS-007 | Existing root reuse/re-verification | No sibling root; approved repo/root/ref is reverified before mutation | MUST |
+
+---
+
+## Success Criteria / Deliverables / Constraints Binding — from ID-05
+
+All SC-001~SC-012 and DEL-001~DEL-011 definitions in EC-01 are normative here and are bound to the REQ/NFR/SEC/OPS acceptance conditions without reinterpretation.
+
+# EC-03 ARCHITECTURE / COMPONENTS / CHANGE TARGETS
+
+## Authoritative Source Projection — ID-06 Architecture Design
+
+## Current Architecture Boundary
+
+The approved Full MCP final tree is used as the code baseline. Full MCP is already dependency-inverted from Provider Router: `full_mcp_backend_adapter.py` uses MCP stdio and does not import Provider Router or the concrete production gateway; security tests also prohibit Full MCP imports of Jarvis/provider-router/memory bypass surfaces. This boundary is preserved.
+
+## Target Architecture
+
+```text
+GPT Full Plan Operator
+  │ OperatorDirective.v1
+  ▼
+Operator Control State Machine ────────────────┐
+  │ required capabilities / stage intent       │
+  ▼                                            │
+Provider Router v2 (sole provider/model authority)
+  │                                             │
+  ├─ PREPARE / REVIEW / VERIFY ──> selected read-only work provider
+  │        │                                    │
+  │        └─ ProviderHandoffPackage.v1 ────────┤
+  │                                             │
+  └─ ACTION (only if state_change_required) ──> selected action provider
+           │                                    │
+           ▼                                    │
+   Public Execution Contract v1                │
+           │                                    │
+   Host Gateway / FullMCPBackendAdapter         │
+           │                                    │
+           ▼                                    │
+   Full MCP Closed Action Runtime               │
+   ├─ Authorization / Effect Journal            │
+   ├─ filesystem/shell/validation existing      │
+   └─ git_stage/commit/push controlled extension│
+           │                                    │
+           └─ Action Runtime Event --------------┘ correlation only
+
+MPRF Provider Runtime Foundation
+  ├─ Provider/Model Registry
+  ├─ Admission/Lifecycle/Health/Quota/Rate
+  ├─ Failure classification + failover eligibility
+  ├─ Checkpoint/Resume
+  └─ Provider Runtime Event
+       │ eligibility/failure evidence only
+       └──────────────> Provider Router v2
+
+MPRF Execution Client ──> Public Execution Contract only
+(no import/access to Full MCP internal classes/stores/registry/journal)
+```
+
+## Preserved Architecture
+
+- Existing `engine`/fan-in/stage-gate authority surfaces not related to provider-policy incompatibility.
+- Existing Full MCP authorization, effect-journal, filesystem/process/validation and stdio boundary semantics.
+- Existing action observability as canonical effect truth.
+- Existing Provider Router as the only selection/reroute authority.
+- Existing Codex action-provider boundary and NVIDIA read-only adapter, subject to authority-binding fixes.
+
+## Changed Architecture
+
+- HYBRID routing becomes stage-aware and versioned rather than one-shot capability-only dispatch.
+- Provider/model eligibility and decision evidence become explicit Router inputs/outputs.
+- Router-selected model binding is propagated into provider adapters; provider adapters cannot silently choose a model.
+- Task state includes PREPARE/ACTION/VERIFY lineage and provider-blocked queue states.
+- Full MCP invocation context gains a versioned publication-policy binding path for publication operations.
+- Full MCP Git service gains exact stage/commit/push primitives with fail-closed publication guards.
+
+## New Architecture Elements
+
+- GPT Operator Directive / acknowledgement contract.
+- Provider Handoff Package with digest/lineage and `state_change_required`.
+- Public Execution Contract for MPRF consumer use.
+- MPRF package under `runtime/mprf/`.
+- Git Publication Authorization/Intent/Evidence contracts.
+- Provider Runtime Event store separate from Full MCP Action Runtime Event store.
+
+## Architecture Decisions
+
+| ID | Decision | Related Requirements | Rationale |
+|---|---|---|---|
+| ARC-001 | Bind implementation to approved Full MCP lineage, never current dirty `main` by implication | REQ-002, OPS-007 | Prevent wrong-root/wrong-baseline mutation |
+| ARC-002 | Add explicit GPT Operator control contract and stage state machine | OPS-004, SC-012 | Current runtime lacks operator-visible control path |
+| ARC-003 | Upgrade Provider Router to versioned request/decision contract with provider/model eligibility and failure context | REQ-004, REQ-005, NFR-001 | Preserve sole routing authority while enabling MPRF consumer inputs |
+| ARC-004 | Represent NVIDIA→Codex as PREPARE→ACTION planned handoff, never fallback | REQ-018, OPS-004 | Conserve Codex and preserve no-auto-fallback policy |
+| ARC-005 | Use explicit `state_change_required` plus canonical capability taxonomy | OPS-003, OPS-004 | Separate generation/test design from mutation/test execution |
+| ARC-006 | Add public execution DTO/client layer above Full MCP internals | REQ-009, REQ-010, SEC-005 | PCA-002 public-boundary-only requirement |
+| ARC-007 | Extend Full MCP closed registry with only `git_stage`, `git_commit`, `git_push` | REQ-006~008, SEC-001~004 | Keep action authority centralized and bounded |
+| ARC-008 | Publication operations require v2 policy-binding digest and exact repo/branch/remote/scope state | SEC-001~004 | InvocationContext v1 alone does not bind publication-specific authority |
+| ARC-009 | Create MPRF as isolated runtime foundation package; Router consumes evidence but retains decision | REQ-013~018 | Avoid split-brain authority |
+| ARC-010 | Maintain dual observability sources with common correlation IDs only | REQ-019, NFR-003 | Prevent duplicate canonical truth |
+| ARC-011 | Codex unavailability blocks/queues ACTION while safe independent NVIDIA work continues | OPS-004, REQ-018 | No unsafe provider escalation |
+| ARC-012 | GATE-007 consumes immutable Track A/B qualification manifests | REQ-012, NFR-004 | Race-free deterministic join |
+
+---
+## Authoritative Source Projection — ID-07 Component Design
+
+| ID | Component | Responsibility | Related Requirements | Change Type |
+|---|---|---|---|---|
+| CMP-D-001 | Operator Control | GPT directive validation, stage lineage, transition authorization | OPS-004, OPS-005 | CREATE |
+| CMP-D-002 | Provider Router v2 | Provider/model selection and reroute decision evidence | REQ-004, REQ-005 | MODIFY |
+| CMP-D-003 | Provider Executor / Handoff | Execute one Router decision; seal PREPARE/ACTION/VERIFY handoff | REQ-003, REQ-018 | MODIFY |
+| CMP-D-004 | Task Queue / Runtime State | Provider-stage states, blocked action queue, lineage | NFR-004, OPS-004 | MODIFY |
+| CMP-D-005 | NVIDIA Adapter | Execute Router-bound model for read-only work only | REQ-005, OPS-004 | MODIFY |
+| CMP-D-006 | Codex Adapter / Launcher | Execute Router-bound action/model contract; no unsafe auto advance | REQ-005, OPS-004 | MODIFY |
+| CMP-D-007 | Public Execution Contract | MPRF-safe action request/status/reconciliation DTOs | REQ-009, REQ-010 | CREATE |
+| CMP-D-008 | Full MCP Contracts/Auth | InvocationContext/publication policy binding and exact auth | SEC-001~004 | MODIFY |
+| CMP-D-009 | Full MCP Git Service | safe stage/commit/push primitives | REQ-006~008 | MODIFY |
+| CMP-D-010 | Full MCP Runtime/Registry | closed operation registration/dispatch/effect truth | REQ-006~008 | MODIFY |
+| CMP-D-011 | Full MCP Adapter/Gateway | Preserve public transport; carry approved publication policy references | REQ-009~010 | MODIFY |
+| CMP-D-012 | MPRF Contract Core | Versioned registry/lifecycle/failure/checkpoint/event contracts | REQ-013~019 | CREATE |
+| CMP-D-013 | MPRF Registry / Admission | Provider/model records and admission eligibility | REQ-013, REQ-014 | CREATE |
+| CMP-D-014 | MPRF Lifecycle / Health | lifecycle, health, quota, rate, capability transitions | REQ-013~016 | CREATE |
+| CMP-D-015 | MPRF Failure / Router Client | failure taxonomy and reroute request; never selects provider/model | REQ-015~018 | CREATE |
+| CMP-D-016 | MPRF Checkpoint / Resume | checkpoint integrity, refs, resume guards | REQ-017, SEC-006 | CREATE |
+| CMP-D-017 | MPRF Observability | Provider Runtime Event source of truth | REQ-019 | CREATE |
+| CMP-D-018 | Qualification/Evidence Suite | contract/security/regression/E2E tests and immutable gate manifests | REQ-020, NFR-002 | MODIFY/CREATE |
+
+## Component Details
+
+### CMP-D-001 — Operator Control
+
+Responsibility: expose a versioned, provider-neutral `OperatorDirective` that permits GPT to advance a task through PREPARE, ACTION, VERIFY, REVIEW and GATE_DECISION states.  
+Inputs: project/run/task IDs, current stage, requested capability set, `state_change_required`, prior artifact digest, gate context.  
+Outputs: validated transition token/record; no provider identity.  
+Dependencies: CMP-D-002 Router, CMP-D-004 queue/state.  
+State Behavior: transition is monotonic and lineage-bound; ACTION cannot exist without an accepted PREPARE artifact when state-changing work needs generated patch/action material.  
+Error Behavior: stale/mismatched directive is blocked; no implicit provider call.  
+Compatibility: current one-shot tasks can be represented as PREPARE-only when no state change is required.  
+Preserved Behavior: stage-gate authority remains outside provider adapters.
+
+### CMP-D-002 — Provider Router v2
+
+Responsibility: sole provider/model selection and reroute decision authority.  
+Inputs: versioned `RouterRequest` with stage, capabilities, state-change flag, provider/model eligibility snapshot, failure/failover context, policy profile.  
+Outputs: `RouterDecision` with provider_ref, model_ref, reason_code, eligibility evidence refs, decision digest.  
+Dependencies: MPRF eligibility evidence when available; static approved policy profile during pre-MPRF remediation.  
+State Behavior: deterministic policy, no scoring/benchmarking.  
+Error Behavior: no eligible provider/model → `ROUTE_BLOCKED`, never silent fallback.  
+Compatibility: v1 compatibility adapter accepts old mode/capability calls but produces v2 decision; old consumers remain test-covered.  
+Preserved Behavior: only Router selects provider/model.
+
+### CMP-D-003 — Provider Executor / Handoff
+
+Responsibility: execute exactly the provider/model chosen by Router for the current stage and seal result/handoff.  
+Inputs: RouterDecision + task stage package.  
+Outputs: normalized provider result and `ProviderHandoffPackage` digest.  
+Dependencies: provider adapters.  
+State Behavior: PREPARE result may create ACTION package; ACTION result may create VERIFY package. Each stage has new execution identity; a failed PREPARE is not converted into ACTION.  
+Error Behavior: provider failure returns classified result to GPT/MPRF; no provider reselection inside executor.  
+Compatibility: existing result normalization retained with versioned `provider_trace` extension.  
+Preserved Behavior: adapter-specific transport remains behind provider executor.
+
+### CMP-D-004 — Task Queue / Runtime State
+
+Responsibility: persist task/stage status and deterministic fan-in readiness.  
+New states: `PREPARE_PENDING`, `PREPARE_RUNNING`, `PREPARED`, `ACTION_PENDING`, `ACTION_PROVIDER_BLOCKED`, `ACTION_RUNNING`, `ACTION_RECONCILE`, `ACTION_COMPLETED`, `VERIFY_PENDING`, `VERIFIED`, `RECOVERY_REQUIRED`, plus existing approval/gate states.  
+Error Behavior: Codex unavailable/quota routes the state-changing boundary to GPT Operator. An exact bounded Manual Action may be authorized; otherwise set `ACTION_PROVIDER_BLOCKED/QUEUED`. It never marks success or switches provider automatically.  
+Compatibility: existing pending/completed/failed projections remain derivable.
+
+### CMP-D-005 — NVIDIA Adapter
+
+Responsibility: read-only work execution only.  
+Change: `model_ref` becomes mandatory from RouterDecision for governed HYBRID execution; environment model may remain only in standalone legacy mode, not authoritative HYBRID mode.  
+Error Behavior: failure taxonomy is returned without calling Codex.  
+Preserved Behavior: context sanitizer, retries for allowed transient NVIDIA call attempts, no state-changing tools.
+
+### CMP-D-006 — Codex Adapter / Launcher
+
+Responsibility: state-changing action provider boundary.  
+Change: accept Router-bound provider/model/action package and return explicit availability/failure taxonomy; when Codex is unavailable, emit a GPT-reviewable exact Manual Action package that cannot execute or advance without explicit GPT Operator authorization.  
+Error Behavior: CLI unavailable/auth/quota/transport failure cannot advance action state.  
+Security: action package is immutable/digest-bound before launch.
+
+### CMP-D-007 — Public Execution Contract
+
+Responsibility: PCA-002 consumer API between MPRF and Execution Backend/Full MCP.  
+Inputs: `PublicExecutionRequest` containing action class, authorization ref, operation request ID, correlation IDs, public arguments schema, effect reconciliation ref.  
+Outputs: `PublicExecutionResult`, `PublicExecutionStatus`, `PublicReconciliationResult`.  
+Forbidden: ToolEffectJournal, internal receipt store, internal operation registry, internal Full MCP class handles or file paths.  
+Implementation location is orchestrator/public contract namespace, not `runtime/mprf` and not private Full MCP modules.
+
+### CMP-D-008 — Full MCP Contracts/Auth
+
+Responsibility: preserve exact authorization and add publication-specific policy binding.  
+Design: retain InvocationContext v1 for existing operations; introduce backward-compatible `gch.full-mcp.invocation-context.v2` with `operation_policy_digests`. Publication operations require v2 and a matching `GitPublicationAuthorization.v1` digest. Existing operations remain valid under v1/v2 compatibility rules.  
+Security: repository identity, branch, remote, expected remote head, allowed path digest, approval ref and validity window are sealed in the publication authorization record.
+
+### CMP-D-009 — Full MCP Git Service
+
+Responsibility: implement publication primitives without shell passthrough.  
+`stage`: exact approved pathspecs only; verify worktree scope/unrelated changes; compute candidate diff + pre/post index digests.  
+`commit`: require exact staged-tree digest from prior stage evidence; reject extra staged entries; create commit with bounded subject; return commit SHA/tree/parent evidence.  
+`push`: require approved remote/branch and expected remote head; perform non-force push only after freshness/protected-branch/NFF checks; reconcile remote ref after ambiguous transport outcome before any retry decision.  
+Forbidden implementation: generic arbitrary git argv execution for publication.
+
+### CMP-D-010 — Full MCP Runtime/Registry
+
+Responsibility: register/dispatch publication operations through existing exact auth/effect journal/observability pipeline.  
+Design: only three new operation definitions; no force/reset/rewrite variants. State-changing effect journal begins before stage/commit/push and seals canonical outcome or recovery-required state.
+
+### CMP-D-011 — Full MCP Adapter/Gateway
+
+Responsibility: preserve MCP stdio closed-catalog boundary and existing HOST-GATEWAY wire contract where possible.  
+Change: carry only public version/policy digest refs necessary for InvocationContext v2; do not expose Full MCP internals to MPRF.  
+Compatibility: existing adapter contract tests remain and new public execution contract tests layer above them.
+
+### CMP-D-012 — MPRF Contract Core
+
+Responsibility: define versioned provider/model IDs, registry records, lifecycle states, failure taxonomy, checkpoint schema and event schema.  
+Rule: no provider-selection algorithm is implemented here.
+
+### CMP-D-013 — MPRF Registry / Admission
+
+Responsibility: maintain admitted provider/model runtime records and capability/eligibility facts.  
+Inputs: approved provider/model configuration and admission references.  
+Outputs: immutable/versioned eligibility snapshot consumed by Router.  
+Forbidden: choosing a provider/model for a task.
+
+### CMP-D-014 — MPRF Lifecycle / Health
+
+Responsibility: provider/model lifecycle, health, quota, rate-limit and capability transition state.  
+Outputs: facts/events and eligibility constraints only.  
+Failure: stale/unknown health becomes ineligible/fail-closed according to versioned policy, never a direct reroute.
+
+### CMP-D-015 — MPRF Failure / Router Client
+
+Responsibility: classify approved failure taxonomy, determine failover eligibility/prohibition, and submit `RerouteRequest` to Provider Router.  
+Forbidden: direct provider/model choice; policy/permission bypass.  
+Legacy lock: NVIDIA failure does not invoke Codex as same-task fallback.
+
+### CMP-D-016 — MPRF Checkpoint / Resume
+
+Responsibility: checkpoint provider-runtime progress and references required for safe resume.  
+Stores: task/stage lineage, artifact digest refs, provider runtime state refs, authorization reference, Full MCP public effect/reconciliation reference.  
+Does not store: duplicate canonical action effect truth.  
+Resume requires recovery sequence completion.
+
+### CMP-D-017 — MPRF Observability
+
+Responsibility: canonical Provider Runtime Event storage.  
+Contains: provider/model/health/quota/rate/transition/failover/retry/exclusion plus correlation IDs.  
+Does not reinterpret Full MCP action result/effect state.
+
+### CMP-D-018 — Qualification/Evidence Suite
+
+Responsibility: implement tests/evidence collectors that prove contracts, security, negative space, regression, source-of-truth separation, recovery and Gate order.  
+Rule: diagnosis/design defines expected evidence only; runtime evidence is produced later under execution authority.
+
+---
+## Authoritative Source Projection — ID-10 Change Targets
+
+## Verified Change Targets
+
+All existing paths below were verified in the approved Full MCP final tree unless marked CREATE.
+
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | `.` | VERIFY | TASK-001 | VERIFIED REPOSITORY ROOT |
+| CT-002 | `runtime/orchestrator/provider_router.py` | MODIFY | TASK-017, TASK-002 | VERIFIED EXISTING |
+| CT-003 | `runtime/orchestrator/provider_executor.py` | MODIFY | TASK-017, TASK-002 | VERIFIED EXISTING |
+| CT-004 | `runtime/orchestrator/engine.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-005 | `runtime/orchestrator/task_queue.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-006 | `runtime/orchestrator/schemas.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-007 | `runtime/orchestrator/result_normalizer.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-008 | `runtime/orchestrator/nvidia_adapter.py` | MODIFY | TASK-017, TASK-002 | VERIFIED EXISTING |
+| CT-009 | `runtime/orchestrator/codex_adapter.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-010 | `runtime/orchestrator/codex_launcher.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-011 | `runtime/orchestrator/operator_control.py` | CREATE | TASK-017 | NEW APPROVED-SCOPE TARGET |
+| CT-012 | `runtime/orchestrator/provider_handoff.py` | CREATE | TASK-017 | NEW APPROVED-SCOPE TARGET |
+| CT-013 | `runtime/orchestrator/public_execution_contract.py` | CREATE | TASK-004 | NEW APPROVED-SCOPE TARGET |
+| CT-014 | `runtime/orchestrator/full_mcp_backend_adapter.py` | MODIFY/PRESERVE | TASK-004, TASK-005 | VERIFIED EXISTING |
+| CT-015 | `runtime/orchestrator/production_execution_gateway.py` | MODIFY/PRESERVE | TASK-004, TASK-005 | VERIFIED EXISTING |
+| CT-016 | `runtime/full_mcp/contracts.py` | MODIFY | TASK-003, TASK-005 | VERIFIED EXISTING |
+| CT-017 | `runtime/full_mcp/authorization.py` | MODIFY | TASK-003, TASK-005 | VERIFIED EXISTING |
+| CT-018 | `runtime/full_mcp/git_service.py` | MODIFY | TASK-003, TASK-005 | VERIFIED EXISTING |
+| CT-019 | `runtime/full_mcp/runtime.py` | MODIFY | TASK-003, TASK-005 | VERIFIED EXISTING |
+| CT-020 | `runtime/full_mcp/operation_registry.py` | PRESERVE/MODIFY wiring only | TASK-005 | VERIFIED EXISTING |
+| CT-021 | `runtime/full_mcp/observability.py` | PRESERVE/MODIFY schema-safe fields only | TASK-005, TASK-014 | VERIFIED EXISTING |
+| CT-022 | `runtime/full_mcp/recovery.py` | PRESERVE/MODIFY mapping only if required | TASK-006, TASK-012 | VERIFIED EXISTING |
+| CT-023 | `runtime/full_mcp/publication_evidence.py` | CREATE | TASK-005, TASK-006 | NEW APPROVED-SCOPE TARGET |
+| CT-024 | `runtime/mprf/__init__.py` | CREATE | TASK-010 | NEW APPROVED-SCOPE TARGET |
+| CT-025 | `runtime/mprf/contracts.py` | CREATE | TASK-010 | NEW APPROVED-SCOPE TARGET |
+| CT-026 | `runtime/mprf/registry.py` | CREATE | TASK-010 | NEW APPROVED-SCOPE TARGET |
+| CT-027 | `runtime/mprf/lifecycle.py` | CREATE | TASK-011 | NEW APPROVED-SCOPE TARGET |
+| CT-028 | `runtime/mprf/failure.py` | CREATE | TASK-012 | NEW APPROVED-SCOPE TARGET |
+| CT-029 | `runtime/mprf/router_client.py` | CREATE | TASK-012 | NEW APPROVED-SCOPE TARGET |
+| CT-030 | `runtime/mprf/checkpoint.py` | CREATE | TASK-013 | NEW APPROVED-SCOPE TARGET |
+| CT-031 | `runtime/mprf/observability.py` | CREATE | TASK-014 | NEW APPROVED-SCOPE TARGET |
+| CT-032 | `runtime/mprf/runtime.py` | CREATE | TASK-010~014 | NEW APPROVED-SCOPE TARGET |
+| CT-033 | `runtime/mprf/execution_client.py` | CREATE | TASK-004, TASK-013 | NEW APPROVED-SCOPE TARGET |
+| CT-034 | `tests/test_provider_router.py` | MODIFY | TASK-017, TASK-002 | VERIFIED EXISTING |
+| CT-035 | `tests/test_hybrid_runtime_flow.py` | MODIFY | TASK-017 | VERIFIED EXISTING |
+| CT-036 | `tests/test_operator_control.py` | CREATE | TASK-017 | NEW TEST TARGET |
+| CT-037 | `tests/test_provider_handoff.py` | CREATE | TASK-017 | NEW TEST TARGET |
+| CT-038 | `tests/full_mcp/test_git.py` | MODIFY | TASK-003, TASK-005 | VERIFIED EXISTING |
+| CT-039 | `tests/full_mcp/test_git_publication.py` | CREATE | TASK-005, TASK-006 | NEW TEST TARGET |
+| CT-040 | `tests/full_mcp/test_security_boundaries.py` | MODIFY | TASK-006 | VERIFIED EXISTING |
+| CT-041 | `tests/full_mcp/test_adapter_contract.py` | MODIFY | TASK-004, TASK-007 | VERIFIED EXISTING |
+| CT-042 | `tests/full_mcp/test_e2e_regression.py` | MODIFY | TASK-007 | VERIFIED EXISTING |
+| CT-043 | `tests/mprf/` | CREATE | TASK-010~014 | NEW TEST TARGET |
+| CT-044 | `tests/test_pre_mprf_integration_gate.py` | CREATE | TASK-009 | NEW TEST TARGET |
+| CT-045 | `tests/test_preph5mprf_integrated_e2e.py` | CREATE | TASK-015 | NEW TEST TARGET |
+| CT-046 | `docs/history/upgrades/PREPH5MPRF/` | CREATE | TASK-016 | NEW CLOSURE/EVIDENCE TARGET |
+
+## Baseline Source Blob Bindings
+
+Representative verified Git blob IDs at Full MCP final approval ref:
+
+- `provider_router.py`: `61afd1c216b8bb752b2f635f2c57f6200ba2ad14`
+- `provider_executor.py`: `76645e93747e4abc73da115e0eb4eef80f00f2b5`
+- `engine.py`: `47f95989655a09b24d8be90ea3703b223aae2c02`
+- `task_queue.py`: `981853a89434d429a9d1bd877911315cd2d3956f`
+- `nvidia_adapter.py`: `2cde47781797d6676ab83a6e90da93adce7e8483`
+- `full_mcp/runtime.py`: `06fa8e4b82567b0b2d532ac01e3285bb6651e682`
+- `full_mcp/git_service.py`: `28b880d29d0f4afaa48aa6d7ea72a4d02e8db814`
+- `full_mcp_backend_adapter.py`: `b0a4747a35443e74e4f922d5d01c2beaf54651a5`
+
+These are design-time source bindings, not execution evidence. Execution must re-verify them or an explicitly approved successor baseline before mutation.
+
+## Unverified Targets
+
+None required for the approved implementation design. New paths are explicitly marked CREATE rather than presented as existing. If implementation reveals a materially different repository structure, `SOURCE_DRIFT_DETECTED` applies before path substitution.
+
+---
+
+# EC-04 INTERFACES / EXECUTION FLOW
+
+## Authoritative Source Projection — ID-08 Interface Design
+
+| ID | Interface | Source | Target | Purpose | Related Requirements |
+|---|---|---|---|---|---|
+| IF-001 | `OperatorDirective.v1` | GPT Operator | Operator Control | Authorize next stage without choosing provider/model | OPS-004~005 |
+| IF-002 | `RouterRequest.v2` | Operator/MPRF facts | Provider Router | Stage/capability/eligibility/failure input | REQ-004~005 |
+| IF-003 | `RouterDecision.v2` | Provider Router | Provider Executor | Provider/model decision + evidence | REQ-004~005 |
+| IF-004 | `ProviderHandoffPackage.v1` | Provider Executor | GPT Operator / next stage | Digest-bound PREPARE→ACTION→VERIFY lineage | REQ-003, REQ-018 |
+| IF-005 | `PublicExecutionRequest.v1` | MPRF execution client / operator | Public Execution Contract | Public action request without Full MCP internals | REQ-009~010 |
+| IF-006 | `PublicExecutionResult.v1` | Public Execution Contract | Consumer | Result/effect/reference projection | REQ-009~010, SEC-004 |
+| IF-007 | `GitPublicationAuthorization.v1` | Execution authority | Full MCP Auth | Bind repo/branch/remote/scope/freshness policy | SEC-001~003 |
+| IF-008 | `GitStageIntent.v1` | Public execution layer | Full MCP Git | Exact path/stage candidate | REQ-006~008 |
+| IF-009 | `GitCommitIntent.v1` | Public execution layer | Full MCP Git | Commit exact staged tree | REQ-006~008 |
+| IF-010 | `GitPushIntent.v1` | Public execution layer | Full MCP Git | Non-force approved push | REQ-006~008 |
+| IF-011 | `ProviderEligibilitySnapshot.v1` | MPRF | Router | Provider/model/capability/health/quota facts | REQ-013~016 |
+| IF-012 | `RerouteRequest.v1` | MPRF Failure | Router | Ask Router to reroute eligible failure | REQ-015~018 |
+| IF-013 | `MPRFCheckpoint.v1` | MPRF | MPRF resume | Safe provider-runtime checkpoint references | REQ-017 |
+| IF-014 | `ProviderRuntimeEvent.v1` | MPRF | telemetry store | Provider runtime canonical event | REQ-019 |
+| IF-015 | Correlation Contract v1 | All public boundaries | All stores | Cross-domain correlation only | REQ-019 |
+
+## Interface Details
+
+### IF-001 — OperatorDirective.v1
+
+Required fields: `schema_version`, `project_id`, `run_id`, `task_id`, `task_execution_id`, `current_stage`, `requested_next_stage`, `required_capabilities`, `state_change_required`, `input_artifact_digests`, `gate_id`, `directive_id`.  
+Contract: directive cannot include `provider` or `model`; those fields are rejected.  
+Error Handling: stale stage, missing predecessor digest or forbidden transition → `OPERATOR_DIRECTIVE_BLOCKED`.  
+Security: directive digest is included in RouterRequest and stage evidence.
+
+### IF-002 — RouterRequest.v2
+
+Required fields: identity/correlation, stage, canonical capabilities, `state_change_required`, policy profile, eligibility snapshot ref/digest, optional failure class and failover request ref.  
+Contract: Router alone interprets policy profile and eligibility to select provider/model.  
+Compatibility: v1 `mode + capabilities` is normalized into v2 with explicit legacy source and no MPRF failure context.  
+Error Handling: unsupported schema/policy/eligibility digest mismatch → blocked decision.
+
+### IF-003 — RouterDecision.v2
+
+Fields: `decision_id`, `request_digest`, `provider_ref`, `model_ref`, `reason_code`, `required_capabilities`, `eligible`, `eligibility_evidence_refs`, `policy_version`, `decision_digest`.  
+Rule: provider/model refs are mandatory for governed HYBRID execution; adapters cannot substitute them.  
+Negative space: no cost score, benchmark score, dynamic provider discovery or automatic fallback chain.
+
+### IF-004 — ProviderHandoffPackage.v1
+
+Fields: parent execution ID, stage, provider decision digest, input/output artifact digests, proposed change manifest, required next capabilities, `state_change_required`, warnings/errors, immutable handoff digest.  
+ACTION handoff rule: only a completed PREPARE package can request ACTION; failure packages request diagnosis/reroute, not action escalation.  
+VERIFY handoff rule: references action result/effect evidence, never copies canonical effect truth.
+
+### IF-005 / IF-006 — Public Execution Contract
+
+Public request contains only operation class, public arguments, authorization/policy refs, correlation IDs and expected effect semantics. Public result projects `status`, `result_digest`, `effect_ref`, `reconciliation_state`, `error_code`, `audit_ref`.  
+Forbidden public fields: internal Python class names, journal path, receipt store path, internal registry handles, raw authorization secrets.
+
+### IF-007 — GitPublicationAuthorization.v1
+
+Fields: project/repository identity digest, approved branch, approved remote name + URL fingerprint, allowed path digest, expected remote head, protected-branch policy ref, approval ref, issue/expiry timestamps, operation set (`stage`,`commit`,`push`), policy digest.  
+Binding: digest must appear in InvocationContext v2 `operation_policy_digests`; each publication call references the exact digest.  
+Freshness: push preflight compares actual remote head with authorized/last reconciled head.
+
+### IF-008 — GitStageIntent.v1
+
+Fields: path list, expected worktree digest, expected HEAD, candidate diff digest, publication policy digest.  
+Output: staged path list, index digest before/after, staged diff digest.  
+Fail closed: unrelated modified/untracked paths outside allowed scope do not get silently staged; if policy requires a clean unrelated scope, they block.
+
+### IF-009 — GitCommitIntent.v1
+
+Fields: expected staged diff digest/index digest, expected HEAD/parent, bounded subject, publication policy digest.  
+Output: commit SHA, tree SHA, parent SHA, committed diff digest.  
+Guard: any extra staged change or index drift blocks commit.
+
+### IF-010 — GitPushIntent.v1
+
+Fields: remote, branch, local commit SHA, expected remote head, publication policy digest.  
+Output: pre/post remote head, push status, remote reconciliation evidence.  
+Prohibitions: no force flags, no refspec outside approved branch, no delete, no tag publication unless separately authorized (not in this program).
+
+### IF-011 — ProviderEligibilitySnapshot.v1
+
+Fields: snapshot version/id/digest, provider records, model records, capability availability, health class, quota class, rate-limit class, admission state, observed-at timestamp.  
+Rule: snapshot supplies facts; Router produces selection.
+
+### IF-012 — RerouteRequest.v1
+
+Fields: original Router decision, failure class, checkpoint/artifact/effect/auth validation refs, failover policy version, requested capabilities.  
+`failure_class` is a closed `FailureClass.v1` enum with exactly: `TASK_FAILURE`, `MODEL_FAILURE`, `PROVIDER_FAILURE`, `AUTH_FAILURE`, `RATE_LIMIT`, `QUOTA_EXHAUSTION`, `NETWORK_FAILURE`, `INVALID_RESPONSE`, `POLICY_REJECTION`, `CHECKPOINT_FAILURE`, `EXECUTION_BACKEND_FAILURE`, `ACTION_SIDE_EFFECT_AMBIGUOUS`, `RECOVERY_REQUIRED`, `UNKNOWN_FAILURE`. Unknown values fail schema validation rather than being coerced.  
+Eligible reroute classes are only `MODEL_FAILURE`, `PROVIDER_FAILURE`, `RATE_LIMIT`, `QUOTA_EXHAUSTION`, and `NETWORK_FAILURE` when versioned policy explicitly classifies that network case as safe. `TASK_FAILURE` requires underlying-cause classification first. `INVALID_RESPONSE` is not eligible by this baseline. `AUTH_FAILURE` is prohibited when permission-related; `POLICY_REJECTION`, `CHECKPOINT_FAILURE` until recovery, `EXECUTION_BACKEND_FAILURE`, `ACTION_SIDE_EFFECT_AMBIGUOUS`, `RECOVERY_REQUIRED`, and unresolved `UNKNOWN_FAILURE` cannot request failover.  
+Every accepted RerouteRequest therefore carries one exact enum value plus evidence that the ID-09 failure-disposition matrix prerequisites were completed.
+
+### IF-013 — MPRFCheckpoint.v1
+
+Fields: project/run/task/stage lineage, provider runtime state version, artifact digest refs, Router decision refs, public action effect/reconciliation refs, authorization ref, integrity digest.  
+No raw action receipt/effect journal data is stored.
+
+### IF-014 / IF-015 — Event and Correlation
+
+ProviderRuntimeEvent owns provider/model lifecycle facts. Full MCP action events own execution/effect facts. Shared identifiers are `project_id`, `project_run_id`, `task_id`, `task_execution_id`, `correlation_id`, `operation_request_id`; shared IDs do not grant cross-domain update authority.
+
+---
+## Authoritative Source Projection — ID-09 Data / Control / State Flow
+
+## 9.1 Full Plan Control Flow
+
+1. GPT Operator reads current Gate/task state and issues an `OperatorDirective` for PREPARE/REVIEW/VERIFY or ACTION.
+2. Operator Control validates dependency/gate/stage lineage and emits a provider-neutral RouterRequest.
+3. Provider Router consumes approved policy plus MPRF eligibility snapshot (or pre-MPRF static compatibility snapshot) and selects provider+model.
+4. Provider Executor invokes exactly that decision.
+5. PREPARE/REVIEW/VERIFY results are sealed as a handoff package and returned to GPT Operator.
+6. If PREPARE completed and state change is required, GPT may authorize a distinct ACTION stage; Router then selects the action provider/model under the same policy authority.
+7. ACTION goes through Public Execution Contract / Full MCP controlled boundary. Result/effect references return to GPT Operator.
+8. GPT requests VERIFY, normally a read-only capability stage. Router selects per policy.
+9. GPT uses evidence to make Gate decision. Provider adapters do not make Gate decisions.
+
+## 9.2 Planned Handoff vs Fallback
+
+```text
+PLANNED HANDOFF
+PREPARE_COMPLETED
+  → immutable handoff digest
+  → GPT directive: ACTION
+  → fresh RouterRequest(stage=ACTION)
+  → fresh RouterDecision
+  → ACTION execution
+
+PROHIBITED FALLBACK
+NVIDIA PREPARE FAILURE
+  ↛ automatically invoke Codex on same task/stage
+```
+
+A failed PREPARE is classified. Eligible provider/model failures may later generate a Router reroute request for the same **read-only PREPARE stage** after checkpoint/policy validation; that is distinct from changing the stage to ACTION.
+
+## 9.3 Provider-Unavailable Flow
+
+```text
+ACTION_PENDING
+  ↓ Router selects eligible action provider
+provider unavailable / quota / auth readiness failure
+  ↓
+ACTION_PROVIDER_BLOCKED
+  ├─ independent NVIDIA-safe tasks may continue
+  └─ no mutation / no gate advancement
+      ↓ when eligibility changes and GPT reissues directive
+fresh RouterRequest → ACTION retry attempt with new attempt lineage
+```
+
+## 9.4 Git Publication Flow
+
+```text
+Authorized PublicExecutionRequest
+  ↓
+GitPublicationAuthorization digest check
+  ↓
+Repository / branch / remote identity check
+  ↓
+Working tree + unrelated change scope check
+  ↓
+Candidate diff digest
+  ↓
+GIT_STAGE exact pathspecs
+  ↓
+Index/staged diff digest seal
+  ↓
+GIT_COMMIT exact sealed index
+  ↓
+Commit SHA/tree/parent evidence
+  ↓
+Remote HEAD freshness + protected branch + NFF validation
+  ↓
+GIT_PUSH non-force exact ref
+  ↓
+Post-push remote head verification
+  ├─ confirmed → effect completed
+  └─ transport ambiguous → ACTION_SIDE_EFFECT_AMBIGUOUS
+       → remote reconciliation
+       → no automatic replay
+```
+
+## 9.5 Failure Taxonomy / Failover Disposition
+
+`FailureClass.v1` is closed and versioned. The implementation must preserve the following exact baseline mapping; a class may not gain failover eligibility by inference, adapter behavior, retry convenience, or provider availability.
+
+| Failure Class | Failover Eligibility | Required Primary Handling | RerouteRequest.v1 Rule |
+|---|---|---|---|
+| `TASK_FAILURE` | Not eligible by this class alone | Classify the underlying cause; fail closed until an eligible class is established | PROHIBITED until reclassified to an exact eligible cause |
+| `MODEL_FAILURE` | Eligible | Complete checkpoint/artifact/effect/auth/policy checks | MAY request Router reroute after all prerequisites |
+| `PROVIDER_FAILURE` | Eligible | Complete checkpoint/artifact/effect/auth/policy checks | MAY request Router reroute after all prerequisites |
+| `AUTH_FAILURE` | Permission-related: prohibited | Correct/revalidate authorization; no authority expansion | PROHIBITED for permission-related failure |
+| `RATE_LIMIT` | Eligible | Apply versioned failover/reroute policy after integrity checks | MAY request Router reroute after all prerequisites |
+| `QUOTA_EXHAUSTION` | Eligible | Apply versioned failover/reroute policy after integrity checks | MAY request Router reroute after all prerequisites |
+| `NETWORK_FAILURE` | Eligible only when policy classifies the case as safe | Validate checkpoint/integrity/effect state first | MAY request Router reroute only with safe-policy evidence |
+| `INVALID_RESPONSE` | Not eligible by this baseline | Validate response and classify/remediate without provider failover | PROHIBITED unless a future controlled policy revision changes baseline |
+| `POLICY_REJECTION` | Prohibited | Governance/policy resolution | PROHIBITED |
+| `CHECKPOINT_FAILURE` | Prohibited until recovery | Repair/re-establish checkpoint integrity; enter recovery as required | PROHIBITED until recovery completes and a new eligible failure exists |
+| `EXECUTION_BACKEND_FAILURE` | Prohibited | Recover backend while preserving canonical action truth | PROHIBITED |
+| `ACTION_SIDE_EFFECT_AMBIGUOUS` | Prohibited | Reconcile canonical effect/remote state; no automatic replay | PROHIBITED |
+| `RECOVERY_REQUIRED` | Prohibited | Complete explicit recovery workflow | PROHIBITED |
+| `UNKNOWN_FAILURE` | Fail closed | Establish an exact class before any reroute decision | PROHIBITED while unresolved |
+
+Legacy lock remains absolute: `NVIDIA Failure → Codex same-task automatic fallback = PROHIBITED`. An eligible failure may create only a fresh Router-owned reroute request for the same logical stage after the ordered recovery prerequisites; it never authorizes an implicit provider switch or ACTION-stage escalation.
+
+## 9.6 MPRF Failure / Recovery Flow
+
+```text
+Failure Classification
+↓
+Checkpoint Integrity
+↓
+Artifact Integrity
+↓
+Execution Effect Reconciliation (public Full MCP reference)
+↓
+Authorization Revalidation
+↓
+Failover Policy Validation
+↓
+Reroute Request (`RerouteRequest.v1`)
+↓
+Provider Router
+↓
+Resume
+```
+
+## 9.7 State Transitions
+
+| Current State | Event | Next State | Failure State |
+|---|---|---|---|
+| PLANNED | GPT PREPARE directive valid | PREPARE_PENDING | OPERATOR_BLOCKED |
+| PREPARE_PENDING | RouterDecision eligible | PREPARE_RUNNING | ROUTE_BLOCKED |
+| PREPARE_RUNNING | provider completed | PREPARED | PREPARE_FAILED |
+| PREPARED | no state change needed | VERIFY_PENDING | RECOVERY_REQUIRED |
+| PREPARED | GPT ACTION directive + state change required | ACTION_PENDING | OPERATOR_BLOCKED |
+| ACTION_PENDING | eligible RouterDecision | ACTION_RUNNING | ACTION_PROVIDER_BLOCKED |
+| ACTION_RUNNING | effect unambiguous and complete | ACTION_COMPLETED | ACTION_RECONCILE / RECOVERY_REQUIRED |
+| ACTION_RECONCILE | canonical state confirmed | ACTION_COMPLETED or ACTION_PENDING(new attempt) | RECOVERY_REQUIRED |
+| ACTION_COMPLETED | GPT VERIFY directive | VERIFY_PENDING | OPERATOR_BLOCKED |
+| VERIFY_PENDING | RouterDecision eligible | VERIFY_RUNNING | ROUTE_BLOCKED |
+| VERIFY_RUNNING | verification passes | VERIFIED | VERIFY_FAILED |
+| VERIFIED | evidence complete | GATE_READY | REMEDIATION_REQUIRED |
+| any | material source drift | SOURCE_DRIFT_DETECTED | PLAN_REVISION_REQUIRED |
+
+---
+## Authoritative Source Projection — ID-20 Full Plan Execution Structure
+
+This section defines execution structure only. It does not execute the Full Plan.
+
+## Execution Sequence
+
+```text
+GPT Operator
+  → read current task/dependency/gate/evidence state
+  → NVIDIA-primary PREPARE / analysis / patch proposal / test design
+  → GPT decision at state-change boundary
+  → Provider Router selects provider/model
+  → Codex-secondary APPLY / shell / test / git only when state change is authorized
+  → NVIDIA/GPT VERIFY and evidence analysis
+  → independent review
+  → GPT Gate decision
+```
+
+Provider handoff rules: NVIDIA PREPARE→ACTION is a planned boundary, not automatic fallback. Codex remains the secondary action provider when available. When Codex is unavailable/quota-limited, GPT Operator may authorize the existing Manual Action path for an exact bounded action package; otherwise action work is queued/blocked. Manual Action is not a provider. Independent NVIDIA-safe tasks may continue when dependencies allow.
+
+## Phase / Task Mapping
+
+| Execution Phase | Tasks | Required Capabilities | Validation | Gate |
+|---|---|---|---|---|
+| ENTRY / COMPATIBILITY | TASK-001, TASK-017 if required | read_only, evidence_analysis, diagnostics; then bounded apply/test capabilities for remediation | TEST-001~006 | GATE-001 |
+| TRACK A IMPLEMENT | TASK-002 | reasoning, code/patch generation, filesystem_write/test_execution when applying | TEST-004~006 | GATE-002 |
+| TRACK B CONTRACT/APPLY | TASK-003~005 | reasoning, security design, code/patch generation, filesystem_write/shell/test_execution/integration | TEST-007~010 | GATE-003 |
+| SECURITY / PUBLICATION SAFETY | TASK-006 | security_review, evidence_analysis, test_execution | TEST-011~014 | GATE-004 |
+| FULL MCP REGRESSION | TASK-007 | diagnostics, test_execution, integration | TEST-015~016 | GATE-005 |
+| EXEC-AUTH QUALIFICATION | TASK-008 | evidence_analysis, review, documentation | TEST-017 | GATE-006 |
+| PRE-MPRF FAN-IN | TASK-009 | read_only, evidence_analysis, review | TEST-018 | GATE-007 |
+| MPRF FOUNDATION IMPLEMENT | TASK-010~014 | code/patch generation, filesystem_write/test_execution plus read-only analysis/review | TEST-019~028 | GATE-008 |
+| INTEGRATED E2E | TASK-015 | test_execution, integration, evidence_analysis | TEST-029~031 | GATE-009 |
+| FINAL CLOSURE | TASK-016 | read_only, evidence_analysis, review, documentation | TEST-032 | GATE-010 |
+
+---
+
+# EC-05 IMPLEMENTATION TASKS
+
+## Authoritative Source Projection — ID-11 Implementation Tasks
+
+The 16 approved Plan tasks are preserved exactly by ID and responsibility. `TASK-017` is a design-only bounded prerequisite remediation required by the verified `RUNTIME_POLICY_MISMATCH`; it does not replace, delete, reorder, or absorb any approved task. It may run only under GATE-001 CONDITIONAL_GO and must complete before Track A/Track B project implementation begins.
+
+## TASK-001 — Integrated Preflight / Authority Binding
+
+Purpose: Re-verify the approved program identity, Full MCP lineage, source authority, target root/repository, worktree isolation, exact approved-source rebinding obligations, and Runtime Compatibility status before any project mutation.
+
+Related Requirements: REQ-001, REQ-002, REQ-003, NFR-004, OPS-004, OPS-005, OPS-006, OPS-007
+
+Related Architecture: ARC-001, ARC-002, ARC-011
+
+Related Components: CMP-D-001, CMP-D-004, CMP-D-018
+
+Dependencies: None
+
+Gate Preconditions: Approved Plan/Handoff available; read-only design entry authorized.
+
+Change Targets: CT-001
+
+Inputs: Approved Plan P1.0; Handoff; Full MCP completion authority; approved refs 0848dab/39e0f6a/0bdfad; current read-only repository state; exact MPRF/requirements source when available.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, diagnostics, review, documentation
+
+state_change_required: false
+
+Expected Output: DEL-001 preflight package: authority/source/root/repository/ref binding, source-drift disposition, runtime-compatibility result, dirty-worktree isolation record, execution-entry decision.
+
+Validation: TEST-001, TEST-002, TEST-003
+
+Ownership Boundary: Read-only preflight authority and evidence only; no repository mutation.
+
+Preserved Areas: Approved Plan, current unrelated worktree content, Full MCP sealed baseline, authority matrix.
+
+Forbidden Areas: No cleanup/reset/checkout/merge; no inference that main is Full MCP baseline; no state-changing provider call.
+
+Completion Condition: All identity/source/baseline checks are either VERIFIED or explicitly fail-closed; runtime mismatch is either absent or routed only to TASK-017; GATE-001 can be evaluated.
+
+## TASK-017 — Full Plan GPT Operator / HYBRID Runtime Compatibility Remediation
+
+Purpose: Implement the bounded prerequisite needed to express GPT Operator control, Router-owned provider/model decision, NVIDIA prepare→ACTION planned handoff, capability/state-change split, and Codex-unavailable GPT-authorized Manual Action or queue/block semantics.
+
+Related Requirements: OPS-003, OPS-004, OPS-005, REQ-003, REQ-005, REQ-018, NFR-001, NFR-004
+
+Related Architecture: ARC-002, ARC-003, ARC-004, ARC-005, ARC-011
+
+Related Components: CMP-D-001, CMP-D-002, CMP-D-003, CMP-D-004, CMP-D-005, CMP-D-006
+
+Dependencies: TASK-001
+
+Gate Preconditions: GATE-001 CONDITIONAL_GO limited to runtime compatibility remediation; separate execution approval still required.
+
+Change Targets: CT-002, CT-003, CT-004, CT-005, CT-006, CT-007, CT-008, CT-009, CT-010, CT-011, CT-012, CT-034, CT-035, CT-036, CT-037
+
+Inputs: Runtime compatibility finding register; existing HYBRID router/executor/engine/task-state contracts; approved Full Plan execution policy.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, test_design, diagnostics, review, documentation, filesystem_write, shell, test_execution, integration
+
+state_change_required: true
+
+Expected Output: Versioned OperatorDirective/RouterRequest/RouterDecision/Handoff contracts, stage-aware runtime state, Router-bound model propagation, explicit ACTION_PROVIDER_BLOCKED/QUEUED handling, compatibility tests and rollback package.
+
+Validation: TEST-002, TEST-003, TEST-004, TEST-005, TEST-006
+
+Ownership Boundary: Only the bounded orchestration/runtime compatibility layer required to honor the approved execution contract.
+
+Preserved Areas: Router remains sole provider/model selector; Full MCP action authority unchanged; NVIDIA cannot execute state changes; Manual Action executes only an exact GPT-authorized bounded action package and is never a provider/model or Gate authority.
+
+Forbidden Areas: No MPRF implementation; no Git publication authority implementation; no new provider; no same-stage NVIDIA→Codex fallback; no task-level provider/model hardcoding.
+
+Completion Condition: All RTMISMATCH-001~006 are closed by implementation evidence; Track A/B remain blocked until GATE-001 is re-evaluated to GO.
+
+## TASK-002 — PCA-001 Provider Router Contract Extension
+
+Purpose: Extend Router input/output contracts for MPRF consumer eligibility/failure/reroute facts while preserving exclusive provider/model selection authority and current-consumer compatibility.
+
+Related Requirements: REQ-004, REQ-005, NFR-001, NFR-003, OPS-003, OPS-004
+
+Related Architecture: ARC-003, ARC-005
+
+Related Components: CMP-D-002, CMP-D-003, CMP-D-005, CMP-D-006
+
+Dependencies: TASK-017
+
+Gate Preconditions: GATE-001 GO.
+
+Change Targets: CT-002, CT-003, CT-008, CT-034
+
+Inputs: Router v1 behavior; IF-002/IF-003/IF-011/IF-012 schemas; approved provider policy.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, test_design, review, diagnostics, documentation, filesystem_write, test_execution
+
+state_change_required: true
+
+Expected Output: PCA-001 Router v2 contract, compatibility adapter/defaults, deterministic decision evidence, rollback path, DEL-002 qualification package.
+
+Validation: TEST-004, TEST-005, TEST-006
+
+Ownership Boundary: Router public contract and its direct executor propagation only.
+
+Preserved Areas: Selection/reroute authority remains Router; existing consumer semantics retained under explicit version compatibility.
+
+Forbidden Areas: No MPRF runtime ownership; no provider lifecycle implementation; no action-effect logic; no task-level hardcoding.
+
+Completion Condition: GATE-002 evidence proves Router v2 versioning, model authority, compatibility, rollback and authority preservation.
+
+## TASK-003 — EXEC-AUTH-EXT-001 Foundation
+
+Purpose: Define the bounded Git publication authority model, policy bindings, intent/evidence contracts, negative-space prohibitions and effect semantics before controlled application.
+
+Related Requirements: REQ-006, REQ-007, REQ-008, SEC-001, SEC-002, SEC-003, SEC-004
+
+Related Architecture: ARC-007, ARC-008
+
+Related Components: CMP-D-008, CMP-D-009, CMP-D-010, CMP-D-018
+
+Dependencies: TASK-017
+
+Gate Preconditions: GATE-001 GO.
+
+Change Targets: CT-016, CT-017, CT-018, CT-019, CT-023, CT-038, CT-039
+
+Inputs: Existing Full MCP InvocationContext/auth/effect/closed registry; publication safety requirements; IF-007~010.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, security_review, test_design, review, diagnostics, documentation
+
+state_change_required: false
+
+Expected Output: Publication authority specification and code/patch proposal package defining git_stage/git_commit/git_push exact contracts, safety matrix and evidence fields.
+
+Validation: TEST-007, TEST-009, TEST-010, TEST-011, TEST-012, TEST-013
+
+Ownership Boundary: EXEC-AUTH publication model only.
+
+Preserved Areas: Existing Full MCP filesystem/shell/git-read/validation semantics and action effect truth.
+
+Forbidden Areas: No generic arbitrary git argv; no force/history rewrite/reset; no unapproved repository/branch/remote expansion.
+
+Completion Condition: Publication contract is internally coherent, public-boundary-ready and eligible for TASK-004/TASK-005 controlled application.
+
+## TASK-004 — PCA-002 Execution Boundary Contract Extension
+
+Purpose: Create the consumer-facing public execution contract needed by future MPRF while keeping PCA-002 an internal EXEC-AUTH workstream and hiding Full MCP internals.
+
+Related Requirements: REQ-009, REQ-010, SEC-005, NFR-001, NFR-003
+
+Related Architecture: ARC-006, ARC-008
+
+Related Components: CMP-D-007, CMP-D-011, CMP-D-018
+
+Dependencies: TASK-003
+
+Gate Preconditions: GATE-001 GO.
+
+Change Targets: CT-013, CT-014, CT-015, CT-033, CT-041
+
+Inputs: Publication authority model; existing MCP stdio adapter/gateway; Full MCP public result/status/reconciliation semantics.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, test_design, review, diagnostics, documentation
+
+state_change_required: false
+
+Expected Output: PublicExecutionRequest/Result v1 DTOs/client boundary, version negotiation/fail-closed rules, negative-space import/access constraints.
+
+Validation: TEST-007, TEST-008
+
+Ownership Boundary: Public contract and consumer client only; no Full MCP internal exposure.
+
+Preserved Areas: HOST-GATEWAY and MCP stdio public boundary where compatible; canonical action truth remains Full MCP.
+
+Forbidden Areas: No MPRF access to ToolEffectJournal, receipt store, operation registry, internal Full MCP classes; no provider selection.
+
+Completion Condition: Contract proves public-boundary-only access and compatibility, enabling controlled application under TASK-005.
+
+## TASK-005 — Full MCP Controlled Authority Extension
+
+Purpose: Apply the approved publication/public-boundary changes to Full MCP and orchestration integration under exact change targets without unrelated authority expansion.
+
+Related Requirements: REQ-006, REQ-007, REQ-008, REQ-009, REQ-010, SEC-001, SEC-002, SEC-003, SEC-004, SEC-005
+
+Related Architecture: ARC-006, ARC-007, ARC-008
+
+Related Components: CMP-D-007, CMP-D-008, CMP-D-009, CMP-D-010, CMP-D-011
+
+Dependencies: TASK-003, TASK-004
+
+Gate Preconditions: GATE-003 contract prerequisites internally satisfied; execution remains within Track B authority.
+
+Change Targets: CT-013, CT-014, CT-015, CT-016, CT-017, CT-018, CT-019, CT-020, CT-021, CT-023, CT-038, CT-039, CT-041
+
+Inputs: Qualified design/patch packages from TASK-003/004; approved target baseline; GATE-003 entry controls.
+
+Required Capabilities: reasoning, read_only, code_generation, patch_generation, review, diagnostics, test_design, filesystem_write, shell, test_execution, integration
+
+state_change_required: true
+
+Expected Output: Controlled Full MCP candidate with exactly three publication operations, public DTO/client integration and bounded evidence projection.
+
+Validation: TEST-007, TEST-008, TEST-009, TEST-010, TEST-011, TEST-012, TEST-013
+
+Ownership Boundary: Only approved change targets in Full MCP/public execution integration.
+
+Preserved Areas: All unrelated operation registry entries, auth/effect semantics, adapter isolation, existing tests/behavior.
+
+Forbidden Areas: No extra action classes, no direct MPRF internals, no force/reset/rewrite, no baseline declaration.
+
+Completion Condition: GATE-003 contract/control scope is complete and eligible for ordered security/publication qualification.
+
+## TASK-006 — Security / Git Publication Safety Validation
+
+Purpose: Validate security first, then Git publication safety, including negative space, authorization, scope, freshness, NFF, protected branch, digest, unrelated change and ambiguous effect controls.
+
+Related Requirements: REQ-007, REQ-008, SEC-001, SEC-002, SEC-003, SEC-004, SEC-005
+
+Related Architecture: ARC-007, ARC-008
+
+Related Components: CMP-D-008, CMP-D-009, CMP-D-010, CMP-D-018
+
+Dependencies: TASK-005
+
+Gate Preconditions: Controlled extension candidate available after TASK-005.
+
+Change Targets: CT-017, CT-018, CT-019, CT-021, CT-022, CT-023, CT-039, CT-040
+
+Inputs: Controlled extension candidate; security/prohibition matrix; publication test fixtures.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, security_review, diagnostics, test_design, review, test_execution
+
+state_change_required: true
+
+Expected Output: DEL-004 Security / Git Publication Safety Qualification Report with separate Security Validation and Git Publication Safety results.
+
+Validation: TEST-011, TEST-012, TEST-013, TEST-014
+
+Ownership Boundary: Qualification/evidence; remediation requests return to TASK-003~005.
+
+Preserved Areas: Security-before-publication-test ordering and fail-closed action boundary.
+
+Forbidden Areas: No PASS aggregation that hides layer order; no real unapproved remote publication; no ambiguous automatic replay.
+
+Completion Condition: Security Validation PASS occurs first and Git Publication Safety PASS occurs second; GATE-004 may be evaluated.
+
+## TASK-007 — Full MCP Regression / MCP_STABLE_BASELINE Reconfirmation
+
+Purpose: Run the approved Full MCP regression corpus plus publication-boundary regression and prove controlled change did not alter unrelated behavior before baseline reconfirmation.
+
+Related Requirements: REQ-011, REQ-012, NFR-001, NFR-003, SEC-001, SEC-002, SEC-003, SEC-004
+
+Related Architecture: ARC-001, ARC-007, ARC-008
+
+Related Components: CMP-D-008, CMP-D-009, CMP-D-010, CMP-D-011, CMP-D-018
+
+Dependencies: TASK-006
+
+Gate Preconditions: GATE-004 PASS.
+
+Change Targets: CT-038, CT-040, CT-041, CT-042
+
+Inputs: GATE-004 evidence; approved Full MCP regression corpus; pre-change stable baseline and final approval lineage.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, diagnostics, review, documentation, test_design, test_execution, integration
+
+state_change_required: true
+
+Expected Output: DEL-005 regression/baseline package: Full MCP regression PASS, Execution Backend Contract reconfirmation, controlled-diff manifest, MCP_STABLE_BASELINE RECONFIRMED evidence.
+
+Validation: TEST-015, TEST-016
+
+Ownership Boundary: Regression and baseline evidence only.
+
+Preserved Areas: No baseline rewriting; prior sealed baseline remains rollback reference.
+
+Forbidden Areas: No EXEC-AUTH PASS before GATE-005; no MPRF work.
+
+Completion Condition: GATE-005 PASS conditions met: regression PASS and both Execution Backend Contract and MCP stable baseline reconfirmed.
+
+## TASK-008 — EXEC-AUTH-EXT-001 Final Qualification
+
+Purpose: Qualify the complete Track B result only after baseline reconfirmation and close PCA-002 as the internal EXEC-AUTH workstream.
+
+Related Requirements: REQ-009, REQ-010, REQ-011, REQ-012, SEC-001, SEC-002, SEC-003, SEC-004, SEC-005
+
+Related Architecture: ARC-006, ARC-007, ARC-008
+
+Related Components: CMP-D-007, CMP-D-008, CMP-D-009, CMP-D-010, CMP-D-011, CMP-D-018
+
+Dependencies: TASK-007
+
+Gate Preconditions: GATE-005 PASS.
+
+Change Targets: CT-013, CT-014, CT-015, CT-016, CT-017, CT-018, CT-019, CT-020, CT-021, CT-022, CT-023, CT-038, CT-039, CT-040, CT-041, CT-042
+
+Inputs: GATE-003/004/005 evidence, baseline reconfirmation evidence, PCA-002 public-boundary evidence.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, diagnostics, review, documentation
+
+state_change_required: false
+
+Expected Output: EXEC-AUTH-EXT-001 qualification manifest; PCA-002 PASS/CLOSED; Track B authority preservation statement.
+
+Validation: TEST-017
+
+Ownership Boundary: Qualification only.
+
+Preserved Areas: MCP stable baseline dependency and PCA-002 internal-workstream identity.
+
+Forbidden Areas: No baseline mutation, no MPRF activation, no bypass of GATE-005.
+
+Completion Condition: GATE-006 PASS: EXEC-AUTH-EXT-001 PASS and PCA-002 PASS/CLOSED with blocker/major 0.
+
+## TASK-009 — Pre-MPRF Integration Gate
+
+Purpose: Fan in Track A and Track B immutable qualification artifacts and prove authority/version/baseline compatibility before MPRF activation.
+
+Related Requirements: REQ-012, REQ-014, NFR-004, OPS-001, OPS-004
+
+Related Architecture: ARC-012
+
+Related Components: CMP-D-018
+
+Dependencies: TASK-002, TASK-008
+
+Gate Preconditions: GATE-002 PASS + GATE-006 PASS + MCP_STABLE_BASELINE RECONFIRMED.
+
+Change Targets: CT-044
+
+Inputs: DEL-002, DEL-003, DEL-004, DEL-005 and baseline/authority manifests.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, diagnostics, review, documentation, test_design
+
+state_change_required: false
+
+Expected Output: DEL-006 deterministic Pre-MPRF Integration Gate evidence; no MPRF code mutation.
+
+Validation: TEST-018
+
+Ownership Boundary: Cross-track fan-in and gate evidence only.
+
+Preserved Areas: Track ownership boundaries; immutable manifests; MPRF remains inactive.
+
+Forbidden Areas: No MPRF code generation/application before GATE-007 PASS; no partial fan-in.
+
+Completion Condition: GATE-007 PASS with Track A/B/baseline compatibility and blocker/major 0.
+
+## TASK-010 — MPRF-001 Provider / Model Registry Foundation
+
+Purpose: Create the approved MPRF contract core, provider/model registry and versioned admission-record foundation without adding provider-selection authority.
+
+Related Requirements: REQ-013, REQ-014, NFR-001, NFR-003
+
+Related Architecture: ARC-009
+
+Related Components: CMP-D-012, CMP-D-013
+
+Dependencies: TASK-009
+
+Gate Preconditions: GATE-007 PASS.
+
+Change Targets: CT-024, CT-025, CT-026, CT-032, CT-043
+
+Inputs: Exact re-bound MPRF approved source; Router v2 public contracts; GATE-007 authority manifest.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, test_design, review, documentation, filesystem_write, test_execution
+
+state_change_required: true
+
+Expected Output: Versioned MPRF contract core and provider/model registry/admission records within approved scope; DEL-007 partial.
+
+Validation: TEST-019
+
+Ownership Boundary: MPRF provider-runtime foundation only.
+
+Preserved Areas: Router selects provider/model; no action authority; no AI Office/Jarvis ownership.
+
+Forbidden Areas: No additional providers beyond approved set; no benchmarking/scoring/dynamic routing.
+
+Completion Condition: Registry/admission contracts pass and expose eligibility facts only.
+
+## TASK-011 — MPRF Provider Lifecycle / Admission
+
+Purpose: Implement provider/model lifecycle, admission, health, quota, rate-limit and capability-transition facts as MPRF-owned runtime state.
+
+Related Requirements: REQ-013, REQ-014, REQ-015, REQ-016
+
+Related Architecture: ARC-009
+
+Related Components: CMP-D-013, CMP-D-014
+
+Dependencies: TASK-010
+
+Gate Preconditions: GATE-007 PASS.
+
+Change Targets: CT-025, CT-026, CT-027, CT-032, CT-043
+
+Inputs: Registry/admission contracts and approved provider/model records.
+
+Required Capabilities: reasoning, read_only, code_generation, patch_generation, diagnostics, review, test_design, filesystem_write, test_execution
+
+state_change_required: true
+
+Expected Output: Lifecycle/health/quota/rate/capability state machine and eligibility snapshot producer.
+
+Validation: TEST-020
+
+Ownership Boundary: Provider-runtime facts only.
+
+Preserved Areas: No routing decision; Router consumes facts and remains decision authority.
+
+Forbidden Areas: No action execution, no provider/model scoring, no hidden automatic reroute.
+
+Completion Condition: Lifecycle/admission transitions are deterministic/versioned and fail closed for stale/unknown eligibility.
+
+## TASK-012 — MPRF Failure / Failover / Recovery
+
+Purpose: Implement the approved failure taxonomy, failover eligibility/prohibition and Router reroute request path without bypassing permissions or legacy policy locks.
+
+Related Requirements: REQ-015, REQ-016, REQ-017, REQ-018, SEC-006
+
+Related Architecture: ARC-003, ARC-004, ARC-009, ARC-011
+
+Related Components: CMP-D-015
+
+Dependencies: TASK-011
+
+Gate Preconditions: GATE-007 PASS.
+
+Change Targets: CT-028, CT-029, CT-032, CT-043
+
+Inputs: Failure taxonomy; lifecycle/eligibility state; RouterRequest/RerouteRequest public contract; authorization references.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, diagnostics, review, test_design, filesystem_write, test_execution
+
+state_change_required: true
+
+Expected Output: Failure classifier, failover eligibility matrix, reroute client and recovery-state transitions.
+
+Validation: TEST-021, TEST-022, TEST-023, TEST-024
+
+Ownership Boundary: Failure classification and reroute request generation only.
+
+Preserved Areas: Router decision authority and legacy NVIDIA→Codex same-task auto-fallback prohibition.
+
+Forbidden Areas: No reroute on policy rejection/permission auth failure/execution backend failure/ambiguous effect/recovery required.
+
+Completion Condition: Every approved failure class has deterministic handling; all eligible/prohibited and legacy negative-space tests pass.
+
+## TASK-013 — MPRF Checkpoint / Resume
+
+Purpose: Implement checkpoint integrity and safe resume references in the exact approved recovery order, without duplicating Full MCP effect truth.
+
+Related Requirements: REQ-017, REQ-018, SEC-004, SEC-006
+
+Related Architecture: ARC-009, ARC-010
+
+Related Components: CMP-D-016, CMP-D-007
+
+Dependencies: TASK-011, TASK-012
+
+Gate Preconditions: GATE-007 PASS.
+
+Change Targets: CT-030, CT-032, CT-033, CT-043
+
+Inputs: Failure/recovery state; public execution result/effect references; authorization refs; task/stage/artifact digests.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, diagnostics, review, test_design, filesystem_write, test_execution
+
+state_change_required: true
+
+Expected Output: MPRFCheckpoint v1 and resume controller enforcing checkpoint→artifact→effect→auth→failover policy→Router→resume order.
+
+Validation: TEST-025, TEST-026
+
+Ownership Boundary: Provider-runtime checkpoint/reference state.
+
+Preserved Areas: Full MCP remains canonical action/effect/reconciliation source.
+
+Forbidden Areas: No raw Full MCP internals in checkpoint; no resume on ambiguous/unreconciled effect; no authorization reuse after invalidation.
+
+Completion Condition: Checkpoint corruption/auth invalidation/ambiguous effect fail closed and valid resume lineage is reconstructable.
+
+## TASK-014 — MPRF Telemetry / Observability
+
+Purpose: Create canonical Provider Runtime Event storage and correlation without duplicating or overwriting Full MCP Action Runtime Event truth.
+
+Related Requirements: REQ-019, NFR-003
+
+Related Architecture: ARC-010
+
+Related Components: CMP-D-017, CMP-D-012
+
+Dependencies: TASK-010, TASK-011, TASK-012, TASK-013
+
+Gate Preconditions: GATE-007 PASS.
+
+Change Targets: CT-031, CT-032, CT-043
+
+Inputs: Provider/model/lifecycle/failure/checkpoint state and correlation contract.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, code_generation, patch_generation, diagnostics, review, test_design, documentation, filesystem_write, test_execution
+
+state_change_required: true
+
+Expected Output: ProviderRuntimeEvent v1 append-only telemetry and cross-domain correlation projection.
+
+Validation: TEST-027, TEST-028
+
+Ownership Boundary: Provider runtime event source of truth only.
+
+Preserved Areas: Action execution/result/effect/reconciliation/validation remain Full MCP event truth.
+
+Forbidden Areas: No duplicate canonical action event; no secret/raw action output; no ownership inference from correlation IDs.
+
+Completion Condition: Event ownership and correlation tests prove reconstructability without source-of-truth overlap.
+
+## TASK-015 — Integrated E2E Qualification
+
+Purpose: Qualify the complete integrated program across Router, MPRF, public execution boundary and Full MCP for normal flow, failure/recovery, security, observability and authority negative space.
+
+Related Requirements: REQ-015, REQ-016, REQ-017, REQ-018, REQ-019, REQ-020, NFR-002, NFR-003, NFR-004, SEC-001, SEC-002, SEC-003, SEC-004, SEC-005, SEC-006
+
+Related Architecture: ARC-002~012
+
+Related Components: CMP-D-001~018
+
+Dependencies: TASK-014, TASK-002, TASK-008
+
+Gate Preconditions: GATE-008 PASS + retained GATE-002/GATE-006 authority evidence.
+
+Change Targets: CT-045
+
+Inputs: Qualified Router/EXEC-AUTH/MPRF artifacts, checkpoints/events, regression baselines.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, diagnostics, review, test_design, documentation, test_execution, integration
+
+state_change_required: true
+
+Expected Output: DEL-010 Integrated E2E Qualification Report with happy path, failure/recovery, security, negative-space, observability and regression results.
+
+Validation: TEST-029, TEST-030, TEST-031
+
+Ownership Boundary: Integrated qualification/evidence only.
+
+Preserved Areas: Authority ownership and baseline lineage.
+
+Forbidden Areas: No scope expansion during test remediation; no closure on partial success.
+
+Completion Condition: GATE-009 PASS with integrated E2E/security/recovery/observability/regression evidence and no blocker/major defect.
+
+## TASK-016 — MULTI_PROVIDER_FOUNDATION_BASELINE Final Validation / Closure
+
+Purpose: Perform final cross-check, traceability, authority/version/source manifesting and declaration-readiness review without declaring/finalizing the baseline before explicit execution authority permits it.
+
+Related Requirements: REQ-020, NFR-002, NFR-003, NFR-004, OPS-001, OPS-002, OPS-003, OPS-004, OPS-005, OPS-006, OPS-007
+
+Related Architecture: ARC-001~012
+
+Related Components: CMP-D-018
+
+Dependencies: TASK-015
+
+Gate Preconditions: GATE-009 PASS.
+
+Change Targets: CT-046
+
+Inputs: All Gate evidence, DEL-001~010, RTM, authority/baseline manifests, defect register.
+
+Required Capabilities: reasoning, read_only, evidence_analysis, diagnostics, review, documentation
+
+state_change_required: false
+
+Expected Output: DEL-011 closure manifest showing all final exit conditions and declaration-ready MULTI_PROVIDER_FOUNDATION_BASELINE evidence.
+
+Validation: TEST-032
+
+Ownership Boundary: Program closure evidence and final review only.
+
+Preserved Areas: No production/PHASE5/PHASE7 activation; no unapproved baseline publication.
+
+Forbidden Areas: No closure with blocker/major, broken traceability, source drift, authority mismatch or missing evidence.
+
+Completion Condition: GATE-010 PASS criteria are satisfied; actual baseline declaration remains subject to authorized execution/closure action.
+
+---
+
+## EC-05A TASK DEPENDENCIES
+
+### Authoritative Source Projection — ID-12 Task Dependencies
+
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-001 | SEQUENTIAL | None | Entry verification and authority freeze |
+| TASK-017 | SEQUENTIAL / GATE-001 LIMITED REMEDIATION | TASK-001 preflight finding | Close verified runtime policy mismatch before project implementation |
+| TASK-002 | PARALLEL_SAFE Track A | GATE-001 GO, TASK-017 if applicable | Track A can run alongside Track B after stable entry |
+| TASK-003 | PARALLEL_SAFE Track B | GATE-001 GO, TASK-017 if applicable | Track B foundation can run alongside Track A |
+| TASK-004 | SEQUENTIAL | TASK-003 | Public boundary depends on publication authority model |
+| TASK-005 | SEQUENTIAL | TASK-003, TASK-004 | Controlled application requires both Track B contracts |
+| TASK-006 | SEQUENTIAL | TASK-005 | Validate security then publication safety after candidate exists |
+| TASK-007 | SEQUENTIAL | GATE-004 PASS, TASK-006 | Regression only after safety qualification |
+| TASK-008 | SEQUENTIAL | GATE-005 PASS, TASK-007 | EXEC-AUTH final PASS requires baseline reconfirmation |
+| TASK-009 | FAN_IN | GATE-002 PASS, GATE-006 PASS, MCP_STABLE_BASELINE RECONFIRMED | Deterministic Track A/Track B join |
+| TASK-010 | SEQUENTIAL | GATE-007 PASS, TASK-009 | MPRF prohibited before Pre-MPRF integration PASS |
+| TASK-011 | SEQUENTIAL | TASK-010 | Lifecycle depends on registry/admission core |
+| TASK-012 | SEQUENTIAL | TASK-011 | Failure/failover consumes lifecycle eligibility facts |
+| TASK-013 | SEQUENTIAL | TASK-011, TASK-012 | Resume needs lifecycle plus failure/recovery contract |
+| TASK-014 | SEQUENTIAL | TASK-010~013 | Telemetry binds all MPRF foundation states |
+| TASK-015 | FAN_IN | GATE-008 PASS, GATE-002 PASS, GATE-006 PASS | Integrated qualification across all qualified domains |
+| TASK-016 | SEQUENTIAL | GATE-009 PASS, TASK-015 | Closure only after integrated qualification |
+
+## Execution Order
+
+1. TASK-001 performs read-only preflight and identifies/refreshes Runtime Compatibility state.
+2. If mismatch persists, GATE-001 may issue **CONDITIONAL_GO only for TASK-017**. No Track A/B work starts.
+3. TASK-017 closes the compatibility remediation; GATE-001 is re-evaluated.
+4. After GATE-001 GO, TASK-002 (Track A) and TASK-003→008 (Track B) may proceed with only the approved limited parallelism.
+5. Track B order is fixed: contract/application → Security Validation → Git Publication Safety → Full MCP regression → MCP baseline reconfirmation → EXEC-AUTH PASS.
+6. TASK-009 joins Track A/B; GATE-007 must PASS before TASK-010.
+7. TASK-010→014 build and qualify MPRF Foundation.
+8. TASK-015 performs integrated E2E; TASK-016 performs final closure review.
+
+Dependency invariants: MPRF before GATE-007 = prohibited; EXEC-AUTH PASS before GATE-005 = prohibited; publication-safety PASS before Security Validation = prohibited.
+
+---
+
+# EC-06 VALIDATION
+
+## Authoritative Source Projection — ID-13 Validation / Test Design
+
+## Validation Strategy
+
+Validation is layered and fail-closed. Contract/unit checks prove versioned schemas and state machines; integration checks prove authority boundaries and handoffs; program regression protects the Full MCP/Router baselines; production-style E2E is deferred to execution authority. No test in this design document has been executed. Test IDs below define later required proof.
+
+## Test Contracts
+
+| ID | Level | Target | Related Requirements | Related Tasks | Pass Condition |
+|---|---|---|---|---|---|
+| TEST-001 | L3 | Authority / repository / baseline binding | REQ-001~003, OPS-006~007 | TASK-001 | Exact root/repo/origin/approved refs reachable; current dirty main is isolated and not treated as baseline; source drift disposition explicit. |
+| TEST-002 | L3 | GPT Operator and Runtime Compatibility | OPS-004~005 | TASK-001, TASK-017 | OperatorDirective/control path exists, stage transitions are explicit, and GATE-001 blocks Track A/B until compatibility PASS. |
+| TEST-003 | L2 | Provider-neutral task contract | OPS-003~004 | TASK-017 | Task contract rejects provider/model fields; state_change_required and canonical capability split are represented. |
+| TEST-004 | L2 | RouterRequest/Decision v2 contract | REQ-004~005, NFR-001 | TASK-017, TASK-002 | Versioned request/decision validates eligibility/failure/capability input and deterministic evidence. |
+| TEST-005 | L3 | Router-only model selection and adapter binding | REQ-005, OPS-004 | TASK-017, TASK-002 | Adapters consume Router-selected provider/model; environment/default model cannot override a bound decision. |
+| TEST-006 | L3 | HYBRID compatibility / no auto fallback | REQ-018, NFR-001 | TASK-017, TASK-002 | Existing compatible calls still work; NVIDIA failure never directly invokes Codex same-stage; Codex unavailable permits only GPT-authorized exact Manual Action or blocked/queued state. |
+| TEST-007 | L2 | Public execution authorization/result contract | REQ-009~010, SEC-001 | TASK-003, TASK-004, TASK-005 | Public DTOs are versioned, exact-bound and contain no Full MCP internal object exposure. |
+| TEST-008 | L3 | PCA-002 internal access negative space | REQ-010, SEC-005 | TASK-004, TASK-005 | Static/runtime dependency checks show MPRF consumer has zero import/access to forbidden Full MCP internals. |
+| TEST-009 | L2 | git_stage exact-scope safety | REQ-006~008, SEC-001~003 | TASK-003, TASK-005 | Only approved pathspecs stage; unrelated/stale candidate or digest mismatch is blocked; stage evidence seals index/staged diff digests. |
+| TEST-010 | L2 | git_commit exact-index safety | REQ-006~008, SEC-001~003 | TASK-003, TASK-005 | Commit requires prior sealed stage evidence, exact index/tree, bounded message and returns immutable commit evidence. |
+| TEST-011 | L3 | git_push remote/branch/freshness/NFF/protection | REQ-006~008, SEC-002 | TASK-003, TASK-005, TASK-006 | Wrong repo/branch/remote, protected branch policy, stale remote head and non-fast-forward conditions fail closed; force unavailable. |
+| TEST-012 | L3 | Unrelated-change / digest / authorization guards | REQ-007~008, SEC-001~003 | TASK-005, TASK-006 | Unapproved changes, authorization mismatch, candidate/diff/index/commit digest mismatch all block publication. |
+| TEST-013 | L3 | Ambiguous push reconciliation | REQ-008, SEC-004 | TASK-005, TASK-006 | Transport ambiguity enters ACTION_SIDE_EFFECT_AMBIGUOUS; remote state reconciles before retry and automatic replay never occurs. |
+| TEST-014 | L3 | Security-first publication qualification | SEC-001~005 | TASK-006 | Security suite PASS is recorded before Git publication safety PASS; hard prohibitions have negative tests. |
+| TEST-015 | L6 | Full MCP regression corpus | REQ-011~012, NFR-001 | TASK-007 | Existing filesystem/shell/git-read/build/test/auth/effect/adapter semantics pass with no unrelated permission expansion. |
+| TEST-016 | L6 | MCP / Execution Backend baseline reconfirmation | REQ-011~012 | TASK-007 | Controlled diff and full regression prove approved baseline successor is eligible for RECONFIRMED status. |
+| TEST-017 | L3 | EXEC-AUTH final qualification order | REQ-009~012 | TASK-008 | GATE-005 evidence precedes EXEC-AUTH PASS; PCA-002 is CLOSED internally and public boundary remains clean. |
+| TEST-018 | L3 | Pre-MPRF deterministic fan-in | REQ-012, REQ-014, NFR-004 | TASK-009 | GATE-007 requires immutable GATE-002 + GATE-006 + baseline evidence; partial/racy input fails closed. |
+| TEST-019 | L2 | MPRF registry/admission contracts | REQ-013~014 | TASK-010 | Versioned provider/model records and admission facts are valid and do not contain routing decisions. |
+| TEST-020 | L2 | MPRF lifecycle/health/quota/rate transitions | REQ-013~016 | TASK-011 | Lifecycle transitions are deterministic; stale/unknown health or exceeded quota becomes ineligible fact, not direct reroute. |
+| TEST-021 | L2 | Failure taxonomy completeness | REQ-015 | TASK-012 | `FailureClass.v1` accepts exactly the 14 approved classes and each maps exactly once to the ID-09 handling and eligibility/prohibition disposition; unknown enum values fail closed. |
+| TEST-022 | L3 | Failover-eligible classes | REQ-016~018 | TASK-012 | `MODEL_FAILURE`, `PROVIDER_FAILURE`, `RATE_LIMIT`, `QUOTA_EXHAUSTION`, and policy-safe `NETWORK_FAILURE` can form Router reroute requests only after checkpoint/artifact/effect/auth/policy prerequisites. |
+| TEST-023 | L3 | Failover-prohibited classes | REQ-016~018, SEC-006 | TASK-012 | `TASK_FAILURE` without classified eligible cause, `INVALID_RESPONSE`, permission `AUTH_FAILURE`, `POLICY_REJECTION`, `CHECKPOINT_FAILURE` until recovery, `EXECUTION_BACKEND_FAILURE`, `ACTION_SIDE_EFFECT_AMBIGUOUS`, `RECOVERY_REQUIRED`, and unresolved `UNKNOWN_FAILURE` cannot produce a reroute. |
+| TEST-024 | L3 | Legacy NVIDIA→Codex same-task fallback absence | REQ-018 | TASK-012 | Failure of NVIDIA PREPARE cannot change stage/provider to Codex ACTION without successful prepare and fresh GPT directive/Router decision. |
+| TEST-025 | L2 | Checkpoint integrity / corruption | REQ-017 | TASK-013 | Digest/lineage corruption blocks resume and enters recovery state. |
+| TEST-026 | L3 | Resume auth/effect reconciliation order | REQ-017~018, SEC-004, SEC-006 | TASK-013 | Checkpoint→artifact→effect→authorization→failover-policy→Router→resume sequence is enforced; invalid auth/ambiguous effect blocks. |
+| TEST-027 | L2 | Provider Runtime Event contract | REQ-019 | TASK-014 | Provider/model/health/quota/transition/failover/retry/exclusion events are append-only, correlated and secret-safe. |
+| TEST-028 | L3 | Observability source-of-truth separation | REQ-019, NFR-003 | TASK-014 | MPRF never emits canonical action effect/result truth and Full MCP never becomes provider-runtime lifecycle truth. |
+| TEST-029 | L4 | Integrated happy path E2E | REQ-020 | TASK-015 | GPT directive→Router decision→MPRF facts→Full MCP authorized action→effect truth→verify/gate evidence completes with authority preserved. |
+| TEST-030 | L4 | Integrated failure/recovery E2E | REQ-015~020, SEC-004~006 | TASK-015 | Eligible failure reroutes safely after recovery checks; prohibited/ambiguous failures fail closed without duplicate action. |
+| TEST-031 | L6 | Integrated negative-space / authority regression | REQ-014, REQ-018~020, SEC-005~006 | TASK-015 | No hidden selection, internal Full MCP coupling, policy bypass, extra provider/action, automatic fallback or event-source duplication exists. |
+| TEST-032 | L6 | Final closure / traceability completeness | REQ-020, NFR-002, OPS-001~007 | TASK-016 | All MUST chains and evidence/gates complete; blocker=0, unresolved major=0, source/identity/version/authority manifests coherent. |
+
+## Regression Requirements
+
+- Full MCP regression must cover existing filesystem, shell, git-read/restore/prepare-commit, validation, auth/effect journal, adapter/gateway and security behavior outside the new publication authority.
+- Router regression must prove v1-compatible consumers remain supported under the documented version policy and that provider/model selection authority is not duplicated.
+- Runtime compatibility regression must prove GPT stage control, planned handoff and blocked ACTION semantics without introducing same-stage automatic fallback.
+- MPRF regression must prove no internal Full MCP coupling, no routing authority, no action authority and no duplicate observability ownership.
+- Any remediation after a failed Gate reruns focused tests, dependent regression, independent review and the same Gate.
+
+## Manual Verification
+
+Required only for evidence that cannot be safely asserted by automated tests, such as explicit approval-reference validity, protected-branch policy source, external remote state, and final user authorization. Manual verification must produce a referenced artifact; verbal/unrecorded confirmation is insufficient.
+
+---
+
+# EC-07 SECURITY
+
+## Authoritative Source Projection — ID-14 Security Design
+
+## Security Design Rules
+
+| ID | Approved SEC Requirement | Security Design Rule | Related Task | Validation |
+|---|---|---|---|---|
+| SEC-D-001 | SEC-001 | Every publication action binds project/repository/branch/remote/scope/approval reference and exact policy digest; mismatch blocks before effect intent. | TASK-003~006 | TEST-007, TEST-009~012 |
+| SEC-D-002 | SEC-002 | Remote HEAD freshness, NFF, protected-branch, working-tree scope and unrelated-change guards are mandatory and non-bypassable. | TASK-003~006 | TEST-011, TEST-012 |
+| SEC-D-003 | SEC-003 | Candidate/diff/index/tree/commit/push evidence is digest-linked across stage→commit→push. | TASK-003~006 | TEST-009~012 |
+| SEC-D-004 | SEC-004 | Ambiguous action/push outcome enters reconciliation; no automatic replay until canonical Full MCP/remote state is established. | TASK-005~006, TASK-013~015 | TEST-013, TEST-026, TEST-030 |
+| SEC-D-005 | SEC-005 | MPRF consumer uses PublicExecutionRequest/Result only; forbidden internal classes/stores/registry/journal have static/runtime negative-space tests. | TASK-004~005, TASK-015 | TEST-008, TEST-031 |
+| SEC-D-006 | SEC-006 | Policy rejection, permission AUTH failure, backend failure, ambiguity and recovery-required states cannot create authority-expanding reroute/failover. | TASK-012~015 | TEST-023, TEST-026, TEST-030~031 |
+
+## Security Constraints to Preserve
+
+- Force push, history rewrite, destructive reset, protected-branch bypass and unapproved repo/branch/remote expansion are not implemented as allowed publication operations.
+- Existing secret-safe Full MCP observability restrictions remain; MPRF Provider Runtime Events cannot persist action payload/stdout/stderr/credentials.
+- Authorization validity is rechecked at resume/retry boundaries; checkpoint possession is not authorization.
+- Provider failure does not grant permission escalation or provider-policy bypass.
+- Full MCP closed registry remains the only action operation authority.
+
+## Prohibited Security Changes
+
+- Adding generic git/shell escape hatches for publication.
+- Allowing MPRF to write Full MCP journals/receipts or decide action effect state.
+- Treating correlation identifiers as authorization tokens.
+- Converting an ambiguous push to success or replay without reconciliation.
+- Converting policy/permission denial to a routable provider failure.
+
+---
+
+# EC-08 PERMISSIONS / CAPABILITIES
+
+## Authoritative Source Projection — ID-15 Permission / Capability Design
+
+## Allowed Within Approved Scope
+
+| ID | Action / Capability | Reason |
+|---|---|---|
+| PERM-001 | read-only repository/source inspection | Required for design/preflight verification |
+| PERM-002 | reasoning/evidence analysis/code_generation/patch_generation/test_design/review/documentation | NVIDIA-primary safe work classes under Router policy |
+| PERM-003 | filesystem_write/shell/test_execution/integration within approved targets after execution approval | Required state-changing apply boundary; Router policy makes them action-provider eligible only |
+| PERM-004 | Full MCP git_stage/git_commit/git_push after task/gate authorization | Explicit approved EXEC-AUTH scope with publication guards |
+| PERM-005 | MPRF registry/lifecycle/failure/checkpoint/telemetry mutation after GATE-007 and execution approval | Explicit approved MPRF Foundation scope |
+
+## Separate Approval Required
+
+| ID | Action | Why Separate Approval Is Required |
+|---|---|---|
+| PERM-006 | Any repository mutation/test execution/Git publication | Implementation Design approval is not execution approval |
+| PERM-007 | Branch merge, baseline declaration/freeze, production activation | Handoff explicitly excludes these from design authority |
+| PERM-008 | Any plan/requirement/root/version/authority material change | Requires Development Plan revision and reapproval |
+| PERM-009 | Future Multi-Provider Handoff activation/version-specific behavior | Handoff v1.1/v1.2 label discrepancy is quarantined and current program keeps it inactive |
+
+## Prohibited Actions
+
+- NVIDIA state-changing execution.
+- Task/provider/model hardcoding outside Provider Router.
+- NVIDIA→Codex same-task same-stage automatic fallback.
+- Force push, history rewrite, destructive reset, protected-branch bypass.
+- MPRF direct use of Full MCP internal journal/receipt/registry/classes.
+- MPRF/AI Office/Jarvis provider/model selection bypass.
+- Dynamic/cost/latency-aware routing, benchmarking/scoring, extra providers, PHASE 5/6/7 activation in this program.
+
+## Provider-Neutral Capability Rule
+
+Each Task declares execution capabilities and `state_change_required`. Provider-role eligibility is derived by policy: safe preparation/reasoning/review/test-design/documentation capabilities are NVIDIA-primary eligible; filesystem_write/shell/test_execution/git/integration/activation capabilities require the secondary action-provider role. The task itself does not select a Provider or Model.
+
+---
+
+## PROVIDER ROUTING AUTHORITY
+task_required_capabilities_are_provider_neutral: CONFIRMED
+provider_selection_authority: PROVIDER_ROUTER
+task_level_provider_hardcoding: PROHIBITED
+model_selection_authority: PROVIDER_ROUTER
+nvidia_mutation_authority: PROHIBITED
+codex_action_boundary: MINIMUM_REQUIRED_STATE_CHANGE_ONLY
+
+# EC-09 EVIDENCE
+
+## Authoritative Source Projection — ID-16 Evidence Requirements
+
+| ID | Purpose | Source | Related Requirement | Related Task / Test | Expected Proof |
+|---|---|---|---|---|---|
+| EVD-001 | Authority/source/root/runtime preflight | TASK-001 / TEST-001~003 | REQ-001~003, OPS-004~007 | TASK-001 | Signed/digest-bound authority matrix, repo/root/ref observations, source-drift result and Runtime Compatibility decision. |
+| EVD-002 | Runtime compatibility remediation proof | TASK-017 / TEST-002~006 | OPS-003~005, REQ-018 | TASK-017 | Operator/Router/handoff schemas, tests, rollback reference and zero open RTMISMATCH-001~006. |
+| EVD-003 | PCA-001 Router qualification | TASK-002 / TEST-004~006 | REQ-004~005 | TASK-002 | Router contract/version/decision evidence, model-binding proof, compatibility and rollback record. |
+| EVD-004 | EXEC-AUTH/PCA-002 contract qualification | TASK-003~005 / TEST-007~010 | REQ-006~010, SEC-001~005 | TASK-003~005 | Authority matrix, public DTO schemas, closed registry diff, internal-access negative-space record. |
+| EVD-005 | Security validation | TASK-006 / TEST-012,014 | SEC-001~005 | TASK-006 | Separate security-layer report with prohibition/authorization/scope/digest/secret-safe results. |
+| EVD-006 | Git publication safety | TASK-006 / TEST-009~013 | REQ-006~008, SEC-001~004 | TASK-006 | Stage/commit/push guard results, freshness/NFF/protected branch/unrelated change/digest/ambiguity evidence. |
+| EVD-007 | Full MCP regression | TASK-007 / TEST-015 | REQ-011~012 | TASK-007 | Regression suite result set and unrelated-permission expansion scan. |
+| EVD-008 | Baseline reconfirmation | TASK-007 / TEST-016 | REQ-011~012 | TASK-007 | Controlled-diff manifest, baseline identity, Execution Backend Contract and MCP_STABLE_BASELINE reconfirmation decision. |
+| EVD-009 | EXEC-AUTH final qualification | TASK-008 / TEST-017 | REQ-009~012 | TASK-008 | GATE-005 dependency proof, EXEC-AUTH PASS package and PCA-002 CLOSED record. |
+| EVD-010 | Pre-MPRF fan-in | TASK-009 / TEST-018 | REQ-012, REQ-014, NFR-004 | TASK-009 | Immutable Track A/Track B/baseline manifest with version/authority compatibility and defect-zero check. |
+| EVD-011 | MPRF registry/lifecycle qualification | TASK-010~011 / TEST-019~020 | REQ-013~016 | TASK-010~011 | Registry/admission/lifecycle/health/quota/rate transition results and authority non-duplication proof. |
+| EVD-012 | Failure/failover qualification | TASK-012 / TEST-021~024 | REQ-015~018, SEC-006 | TASK-012 | Failure matrix, eligible/prohibited cases, Router reroute evidence, legacy fallback negative-space proof. |
+| EVD-013 | Checkpoint/resume qualification | TASK-013 / TEST-025~026 | REQ-017~018, SEC-004, SEC-006 | TASK-013 | Checkpoint digests, corruption/auth/effect reconciliation cases and safe resume lineage. |
+| EVD-014 | Observability separation | TASK-014 / TEST-027~028 | REQ-019, NFR-003 | TASK-014 | Provider Runtime Event schema/store evidence, Full MCP Action Runtime Event references and duplicate-owner scan. |
+| EVD-015 | Integrated happy-path E2E | TASK-015 / TEST-029 | REQ-020 | TASK-015 | Cross-domain correlated happy-path execution evidence. |
+| EVD-016 | Integrated failure/security E2E | TASK-015 / TEST-030~031 | REQ-015~020, SEC-004~006 | TASK-015 | Fault/recovery, negative-space, security and authority-preservation evidence. |
+| EVD-017 | Final traceability/closure | TASK-016 / TEST-032 | REQ-020, NFR-002, OPS-001~007 | TASK-016 | Complete RTM, closure metrics, version/source/authority manifest, zero blocker/major proof. |
+| EVD-018 | Implementation Design diagnosis | ID-24 EDP run | NFR-002, OPS-001~007 | Design phase | EDP evidence matrix, findings closure, negative-space, adversarial pass, PASS challenge and closure metrics. |
+
+This section defines expected evidence only. Except for read-only design-time repository observations in ID-03 and diagnosis evidence in ID-24, no implementation/runtime/test evidence is claimed by this document.
+
+---
+
+# EC-10 FAN-OUT / FAN-IN
+
+## Authoritative Source Projection — ID-17 Fan-Out / Fan-In Design
+
+## Fan-Out Decision
+
+FAN_OUT: ALLOWED
+
+Reason: The Approved Plan explicitly permits limited Track A / Track B parallelism after GATE-001 GO. Runtime-compatibility remediation is not parallel with Track implementation, and MPRF is not parallel with either incomplete Track.
+
+## Parallel Work Units
+
+| Work Unit | Tasks | Ownership Boundary | Input | Expected Output | Forbidden Overlap |
+|---|---|---|---|---|---|
+| FW-001 | TASK-002 | Provider Router contract only | GATE-001 evidence, Router baseline | DEL-002 PCA-001 qualification | No Full MCP/MPRF action authority |
+| FW-002 | TASK-003~008 | EXEC-AUTH/PCA-002/Full MCP controlled extension | GATE-001 evidence, Full MCP baseline | DEL-003~005 + GATE-006 package | No Router selection authority, no MPRF foundation |
+| FW-003 | Independent NVIDIA-safe analysis while ACTION_PROVIDER_BLOCKED | Read-only independent tasks only | Current task graph/dependencies | Prepared analysis/evidence packages | No mutation/gate advancement dependent on blocked action |
+
+## Fan-In / Merge Points
+
+| Merge Point | Inputs | Required Validation |
+|---|---|---|
+| FI-001 — GATE-001 re-evaluation | TASK-001 + TASK-017 evidence when mismatch exists | TEST-001~006; runtime compatibility PASS |
+| FI-002 — GATE-007 Pre-MPRF join | GATE-002 PASS + GATE-006 PASS + MCP_STABLE_BASELINE RECONFIRMED | TEST-018; immutable version/authority/baseline manifest |
+| FI-003 — GATE-008 MPRF qualification | TASK-010~014 | TEST-019~028 |
+| FI-004 — GATE-009 Integrated qualification | Router + EXEC-AUTH + MPRF qualification packages | TEST-029~031 |
+| FI-005 — GATE-010 Closure | All Gate evidence + RTM + defect register | TEST-032 |
+
+---
+
+# EC-11 GATES / REVIEW
+
+## Authoritative Source Projection — ID-18 Gate Design
+
+## GATE-001 — Full MCP Stable Entry
+
+Purpose: Prove approved baseline/source/root identity and Runtime Compatibility before Track A/B implementation.
+
+Required Tasks: TASK-001, TASK-017
+Required Validation: TEST-001, TEST-002, TEST-003, TEST-004, TEST-005, TEST-006
+Required Evidence: EVD-001, EVD-002
+Required Review: independent entry reviewer verifies source drift, baseline identity, dirty-worktree isolation, runtime policy and no unauthorized WHAT change.
+Decision States: GO / CONDITIONAL_GO / NO_GO.
+GO Condition: source/root/repository/approved ref bindings valid, no material drift, runtime policy compatibility PASS, and any TASK-017 remediation PASS.
+CONDITIONAL_GO Condition: only when stable-entry evidence is valid and the **approved bounded runtime remediation path** is the sole unresolved item; authorizes TASK-017 only and explicitly does not authorize TASK-002/TASK-003 or other project implementation.
+NO_GO Condition: missing/stale/conflicting authority, material source drift, wrong root/ref, unresolved runtime mismatch without approved remediation, or remediation failure.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-002 — PCA-001 Contract Validation
+
+Purpose: Qualify Router v2 without authority drift.
+Required Tasks: TASK-002
+Required Validation: TEST-004, TEST-005, TEST-006
+Required Evidence: EVD-003
+Required Review: Router authority/compatibility review.
+Decision States: GO / NO_GO.
+GO Condition: versioned contract/regression/rollback PASS; Router-only provider/model/reroute authority preserved.
+CONDITIONAL_GO Condition: not used for MPRF join.
+NO_GO Condition: compatibility break, duplicate selector, model override, unresolved blocker/major.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-003 — EXEC-AUTH / PCA-002 Contract Validation
+
+Purpose: Validate publication authority/public execution contract before safety qualification.
+Required Tasks: TASK-003, TASK-004, TASK-005
+Required Validation: TEST-007, TEST-008, TEST-009, TEST-010
+Required Evidence: EVD-004
+Required Review: execution-authority/public-boundary review.
+Decision States: GO / NO_GO.
+GO Condition: exactly three publication actions, exact authorization/public contract, zero internal MPRF coupling, no unrelated authority expansion.
+CONDITIONAL_GO Condition: not used.
+NO_GO Condition: generic git escape, internal exposure, unsupported action, broken auth/effect binding, unresolved blocker/major.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-004 — Security / Publication Safety
+
+Purpose: Qualify Track B safety in mandatory internal order.
+Required Tasks: TASK-006
+Required Validation: TEST-011, TEST-012, TEST-013, TEST-014
+Required Evidence: EVD-005, EVD-006
+Required Review: security reviewer followed by publication-safety reviewer.
+Decision States: GO / NO_GO.
+GO Condition: **Security Validation PASS occurs first**, then Git Publication Safety PASS; all hard prohibitions and ambiguity controls pass.
+CONDITIONAL_GO Condition: not used.
+NO_GO Condition: either layer fails, order/evidence is ambiguous, or any publication guard can be bypassed.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-005 — Full MCP Regression / MCP Baseline Reconfirmation
+
+Purpose: Prove controlled extension preserves Full MCP and reconfirm stable baseline before EXEC-AUTH final PASS.
+Required Tasks: TASK-007
+Required Validation: TEST-015, TEST-016
+Required Evidence: EVD-007, EVD-008
+Required Review: regression/baseline reviewer independent of implementation.
+Decision States: GO / NO_GO.
+GO Condition: Full MCP regression PASS, no unrelated permission expansion, Execution Backend Contract FINAL reconfirmed, MCP_STABLE_BASELINE RECONFIRMED.
+CONDITIONAL_GO Condition: not used for GATE-006.
+NO_GO Condition: regression failure, uncontrolled diff, baseline ambiguity or unresolved blocker/major.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-006 — EXEC-AUTH Final PASS
+
+Purpose: Close Track B after baseline reconfirmation.
+Required Tasks: TASK-008
+Required Validation: TEST-017
+Required Evidence: EVD-009
+Required Review: EXEC-AUTH qualification reviewer.
+Decision States: GO / NO_GO.
+GO Condition: GATE-005 GO is already sealed; EXEC-AUTH PASS and PCA-002 PASS/CLOSED; authority/security/public-boundary evidence complete.
+CONDITIONAL_GO Condition: not used.
+NO_GO Condition: any missing GATE-005 dependency or Track B material defect.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-007 — Pre-MPRF Integration Gate
+
+Purpose: Deterministically join Track A/Track B and baseline evidence before MPRF.
+Required Tasks: TASK-009
+Required Validation: TEST-018
+Required Evidence: EVD-003, EVD-008, EVD-009, EVD-010
+Required Review: cross-track authority/version compatibility review.
+Decision States: GO / NO_GO.
+GO Condition: GATE-002 GO + GATE-006 GO + MCP_STABLE_BASELINE RECONFIRMED; compatible public versions; blocker/major 0.
+CONDITIONAL_GO Condition: prohibited for starting MPRF.
+NO_GO Condition: partial Track input, race/stale evidence, version mismatch, authority overlap or material defect.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-008 — MPRF Foundation Qualification
+
+Purpose: Qualify MPRF Provider Runtime Foundation within approved scope.
+Required Tasks: TASK-010, TASK-011, TASK-012, TASK-013, TASK-014
+Required Validation: TEST-019, TEST-020, TEST-021, TEST-022, TEST-023, TEST-024, TEST-025, TEST-026, TEST-027, TEST-028
+Required Evidence: EVD-011, EVD-012, EVD-013, EVD-014
+Required Review: MPRF scope/authority/failure/recovery/observability review.
+Decision States: GO / NO_GO.
+GO Condition: registry/lifecycle/failure/checkpoint/telemetry PASS; no selection/action authority absorption; prohibited failover cases and source-of-truth separation PASS.
+CONDITIONAL_GO Condition: not used for integrated E2E.
+NO_GO Condition: authority expansion, failure-policy violation, checkpoint/recovery gap, observability duplication or material defect.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-009 — Integrated E2E Qualification
+
+Purpose: Qualify cross-domain end-to-end behavior and negative space.
+Required Tasks: TASK-015
+Required Validation: TEST-029, TEST-030, TEST-031
+Required Evidence: EVD-015, EVD-016
+Required Review: independent integrated qualification review.
+Decision States: GO / NO_GO.
+GO Condition: happy path, failure/recovery, security, observability, authority/regression negative space all PASS with blocker/major 0.
+CONDITIONAL_GO Condition: not used for closure.
+NO_GO Condition: any material integrated defect or missing upstream evidence.
+Gate Bypass: NOT ALLOWED.
+
+## GATE-010 — MULTI_PROVIDER_FOUNDATION_BASELINE Closure
+
+Purpose: Validate final exit conditions and produce declaration-ready closure evidence.
+Required Tasks: TASK-016
+Required Validation: TEST-032
+Required Evidence: EVD-001, EVD-002, EVD-003, EVD-004, EVD-005, EVD-006, EVD-007, EVD-008, EVD-009, EVD-010, EVD-011, EVD-012, EVD-013, EVD-014, EVD-015, EVD-016, EVD-017
+Required Review: final independent closure review.
+Decision States: GO / NO_GO.
+GO Condition: all final exit conditions, 100% MUST traceability, source/identity/version/authority integrity, blocker 0, unresolved major 0, no material TBD/open question.
+CONDITIONAL_GO Condition: not used.
+NO_GO Condition: any missing/contradictory evidence, unresolved material defect or authority/source drift.
+Gate Bypass: NOT ALLOWED.
+
+---
+
+# EC-12 RECOVERY
+
+## Authoritative Source Projection — ID-19 Recovery Design
+
+## RCV-001 — Runtime Compatibility Remediation Failure
+
+Trigger: TASK-017 focused/regression validation fails or Operator/Router policy cannot be expressed safely.
+Affected Tasks: TASK-017, TASK-002, TASK-003.
+Recovery Flow: Failure → NVIDIA analysis/remediation proposal → Codex mutation only under execution authority → focused TEST-002~006 → regression → independent review → GATE-001 re-evaluation.
+Recovery Validation: TEST-002~006.
+Recovery Gate: GATE-001.
+Prohibited Bypass: no Track A/B start while mismatch remains; no automatic provider escalation.
+
+## RCV-002 — Track A Router Contract Failure
+
+Trigger: Router v2 compatibility/authority/model binding test failure.
+Affected Tasks: TASK-002.
+Recovery Flow: diagnose → restore prior compatible contract or revise bounded extension → TEST-004~006 → Router regression → independent review → GATE-002.
+Recovery Validation: TEST-004~006.
+Recovery Gate: GATE-002.
+Prohibited Bypass: MPRF cannot compensate by selecting provider/model itself.
+
+## RCV-003 — Publication Security/Safety Failure
+
+Trigger: GATE-003/004 failure, bypassable guard, digest mismatch or prohibited operation path.
+Affected Tasks: TASK-003~006.
+Recovery Flow: diagnose → NVIDIA remediation proposal → Codex apply if approved → Security Validation first → Publication Safety second → independent review → same Gate.
+Recovery Validation: TEST-007~014.
+Recovery Gate: GATE-003 or GATE-004.
+Prohibited Bypass: no publication activation, no force/reset/rewrite workaround.
+
+## RCV-004 — Full MCP Regression/Baseline Failure
+
+Trigger: TEST-015/016 failure or uncontrolled source/permission drift.
+Affected Tasks: TASK-005~008.
+Recovery Flow: diagnose → revert only controlled extension to approved prior baseline without destructive reset/history rewrite → focused validation → full regression → independent review → GATE-005.
+Recovery Validation: TEST-015~017.
+Recovery Gate: GATE-005, then GATE-006.
+Prohibited Bypass: EXEC-AUTH PASS cannot precede reconfirmation.
+
+## RCV-005 — MPRF Failure/Checkpoint Defect
+
+Trigger: taxonomy, eligibility, checkpoint integrity, auth revalidation or recovery-order defect.
+Affected Tasks: TASK-012, TASK-013.
+Recovery Flow: failure classification → checkpoint/artifact/effect/auth analysis → NVIDIA remediation proposal → Codex apply if needed → TEST-021~026 → regression → independent review → GATE-008.
+Recovery Validation: TEST-021~026.
+Recovery Gate: GATE-008.
+Prohibited Bypass: no permission/policy failover; no ambiguous action replay.
+
+## RCV-006 — Action Side Effect Ambiguous
+
+Trigger: `ACTION_SIDE_EFFECT_AMBIGUOUS`, including uncertain push transport outcome.
+Affected Tasks: TASK-005, TASK-006, TASK-013, TASK-015.
+Recovery Flow: stop replay → reconcile Full MCP effect/remote canonical state → validate artifacts → revalidate authorization → validate failover/retry policy → fresh Router request if eligible → resume/new attempt.
+Recovery Validation: TEST-013, TEST-026, TEST-030.
+Recovery Gate: owning current Gate.
+Prohibited Bypass: automatic retry/replay before reconciliation.
+
+## RCV-007 — Source Drift
+
+Trigger: exact approved MPRF/requirements source or repository baseline materially differs from the Planning Authority assumptions.
+Affected Tasks: TASK-001 and all downstream tasks.
+Recovery Flow: `SOURCE_DRIFT_DETECTED` → impact assessment → `PLAN_REVISION_REQUIRED` when WHAT/identity/root/version changes → plan reapproval → design revision/diagnosis.
+Recovery Validation: TEST-001.
+Recovery Gate: GATE-001.
+Prohibited Bypass: silent path/semantic substitution.
+
+## RCV-008 — Integrated E2E / Closure Failure
+
+Trigger: GATE-009/010 failure.
+Affected Tasks: TASK-015, TASK-016 plus defect-owning upstream task.
+Recovery Flow: locate owner → NVIDIA diagnosis/proposal → Codex mutation if required → focused validation → dependent regression → independent review → same Gate re-evaluation.
+Recovery Validation: TEST-029~032 plus affected focused tests.
+Recovery Gate: GATE-009 or GATE-010.
+Prohibited Bypass: baseline declaration on partial success.
+
+---
+
+# EC-13 TRACEABILITY
+
+## Authoritative Source Projection — ID-21 Design Traceability
+
+The following RTM maps approved Plan obligations to implementation HOW. Requirement text is not reconstructed beyond Plan-provided group semantics. Provider-role eligibility means policy eligibility, never task-level assignment.
+
+| Requirement | Success Criterion | Architecture | Component | Task | Required Capability | Provider-role eligibility | Validation | Evidence | Gate | Deliverable |
+|---|---|---|---|---|---|---|---|---|---|---|
+| REQ-001 | SC-001 | ARC-001 | CMP-D-018 | TASK-001 | read_only, evidence_analysis | NVIDIA-primary safe | TEST-001 | EVD-001 | GATE-001 | DEL-001 |
+| REQ-002 | SC-001 | ARC-001 | CMP-D-018 | TASK-001 | read_only, diagnostics | NVIDIA-primary safe | TEST-001 | EVD-001 | GATE-001 | DEL-001 |
+| REQ-003 | SC-001 | ARC-004, ARC-012 | CMP-D-003, CMP-D-004 | TASK-017, TASK-002, TASK-003, TASK-009 | reasoning, handoff, integration | NVIDIA-primary prepare; Codex-secondary apply only | TEST-002, TEST-018 | EVD-002, EVD-010 | GATE-001, GATE-007 | DEL-001, DEL-006 |
+| REQ-004 | SC-002 | ARC-003 | CMP-D-002 | TASK-002 | code_generation, test_design, apply/test_execution | NVIDIA-primary generation; Codex-secondary apply | TEST-004 | EVD-003 | GATE-002 | DEL-002 |
+| REQ-005 | SC-002 | ARC-003 | CMP-D-002, CMP-D-005, CMP-D-006 | TASK-017, TASK-002 | reasoning, integration | Router-selected roles only | TEST-005 | EVD-002, EVD-003 | GATE-002 | DEL-002 |
+| REQ-006 | SC-003 | ARC-007 | CMP-D-009, CMP-D-010 | TASK-003, TASK-005 | code/patch generation, filesystem_write, git, test_execution | NVIDIA-primary proposal; Codex-secondary action | TEST-009~011 | EVD-004, EVD-006 | GATE-003, GATE-004 | DEL-003, DEL-004 |
+| REQ-007 | SC-003 | ARC-008 | CMP-D-008, CMP-D-009 | TASK-003, TASK-005, TASK-006 | security_review, test_execution | NVIDIA-primary analysis; Codex-secondary tests/actions | TEST-011~014 | EVD-005, EVD-006 | GATE-004 | DEL-004 |
+| REQ-008 | SC-003 | ARC-007, ARC-008 | CMP-D-009, CMP-D-010 | TASK-003, TASK-005, TASK-006 | security_review, evidence_analysis, test_execution | NVIDIA-primary analysis; Codex-secondary actions | TEST-012~014 | EVD-005, EVD-006 | GATE-004 | DEL-004 |
+| REQ-009 | SC-004 | ARC-006 | CMP-D-007 | TASK-004, TASK-005, TASK-008 | code_generation, review, integration | NVIDIA-primary contract work; Codex-secondary apply | TEST-007, TEST-017 | EVD-004, EVD-009 | GATE-003, GATE-006 | DEL-003 |
+| REQ-010 | SC-004 | ARC-006 | CMP-D-007, CMP-D-011 | TASK-004, TASK-005 | read_only scan, code_generation, test_execution | NVIDIA-primary analysis; Codex-secondary apply/test | TEST-008 | EVD-004 | GATE-003 | DEL-003 |
+| REQ-011 | SC-005 | ARC-001, ARC-008 | CMP-D-018 | TASK-007, TASK-008 | test_execution, evidence_analysis | Codex-secondary regression execution; NVIDIA-primary review | TEST-015~017 | EVD-007~009 | GATE-005, GATE-006 | DEL-005 |
+| REQ-012 | SC-005 | ARC-012 | CMP-D-018 | TASK-007, TASK-008, TASK-009 | evidence_analysis, review | NVIDIA-primary safe | TEST-016~018 | EVD-008~010 | GATE-005~007 | DEL-005, DEL-006 |
+| REQ-013 | SC-006 | ARC-009 | CMP-D-012~014 | TASK-010, TASK-011 | code_generation, filesystem_write, test_execution | NVIDIA-primary generation; Codex-secondary apply/test | TEST-019~020 | EVD-011 | GATE-008 | DEL-007 |
+| REQ-014 | SC-006 | ARC-009, ARC-012 | CMP-D-012~017 | TASK-009, TASK-010, TASK-011 | review, code_generation, test_execution | NVIDIA-primary review/generation; Codex-secondary apply/test | TEST-018~020, TEST-031 | EVD-010, EVD-011, EVD-016 | GATE-007~009 | DEL-006, DEL-007, DEL-010 |
+| REQ-015 | SC-007 | ARC-009 | CMP-D-015 | TASK-012 | reasoning, code_generation, test_execution | NVIDIA-primary analysis/generation; Codex-secondary apply/test | TEST-021 | EVD-012 | GATE-008 | DEL-008 |
+| REQ-016 | SC-007 | ARC-003, ARC-009 | CMP-D-015 | TASK-012 | reasoning, integration, test_execution | Router decides; NVIDIA-primary analysis; Codex-secondary apply/test | TEST-022~023 | EVD-012 | GATE-008 | DEL-008 |
+| REQ-017 | SC-007 | ARC-009, ARC-010 | CMP-D-015, CMP-D-016 | TASK-012, TASK-013, TASK-015 | evidence_analysis, code_generation, test_execution, integration | NVIDIA-primary analysis; Codex-secondary apply/test | TEST-021~026, TEST-030 | EVD-012, EVD-013, EVD-016 | GATE-008, GATE-009 | DEL-008, DEL-010 |
+| REQ-018 | SC-007 | ARC-004, ARC-011 | CMP-D-003, CMP-D-015, CMP-D-016 | TASK-017, TASK-012, TASK-013, TASK-015 | reasoning, diagnostics, test_execution | NVIDIA-primary prepare; no automatic Codex fallback | TEST-006, TEST-024, TEST-026, TEST-030 | EVD-002, EVD-012, EVD-013, EVD-016 | GATE-001, GATE-008, GATE-009 | DEL-001, DEL-008, DEL-010 |
+| REQ-019 | SC-008 | ARC-010 | CMP-D-017 | TASK-014, TASK-015 | code_generation, evidence_analysis, test_execution | NVIDIA-primary generation/review; Codex-secondary apply/test | TEST-027~028, TEST-031 | EVD-014, EVD-016 | GATE-008, GATE-009 | DEL-009, DEL-010 |
+| REQ-020 | SC-009 | ARC-012 | CMP-D-018 | TASK-015, TASK-016 | integration, test_execution, evidence_analysis | Codex-secondary E2E execution; NVIDIA-primary review/closure | TEST-029~032 | EVD-015~017 | GATE-009, GATE-010 | DEL-010, DEL-011 |
+| NFR-001 | SC-010 | ARC-003, ARC-006, ARC-008, ARC-009 | CMP-D-002, CMP-D-007, CMP-D-008, CMP-D-012 | TASK-002~014 | contract generation/review/test | NVIDIA-primary generation/review; Codex-secondary apply/test | TEST-004, TEST-007, TEST-015, TEST-019 | EVD-003, EVD-004, EVD-007, EVD-011 | GATE-002~008 | DEL-002~009 |
+| NFR-002 | SC-010 | ARC-012 | CMP-D-018 | TASK-001~016 | evidence_analysis, documentation | NVIDIA-primary safe; Codex only for producing runtime evidence where required | TEST-032 | EVD-017 | GATE-010 | DEL-011 |
+| NFR-003 | SC-010 | ARC-006, ARC-009, ARC-010 | CMP-D-007, CMP-D-015~017 | TASK-004, TASK-010~015 | review, test_execution | NVIDIA-primary review; Codex-secondary apply/test | TEST-008, TEST-028, TEST-031 | EVD-004, EVD-014, EVD-016 | GATE-003, GATE-008, GATE-009 | DEL-003, DEL-009, DEL-010 |
+| NFR-004 | SC-010 | ARC-012 | CMP-D-004, CMP-D-018 | TASK-009, TASK-015 | evidence_analysis, integration | NVIDIA-primary fan-in analysis; Codex-secondary E2E | TEST-018, TEST-029~031 | EVD-010, EVD-015, EVD-016 | GATE-007, GATE-009 | DEL-006, DEL-010 |
+| NFR-005 | SC-010 | ARC-001 | CMP-D-018 | TASK-001~016 | design/evidence analysis | NVIDIA-primary safe | TEST-032 | EVD-018 | GATE-010 | DEL-011 |
+| SEC-001 | SC-011 | ARC-008 | CMP-D-008 | TASK-003~006 | security_review, test_execution | NVIDIA-primary security analysis; Codex-secondary tests | TEST-007, TEST-009~012 | EVD-004~006 | GATE-003~004 | DEL-003, DEL-004 |
+| SEC-002 | SC-011 | ARC-008 | CMP-D-009 | TASK-003~006 | security_review, test_execution | NVIDIA-primary analysis; Codex-secondary tests | TEST-011~014 | EVD-005, EVD-006 | GATE-004 | DEL-004 |
+| SEC-003 | SC-011 | ARC-008 | CMP-D-008, CMP-D-009 | TASK-003~006 | evidence_analysis, test_execution | NVIDIA-primary evidence analysis; Codex-secondary tests | TEST-009~012 | EVD-006 | GATE-004 | DEL-004 |
+| SEC-004 | SC-011 | ARC-008, ARC-010 | CMP-D-009, CMP-D-016 | TASK-005, TASK-006, TASK-013, TASK-015 | diagnostics, reconciliation test | NVIDIA-primary diagnosis; Codex-secondary controlled tests | TEST-013, TEST-026, TEST-030 | EVD-006, EVD-013, EVD-016 | GATE-004, GATE-008, GATE-009 | DEL-004, DEL-008, DEL-010 |
+| SEC-005 | SC-011 | ARC-006 | CMP-D-007, CMP-D-011 | TASK-004, TASK-005, TASK-015 | read_only scan, test_execution | NVIDIA-primary scan; Codex-secondary tests | TEST-008, TEST-031 | EVD-004, EVD-016 | GATE-003, GATE-009 | DEL-003, DEL-010 |
+| SEC-006 | SC-011 | ARC-009 | CMP-D-015, CMP-D-016 | TASK-012, TASK-013, TASK-015 | reasoning, test_execution | NVIDIA-primary analysis; Codex-secondary tests | TEST-023, TEST-026, TEST-030~031 | EVD-012, EVD-013, EVD-016 | GATE-008, GATE-009 | DEL-008, DEL-010 |
+| OPS-001 | SC-012 | ARC-012 | CMP-D-018 | TASK-001~016 | evidence_analysis, documentation | NVIDIA-primary safe | TEST-032 | EVD-017, EVD-018 | GATE-001~010 | DEL-001~011 |
+| OPS-002 | SC-012 | ARC-012 | CMP-D-018 | TASK-001~016 | documentation, evidence_analysis | NVIDIA-primary safe | TEST-032 | EVD-017, EVD-018 | GATE-001~010 | DEL-001~011 |
+| OPS-003 | SC-012 | ARC-005 | CMP-D-001~006 | TASK-017, TASK-002~015 | capability declaration | Router resolves; no task hardcoding | TEST-003, TEST-005 | EVD-002 | GATE-001 | DEL-001 |
+| OPS-004 | SC-012 | ARC-002~005, ARC-011 | CMP-D-001~006 | TASK-001, TASK-017, TASK-002~016 | operator/routing/evidence/action capabilities | NVIDIA-primary / Codex-secondary under Router | TEST-002~006, TEST-032 | EVD-001, EVD-002, EVD-017 | GATE-001~010 | DEL-001~011 |
+| OPS-005 | SC-012 | ARC-002, ARC-011 | CMP-D-001, CMP-D-004 | TASK-001, TASK-017 | diagnostics, apply/test remediation | NVIDIA-primary analysis; Codex-secondary remediation apply | TEST-002~006 | EVD-001, EVD-002 | GATE-001 | DEL-001 |
+| OPS-006 | SC-012 | ARC-001 | CMP-D-018 | TASK-001, TASK-016 | read_only, evidence_analysis | NVIDIA-primary safe | TEST-001, TEST-032 | EVD-001, EVD-017 | GATE-001, GATE-010 | DEL-001, DEL-011 |
+| OPS-007 | SC-012 | ARC-001 | CMP-D-018 | TASK-001 | read_only, diagnostics | NVIDIA-primary safe | TEST-001 | EVD-001 | GATE-001 | DEL-001 |
+
+MUST requirement coverage rule: every Plan requirement group represented above has complete technical coverage. The exact upstream R1.0/MPRF v0.7 bodies are not reconstructed; execution preflight must rebind them, and any material mismatch triggers RCV-007.
+
+---
+
+# EC-14 PROJECTION INTEGRITY
+
+NO_SEMANTIC_EXPANSION: CONFIRMED
+NO_SEMANTIC_LOSS: CONFIRMED
+NO_UNAUTHORIZED_SCOPE_CHANGE: CONFIRMED
+PROJECT_IDENTITY_INTEGRITY: PASS
+VERSION_IDENTITY_INTEGRITY: PASS
+REQUIRED_CAPABILITY_INTEGRITY: PASS
+HYBRID_POLICY_INTEGRITY: PASS
+SOURCE_DRIFT_STATUS: CLEAR_FOR_APPROVAL_ARTIFACT / EXECUTION_REBIND_REQUIRED_AS_DESIGNED
+
+requirements_coverage: 100% — REQ-001~020, NFR-001~005, SEC-001~006, OPS-001~007
+tasks_coverage: 100% — approved TASK-001~016 plus bounded TASK-017 prerequisite remediation
+required_capabilities_coverage: 100%
+validations_coverage: 100% — TEST-001~032
+security_coverage: 100% — SEC-D-001~006 plus negative-space prohibitions
+permissions_coverage: 100% — PERM-001~009 and provider-neutral capability rules
+evidence_coverage: 100% — EVD-001~018
+gates_coverage: 100% — GATE-001~010
+recovery_coverage: 100% — RCV-001~008
+traceability_coverage: 100% for Plan MUST obligations represented by the Approved Implementation Design
+
+## Authoritative Source Projection — ID-22 Plan Boundary Check
+
+## Requirement Changes
+UNAUTHORIZED_REQUIREMENT_CHANGE: NONE
+Details: No new WHAT requirement is introduced. `TASK-017` implements a bounded HOW prerequisite expressly required when the approved runtime policy cannot be represented; it does not change the approved Full Plan policy.
+
+## Scope Changes
+UNAUTHORIZED_SCOPE_CHANGE: NONE
+Details: Runtime compatibility remediation is within the Approved Plan GATE-001 Runtime Compatibility path; publication/MPRF scopes remain bounded.
+
+## Constraint Changes
+UNAUTHORIZED_CONSTRAINT_CHANGE: NONE
+Details: All no-fallback, no-internal-access, ordering, provider-authority and scope locks are preserved or strengthened operationally.
+
+## Success Criteria Changes
+UNAUTHORIZED_SUCCESS_CRITERIA_CHANGE: NONE
+Details: SC-001~SC-012 are preserved.
+
+## Deliverable Changes
+UNAUTHORIZED_DELIVERABLE_CHANGE: NONE
+Details: DEL-001~DEL-011 are preserved. EVD IDs are design evidence requirements, not new business deliverables.
+
+## Project Identity Changes
+UNAUTHORIZED_PROJECT_IDENTITY_CHANGE: NONE
+Details: Existing integrated program identity is unchanged.
+
+## Lifecycle / Root / Version Changes
+UNAUTHORIZED_LIFECYCLE_VERSION_CHANGE: NONE
+Details: Existing Full MCP approved repository/root and upgrade sequence are preserved; current dirty main is not reinterpreted as baseline.
+
+## HYBRID Policy Changes
+UNAUTHORIZED_HYBRID_POLICY_CHANGE: NONE
+AUTHORIZED_EXECUTION_POLICY_AMENDMENT: USER_DIRECTIVE_2026-09-17_NVIDIA_PRIMARY_FULL_MCP_PATTERN
+Details: GPT Operator, Router authority, NVIDIA-primary/Codex-secondary and no automatic NVIDIA→Codex fallback remain authoritative. While Codex is unavailable/quota-exhausted, GPT Operator may authorize the existing Manual Action path for an exact bounded state-changing action package. Manual Action is not a provider/model and cannot expand scope or advance a Gate automatically.
+
+PLAN_REVISION_REQUIRED: NO for the current design. Any future material source drift or WHAT/root/version/authority change invokes RCV-007 and changes this disposition.
+
+---
+
+## Authoritative Source Projection — ID-23 Design Assumptions / Open Issues
+
+## Verified Facts
+
+- Full MCP Stable Baseline `0848dab...`, Closure `39e0f6a...` and Final Approval `0bdfad...` are reachable in the verified repository lineage.
+- `origin/upgrade-003/full-mcp` points to the final approval ref; current local `main` is `fffe93a...` and is not the Full MCP approved baseline.
+- Current local worktree is dirty; it is an execution-isolation/preflight condition, not authority to clean or absorb changes.
+- Current HYBRID runtime already routes read-only work to NVIDIA and state-changing capability to Codex, but verified RTMISMATCH-001~006 require bounded compatibility remediation before Track implementation.
+- Full MCP public MCP stdio adapter is dependency-inverted from Provider Router and hides internal classes from consumers.
+- Full MCP current operation catalog does not include git_stage/git_commit/git_push.
+
+## Technical Assumptions
+
+- ASM-D-001: Exact approved Requirements R1.0/MPRF v0.7 source will be re-bound at execution preflight; this design uses only semantics explicitly preserved by Approved Plan P1.0.
+- ASM-D-002: Execution creates an isolated approved workspace/ref derived from the approved Full MCP lineage rather than mutating or cleaning the current unrelated dirty `main`.
+- ASM-D-003: Protected-branch policy can be obtained from an authoritative repository policy source at execution time; if unavailable, push qualification fails closed.
+- ASM-D-004: Router v2 can expose provider/model decision evidence without embedding provider lifecycle ownership; if current implementation cannot, PLAN remains unchanged but design remediation is required.
+
+## Open Design Questions
+
+N/A — all implementation-HOW choices required for execution handoff are resolved. Execution-time evidence values (current remote head, live quota/health/auth, exact protected-branch state) are variable inputs, not design questions.
+
+## Design Blockers
+
+N/A for Implementation Design approval. `RUNTIME_POLICY_MISMATCH` is a **runtime execution-entry blocker** with a fully specified TASK-017 remediation path; current design does not claim it is already fixed. Exact approved source re-binding is likewise a GATE-001 execution condition.
+
+## Deferred Technical Decisions
+
+- DD-D-001: exact future Multi-Provider Handoff canonical version remains deferred until that inactive handoff is activated by a separately authorized project.
+- DD-D-002: concrete model/provider values remain execution-time Router decisions and are intentionally not designed into tasks.
+
+---
+
+## EXECUTION APPROVAL BOUNDARY
+
+This semantic body is the Approved Implementation Design execution projection plus the explicit user-authorized 2026-09-17 execution-policy amendment for NVIDIA-primary operation with GPT-authorized Manual Action when Codex is unavailable. The amendment changes no project WHAT, provider/model selection authority, NVIDIA mutation prohibition, Gate order, or scope boundary.
+Execution remains controlled by the recorded user approval, task authority and Stage Gates; diagnosis PASS alone cannot bypass them.
+
+HANDOFF_RESULT: READY_FOR_CONTRACT_DIAGNOSIS
+<!-- SEMANTIC_BODY_END -->
+
+# EC-15 CONTRACT DIAGNOSIS RESULT
+
+DIAGNOSIS_RUN_VERSION: EDP-EC-FINAL-2.0
+DIAGNOSIS_DECISION: PASS
+DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL
+CONTRACT_STATUS: DIAGNOSED_PASS
+BLOCKER_COUNT: 0
+UNRESOLVED_MAJOR_COUNT: 0
+UNRESOLVED_MINOR_COUNT: 0
+MAJOR_COUNT: 0
+MINOR_COUNT: 0
+COUNT_SEMANTICS: EC-15 BLOCKER_COUNT/MAJOR_COUNT/MINOR_COUNT are current unresolved counts; historical resolved findings are preserved in the external Diagnosis report.
+DIAGNOSED_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+MUST_REQUIREMENT_COVERAGE: 100%
+MUST_TRACEABILITY_COVERAGE: 100%
+DOMAIN_EVIDENCE_COVERAGE: 100%
+NEGATIVE_SPACE_OPEN_MATERIAL_COUNT: 0
+CROSS_DOCUMENT_CONFLICT_COUNT: 0
+BROKEN_REFERENCE_COUNT: 0
+UNRESOLVED_MATERIAL_TBD_COUNT: 0
+UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT: 0
+ADVERSARIAL_NEW_BLOCKER_MAJOR: 0
+PASS_CHALLENGE_OPEN_COUNT: 0
+REGRESSION_REDIAGNOSIS_STATUS: PASS
+MATERIAL_DEFECT_SEARCH: EXHAUSTED_FOR_AVAILABLE_EVIDENCE
+FINAL_REDIAGNOSIS_STATUS: PASS
+
+PASS means:
+`CONTRACT_STATUS: DIAGNOSED_PASS`
+
+PASS does not mean user approval and does not authorize execution, activation, mutation, provider-worker execution, tests, Git publication, merge, deploy, or READY_FOR_EXECUTION.
+
+# EC-16 FINAL EXECUTION APPROVAL
+
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-17
+USER_APPROVAL_EVIDENCE: User explicitly stated `최종 실행승인` in the execution-approval lifecycle on 2026-09-17.
+ACTIVATION_APPROVAL_SCOPE: UPGRADE contract activation + Runtime Preflight + approved bounded TASK-017-first remediation path when mismatch persists; subsequent approved tasks may proceed only through contract Gates.
+
+POST_DIAGNOSIS_INTEGRITY: PASS
+DIAGNOSED_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+FINAL_CONTRACT_BODY_SHA256: c7afbaf4d7e9a146ae91bbc08bc0436e9b44c30c0dbad6d2deb7d5680cd0513b
+SEMANTIC_BODY_MUTATION_AFTER_DIAGNOSIS: USER_AUTHORIZED_EXECUTION_POLICY_AMENDMENT_REDIAGNOSED_AND_RESEALED
+
+Required equality:
+`FINAL_CONTRACT_BODY_SHA256 == DIAGNOSED_CONTRACT_BODY_SHA256`
+
+Equality result: PASS
+
+If a future materialized copy differs:
+`POST_DIAGNOSIS_MUTATION_DETECTED → BLOCK`
+
+# EC-17 EXTERNAL HANDOFF REFERENCES
+
+APPROVED_CONTRACT_ARTIFACT: PREPH5MPRF_MULTI_PROVIDER_FOUNDATION_BASELINE_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt
+CODEX_EXECUTION_INSTRUCTION_ARTIFACT: PREPH5MPRF_MULTI_PROVIDER_FOUNDATION_BASELINE_CODEX_EXECUTION_INSTRUCTION.md
+EXECUTION_APPROVAL_RESULT_ARTIFACT: PREPH5MPRF_MULTI_PROVIDER_FOUNDATION_BASELINE_EXECUTION_APPROVAL_RESULT.md
+EXECUTION_HANDOFF_ARTIFACT: PREPH5MPRF_MULTI_PROVIDER_FOUNDATION_BASELINE_EXECUTION_HANDOFF.md
+GPT_NEW_CHAT_IMPLEMENTATION_START_ARTIFACT: PREPH5MPRF_MULTI_PROVIDER_FOUNDATION_BASELINE_GPT_NEW_CHAT_IMPLEMENTATION_START.md
+TARGET_CANONICAL_PATH: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering/docs/DEVELOPMENT_PLAN.txt`
+
+FULL_FILE_SHA256_BINDING: EXTERNAL_IN_APPROVAL_PACKAGE
+
+READY_FOR_EXECUTION conditions:
+- correct Approved Implementation Design identity/version/hash: PASS
+- diagnosis PASS: PASS
+- BLOCKER 0: PASS
+- unresolved MAJOR 0: PASS
+- explicit user final execution approval: PASS
+- semantic-body hash integrity: PASS
+- all 5 final approval/handoff artifacts: PASS
+- identity/root/version integrity: PASS_FOR_APPROVAL_PACKAGE; execution-time re-verification still mandatory
+- Runtime Compatibility: `RUNTIME_POLICY_MISMATCH` retained with approved TASK-017 first-remediation path; general implementation remains blocked until GATE-001 GO
+
+ORCHESTRATION_OPERATOR: GPT
+PRIMARY_WORK_PROVIDER: NVIDIA
+SECONDARY_ACTION_PROVIDER: CODEX
+CODEX_USAGE_POLICY: CONSERVE
+UNSAFE_AUTOMATIC_FALLBACK: PROHIBITED
+GPT_HANDOFF_STATUS: READY_FOR_NEW_CHAT
+CURRENT_APPROVAL_STATE: READY_FOR_EXECUTION

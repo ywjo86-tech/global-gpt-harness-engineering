@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 _TASK_HEADING = re.compile(r"(?m)^##\s+(TASK-\d{3})\b(?:\s+—\s*(.*?))?\s*$")
 _GATE_HEADING = re.compile(r"(?m)^##\s+(GATE-\d{3})\b.*$")
-_CT_ROW = re.compile(r"(?m)^\|\s*(CT-\d{3})\s*\|\s*`([^`]+)`\s*\|[^\n]*$")
+_CT_ROW = re.compile(r"(?m)^\|\s*(CT-\d{3})\s*\|\s*`?([^|`]+?)`?\s*\|[^\n]*$")
 _DEP_ROW = re.compile(r"(?m)^\|\s*(TASK-\d{3})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|")
 _PROJECTION_SCHEMA = "orchestration.task-lv-authority-projection.v1"
 _PROJECTION_POLICY = {
@@ -36,14 +36,56 @@ def _section_map(text: str, pattern: re.Pattern[str]) -> dict[str, str]:
 
 
 def _field(section: str, name: str) -> str | None:
-    match = re.search(rf"(?m)^{re.escape(name)}:\s*(.*?)\s*$", section)
-    return match.group(1).strip() if match else None
+    match = re.search(rf"(?m)^{re.escape(name)}:[ \t]*(.*)$", section)
+    if not match:
+        return None
+    inline = match.group(1).strip()
+    if inline:
+        return inline
+    values: list[str] = []
+    for raw in section[match.end():].splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            if values:
+                break
+            continue
+        if not stripped.startswith("-"):
+            break
+        value = stripped[1:].strip()
+        if value:
+            values.append(value)
+    return ", ".join(values)
+
+
+def _expand_id_token(token: str, prefix: str) -> list[str]:
+    clean = token.strip().strip("`")
+    if not clean:
+        return []
+    pattern = rf"^{re.escape(prefix)}(\d{{3}})~(?:{re.escape(prefix)})?(\d{{3}})$"
+    match = re.fullmatch(pattern, clean)
+    if match:
+        start, end = int(match.group(1)), int(match.group(2))
+        if end < start:
+            raise TaskContractProjectionError(f"descending ID range is invalid: {clean}")
+        return [f"{prefix}{value:03d}" for value in range(start, end + 1)]
+    return [clean] if clean.startswith(prefix) else []
 
 
 def _ids(value: str | None, prefix: str) -> list[str]:
     if not value or value.upper() in {"NONE", "N/A"}:
         return []
-    return [item.strip() for item in value.split(",") if item.strip().startswith(prefix)]
+    resolved: list[str] = []
+    for token in re.split(r"[,\n]+", value):
+        for item in _expand_id_token(token, prefix):
+            if item not in resolved:
+                resolved.append(item)
+    return resolved
+
+
+def _items(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip().strip("`") for item in re.split(r"[,\n]+", value) if item.strip()]
 
 
 def _task_titles(text: str) -> dict[str, str]:
@@ -92,9 +134,7 @@ def analyze_task_stage_gate_contract(text: str, requested_gate_id: str) -> dict[
     for task_id, section in tasks_raw.items():
         tasks[task_id] = {
             "dependencies": _ids(_field(section, "Dependencies"), "TASK-"),
-            "required_capabilities": [
-                item.strip() for item in (_field(section, "Required Capabilities") or "").split(",") if item.strip()
-            ],
+            "required_capabilities": _items(_field(section, "Required Capabilities")),
             "change_targets": _ids(_field(section, "Change Targets"), "CT-"),
         }
 
@@ -290,7 +330,7 @@ def resolve_task_lv_projection(
         validation_ids = _ids(_field(section, "Validation"), "TEST-")
         completion = _field(section, "Completion Condition")
         purpose = _field(section, "Purpose") or titles[task_id]
-        capabilities = [item.strip() for item in (_field(section, "Required Capabilities") or "").split(",") if item.strip()]
+        capabilities = _items(_field(section, "Required Capabilities"))
         dependencies = _ids(_field(section, "Dependencies"), "TASK-")
         if not completion or not validation_ids or not capabilities:
             raise TaskContractProjectionError(f"TASK runtime authority fields are incomplete: {task_id}")

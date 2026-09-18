@@ -292,3 +292,97 @@ Required Tasks: TASK-001
         self.assertIsNotNone(analysis)
         self.assertIn("TASK dependency exists but is not staged by any Gate", analysis["blockers"])
         self.assertEqual(analysis["unstaged_dependencies"], [{"task_id": "TASK-001", "dependency": "TASK-002"}])
+
+
+class TaskContractBulletAndRangeCompatibilityTests(unittest.TestCase):
+    BULLET_RANGE_CONTRACT = """# Contract
+
+## TASK-001 — entry
+Purpose: Verify entry.
+Dependencies: NONE
+Change Targets:
+- CT-001
+Required Capabilities:
+- reasoning
+- read_only
+Validation:
+- TEST-001
+Completion Condition: Entry passes.
+
+## TASK-002 — implement
+Purpose: Implement boundary.
+Dependencies:
+- TASK-001
+Change Targets:
+- CT-002
+Required Capabilities:
+- reasoning
+- implementation
+- filesystem_write
+Validation:
+- TEST-002
+- TEST-003
+Completion Condition: Boundary passes.
+
+## TASK-003 — integrate
+Purpose: Integrate boundary.
+Dependencies:
+- TASK-002
+Change Targets:
+- CT-003
+Required Capabilities:
+- reasoning
+- implementation
+Validation:
+- TEST-004
+Completion Condition: Integration passes.
+
+## SOURCE Change Targets
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | docs/DEVELOPMENT_PLAN.txt | VERIFY | TASK-001 | VERIFIED |
+| CT-002 | runtime/example.py | CREATE | TASK-002 | PLANNED_CREATE |
+| CT-003 | tests/test_example.py | CREATE | TASK-003 | PLANNED_CREATE |
+
+## SOURCE Task Dependencies
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-001 | EXTERNAL | NONE | Entry |
+| TASK-002 | SEQUENTIAL | TASK-001 | Boundary |
+| TASK-003 | SEQUENTIAL | TASK-002 | Integration |
+
+## GATE-001 — entry
+Required Tasks: TASK-001
+
+## GATE-002 — implementation
+Required Tasks: TASK-002~003
+"""
+
+    def test_multiline_bullets_and_compact_task_ranges_are_projection_ready(self) -> None:
+        analysis = analyze_task_stage_gate_contract(self.BULLET_RANGE_CONTRACT, "GATE-002")
+        self.assertEqual(analysis["blockers"], [])
+        self.assertEqual(analysis["requested_gate_tasks"], ["TASK-002", "TASK-003"])
+        self.assertTrue(analysis["runtime_projection_ready"])
+
+    def test_unquoted_change_target_paths_and_multiline_fields_resolve(self) -> None:
+        plan_sha = hashlib.sha256(self.BULLET_RANGE_CONTRACT.encode()).hexdigest()
+        value = {
+            "schema_version": "orchestration.task-lv-authority-projection.v1",
+            "project_id": "task-project",
+            "canonical_plan_sha256": plan_sha,
+            "contract_shape": "TASK_STAGE_GATE",
+            "projection_policy": projection(plan_sha)["projection_policy"],
+            "change_targets": {
+                "CT-001": {"source_expression": "docs/DEVELOPMENT_PLAN.txt", "owned_files": ["docs/DEVELOPMENT_PLAN.txt"]},
+                "CT-002": {"source_expression": "runtime/example.py", "owned_files": ["runtime/example.py"]},
+                "CT-003": {"source_expression": "tests/test_example.py", "owned_files": ["tests/test_example.py"]},
+            },
+        }
+        resolved = resolve_task_lv_projection(
+            self.BULLET_RANGE_CONTRACT, value,
+            project_id="task-project", canonical_plan_sha256=plan_sha, gate_id="GATE-002",
+        )
+        self.assertEqual([item["lv_id"] for item in resolved], ["TASK-002", "TASK-003"])
+        self.assertEqual(resolved[0]["dependencies"], ["TASK-001"])
+        self.assertEqual(resolved[0]["tests"], ["TEST-002", "TEST-003"])
+        self.assertEqual(resolved[0]["required_capabilities"], ["reasoning", "implementation", "filesystem_write"])
