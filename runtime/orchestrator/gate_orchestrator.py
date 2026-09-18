@@ -971,8 +971,9 @@ def activate_first_gate(project_root: str | Path, gate_id: str, approval_evidenc
     This records an immutable activation envelope; it does not fabricate a
     predecessor Gate checkpoint or grant LV-specific user approvals.
     """
-    root, project_id = _safe_project(project_root)
+    root, root_project_id = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
+    project_id = plan.project_id
     envelope = load_approval_evidence(approval_evidence)
     payload = envelope["payload"]
     assert isinstance(payload, dict)
