@@ -1359,6 +1359,8 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     extra_context={"execution_mode":"production",
                                    "execution_backend":(
                                        "GPT_OPERATOR_RECOVERY_VERIFICATION" if post_result_request_gap
+                                       else "PROVIDER_ACTION" if route_decision is not None and route_decision.stage == "ACTION"
+                                            and route_decision.provider_ref != "codex"
                                        else "NVIDIA_READ_ONLY" if route_decision is not None and route_decision.provider_ref == "nvidia"
                                        else "HOST_GATEWAY"
                                    ),
@@ -1366,11 +1368,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                                    "task_effect_requirement":(
                                        "NONE_SATISFIED" if post_result_request_gap
                                        else "READ_ONLY_EXECUTION" if route_decision is not None and route_decision.provider_ref == "nvidia"
+                                            and route_decision.stage != "ACTION"
                                        else "MUTATION_REQUIRED"
                                    ),
                                    "allow_verification_only":post_result_request_gap,
                                    "allow_read_only_execution":bool(
-                                       not post_result_request_gap and route_decision is not None and route_decision.provider_ref == "nvidia"
+                                       not post_result_request_gap and route_decision is not None
+                                       and route_decision.provider_ref == "nvidia" and route_decision.stage != "ACTION"
                                    ),
                                    "provider_route":dict(provider_route_envelope or {}),
                                    "change_target_count":0 if post_result_request_gap else len(selected.owned_files),
@@ -1744,7 +1748,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             state_snapshot={"branch": "sealed", "head": str(manifest.get("source_head", ""))},
             extra_context={"execution_mode": "production",
                            "execution_backend": (
-                               "NVIDIA_READ_ONLY"
+                               "PROVIDER_ACTION"
+                               if route_decision is not None and route_decision.stage == "ACTION"
+                                  and route_decision.provider_ref != "codex"
+                               else "NVIDIA_READ_ONLY"
                                if route_decision is not None and route_decision.provider_ref == "nvidia"
                                else "HOST_GATEWAY"
                            ),
@@ -1752,11 +1759,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                            "task_effect_requirement": (
                                "READ_ONLY_EXECUTION"
                                if route_decision is not None and route_decision.provider_ref == "nvidia"
+                                  and route_decision.stage != "ACTION"
                                else execution_obligation
                            ),
                            "allow_verification_only": execution_obligation == "NONE_SATISFIED",
                            "allow_read_only_execution": bool(
                                route_decision is not None and route_decision.provider_ref == "nvidia"
+                               and route_decision.stage != "ACTION"
                            ),
                            "provider_route": dict(provider_route_envelope or {}),
                            "change_target_count":len(manifest.get("owned_files", [])),

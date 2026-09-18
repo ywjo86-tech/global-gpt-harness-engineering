@@ -1,0 +1,10 @@
+{
+  "schema_version": "edp.regression-evidence.v1",
+  "tests_run": 1575,
+  "passed": 1575,
+  "skipped": 12,
+  "return_code": 0,
+  "log_sha256": "c2eaf5d102c9f1f2565221463c6ada14c2238e9cc36f95572fa659d9b1b9742a",
+  "git_diff_check": "PASS",
+  "compileall": "PASS"
+}

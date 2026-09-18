@@ -30,6 +30,9 @@ from .tool_authorization import build_contract_candidate
 from .validation_toolchain import (
     ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
 )
+from .provider_action_execution import (
+    PROVIDER_ACTION_BACKEND, ProviderActionExecutionError, execute_provider_action_proposal,
+)
 from .production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, LOCAL_CHILD, GatewayError,
     HostExecutionGateway, UnixSocketGatewayTransport, build_gateway_request,
@@ -2557,6 +2560,31 @@ def _read_only_execution_authorized(request: WorkerRequest) -> bool:
     )
 
 
+def _provider_action_execution_authorized(request: WorkerRequest) -> bool:
+    """Authorize model proposal generation while keeping effects in the Broker."""
+    binding = request.extra_context.get("canonical_authority_binding")
+    binding_digest = request.extra_context.get("canonical_authority_binding_digest")
+    route = request.extra_context.get("provider_route")
+    if (request.extra_context.get("execution_backend") != PROVIDER_ACTION_BACKEND
+            or request.extra_context.get("task_effect_requirement") != "MUTATION_REQUIRED"
+            or not isinstance(binding, Mapping) or binding.get("execution_obligation") != "MUTATION_REQUIRED"
+            or not isinstance(binding_digest, str) or not binding_digest or not isinstance(route, Mapping)):
+        return False
+    try:
+        routed_request, decision = validate_router_envelope(route)
+    except ProviderRouterContractError:
+        return False
+    capabilities = normalize_capabilities_v2(request.task.required_capabilities)
+    return (
+        decision.eligible and decision.stage == "ACTION" and routed_request.state_change_required
+        and bool(STATE_CHANGING_CAPABILITIES.intersection(capabilities))
+        and tuple(decision.required_capabilities) == capabilities
+        and routed_request.project_id == str(request.contract_summary.get("project_id", ""))
+        and routed_request.run_id == str(request.extra_context.get("run_id", ""))
+        and routed_request.task_id == request.task.thread_id
+    )
+
+
 def execute_production_worker(request: WorkerRequest, *,
                               executor: Callable[..., subprocess.CompletedProcess[bytes]] | None = None,
                               timeout: int = 1800,
@@ -2615,17 +2643,24 @@ def execute_production_worker(request: WorkerRequest, *,
         configured_backend = LOCAL_CHILD
     verification_only = _verification_only_authorized(request)
     read_only_execution = _read_only_execution_authorized(request)
+    provider_action_execution = _provider_action_execution_authorized(request)
     if verification_only:
         configured_backend = "VERIFICATION_ONLY"
     elif read_only_execution:
         configured_backend = NVIDIA_READ_ONLY_BACKEND
-    if configured_backend not in {LOCAL_CHILD, HOST_GATEWAY, "VERIFICATION_ONLY", NVIDIA_READ_ONLY_BACKEND}:
+    elif provider_action_execution:
+        configured_backend = PROVIDER_ACTION_BACKEND
+    if configured_backend not in {LOCAL_CHILD, HOST_GATEWAY, "VERIFICATION_ONLY", NVIDIA_READ_ONLY_BACKEND, PROVIDER_ACTION_BACKEND}:
         raise ProductionWorkerError("EXECUTION_BACKEND_REQUIRED")
     if configured_backend == NVIDIA_READ_ONLY_BACKEND and not read_only_execution:
         raise ProductionWorkerError("NVIDIA_READ_ONLY_AUTHORITY_REQUIRED")
+    if configured_backend == PROVIDER_ACTION_BACKEND and not provider_action_execution:
+        raise ProductionWorkerError("PROVIDER_ACTION_AUTHORITY_REQUIRED")
     if route_decision is not None:
-        if route_decision.provider_ref == NVIDIA_PROVIDER and configured_backend != NVIDIA_READ_ONLY_BACKEND:
+        if route_decision.provider_ref == NVIDIA_PROVIDER and route_decision.stage != "ACTION" and configured_backend != NVIDIA_READ_ONLY_BACKEND:
             raise ProductionWorkerError("NVIDIA_ROUTE_BACKEND_MISMATCH")
+        if route_decision.stage == "ACTION" and route_decision.provider_ref != "codex" and configured_backend != PROVIDER_ACTION_BACKEND:
+            raise ProductionWorkerError("PROVIDER_ACTION_ROUTE_BACKEND_MISMATCH")
         if route_decision.provider_ref != NVIDIA_PROVIDER and configured_backend == NVIDIA_READ_ONLY_BACKEND:
             raise ProductionWorkerError("NVIDIA_ROUTE_BACKEND_MISMATCH")
     legacy_fixture = not request.extra_context.get("run_root")
@@ -2648,6 +2683,14 @@ def execute_production_worker(request: WorkerRequest, *,
         gateway_request = {
             "execution_backend": NVIDIA_READ_ONLY_BACKEND,
             "execution_request_id": f"nvidia-{route_decision.decision_digest[:32]}",
+            "request_digest": route_decision.request_digest,
+            "gateway_contract_version": GATEWAY_CONTRACT_VERSION,
+        }
+    elif configured_backend == PROVIDER_ACTION_BACKEND:
+        assert route_decision is not None
+        gateway_request = {
+            "execution_backend": PROVIDER_ACTION_BACKEND,
+            "execution_request_id": f"provider-action-{route_decision.decision_digest[:32]}",
             "request_digest": route_decision.request_digest,
             "gateway_contract_version": GATEWAY_CONTRACT_VERSION,
         }
@@ -2731,12 +2774,20 @@ def execute_production_worker(request: WorkerRequest, *,
             "host_writable": False, "harness_writable": True,
             "staging_binding": "NVIDIA_ROUTER_RESPONSE",
         }
+    elif provider_action_execution:
+        final_message_target_metadata = {
+            "target_scope": "RUN_ROOT", "codex_writable": False,
+            "host_writable": False, "harness_writable": True,
+            "staging_binding": "PROVIDER_ACTION_PROPOSAL",
+        }
     else:
         final_message_target_metadata = _validate_final_message_target(root, execution_last)
     argv = (
         ["verification-only", "sealed-none-satisfied"]
         if verification_only
         else ["nvidia-router", route_decision.model_ref] if read_only_execution and route_decision is not None
+        else ["provider-action", route_decision.provider_ref, route_decision.model_ref]
+             if provider_action_execution and route_decision is not None
         else CodexExecutionAdapter().argv(root=root, last_message=execution_last)
     )
     pending_paths = [line[3:] for line in baseline_status.splitlines() if len(line) > 3]
@@ -2842,6 +2893,52 @@ def execute_production_worker(request: WorkerRequest, *,
                 "router_decision_digest": route_decision.decision_digest,
                 "provider_attempts": provider_result.get("provider_attempts", 0),
                 "model_failover_used": bool(provider_result.get("model_failover_used", False)),
+                "hard_stop": True,
+            }
+        elif configured_backend == PROVIDER_ACTION_BACKEND:
+            assert route_decision is not None
+            if route_decision.provider_ref != NVIDIA_PROVIDER:
+                raise ProductionWorkerError("PROVIDER_ACTION_RUNNER_UNAVAILABLE")
+            def safe_provider_effect(raw: bytes) -> bool:
+                return not bool(_secret_findings(raw))
+            try:
+                action_result = execute_provider_action_proposal(
+                    request, decision=route_decision, baseline=baseline, owned=owned,
+                    output_dir=output, provider_runner=run_nvidia_reasoning_task,
+                    security_scan=safe_provider_effect, timeout=timeout,
+                )
+            except ProviderActionExecutionError as exc:
+                raise ProductionWorkerError(str(exc)) from exc
+            final_bytes = str(action_result["proposal_summary"]).encode("utf-8")
+            _persist_private_final_message(last, final_bytes)
+            final_message_target_metadata.update(_validate_final_message(last))
+            stdout = b"provider-action-proposal-completed"
+            stderr = b""
+            worker_exit = 0
+            timed_out = False
+            adapter_evidence = {
+                "contract_version": "PROVIDER_ACTION.v1",
+                "backend": PROVIDER_ACTION_BACKEND,
+                "strict": False,
+            }
+            process_evidence = {
+                "schema_version": "orchestration.production-worker-process.v1",
+                "pid": None, "process_group_id": None, "started_at": None, "ended_at": None,
+                "termination": "EXITED", "requested_signal": None, "exit_code": 0, "signal": None,
+                "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+                "secret_like_output_detected": False,
+                "governed_effect_evidence": list(action_result["governed_effect_evidence"]),
+                "provider": action_result["provider"],
+                "routed_model": action_result["routed_model"],
+                "actual_model": action_result["actual_model"],
+                "router_decision_digest": action_result["router_decision_digest"],
+                "provider_attempts": action_result["provider_attempts"],
+                "model_failover_used": action_result["model_failover_used"],
+                "proposal_digest": action_result["proposal_digest"],
+                "proposal_path": action_result["proposal_path"],
+                "context_files": list(action_result["context_files"]),
+                "context_metadata": dict(action_result["context_metadata"]),
                 "hard_stop": True,
             }
         elif configured_backend == HOST_GATEWAY:
@@ -3153,7 +3250,11 @@ def execute_production_worker(request: WorkerRequest, *,
         "current_head":head, "current_tree":tree, "checkpoint_commit":head, "commands":commands,
         "staged_changes":False, "unstaged_changes":False, "review_verdict":"PASS",
         "executor":{
-            "identity": NVIDIA_EXECUTOR_ID if read_only_execution else EXECUTOR_ID,
+            "identity": (
+                "provider-action-production" if provider_action_execution
+                else NVIDIA_EXECUTOR_ID if read_only_execution
+                else EXECUTOR_ID
+            ),
             "version":EXECUTOR_VERSION,
         },
         "adapter_contract_version": ADAPTER_CONTRACT_VERSION,

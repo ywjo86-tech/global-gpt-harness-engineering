@@ -82,11 +82,15 @@ def _contract(value: Mapping[str, Any]) -> ToolAuthorizationContract:
 
 
 class ProductionToolTransport:
-    """The only production Codex tool-effect path; no native executor exists here."""
+    """The governed production tool-effect path shared by approved provider execution flows."""
 
     def __init__(self, *, request: Mapping[str, Any], workspace_root: Path,
-                 journal_root: Path, security_scan) -> None:
+                 journal_root: Path, security_scan,
+                 operation_callsite_id: str = "CODEX_DYNAMIC_TOOL_CALL_V1") -> None:
         self.request = dict(request)
+        self.operation_callsite_id = str(operation_callsite_id).strip()
+        if not self.operation_callsite_id:
+            raise ToolAuthorizationError("operation callsite identity is required")
         self.workspace_root = Path(workspace_root).resolve()
         self.registry = ClosedOperationRegistry(production_operations())
         owned = list(request.get("owned_files", []))
@@ -208,7 +212,7 @@ class ProductionToolTransport:
         def build(seed: str) -> OperationIdentity:
             dispatch_id = "DISPATCH_" + hashlib.sha256(seed.encode()).hexdigest()[:24]
             return OperationIdentity(
-                operation.operation_registration_id, dispatch_id, "CODEX_DYNAMIC_TOOL_CALL_V1",
+                operation.operation_registration_id, dispatch_id, self.operation_callsite_id,
                 envelope.operation_class_id, envelope.worker_task_id, envelope.worker_action_id,
                 str(self.request.get("project_id")), str(self.request.get("gate_id")), str(self.request.get("lv_id")),
                 str(self.request.get("run_id")), plan_digest, requirement_digest, str(package_binding),

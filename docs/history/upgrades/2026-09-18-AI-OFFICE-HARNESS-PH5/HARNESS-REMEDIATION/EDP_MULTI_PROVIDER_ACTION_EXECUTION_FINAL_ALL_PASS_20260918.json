@@ -1,0 +1,194 @@
+{
+  "schema_version": "edp.final-diagnosis.v1",
+  "diagnosis_id": "EDP-PH5-MULTI-PROVIDER-ACTION-20260918",
+  "subject": "Full Plan Autonomous Multi-Provider ACTION Execution",
+  "protocol": "standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md",
+  "domain_skill": "code-review-harness",
+  "final_decision": "ALL_PASS",
+  "source_authority": {
+    "canonical_plan": "docs/DEVELOPMENT_PLAN.txt",
+    "canonical_plan_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+    "status": "VALID_UNCHANGED",
+    "authority_stack": [
+      "USER_APPROVED_PH5_PLAN",
+      "EXHAUSTIVE_DIAGNOSIS_PROTOCOL",
+      "FULL_PLAN",
+      "PROVIDER_ROUTER",
+      "MPRF",
+      "EXECUTION_BACKEND_FULL_MCP"
+    ]
+  },
+  "frozen_obligations": [
+    {
+      "id": "REQ-002",
+      "result": "PASS",
+      "evidence": "No state-changing provider prerequisite; governed ACTION selects an eligible capability-fit provider."
+    },
+    {
+      "id": "REQ-003",
+      "result": "PASS",
+      "evidence": "Governed model execution consumes RouterRequest.v2/RouterDecision.v2; provider/model fields remain Router-owned."
+    },
+    {
+      "id": "REQ-004",
+      "result": "PASS",
+      "evidence": "Provider generates proposal only; MUTATION_REQUIRED effects execute through ProductionToolTransport/SingleToolBroker. Legacy paths fail closed."
+    },
+    {
+      "id": "REQ-005",
+      "result": "PASS",
+      "evidence": "Router authority preserved; runtime/full_mcp and runtime/mprf product ownership untouched."
+    },
+    {
+      "id": "REQ-020",
+      "result": "PASS",
+      "evidence": "No lifecycle/task/fan-in authority moved out of Full Plan."
+    },
+    {
+      "id": "REQ-021",
+      "result": "PASS",
+      "evidence": "MPRF remains eligibility/runtime fact source and contains no provider selection invocation."
+    },
+    {
+      "id": "NFR-001",
+      "result": "PASS",
+      "evidence": "Missing governed backend/capability/identity/scope/security requirements fail closed."
+    },
+    {
+      "id": "NFR-004",
+      "result": "PASS",
+      "evidence": "Full repository regression 1575 PASS, 12 environment/opt-in skips, RC=0."
+    },
+    {
+      "id": "NFR-005",
+      "result": "PASS",
+      "evidence": "No task-level provider/model priority; capability-fit test proves either approved provider can win."
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "MPA-F-001",
+      "severity": "BLOCKER",
+      "status": "RESOLVED",
+      "owner": "Harness Router revision authority",
+      "artifact": "runtime/orchestrator/provider_router.py",
+      "related": [
+        "REQ-002",
+        "REQ-003",
+        "NFR-005"
+      ],
+      "problem": "Governed ACTION selected CODEX_PROVIDER unconditionally.",
+      "evidence": "Pre-remediation stage==ACTION provider binding; user-observed WAITING_PROVIDER when Codex unavailable.",
+      "impact": "Full Plan could not continue autonomously with another eligible provider.",
+      "correction": "Capability-fit selection with effect/generation capability separation; legacy state-changing mode fails closed into governed Router.",
+      "regression": "provider router + hybrid flow + full repository regression."
+    },
+    {
+      "finding_id": "MPA-F-002",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "owner": "Execution Backend revision authority",
+      "artifact": "runtime/orchestrator/provider_action_execution.py; production_worker_executor.py",
+      "related": [
+        "REQ-004",
+        "REQ-005"
+      ],
+      "problem": "Model generation and state-changing authority were conflated in the Codex-only action path.",
+      "evidence": "No provider-neutral proposal/effect boundary existed.",
+      "impact": "Alternative reasoning providers could not participate without being granted inappropriate mutation authority.",
+      "correction": "Provider-neutral proposal contract; actual writes remain ProductionToolTransport/SingleToolBroker effects with owned scope, authorization, journal, and deterministic verification.",
+      "regression": "provider action, tool transport, worker executor, Full Plan/Gate suites."
+    },
+    {
+      "finding_id": "MPA-F-003",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "owner": "Security revision authority",
+      "artifact": "runtime/orchestrator/provider_action_execution.py",
+      "related": [
+        "NFR-001"
+      ],
+      "problem": "Initial remediation persisted raw provider proposal before complete proposal security scan.",
+      "evidence": "Adversarial source-order audit found persist-before-scan.",
+      "impact": "Rejected secret-like generated content could remain in a private artifact.",
+      "correction": "Complete canonical proposal is security-scanned before private persistence; explicit no-persistence/no-effect regression added.",
+      "regression": "test_security_rejected_proposal_is_never_persisted_or_applied + full regression."
+    },
+    {
+      "finding_id": "MPA-F-004",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "owner": "Harness Router revision authority",
+      "artifact": "runtime/orchestrator/provider_router.py",
+      "related": [
+        "NFR-005"
+      ],
+      "problem": "Initial remediation used explicit NVIDIA/Codex policy rank as a tie breaker.",
+      "evidence": "Adversarial negative-space review of _select_provider.",
+      "impact": "Would preserve a hidden provider priority despite provider-neutral requirement.",
+      "correction": "Removed provider-specific rank; narrower capability fit then lexical identity only. Added inverse selection test where Codex wins while NVIDIA is also eligible.",
+      "regression": "ProviderRouterAutonomousActionTest + full regression."
+    }
+  ],
+  "evidence_matrix": {
+    "canonical_source": "PASS",
+    "router_selection_authority": "PASS",
+    "mprf_non_selection": "PASS",
+    "generation_effect_separation": "PASS",
+    "owned_scope_authorization": "PASS",
+    "secret_persistence_negative_space": "PASS",
+    "legacy_fail_closed": "PASS",
+    "provider_priority_negative_space": "PASS",
+    "protected_core": "PASS",
+    "full_regression": "PASS",
+    "compile_import": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "traceability": {
+    "must_requirement_coverage": "100%",
+    "must_traceability_coverage": "100%",
+    "domain_evidence_coverage": "100%",
+    "adversarial_evidence": "MULTI_PROVIDER_ACTION_ADVERSARIAL_CHECK.json"
+  },
+  "regression": {
+    "command": "/tmp/gch-edp-allpass-venv/bin/python -m unittest discover -v",
+    "tests_run": 1575,
+    "result": "PASS",
+    "skipped": 12,
+    "return_code": 0,
+    "log_sha256": "c2eaf5d102c9f1f2565221463c6ada14c2238e9cc36f95572fa659d9b1b9742a",
+    "git_diff_check": "PASS",
+    "compileall": "PASS"
+  },
+  "independent_provider_review": {
+    "status": "EXCLUDED_INVALID_OUTPUT_CONTRACT",
+    "attempts": 2,
+    "reason": "Router-selected review provider returned non-JSON analysis despite exact JSON output contract; no verdict from those attempts was used for PASS.",
+    "evidence": [
+      "MULTI_PROVIDER_ACTION_EXTERNAL_REVIEW_ATTEMPTS.json"
+    ]
+  },
+  "closure_metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS"
+  },
+  "exhaustion_statement": "MATERIAL_DEFECT_SEARCH: EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "current_worktree_change_count": 20,
+  "notes": [
+    "Manual Action remains an emergency/break-glass path but is no longer required for the normal eligible-provider ACTION path.",
+    "Current approved provider domain remains NVIDIA and Codex; future providers require approved registry/adapters rather than task hardcoding."
+  ]
+}

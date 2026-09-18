@@ -1,0 +1,52 @@
+{
+  "schema_version": "edp.adversarial-check.v1",
+  "decision": "PASS",
+  "checks": {
+    "canonical_plan_sha": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "mprf_no_selection_authority": {
+      "status": "PASS",
+      "detail": "[]"
+    },
+    "legacy_state_change_fail_closed": {
+      "status": "PASS",
+      "detail": "ProviderRouteDecision(provider='manual', mode='hybrid', reason_code='hybrid_state_change_requires_governed_router', required_capabilities=('filesystem_write', 'implementation', 'reasoning'), eligible=False)"
+    },
+    "action_can_select_nvidia": {
+      "status": "PASS",
+      "detail": "RouterDecisionV2(schema_version='orchestration.router-decision.v2', decision_id='decision-A1', request_digest='7676316dedf0e2260722048349089ee781d759d53b691b59baac698c982cabcd', stage='ACTION', provider_ref='nvidia', model_ref='n/model', reason_code='governed_action_by_capability_fit', required_capabilities=('filesystem_write', 'implementation_apply', 'integration', 'reasoning', 'test_execution'), eligible=True, eligibility_evidence_refs=('e',), policy_version='NVIDIA_PRIMARY_CODEX_SECONDARY_V1', action_state='ACTION_PENDING', model_fallback_refs=())"
+    },
+    "action_no_provider_priority": {
+      "status": "PASS",
+      "detail": "RouterDecisionV2(schema_version='orchestration.router-decision.v2', decision_id='decision-A2', request_digest='7ea2ebf47ea89775bd8a6fb42d2daccc6ccfe8b04c69672fb1407ee547a630c1', stage='ACTION', provider_ref='codex', model_ref='c/model', reason_code='governed_action_by_capability_fit', required_capabilities=('filesystem_write', 'implementation_apply', 'integration', 'reasoning', 'test_execution'), eligible=True, eligibility_evidence_refs=('e',), policy_version='NVIDIA_PRIMARY_CODEX_SECONDARY_V1', action_state='ACTION_PENDING', model_fallback_refs=())"
+    },
+    "proposal_security_before_persist": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "product_effect_via_transport": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "no_shell_git_in_provider_action": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "direct_write_is_private_evidence_only": {
+      "status": "PASS",
+      "detail": "[199]"
+    },
+    "protected_mprf_full_mcp_unchanged": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "no_old_action_hardbind_markers": {
+      "status": "PASS",
+      "detail": ""
+    }
+  },
+  "findings": [],
+  "pass_challenge_count": 0
+}

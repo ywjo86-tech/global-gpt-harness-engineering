@@ -64,7 +64,7 @@ def _task(capabilities: list[str]) -> TaskSlice:
 
 
 class HybridRuntimeFlowTest(unittest.TestCase):
-    def test_hybrid_routes_read_only_to_nvidia_and_write_to_codex(self) -> None:
+    def test_legacy_hybrid_write_requires_governed_router(self) -> None:
         with patch("runtime.orchestrator.provider_executor.run_nvidia_reasoning_task", return_value={"status": "completed", "summary": "ok"}) as nvidia, patch(
             "runtime.orchestrator.provider_executor.run_task_prompt",
             return_value={"status": "manual_fallback", "mode": "manual"},
@@ -72,28 +72,22 @@ class HybridRuntimeFlowTest(unittest.TestCase):
             read_result = execute_provider_task(_task(["reasoning", "read_only"]), mode="hybrid", project_root=".", local_worker=lambda task: {})
             write_result = execute_provider_task(_task(["reasoning", "filesystem_write"]), mode="hybrid", project_root=".", local_worker=lambda task: {})
             self.assertEqual(read_result["provider_trace"]["provider"], "nvidia")
-            self.assertEqual(write_result["provider"], "codex")
+            self.assertEqual(write_result["provider"], "manual")
+            self.assertEqual(write_result["route_reason"], "hybrid_state_change_requires_governed_router")
             nvidia.assert_called_once()
-            codex.assert_called_once()
-            codex.assert_called_with(
-                _task(["reasoning", "filesystem_write"]).task_prompt_path,
-                _task(["reasoning", "filesystem_write"]).output_dir,
-                "codex-cli",
-                project_root=".",
-                required_capabilities=["reasoning", "filesystem_write"],
-            )
+            codex.assert_not_called()
 
-    def test_hybrid_routes_read_only_plus_integration_to_codex(self) -> None:
+    def test_legacy_hybrid_integration_requires_governed_router(self) -> None:
         with patch("runtime.orchestrator.provider_executor.run_nvidia_reasoning_task") as nvidia, patch(
             "runtime.orchestrator.provider_executor.run_task_prompt",
             return_value={"status": "manual_fallback", "mode": "manual"},
         ) as codex:
             result = execute_provider_task(_task(["reasoning", "read_only", "integration"]), mode="hybrid", project_root=".", local_worker=lambda task: {})
 
-            self.assertEqual(result["provider"], "codex")
-            self.assertEqual(result["route_reason"], "hybrid_state_changing_to_codex")
+            self.assertEqual(result["provider"], "manual")
+            self.assertEqual(result["route_reason"], "hybrid_state_change_requires_governed_router")
             nvidia.assert_not_called()
-            codex.assert_called_once()
+            codex.assert_not_called()
 
     def test_governed_hybrid_persists_prepare_checkpoint_and_resumes_without_repeating_provider(self) -> None:
         with cloned_sample_project() as project:
@@ -158,7 +152,9 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                 self.assertEqual(action["status"], "action_provider_blocked")
                 self.assertEqual(action["queue_state"], "QUEUED")
                 self.assertEqual(action["runtime_stage"], "ACTION")
-                self.assertEqual(action["action_state"], "ACTION_PROVIDER_BLOCKED")
+                self.assertEqual(action["action_state"], "ACTION_BACKEND_REQUIRED")
+                self.assertEqual(action["provider"], "nvidia")
+                self.assertEqual(action["next_step"], "DURABLE_FULL_PLAN_ACTION_BACKEND_REQUIRED")
                 codex.assert_not_called()
 
                 checkpoint = json.loads(Path(action["continuation_checkpoint"]).read_text(encoding="utf-8"))
@@ -166,41 +162,26 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                 self.assertEqual(checkpoint["execution_state"], "ACTION_PROVIDER_BLOCKED")
                 self.assertEqual(checkpoint["next_action"], "GPT_AUTHORIZED_MANUAL_ACTION_OR_QUEUE_BLOCK")
 
-    def test_gpt_operator_action_uses_file_backed_codex_model_when_approved_policy_exists(self) -> None:
+    def test_operator_api_does_not_bypass_production_action_backend_when_multiple_providers_exist(self) -> None:
         with cloned_sample_project() as project:
             pool = _write_model_pool(project)
             codex_policy = _write_codex_policy(project)
-            with patch.dict(
-                os.environ, {
-                    "NVIDIA_API_KEY": "test-key",
-                    "NVIDIA_MODEL": "nvidia/environment-must-not-control-router",
-                    "CODEX_MODEL": "codex/environment-must-not-control-router",
-                    "GCH_NVIDIA_MODEL_POOL": str(pool),
-                    "GCH_PRE_MPRF_PROVIDER_POLICY": str(codex_policy),
-                }, clear=False
-            ), patch("runtime.orchestrator.engine.detect_codex_cli", return_value=True), patch(
+            with patch.dict(os.environ, {
+                "NVIDIA_API_KEY": "test-key", "GCH_NVIDIA_MODEL_POOL": str(pool),
+                "GCH_PRE_MPRF_PROVIDER_POLICY": str(codex_policy),
+            }, clear=False), patch("runtime.orchestrator.engine.detect_codex_cli", return_value=True), patch(
                 "runtime.orchestrator.provider_executor.run_nvidia_reasoning_task",
                 return_value={"status": "completed", "summary": "prepared", "findings": [], "warnings": [], "errors": []},
-            ), patch(
-                "runtime.orchestrator.provider_executor.run_task_prompt",
-                return_value={"status": "completed", "summary": "applied", "findings": [], "warnings": [], "errors": []},
-            ) as codex:
+            ), patch("runtime.orchestrator.provider_executor.run_task_prompt") as codex:
                 engine = OrchestrationEngine(project)
-                first = engine.run(mode="hybrid", run_id="operator-action-approved-codex")
+                first = engine.run(mode="hybrid", run_id="operator-action-multi-provider")
                 prepared = [item for item in first["completed_workers"] if item.get("status") == "prepared"]
                 self.assertTrue(prepared)
-                thread_id = str(prepared[0]["thread_id"])
-
-                action = engine.operator_action("operator-action-approved-codex", thread_id)
-                self.assertEqual(action["status"], "completed")
-                self.assertEqual(action["provider"], "codex")
-                self.assertEqual(action["model"], "codex/router-model")
-                self.assertEqual(codex.call_args.kwargs["model_ref"], "codex/router-model")
-                self.assertNotEqual(codex.call_args.kwargs["model_ref"], os.environ["CODEX_MODEL"])
-
-                checkpoint = json.loads(Path(action["continuation_checkpoint"]).read_text(encoding="utf-8"))
-                self.assertEqual(checkpoint["execution_state"], "VERIFY_PENDING")
-                self.assertEqual(checkpoint["next_action"], "GPT_OPERATOR_VERIFY_REQUIRED")
+                action = engine.operator_action("operator-action-multi-provider", str(prepared[0]["thread_id"]))
+                self.assertEqual(action["status"], "action_provider_blocked")
+                self.assertEqual(action["provider"], "nvidia")
+                self.assertEqual(action["route_reason"], "production_action_backend_required")
+                codex.assert_not_called()
 
     def test_governed_adapter_cannot_use_environment_model_as_substitute(self) -> None:
         with patch.dict(

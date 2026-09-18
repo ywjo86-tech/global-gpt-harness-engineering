@@ -55,7 +55,9 @@ def route_provider(mode: str | None, required_capabilities: Iterable[str] | None
     if normalized_mode == HYBRID:
         if read_only:
             return ProviderRouteDecision(NVIDIA_PROVIDER, normalized_mode, "hybrid_read_only_to_nvidia", capabilities, True)
-        return ProviderRouteDecision(CODEX_PROVIDER, normalized_mode, "hybrid_state_changing_to_codex", capabilities, True)
+        return ProviderRouteDecision(
+            MANUAL_PROVIDER, normalized_mode, "hybrid_state_change_requires_governed_router", capabilities, False
+        )
     raise ValueError(f"Unsupported execution mode: {mode}")
 
 
@@ -110,6 +112,7 @@ class ProviderEligibilitySnapshotV1:
     evidence_refs: tuple[str, ...] = ()
     failure_classes: Mapping[str, str] | None = None
     model_fallback_refs: Mapping[str, tuple[str, ...]] | None = None
+    provider_capabilities: Mapping[str, tuple[str, ...]] | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != ELIGIBILITY_SCHEMA_V1 or not self.snapshot_id:
@@ -119,6 +122,13 @@ class ProviderEligibilitySnapshotV1:
         if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in self.model_refs):
             raise ProviderRouterContractError("unapproved provider model binding")
         fallbacks = self.model_fallback_refs or {}
+        provider_caps = self.provider_capabilities or {}
+        if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in provider_caps):
+            raise ProviderRouterContractError("unapproved provider capability binding")
+        for provider, refs in provider_caps.items():
+            normalized_caps = tuple(sorted({str(ref).strip() for ref in refs if str(ref).strip()}))
+            if not normalized_caps or len(normalized_caps) != len(tuple(refs)):
+                raise ProviderRouterContractError("invalid provider capability binding")
         if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in fallbacks):
             raise ProviderRouterContractError("unapproved provider fallback binding")
         for provider, refs in fallbacks.items():
@@ -141,6 +151,10 @@ class ProviderEligibilitySnapshotV1:
         if self.model_fallback_refs:
             payload["model_fallback_refs"] = {
                 provider: list(refs) for provider, refs in self.model_fallback_refs.items() if refs
+            }
+        if self.provider_capabilities:
+            payload["provider_capabilities"] = {
+                provider: list(refs) for provider, refs in self.provider_capabilities.items() if refs
             }
         return payload
 
@@ -315,6 +329,9 @@ def eligibility_snapshot_from_mapping(value: Mapping[str, Any]) -> ProviderEligi
             str(provider): tuple(refs)
             for provider, refs in raw_fallbacks.items()
         } or None,
+        provider_capabilities={
+            str(provider): tuple(refs) for provider, refs in dict(value.get("provider_capabilities", {})).items()
+        } or None,
     )
 
 
@@ -356,6 +373,70 @@ def validate_router_envelope(value: Mapping[str, Any]) -> tuple[RouterRequestV2,
     return request, decision
 
 
+EFFECT_ONLY_CAPABILITIES = frozenset({"filesystem_write", "shell", "git", "activation"})
+ACTION_GENERATION_ALIASES = {
+    "implementation_apply": "implementation_generation",
+    "test_execution": "test_design",
+}
+ACTION_PROPOSAL_CAPABILITY = "patch_generation"
+
+
+def provider_generation_requirements(request: RouterRequestV2) -> tuple[str, ...]:
+    """Translate task/effect requirements into model-generation capabilities.
+
+    Effect authority (write/shell/git/activation) belongs to Execution Backend,
+    never to the selected model. ACTION providers only need to generate a
+    bounded proposal for those effects.
+    """
+    required: set[str] = set()
+    for capability in request.required_capabilities:
+        if capability in EFFECT_ONLY_CAPABILITIES:
+            continue
+        required.add(ACTION_GENERATION_ALIASES.get(capability, capability))
+    if request.stage == "ACTION":
+        required.add(ACTION_PROPOSAL_CAPABILITY)
+    return tuple(sorted(required))
+
+
+def _legacy_provider_capabilities(provider: str) -> frozenset[str]:
+    # Historical snapshots did not authorize provider-neutral ACTION proposals.
+    # Preserve their old meaning: NVIDIA is non-mutating, while Codex may satisfy
+    # the legacy action path until a new explicit capability projection exists.
+    base = set(READ_ONLY_CAPABILITIES) | {"integration", "implementation_generation", "test_design"}
+    if provider == NVIDIA_PROVIDER:
+        base.discard(ACTION_PROPOSAL_CAPABILITY)
+    if provider == CODEX_PROVIDER:
+        base.add(ACTION_PROPOSAL_CAPABILITY)
+    return frozenset(base)
+
+
+def _provider_capability_set(snapshot: ProviderEligibilitySnapshotV1, provider: str) -> frozenset[str]:
+    supplied = (snapshot.provider_capabilities or {}).get(provider)
+    return frozenset(supplied) if supplied else _legacy_provider_capabilities(provider)
+
+
+def _select_provider(request: RouterRequestV2) -> tuple[str, str] | None:
+    required = set(provider_generation_requirements(request))
+    candidates: list[tuple[int, str, str]] = []
+    for provider in sorted(request.eligibility_snapshot.provider_eligible):
+        if not bool(request.eligibility_snapshot.provider_eligible.get(provider, False)):
+            continue
+        model = str(request.eligibility_snapshot.model_refs.get(provider, "")).strip()
+        if not model:
+            continue
+        capabilities = _provider_capability_set(request.eligibility_snapshot, provider)
+        if not required.issubset(capabilities):
+            continue
+        # Narrower capability fit wins. Provider identity is used only as a
+        # stable lexical tie-breaker; no stage/provider priority is encoded.
+        excess = len(capabilities - required)
+        candidates.append((excess, provider, model))
+    if not candidates:
+        return None
+    _excess, provider, model = min(candidates)
+    return provider, model
+
+
 def _blocked_decision(request: RouterRequestV2, reason: str, state: str) -> RouterDecisionV2:
     return RouterDecisionV2(
         schema_version=ROUTER_DECISION_SCHEMA_V2,
@@ -383,27 +464,23 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
         state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
         return _blocked_decision(request, "reroute_policy_not_activated_pre_mprf", state)
 
-    if request.stage == "ACTION":
-        provider = CODEX_PROVIDER
-        blocked_state = "ACTION_PROVIDER_BLOCKED"
-    else:
-        provider = NVIDIA_PROVIDER
-        blocked_state = "ROUTE_BLOCKED"
-
-    if not bool(request.eligibility_snapshot.provider_eligible.get(provider, False)):
-        reason = "action_provider_unavailable" if request.stage == "ACTION" else "read_provider_unavailable"
-        return _blocked_decision(request, reason, blocked_state)
-    model_ref = str(request.eligibility_snapshot.model_refs.get(provider, "")).strip()
-    if not model_ref:
-        return _blocked_decision(request, "router_model_binding_missing", blocked_state)
-
+    blocked_state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
     if request.stage != "ACTION" and STATE_CHANGING_CAPABILITIES.intersection(request.required_capabilities):
         return _blocked_decision(request, "state_change_capability_outside_action_stage", "ROUTE_BLOCKED")
     if request.stage == "ACTION" and not STATE_CHANGING_CAPABILITIES.intersection(request.required_capabilities):
         return _blocked_decision(request, "action_stage_without_state_change_capability", "ACTION_PROVIDER_BLOCKED")
 
+    selected = _select_provider(request)
+    if selected is None:
+        any_runtime = any(bool(value) for value in request.eligibility_snapshot.provider_eligible.values())
+        if not any_runtime:
+            reason = "action_provider_unavailable" if request.stage == "ACTION" else "read_provider_unavailable"
+        else:
+            reason = "provider_capability_mismatch"
+        return _blocked_decision(request, reason, blocked_state)
+    provider, model_ref = selected
     fallback_refs = tuple((request.eligibility_snapshot.model_fallback_refs or {}).get(provider, ()))
-    reason = "governed_action_to_codex" if provider == CODEX_PROVIDER else "governed_read_stage_to_nvidia"
+    reason = "governed_action_by_capability_fit" if request.stage == "ACTION" else "governed_read_by_capability_fit"
     action_state = "ACTION_PENDING" if request.stage == "ACTION" else f"{request.stage}_PENDING"
     return RouterDecisionV2(
         schema_version=ROUTER_DECISION_SCHEMA_V2,

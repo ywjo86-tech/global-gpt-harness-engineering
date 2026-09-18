@@ -1,0 +1,23 @@
+{
+  "schema_version": "edp.external-review-attempts.v1",
+  "accepted_as_decision_evidence": false,
+  "attempts": [
+    {
+      "attempt": 1,
+      "route_provider": "nvidia",
+      "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+      "provider_status": "completed",
+      "output_contract": "INVALID_NON_JSON",
+      "disposition": "EXCLUDED"
+    },
+    {
+      "attempt": 2,
+      "route_provider": "nvidia",
+      "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+      "provider_status": "completed",
+      "output_contract": "INVALID_NON_JSON",
+      "disposition": "EXCLUDED"
+    }
+  ],
+  "closure_basis": "Deterministic EDP adversarial second pass and PASS challenge; malformed provider review output was not treated as PASS."
+}

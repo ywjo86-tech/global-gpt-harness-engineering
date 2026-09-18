@@ -123,10 +123,11 @@ class ProductionMPRFBindingTests(unittest.TestCase):
                 ROUTER_REQUEST_SCHEMA_V2, "REQ-ACTION", "P1", "R1", "T1", "E2", "e"*64,
                 "ACTION", ("filesystem_write",), True, GOVERNED_POLICY_V1, snapshot,
             )
-            blocked = route_request(action)
-            self.assertFalse(blocked.eligible)
-            self.assertEqual(blocked.reason_code, "action_provider_unavailable")
-            self.assertEqual(blocked.provider_ref, "")
+            action_decision = route_request(action)
+            self.assertTrue(action_decision.eligible)
+            self.assertEqual(action_decision.reason_code, "governed_action_by_capability_fit")
+            self.assertEqual(action_decision.provider_ref, "nvidia")
+            self.assertIn("patch_generation", snapshot.provider_capabilities["nvidia"])
 
     def test_production_full_plan_source_uses_mprf_binding_not_static_collector(self):
         source = (Path(__file__).resolve().parents[1] / "runtime/orchestrator/gate_orchestrator.py").read_text(encoding="utf-8")

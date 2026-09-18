@@ -302,10 +302,12 @@ class IntegratedE2EQualificationTests(unittest.TestCase):
             GOVERNED_POLICY_V1, unavailable,
         )
         decision = route_request(request)
-        self.assertFalse(decision.eligible)
-        self.assertEqual(decision.provider_ref, "")
-        self.assertEqual(decision.model_ref, "")
-        self.assertEqual(decision.reason_code, "read_provider_unavailable")
+        # MPRF still does not select a provider; it only projects eligibility.
+        # Router may choose another eligible capability-compatible provider.
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, CODEX_PROVIDER)
+        self.assertEqual(decision.model_ref, "codex/model-b")
+        self.assertEqual(decision.reason_code, "governed_read_by_capability_fit")
 
         with tempfile.TemporaryDirectory() as td:
             provider_store = ProviderRuntimeEventStoreV1(Path(td).resolve(), "negative-run")

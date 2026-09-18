@@ -13,7 +13,7 @@ from mcp.client.stdio import StdioServerParameters
 
 from runtime.orchestrator.execution_modes import HYBRID, NVIDIA
 from runtime.orchestrator.full_mcp_backend_adapter import AdapterToolCall, FullMCPBackendAdapter
-from runtime.orchestrator.provider_router import CODEX_PROVIDER, MANUAL_PROVIDER, NVIDIA_PROVIDER, route_provider
+from runtime.orchestrator.provider_router import MANUAL_PROVIDER, NVIDIA_PROVIDER, route_provider
 from tests.full_mcp.test_adapter_contract import gateway_request, initialize_repo, invocation_fixture
 
 
@@ -22,9 +22,12 @@ class ProviderHybridRegressionTests(unittest.TestCase):
         read_only = route_provider(HYBRID, ("read_only", "reasoning", "evidence_analysis"))
         self.assertEqual(read_only.provider, NVIDIA_PROVIDER)
         self.assertTrue(read_only.eligible)
+        # Legacy mode routing must not silently bind state-changing work to a
+        # specific provider. Governed RouterRequest.v2 owns that selection.
         state = route_provider(HYBRID, ("filesystem_write", "implementation", "test"))
-        self.assertEqual(state.provider, CODEX_PROVIDER)
-        self.assertTrue(state.eligible)
+        self.assertEqual(state.provider, MANUAL_PROVIDER)
+        self.assertFalse(state.eligible)
+        self.assertEqual(state.reason_code, "hybrid_state_change_requires_governed_router")
         rejected = route_provider(NVIDIA, ("filesystem_write",))
         self.assertEqual(rejected.provider, MANUAL_PROVIDER)
         self.assertFalse(rejected.eligible)

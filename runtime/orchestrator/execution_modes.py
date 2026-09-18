@@ -56,7 +56,7 @@ def mode_info(mode: str | None) -> ExecutionModeInfo:
     if normalized == HYBRID:
         return ExecutionModeInfo(
             mode=normalized,
-            description="Rule-based provider routing across NVIDIA reasoning and Codex state-changing execution.",
+            description="Capability-based governed provider routing; state effects remain in the Execution Backend.",
             codex_cli_eligible=True,
             manual_fallback=True,
         )

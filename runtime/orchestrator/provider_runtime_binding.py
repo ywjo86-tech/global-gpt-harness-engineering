@@ -152,7 +152,7 @@ def _mprf_snapshot_from_policy(
         fallback_refs = {NVIDIA_PROVIDER: nvidia_fallbacks}
     return ProviderEligibilitySnapshotV1(
         ELIGIBILITY_SCHEMA_V1, snapshot.snapshot_id, snapshot.provider_eligible, snapshot.model_refs,
-        snapshot.evidence_refs, snapshot.failure_classes, fallback_refs,
+        snapshot.evidence_refs, snapshot.failure_classes, fallback_refs, source.provider_capabilities,
     )
 
 

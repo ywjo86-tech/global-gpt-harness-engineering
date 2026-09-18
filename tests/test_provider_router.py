@@ -34,12 +34,13 @@ class ProviderRouterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "nvidia")
         self.assertEqual(decision.reason_code, "hybrid_read_only_to_nvidia")
 
-    def test_hybrid_routes_state_changing_to_codex(self) -> None:
+    def test_legacy_hybrid_state_change_requires_governed_router(self) -> None:
         for capability in ["filesystem_write", "shell", "test", "git", "implementation", "integration"]:
             with self.subTest(capability=capability):
                 decision = route_provider("hybrid", ["reasoning", capability])
-                self.assertEqual(decision.provider, "codex")
-                self.assertEqual(decision.reason_code, "hybrid_state_changing_to_codex")
+                self.assertEqual(decision.provider, "manual")
+                self.assertEqual(decision.reason_code, "hybrid_state_change_requires_governed_router")
+                self.assertFalse(decision.eligible)
 
     def test_nvidia_rejects_state_changing(self) -> None:
         for capability in ["filesystem_write", "shell", "test", "git", "implementation", "integration"]:
@@ -52,15 +53,17 @@ class ProviderRouterTest(unittest.TestCase):
         hybrid = route_provider("hybrid", ["reasoning", "read_only", "integration"])
         nvidia = route_provider("nvidia", ["reasoning", "read_only", "integration"])
 
-        self.assertEqual(hybrid.provider, "codex")
-        self.assertEqual(hybrid.reason_code, "hybrid_state_changing_to_codex")
+        self.assertEqual(hybrid.provider, "manual")
+        self.assertEqual(hybrid.reason_code, "hybrid_state_change_requires_governed_router")
+        self.assertFalse(hybrid.eligible)
         self.assertEqual(nvidia.provider, "manual")
         self.assertFalse(nvidia.eligible)
 
     def test_capabilities_are_deduplicated_and_sorted_in_decision(self) -> None:
         decision = route_provider("hybrid", ["test", "read_only", "test", " reasoning ", ""])
 
-        self.assertEqual(decision.provider, "codex")
+        self.assertEqual(decision.provider, "manual")
+        self.assertFalse(decision.eligible)
         self.assertEqual(decision.required_capabilities, ("read_only", "reasoning", "test"))
 
 
@@ -100,12 +103,12 @@ class ProviderRouterV2Test(unittest.TestCase):
         self.assertEqual(decision.model_ref, "")
         self.assertEqual(decision.action_state, "ACTION_PROVIDER_BLOCKED")
 
-    def test_nvidia_failure_never_selects_codex_for_same_read_stage(self):
+    def test_read_stage_can_select_another_capable_provider(self):
         request = self._request(stage="PREPARE", nvidia=False, codex=True)
         decision = route_request(request)
-        self.assertFalse(decision.eligible)
-        self.assertEqual(decision.provider_ref, "")
-        self.assertEqual(decision.reason_code, "read_provider_unavailable")
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, "codex")
+        self.assertEqual(decision.reason_code, "governed_read_by_capability_fit")
 
 
 class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
@@ -188,6 +191,62 @@ class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
         self.assertEqual(decision1.decision_digest, decision2.decision_digest)
         self.assertIn("eligibility-evidence", decision1.eligibility_evidence_refs)
 
+
+
+class ProviderRouterAutonomousActionTest(unittest.TestCase):
+    def request(self, *, nvidia=True, codex=False, nvidia_caps=None, codex_caps=None):
+        profiles = {
+            "nvidia": tuple(nvidia_caps or ("reasoning", "patch_generation", "implementation_generation", "test_design", "integration")),
+            "codex": tuple(codex_caps or ("reasoning", "patch_generation", "implementation_generation", "test_design", "integration")),
+        }
+        snapshot = ProviderEligibilitySnapshotV1(
+            ELIGIBILITY_SCHEMA_V1, "ACTION-S1", {"nvidia": nvidia, "codex": codex},
+            {"nvidia": "nvidia/action-model", "codex": "codex/action-model"},
+            ("mprf-action-evidence",), provider_capabilities=profiles,
+        )
+        return RouterRequestV2(
+            ROUTER_REQUEST_SCHEMA_V2, "ACTION-REQ", "P1", "R1", "TASK-015", "ACTION-EXEC", "a" * 64,
+            "ACTION", ("reasoning", "implementation", "test", "integration", "filesystem_write"), True,
+            GOVERNED_POLICY_V1, snapshot,
+        )
+
+    def test_action_selects_nvidia_when_it_is_capable_and_codex_unavailable(self):
+        decision = route_request(self.request())
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, "nvidia")
+        self.assertEqual(decision.action_state, "ACTION_PENDING")
+        self.assertEqual(decision.reason_code, "governed_action_by_capability_fit")
+
+    def test_effect_capability_is_not_required_from_model_profile(self):
+        decision = route_request(self.request(nvidia_caps=(
+            "reasoning", "patch_generation", "implementation_generation", "test_design", "integration")))
+        self.assertTrue(decision.eligible)
+        self.assertNotIn("filesystem_write", decision.eligibility_evidence_refs)
+
+    def test_action_selection_has_no_provider_name_priority(self):
+        # Both are eligible. Codex has the narrower exact generation-capability
+        # fit, so it must win even though NVIDIA is also healthy. This proves
+        # selection is capability-fit driven rather than provider-ranked.
+        required = ("reasoning", "patch_generation", "implementation_generation", "test_design", "integration")
+        decision = route_request(self.request(
+            nvidia=True, codex=True,
+            nvidia_caps=required + ("documentation", "security_review"),
+            codex_caps=required,
+        ))
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, "codex")
+        self.assertEqual(decision.reason_code, "governed_action_by_capability_fit")
+
+    def test_provider_without_patch_generation_is_blocked(self):
+        decision = route_request(self.request(nvidia_caps=(
+            "reasoning", "implementation_generation", "test_design", "integration")))
+        self.assertFalse(decision.eligible)
+        self.assertEqual(decision.reason_code, "provider_capability_mismatch")
+
+    def test_capability_projection_changes_snapshot_digest(self):
+        request = self.request()
+        changed = self.request(nvidia_caps=("reasoning", "patch_generation"))
+        self.assertNotEqual(request.eligibility_snapshot.snapshot_digest, changed.eligibility_snapshot.snapshot_digest)
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from .tool_authorization import (
     validate_contract as validate_tool_authorization_contract,
 )
 from .provider_router import (
+    CODEX_PROVIDER,
     NVIDIA_PROVIDER,
     STATE_CHANGING_CAPABILITIES,
     RouterDecisionV2,
@@ -842,7 +843,15 @@ def build_production_canonical_worker_authority_provider(
             and router_decision.stage in {"PREPARE", "VERIFY", "REVIEW"}
             and not STATE_CHANGING_CAPABILITIES.intersection(router_decision.required_capabilities)
         )
-        if not nvidia_read_only:
+        provider_action = bool(
+            router_decision is not None
+            and router_decision.eligible
+            and router_decision.stage == "ACTION"
+            and router_decision.provider_ref != CODEX_PROVIDER
+            and STATE_CHANGING_CAPABILITIES.intersection(router_decision.required_capabilities)
+        )
+        codex_readiness_required = router_decision is None or router_decision.provider_ref == CODEX_PROVIDER
+        if codex_readiness_required:
             if codex_auth_readiness is None:
                 raise ProductionCanonicalAuthorityError(
                     "pre-collected Codex readiness evidence is required",
@@ -944,14 +953,14 @@ def build_production_canonical_worker_authority_provider(
                 "execution_obligation": "READ_ONLY_EXECUTION" if nvidia_read_only else "MUTATION_REQUIRED",
                 "preflight_evidence_digest": seed_digest,
                 "codex_auth_readiness_ref": (
-                    f"not-applicable://nvidia-read-only#{seed_digest}"
-                    if nvidia_read_only
+                    f"not-applicable://provider-action#{seed_digest}" if provider_action
+                    else f"not-applicable://nvidia-read-only#{seed_digest}" if nvidia_read_only
                     else getattr(codex_auth_readiness, "readiness_ref", "")
                          or f"codex-readiness://{worker_task_id}#{seed_digest}"
                 ),
                 "codex_auth_recheck_evidence_ref": (
-                    f"not-applicable://nvidia-read-only-recheck#{seed_digest}"
-                    if nvidia_read_only
+                    f"not-applicable://provider-action-recheck#{seed_digest}" if provider_action
+                    else f"not-applicable://nvidia-read-only-recheck#{seed_digest}" if nvidia_read_only
                     else f"codex-recheck://{worker_task_id}#{seed_digest}"
                 ),
                 "launch_authorization_digest": seed_digest,
@@ -972,9 +981,9 @@ def build_production_canonical_worker_authority_provider(
                     canonical_json_bytes(binding)
                 ).hexdigest(),
             }
-        if nvidia_read_only:
+        if nvidia_read_only or provider_action:
             raise ProductionCanonicalAuthorityError(
-                "DEC-007 canonical mutation authority cannot be reused for NVIDIA read-only execution",
+                "DEC-007 legacy Codex authority cannot be reused for a provider-neutral route",
                 reason_taxonomy="PRODUCTION_CANONICAL_PROVIDER_AUTHORITY_MISMATCH",
             )
         package_id, package_revision = production_canonical_package_identity(

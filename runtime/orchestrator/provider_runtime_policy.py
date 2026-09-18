@@ -14,6 +14,20 @@ from .provider_router import (
 )
 
 
+PROVIDER_GENERATION_CAPABILITIES_V1 = {
+    "nvidia": (
+        "read_only", "reasoning", "evidence_analysis", "code_generation", "patch_generation",
+        "test_design", "implementation_generation", "integration", "review", "diagnostics",
+        "documentation", "security_review",
+    ),
+    "codex": (
+        "read_only", "reasoning", "evidence_analysis", "code_generation", "patch_generation",
+        "test_design", "implementation_generation", "integration", "review", "diagnostics",
+        "documentation", "security_review", "native_tool_action",
+    ),
+}
+
+
 def collect_static_provider_eligibility(
     run_id: str,
     *,
@@ -113,4 +127,5 @@ def collect_static_provider_eligibility(
         model_refs=model_refs,
         evidence_refs=tuple(dict.fromkeys(evidence_refs)),
         model_fallback_refs={"nvidia": nvidia_fallbacks} if nvidia_fallbacks else None,
+        provider_capabilities=PROVIDER_GENERATION_CAPABILITIES_V1,
     )

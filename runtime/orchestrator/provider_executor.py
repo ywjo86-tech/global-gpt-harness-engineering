@@ -47,6 +47,21 @@ def _execute_governed(
             "next_step": "GPT_OPERATOR_REVIEW_REQUIRED",
         }
 
+    if decision.stage == "ACTION" and decision.provider_ref != CODEX_PROVIDER:
+        # The legacy provider executor has no Broker/tool-authorization context.
+        # Never mistake proposal generation for an applied state change. Durable
+        # Full Plan uses production_worker_executor.PROVIDER_ACTION instead.
+        return {
+            "status": "action_provider_blocked", "mode": "hybrid",
+            "provider": decision.provider_ref, "model": decision.model_ref,
+            "route_reason": "production_action_backend_required",
+            "router_decision_digest": decision.decision_digest,
+            "runtime_stage": decision.stage, "action_state": "ACTION_BACKEND_REQUIRED",
+            "required_capabilities": list(decision.required_capabilities),
+            "errors": ["production_action_backend_required"],
+            "next_step": "DURABLE_FULL_PLAN_ACTION_BACKEND_REQUIRED",
+        }
+
     if decision.provider_ref == NVIDIA_PROVIDER:
         payload = run_nvidia_reasoning_task(
             prompt=task.input,
