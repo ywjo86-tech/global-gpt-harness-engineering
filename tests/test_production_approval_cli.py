@@ -61,6 +61,12 @@ class ProductionApprovalWriterTests(unittest.TestCase):
         self.assertEqual(second["event"]["event_type"], "CORRECTION")
         self.assertEqual(chain[1]["predecessor"], chain[0]["record_hash"])
 
+    def test_explicit_logical_project_id_is_preserved(self):
+        result = self.write(project_id="LOGICAL_PROJECT_ID")
+        self.assertEqual(result["event"]["project_id"], "LOGICAL_PROJECT_ID")
+        event = load_v2_event_log(self.root / "approval-v2.json")[0]
+        self.assertEqual(event["project_id"], "LOGICAL_PROJECT_ID")
+
     def test_dry_run_and_read_only_do_not_write(self):
         for flag in ({"dry_run": True}, {"read_only": True}):
             with self.subTest(flag=flag):

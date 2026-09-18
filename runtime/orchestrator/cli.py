@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             sub.add_argument("--plan-sha256", required=True)
             sub.add_argument("--scope-file", required=True)
             sub.add_argument("--authorization-source", required=True)
+            sub.add_argument("--project-id")
             sub.add_argument("--approval-mode", default="GATE_BY_GATE")
             sub.add_argument("--dry-run", action="store_true")
             sub.add_argument("--read-only", action="store_true")
@@ -587,7 +588,7 @@ def main(argv: list[str] | None = None) -> int:
                 plan_sha256=args.plan_sha256, approval_mode=args.approval_mode,
                 canonical_lv_scope=scope["canonical_lv_scope"], owned_file_scope=scope["owned_file_scope"],
                 completion_conditions_sha256=scope["completion_conditions_sha256"],
-                authorization_source=args.authorization_source,
+                authorization_source=args.authorization_source, project_id=args.project_id,
                 correction_of=getattr(args, "supersedes", None), dry_run=args.dry_run, read_only=args.read_only,
             )
             _print(outcome)

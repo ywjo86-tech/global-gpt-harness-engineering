@@ -348,7 +348,7 @@ def write_production_approval(
     plan_sha256: str, approval_mode: str, canonical_lv_scope: Iterable[str],
     owned_file_scope: Mapping[str, Iterable[str]], completion_conditions_sha256: str,
     authorization_source: str, correction_of: str | None = None,
-    dry_run: bool = False, read_only: bool = False,
+    dry_run: bool = False, read_only: bool = False, project_id: str | None = None,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     output = Path(output_path)
@@ -389,11 +389,12 @@ def write_production_approval(
     approved_timestamp = superseded_event.get("approved_at") if superseded_event is not None else timestamp
     _utc_time(approved_timestamp, "approved_at")
     predecessor = existing[-1]["record_hash"] if existing else legacy[-1]["record_hash"] if legacy else None
+    bound_project_id = _identifier(project_id if project_id is not None else root.name, "project_id")
     candidate: dict[str, Any] = {
         "schema_version": SCHEMA_V2,
         "event_id": event_id,
         "event_type": "CORRECTION" if correction_of else "APPROVED",
-        "project_id": root.name,
+        "project_id": bound_project_id,
         "gate_id": gate_id,
         "plan_sha256": plan_sha256,
         "branch": branch,
