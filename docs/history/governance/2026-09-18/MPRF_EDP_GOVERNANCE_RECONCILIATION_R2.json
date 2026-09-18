@@ -1,0 +1,105 @@
+{
+  "authority": {
+    "edp_expected_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "edp_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "gate_closure": "CLOSED",
+    "gate_id": "GATE-010",
+    "phase": "FINAL_CLOSURE",
+    "plan_expected_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+    "plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f"
+  },
+  "base_baseline": "ede7e071279e1f58ece96ff52cc2c485f37827c5",
+  "branch": "integration/mprf-edp-hygiene-20260918",
+  "edp_closure": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "BLOCKER_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "EXHAUSTION_STATUS": "EXHAUSTED_FOR_INTEGRATION_SCOPE",
+    "FINAL_DECISION": "PASS_FOR_MAIN_FAST_FORWARD_INTEGRATION",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0
+  },
+  "findings": [
+    {
+      "finding": "Plan-bound EDP artifact missing from final MPRF branch.",
+      "id": "MPRF-GOV-001",
+      "remediation": "Restored exact EDP-1.0 artifact bound by the approved Plan SHA-256.",
+      "severity_before": "BLOCKER",
+      "status": "RESOLVED"
+    },
+    {
+      "finding": "Uninitialized status exposed schema defaults and contract=null.",
+      "id": "MPRF-GOV-002",
+      "remediation": "Status loads contract read-only and projects explicit source metadata without persisting runtime state.",
+      "severity_before": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "finding": "Mapped project status still preferred stale orchestration text over canonical v2 Gate ledger phase.",
+      "id": "MPRF-GOV-004",
+      "remediation": "Canonical v2 Gate ledger is validated fail-closed and its phase takes precedence for mapped contracts; legacy ledgers retain textual fallback.",
+      "severity_before": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "finding": "Engine-host current-state document remained on UPGRADE-002 after MPRF final closure.",
+      "id": "MPRF-GOV-005",
+      "remediation": "Added superseding MPRF FINAL_CLOSURE current binding while preserving historical state below.",
+      "severity_before": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "finding": "Runtime transient artifacts could repollute Git worktrees.",
+      "id": "MPRF-GOV-006",
+      "remediation": "Added explicit ignore rules for orchestrator runs, stage-gate and handoff transient outputs.",
+      "severity_before": "MAJOR",
+      "status": "RESOLVED"
+    }
+  ],
+  "negative_space": {
+    "approval_log_modified": false,
+    "deployment_performed": false,
+    "development_plan_semantics_modified": false,
+    "full_mcp_action_authority_modified": false,
+    "gate_state_modified": false,
+    "phase5_execution_authorized": false,
+    "phase7_execution_authorized": false,
+    "provider_router_policy_modified": false
+  },
+  "project_id": "MULTI_PROVIDER_FOUNDATION",
+  "qualified_head_before_record": "00a121f4eaf24e26c5ffed1a15fdac11bc3ecd67",
+  "recorded_at_utc": "2026-09-18T00:35:39.623384Z",
+  "schema_version": "gch.mprf-edp-governance-reconciliation.v2",
+  "validation": {
+    "authority_binding": "PASS",
+    "broad_repository": {
+      "result": "PASS",
+      "skipped": 15,
+      "tests": 1363
+    },
+    "compileall": "PASS",
+    "engine_host_status_phase": "FINAL_CLOSURE",
+    "focused_tests": {
+      "result": "PASS",
+      "tests": 117
+    },
+    "git_diff_check": "PASS",
+    "mapped_status_no_write": "PASS",
+    "mapped_status_phase": "FINAL_CLOSURE",
+    "mprf_suite": {
+      "result": "PASS",
+      "tests": 30
+    },
+    "new_functional_regressions": 0
+  }
+}
