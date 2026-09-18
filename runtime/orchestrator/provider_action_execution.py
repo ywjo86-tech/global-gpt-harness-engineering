@@ -325,6 +325,8 @@ def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
         "provider ACTION Python content is not syntactically valid",
         "provider ACTION proposal write set is invalid",
         "provider ACTION write schema mismatch",
+        "provider ACTION write binding is invalid",
+        "provider ACTION relative path binding is invalid",
         "provider ACTION proposal summary is invalid",
     }
 
@@ -338,6 +340,8 @@ def _correction_prompt(base_prompt: str, reason: str) -> str:
         "provider ACTION Python content is not syntactically valid",
         "provider ACTION proposal write set is invalid",
         "provider ACTION write schema mismatch",
+        "provider ACTION write binding is invalid",
+        "provider ACTION relative path binding is invalid",
         "provider ACTION proposal summary is invalid",
     } else "provider ACTION output contract mismatch"
     return (

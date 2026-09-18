@@ -1,0 +1,36 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-BINDING-RETRY-20260919",
+  "status": "ALL_PASS",
+  "defect": "A Provider ACTION proposal with an invalid owned-file binding or invalid exact-file relative_path was fail-closed immediately instead of receiving a bounded output-contract correction opportunity within the Router-approved model chain.",
+  "remediation": [
+    "treat write-binding and relative-path-binding mismatches as bounded output-contract errors only",
+    "keep project/run/Gate/LV/source identity mismatch non-retryable",
+    "keep security rejection non-retryable",
+    "rotate correction only through Router-approved models",
+    "never persist or execute invalid binding proposals"
+  ],
+  "negative_space": [
+    "no owned-file scope expansion",
+    "no Router authority change",
+    "no MPRF change",
+    "no Full MCP change",
+    "no Manual Action path added",
+    "no security-policy relaxation"
+  ],
+  "evidence": {
+    "direct": "17 PASS / RC=0",
+    "focused": "223 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1596 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "Invalid write bindings are now correctable only as bounded proposal-contract errors; authority, scope, security, and effect boundaries remain fail-closed.",
+  "record_sha256": "552e6e78d6c9139e125d61b3f7e7cc14916a9c6847ffd1be1c38efb35c141dca"
+}

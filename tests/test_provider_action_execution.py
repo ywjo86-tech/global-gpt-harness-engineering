@@ -178,6 +178,53 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertTrue(result["model_failover_used"])
             self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
 
+    def test_write_binding_error_retries_with_router_approved_fallback_without_early_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a",))
+            bad = self.proposal(content="value = 0\n", owned_id="OWNED_9999")
+            good = self.proposal(content="value = 1\n")
+            def provider_runner(**kwargs):
+                calls.append((kwargs["model"], kwargs["prompt"]))
+                payload = bad if len(calls) == 1 else good
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(payload), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=routed, baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual([item[0] for item in calls], ["nvidia/action-model", "nvidia/fallback-a"])
+            self.assertIn("write binding is invalid", calls[1][1])
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+
+    def test_relative_path_binding_error_is_retryable_but_never_broadens_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            bad = self.proposal(content="value = 0\n"); bad["writes"][0]["relative_path"] = "escape.py"
+            good = self.proposal(content="value = 1\n")
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"]); payload = bad if len(calls) == 1 else good
+                return {"status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                        "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                        "summary": json.dumps(payload), "context_metadata": {}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(("nvidia/fallback-a",)), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertIn("relative path binding is invalid", calls[1])
+            self.assertFalse((root / "tests/escape.py").exists())
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+
     def test_identity_mismatch_is_not_auto_corrected(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
