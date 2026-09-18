@@ -1,0 +1,190 @@
+{
+  "adversarial_second_pass": {
+    "challenges": [
+      "Tampered Router envelope rejected",
+      "NVIDIA route with state-changing capability rejected",
+      "Codex-unavailable action remains blocked",
+      "Live NVIDIA Worker cannot call Codex in smoke",
+      "Historical qualification no longer assumes current checkout equals historical branch"
+    ],
+    "count": 0,
+    "new_blocker_major": [],
+    "result": "PASS"
+  },
+  "authority": {
+    "edp_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "gate_state": "GATE-010 FINAL_CLOSURE CLOSED",
+    "phase5_execution_authorized": false,
+    "plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f"
+  },
+  "closure_metrics": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "BLOCKER_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0
+  },
+  "cross_document_audit": "PASS: implementation preserves approved Plan provider boundaries and current GATE-010 closure.",
+  "date": "2026-09-18",
+  "exhaustion": "MATERIAL_DEFECT_SEARCH_EXHAUSTED_FOR_REQUESTED_PRE_PHASE5_SCOPE",
+  "final_decision": "ALL_PASS_FOR_EDP_P5_004_P5_005_REMEDIATION_SCOPE; PHASE5_NOT_STARTED_AND_REMAINS_SEPARATE_AUTHORITY",
+  "findings": [
+    {
+      "evidence": [
+        "Production gate now creates immutable Router request/decision envelope before canonical Worker authority.",
+        "Read-only NVIDIA route bypasses Codex readiness prerequisite while state-changing routes retain Codex/manual/blocked boundary.",
+        "Production Worker validates canonical Router envelope and executes NVIDIA_READ_ONLY backend only for non-mutating capabilities.",
+        "Live production Worker smoke used governed nvidia/nemotron-3-super-120b-a12b, Codex argv patched to fail if called, result completed READ_ONLY_EXECUTION, executor nvidia-router-production, changed_files=[], HEAD unchanged, worktree clean."
+      ],
+      "id": "EDP-P5-004",
+      "severity": "BLOCKER",
+      "status": "RESOLVED"
+    },
+    {
+      "evidence": [
+        "Current contract fixtures include TASK-to-LV projection/project_id semantics.",
+        "Historical Full MCP qualification tests use archived stable-baseline evidence rather than requiring cleaned runtime transients/current historical branch checkout.",
+        "Global gate integration fixtures now model provider availability and fail-closed semantics.",
+        "Broad root regression: 1365 tests OK, 12 skipped; Full MCP 78 OK; MPRF 30 OK; focused provider/production 245 OK, 1 skipped."
+      ],
+      "id": "EDP-P5-005",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    }
+  ],
+  "mandatory_evidence_matrix": [
+    {
+      "domain": "CANONICAL_SOURCE",
+      "result": "PASS"
+    },
+    {
+      "domain": "AUTHORITY_BINDING",
+      "result": "PASS"
+    },
+    {
+      "domain": "PROVIDER_ROUTER_AUTHORITY",
+      "result": "PASS"
+    },
+    {
+      "domain": "NVIDIA_READ_ONLY_PRODUCTION_WORKER",
+      "result": "PASS"
+    },
+    {
+      "domain": "CODEX_UNAVAILABLE_FAIL_CLOSED",
+      "result": "PASS"
+    },
+    {
+      "domain": "STATE_CHANGE_PROHIBITION",
+      "result": "PASS"
+    },
+    {
+      "domain": "MODEL_INTRA_PROVIDER_FAILOVER",
+      "result": "PASS"
+    },
+    {
+      "domain": "FULL_PLAN_CONTINUITY",
+      "result": "PASS"
+    },
+    {
+      "domain": "FULL_MCP_REGRESSION",
+      "evidence": "78/78",
+      "result": "PASS"
+    },
+    {
+      "domain": "MPRF_REGRESSION",
+      "evidence": "30/30",
+      "result": "PASS"
+    },
+    {
+      "domain": "BROAD_REGRESSION",
+      "evidence": "1365 OK / 12 skipped",
+      "result": "PASS"
+    },
+    {
+      "domain": "FOCUSED_REGRESSION",
+      "evidence": "245 OK / 1 skipped",
+      "result": "PASS"
+    },
+    {
+      "domain": "STATIC",
+      "evidence": "compileall + git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "negative_space": [
+    {
+      "check": "NVIDIA mutation path",
+      "result": "ABSENT/REJECTED"
+    },
+    {
+      "check": "automatic NVIDIA-to-Codex fallback",
+      "result": "ABSENT"
+    },
+    {
+      "check": "Production read-only Worker direct Codex invocation",
+      "result": "ABSENT in governed NVIDIA route"
+    },
+    {
+      "check": "historical tests depend on deleted transient runtime evidence",
+      "result": "REMOVED"
+    },
+    {
+      "check": "PHASE5 activation as side effect",
+      "result": "ABSENT"
+    }
+  ],
+  "pass_challenge": {
+    "open": [],
+    "open_count": 0
+  },
+  "qualified_branch": "diagnosis/phase5-preflight-edp-20260918",
+  "qualified_head_before_record": "d4d69ebb75ce841faaa63d53a0d12dac7a0945ec",
+  "regression_rediagnosis": {
+    "broad": "PASS 1365 / skipped 12",
+    "focused": "PASS 245 / skipped 1",
+    "full_mcp": "PASS 78",
+    "live_nvidia_worker": "PASS",
+    "mprf": "PASS 30",
+    "nvidia_only_four_gate_supervisor": "PASS INTAKE PLAN REVIEW FINAL; dead_letter=0",
+    "static": "PASS"
+  },
+  "rtm": [
+    {
+      "evidence": "gate_orchestrator creates Router envelope; production_worker_executor validates it",
+      "obligation": "GPT Operator / Provider Router is provider-selection authority",
+      "result": "PASS"
+    },
+    {
+      "evidence": "live Worker routed to NVIDIA and completed",
+      "obligation": "NVIDIA primary for read-only/reasoning/evidence",
+      "result": "PASS"
+    },
+    {
+      "evidence": "NVIDIA_READ_ONLY authority checks reject state-changing capabilities; negative tests PASS",
+      "obligation": "NVIDIA state-changing execution prohibited",
+      "result": "PASS"
+    },
+    {
+      "evidence": "ACTION provider unavailable remains blocked; NVIDIA worker has zero changed files",
+      "obligation": "Codex unavailable does not trigger NVIDIA mutation or automatic cross-provider fallback",
+      "result": "PASS"
+    },
+    {
+      "evidence": "GATE_STATE remains GATE-010 FINAL_CLOSURE CLOSED; no PHASE5 activation performed",
+      "obligation": "No PHASE5 execution without separate authority",
+      "result": "PASS"
+    }
+  ],
+  "schema_version": "gch.edp.phase5-preflight-final.v1",
+  "scope": "EDP-P5-004 Production Worker Provider Router integration; EDP-P5-005 regression fixture remediation; exhaustive re-diagnosis"
+}
