@@ -1,5 +1,41 @@
 # Orchestration State
 
+> Updated: 2026-09-18
+> Scope: MULTI_PROVIDER_FOUNDATION final closure + EDP/governance reconciliation + runtime transient hygiene
+
+## Current Execution Binding
+
+Current phase: FINAL_CLOSURE
+
+- Active project: MULTI_PROVIDER_FOUNDATION
+- Active lifecycle: PREPH5MPRF
+- Active contract: docs/DEVELOPMENT_PLAN.txt
+- Contract SHA-256: 7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f
+- Diagnosis standard: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
+- Diagnosis standard SHA-256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
+- Canonical Gate: GATE-010
+- Canonical phase: FINAL_CLOSURE
+- Gate closure: CLOSED
+- Technical baseline commit: 211b8bb10eaec8a7e43dbee0cefd4884d2f55417
+- Project closure commit: ede7e071279e1f58ece96ff52cc2c485f37827c5
+- EDP/status remediation commit: 1ce2e0b35474d6eb4bbff03e6eaaf84133b10ea0
+- Runtime transient hygiene commit: e77b35445d4302e7b7d49a68f06db6229d8894ce
+- Multi-Provider baseline: APPROVED_SEALED / DECLARED
+- Full Plan GATE-001 through GATE-010: PASS / COMPLETED
+- PHASE 5 execution: NOT_AUTHORIZED
+- PHASE 7 execution: NOT_AUTHORIZED
+- Provider expansion: NOT_AUTHORIZED
+- Deployment: NOT_AUTHORIZED
+- Runtime binding note: this block supersedes earlier current-state blocks below; prior records remain historical evidence.
+
+## Current Safety / Integration Boundary
+
+- Final MPRF Plan, Gate ledger, approval records, and prior immutable closure evidence remain unchanged.
+- The EDP/status remediation restores the Plan-bound diagnosis artifact and correct current-phase projection.
+- Runtime-generated transient evidence is excluded from Git by the dedicated hygiene rule.
+- No provider policy, Provider Router authority, Full MCP action authority, deployment authority, or Phase 5/7 execution authority is expanded by this reconciliation.
+
+## Historical State Preserved Below
 > Updated: `2026-09-15`
 > Scope: GCH-EXEC-BACKEND UPGRADE-002 FINAL STABLE BASELINE closure
 
