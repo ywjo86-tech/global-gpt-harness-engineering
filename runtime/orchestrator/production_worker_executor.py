@@ -9,6 +9,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -3201,7 +3202,8 @@ def execute_production_worker(request: WorkerRequest, *,
         def execute(command_root: Path, command: list[str]) -> Mapping[str, Any]:
             normalized = list(command)
             if normalized and normalized[0] == ".venv/bin/python":
-                normalized[0] = str(command_root / ".venv" / "bin" / "python")
+                project_python = command_root / ".venv" / "bin" / "python"
+                normalized[0] = str(project_python if project_python.is_file() else Path(sys.executable))
             return _command(command_root, normalized, classify_collection=_is_test_runner(normalized))
         return run_command_group(root, commands_to_run, execute)
 

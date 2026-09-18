@@ -1,0 +1,37 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-VALIDATION-APPROVED-VENV-20260918",
+  "status": "ALL_PASS",
+  "defect": "Production Full Plan preflight accepted an explicit approved external venv, but Python validation later required only project-local .venv.",
+  "remediation": [
+    "allow active venv interpreter when project-local .venv is absent",
+    "preserve sealed .venv/bin/python token and resolve it to active interpreter at execution",
+    "retain fail-closed behavior when neither project-local nor active venv exists"
+  ],
+  "authority_preserved": {
+    "full_plan": true,
+    "router": true,
+    "mprf": true,
+    "full_mcp": true
+  },
+  "negative_space": [
+    "no provider/model selection added",
+    "no system-Python fallback when not in a venv",
+    "no validation bypass",
+    "no approved owned-scope expansion"
+  ],
+  "evidence": {
+    "focused": "135 PASS / 1 opt-in skip",
+    "validation_toolchain": "12 PASS",
+    "full_regression": "1588 PASS / 12 skip / RC=0"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "No material unresolved defect remains in the approved-external-venv validation boundary after focused and full regression.",
+  "record_sha256": "ef83bae7dce0b669a5946de7d867fbe051f3a0ab56123eab22837648faf8c431"
+}

@@ -18,6 +18,19 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.profile_ids,('PYTHON_PYTEST',))
             self.assertEqual(plan.focused[0][:4],('.venv/bin/python','-m','pytest','-q'))
 
+    def test_active_approved_venv_can_resolve_python_scope_without_project_local_venv(self):
+        with tempfile.TemporaryDirectory() as d:
+            from unittest.mock import patch
+            root=Path(d)
+            active=Path(d)/'approved-venv/bin/python'; active.parent.mkdir(parents=True); active.write_text(''); active.chmod(0o755)
+            with patch('runtime.orchestrator.validation_toolchain.sys.executable', str(active)), \
+                 patch('runtime.orchestrator.validation_toolchain.sys.prefix', str(active.parent.parent)), \
+                 patch('runtime.orchestrator.validation_toolchain.sys.base_prefix', '/usr'):
+                plan=resolve_validation_commands(root,['tests/test_a.py'],allow_deferred=False)
+            self.assertFalse(plan.deferred)
+            self.assertEqual(plan.profile_ids,('PYTHON_PYTEST',))
+            self.assertEqual(plan.focused[0][0],'.venv/bin/python')
+
     def test_android_node_manifest_resolves_without_guessing_package_manager(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'gradlew').write_text('#!/bin/sh\n'); (root/'backend').mkdir()

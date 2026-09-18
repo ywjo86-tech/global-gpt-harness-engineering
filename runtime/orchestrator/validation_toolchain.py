@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
@@ -138,7 +139,7 @@ def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
     raise ValidationToolchainError(f"unsupported backend package manager: {name}")
 
 
-def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow_deferred: bool = False) -> ValidationCommandSet:
+def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow_deferred: bool = False, python_executable: str | Path | None = None) -> ValidationCommandSet:
     documentation_only = bool(owned_files) and all(
         isinstance(path, str) and (path == "docs/" or path.startswith("docs/"))
         for path in owned_files
@@ -191,18 +192,49 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
 
     py_tests = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     if python_scope and not android and not node:
-        interpreter = root / ".venv" / "bin" / "python"
+        project_interpreter = root / ".venv" / "bin" / "python"
+        external_interpreter: Path | None = None
+        if python_executable is not None:
+            candidate = Path(str(python_executable))
+            if not candidate.is_absolute() or not candidate.is_file() or not os.access(candidate, os.X_OK):
+                raise ValidationToolchainError("approved external Python interpreter is unavailable")
+            try:
+                candidate.absolute().relative_to(root)
+            except ValueError:
+                pass
+            else:
+                raise ValidationToolchainError("approved external Python interpreter must be outside project root")
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_file() or resolved.stat().st_mode & 0o022:
+                raise ValidationToolchainError("approved external Python interpreter is unsafe")
+            external_interpreter = candidate.absolute()
+        elif not project_interpreter.is_file():
+            active_python = Path(sys.executable)
+            if sys.prefix != sys.base_prefix and active_python.is_file() and os.access(active_python, os.X_OK):
+                external_interpreter = active_python.absolute()
+
         if py_tests:
-            profiles.append("PYTHON_PYTEST")
-            focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
-            full.append((".venv/bin/python", "-m", "pytest", "-q"))
             py_owned = [path for path in owned_files if path.endswith(".py")]
-            compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
-            if not interpreter.is_file():
-                if allow_deferred:
-                    deferred = True
-                else:
-                    raise ValidationToolchainError("Python owned scope requires project venv")
+            if project_interpreter.is_file() and external_interpreter is None:
+                profiles.append("PYTHON_PYTEST")
+                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
+                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
+            elif external_interpreter is not None:
+                modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
+                runner = str(external_interpreter)
+                profiles.append("PYTHON_UNITTEST_EXTERNAL")
+                focused.append((runner, "-m", "unittest", "-v", *modules))
+                full.append((runner, "-m", "unittest", "discover", "-s", "tests", "-v"))
+                compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
+            elif allow_deferred:
+                profiles.append("PYTHON_PYTEST")
+                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
+                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
+                deferred = True
+            else:
+                raise ValidationToolchainError("Python owned scope requires project venv or approved external interpreter")
         elif allow_deferred:
             profiles.append("PYTHON_PYTEST")
             deferred = True
@@ -285,6 +317,8 @@ def validate_profile_resolution(expected: Sequence[str], actual: Sequence[str]) 
         raise ValidationToolchainError("Android bootstrap validation profile did not resolve")
     if "PYTHON_PYTEST" in expected_set and "PYTHON_PYTEST" not in actual_set:
         raise ValidationToolchainError("Python validation profile did not resolve")
+    if "PYTHON_UNITTEST_EXTERNAL" in expected_set and "PYTHON_UNITTEST_EXTERNAL" not in actual_set:
+        raise ValidationToolchainError("external Python validation profile did not resolve")
     if "NODE_PACKAGE_MANIFEST" in expected_set and not any(item.startswith("NODE_") for item in actual_set):
         raise ValidationToolchainError("Node validation profile did not resolve")
     explicit_node = {item for item in expected_set if item.startswith("NODE_") and item != "NODE_PACKAGE_MANIFEST"}
