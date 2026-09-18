@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 
 from .approval_hash import calculate_record_hash
 from .canonical_transition import validate_canonical_gate_state
@@ -395,6 +395,42 @@ LEDGER_FIELDS = {
     "active_scope",
     "owned_files",
 }
+LEDGER_OPTIONAL_FIELDS_V1 = {"last_review", "transition_authorized"}
+LAST_REVIEW_FIELDS_V1 = {
+    "decision", "review_artifact", "finding_counts", "recovery_required", "reason",
+}
+
+
+def _validate_legacy_ledger_extensions(value: Mapping[str, Any]) -> None:
+    if "transition_authorized" in value and not isinstance(value["transition_authorized"], bool):
+        raise ContractMappingError("legacy Gate transition_authorized must be boolean")
+    review = value.get("last_review")
+    if review is None:
+        return
+    if not isinstance(review, Mapping) or set(review) != LAST_REVIEW_FIELDS_V1:
+        raise ContractMappingError("legacy Gate last_review schema is invalid")
+    if review.get("decision") not in {"GO", "NO_GO"}:
+        raise ContractMappingError("legacy Gate last_review decision is invalid")
+    artifact = review.get("review_artifact")
+    if not isinstance(artifact, str) or not artifact or Path(artifact).is_absolute() or ".." in PurePosixPath(artifact).parts:
+        raise ContractMappingError("legacy Gate last_review artifact is invalid")
+    counts = review.get("finding_counts")
+    if (
+        not isinstance(counts, Mapping)
+        or set(counts) != {"BLOCKER", "MAJOR", "MINOR"}
+        or any(isinstance(item, bool) or not isinstance(item, int) or item < 0 for item in counts.values())
+    ):
+        raise ContractMappingError("legacy Gate last_review finding counts are invalid")
+    recovery = review.get("recovery_required")
+    if recovery is not None and (not isinstance(recovery, str) or not recovery):
+        raise ContractMappingError("legacy Gate last_review recovery reference is invalid")
+    reason = review.get("reason")
+    if not isinstance(reason, str) or not reason or len(reason) > 4096:
+        raise ContractMappingError("legacy Gate last_review reason is invalid")
+    if review["decision"] == "NO_GO" and value.get("transition_authorized") is not False:
+        raise ContractMappingError("legacy Gate NO_GO review must fail closed")
+
+
 LEDGER_FIELDS_V2 = {
     "schema_version", "project_id", "gate_id", "phase", "plan_sha256",
     "gate_status", "closure_status", "approval_record_hash",
@@ -428,16 +464,20 @@ def _ledger_payload(text: str) -> dict[str, Any]:
             raise ContractMappingError("Gate State ledger JSON is malformed") from exc
         if not isinstance(value, dict):
             raise ContractMappingError("Gate State ledger payload must be an object")
-        expected_fields = LEDGER_FIELDS_V2 if value.get("schema_version") == "orchestration.canonical-gate-state.v2" else LEDGER_FIELDS
-        if set(value) != expected_fields:
+        is_v2 = value.get("schema_version") == "orchestration.canonical-gate-state.v2"
+        expected_fields = LEDGER_FIELDS_V2 if is_v2 else LEDGER_FIELDS
+        allowed_fields = expected_fields if is_v2 else expected_fields | LEDGER_OPTIONAL_FIELDS_V1
+        if not expected_fields.issubset(value) or not set(value).issubset(allowed_fields):
             missing = sorted(expected_fields - set(value))
-            unknown = sorted(set(value) - expected_fields)
+            unknown = sorted(set(value) - allowed_fields)
             detail = []
             if missing:
                 detail.append(f"missing fields: {', '.join(missing)}")
             if unknown:
                 detail.append(f"unknown fields: {', '.join(unknown)}")
             raise ContractMappingError("Gate State ledger fields are invalid (" + "; ".join(detail) + ")")
+        if not is_v2:
+            _validate_legacy_ledger_extensions(value)
         values.append(value)
     if len(values) > 1 and any(value.get("schema_version") != "orchestration.canonical-gate-state.v2" for value in values):
         raise ContractMappingError("append-only Gate State ledger entries must use canonical v2 schema")
@@ -782,8 +822,9 @@ def _evaluate_first_gate_activation(mapping: ContractMapping, gate_text: str) ->
         "state": "GATE1_ACTIVE",
         "selected_source": mapping.canonical_source,
         "checkpoint_commit": activation["head"],
-        "transition_authorized": True,
+        "transition_authorized": bool(ledger.get("transition_authorized", True)),
         "gate_1_started": True,
+        **({"last_review": dict(ledger["last_review"])} if isinstance(ledger.get("last_review"), Mapping) else {}),
         "gate_id": activation["gate_id"],
         "approval_id": activation["approval_id"],
         "approval_record_hash": ledger["approval_record_hash"],

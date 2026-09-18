@@ -107,6 +107,62 @@ class FirstGateActiveCanonicalStateTests(unittest.TestCase):
             self.assertEqual(subprocess.run(["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True, check=True).stdout, "")
 
 
+    def test_first_gate_no_go_review_extension_fails_closed_without_overriding_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, _, mapping, _, _, _, _ = self._fixture(Path(directory))
+            gate_path = root / "docs" / "GATE_STATE.md"
+            text = gate_path.read_text(encoding="utf-8")
+            fence = chr(96) * 3
+            block = text.split(fence + "json\n", 1)[1].split("\n" + fence, 1)[0]
+            ledger = json.loads(block)
+            ledger["transition_authorized"] = False
+            ledger["last_review"] = {
+                "decision": "NO_GO",
+                "review_artifact": "GATE-001.FINAL_INDEPENDENT_REVIEW.json",
+                "finding_counts": {"BLOCKER": 1, "MAJOR": 1, "MINOR": 0},
+                "recovery_required": "RCV-001",
+                "reason": "fixture review requires remediation",
+            }
+            gate_path.write_text(
+                "# Gate State Ledger\n\nStatus: FIRST_GATE_ACTIVE\n\n"
+                + fence + "json\n"
+                + json.dumps(ledger, sort_keys=True, indent=2)
+                + "\n" + fence + "\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "record no-go gate review")
+            state = evaluate_canonical_state(mapping)
+            self.assertEqual(state["state"], "GATE1_ACTIVE")
+            self.assertFalse(state["transition_authorized"])
+            self.assertEqual(state["last_review"]["decision"], "NO_GO")
+
+    def test_first_gate_no_go_review_cannot_claim_transition_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, _, mapping, _, _, _, _ = self._fixture(Path(directory))
+            gate_path = root / "docs" / "GATE_STATE.md"
+            text = gate_path.read_text(encoding="utf-8")
+            fence = chr(96) * 3
+            block = text.split(fence + "json\n", 1)[1].split("\n" + fence, 1)[0]
+            ledger = json.loads(block)
+            ledger["transition_authorized"] = True
+            ledger["last_review"] = {
+                "decision": "NO_GO",
+                "review_artifact": "GATE-001.FINAL_INDEPENDENT_REVIEW.json",
+                "finding_counts": {"BLOCKER": 1, "MAJOR": 0, "MINOR": 0},
+                "recovery_required": "RCV-001",
+                "reason": "fixture blocker remains",
+            }
+            gate_path.write_text(
+                "# Gate State Ledger\n\nStatus: FIRST_GATE_ACTIVE\n\n"
+                + fence + "json\n"
+                + json.dumps(ledger, sort_keys=True, indent=2)
+                + "\n" + fence + "\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "record conflicting no-go review")
+            with self.assertRaisesRegex(ContractMappingError, "NO_GO review must fail closed"):
+                evaluate_canonical_state(mapping)
+
     def test_non_main_worktree_branch_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root, _, mapping, _, _, baseline, activation_commit = self._fixture(
