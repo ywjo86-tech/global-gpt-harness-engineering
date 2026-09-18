@@ -138,14 +138,27 @@ def validate_action_proposal(
         target_path = (bindings[file_id] + relative_path) if directory_scope else bindings[file_id]
         if target_path.endswith(".py"):
             try:
-                ast.parse(content, filename=target_path)
+                parsed_python = ast.parse(content, filename=target_path)
             except SyntaxError as exc:
                 raise ProviderActionExecutionError("provider ACTION Python content is not syntactically valid") from exc
+            if not (Path(request.project_root) / target_path).exists() and not content.strip():
+                raise ProviderActionExecutionError("provider ACTION new Python content is empty")
         size = len(content.encode("utf-8"))
         total += size
         if size > MAX_WRITE_BYTES or total > MAX_PROPOSAL_BYTES:
             raise ProviderActionExecutionError("provider ACTION proposal exceeds size limit")
         normalized.append({"owned_file_id": file_id, "relative_path": relative_path, "content": content})
+    written_exact = {
+        bindings[item["owned_file_id"]]
+        for item in normalized
+        if not bindings[item["owned_file_id"]].endswith("/")
+    }
+    required_new_exact = {
+        path for path in owned
+        if not path.endswith("/") and not (Path(request.project_root) / path).exists()
+    }
+    if not required_new_exact.issubset(written_exact):
+        raise ProviderActionExecutionError("provider ACTION proposal omits required new owned file")
     summary = str(payload.get("summary", "")).strip()
     if not summary or len(summary) > 2048:
         raise ProviderActionExecutionError("provider ACTION proposal summary is invalid")
@@ -323,6 +336,8 @@ def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
         "provider ACTION proposal is ambiguous",
         "provider ACTION proposal schema mismatch",
         "provider ACTION Python content is not syntactically valid",
+        "provider ACTION new Python content is empty",
+        "provider ACTION proposal omits required new owned file",
         "provider ACTION proposal write set is invalid",
         "provider ACTION write schema mismatch",
         "provider ACTION write binding is invalid",
@@ -338,6 +353,8 @@ def _correction_prompt(base_prompt: str, reason: str) -> str:
         "provider ACTION proposal is ambiguous",
         "provider ACTION proposal schema mismatch",
         "provider ACTION Python content is not syntactically valid",
+        "provider ACTION new Python content is empty",
+        "provider ACTION proposal omits required new owned file",
         "provider ACTION proposal write set is invalid",
         "provider ACTION write schema mismatch",
         "provider ACTION write binding is invalid",

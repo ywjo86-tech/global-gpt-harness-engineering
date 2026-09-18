@@ -1,0 +1,36 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-PROPOSAL-COMPLETENESS-20260919",
+  "status": "ALL_PASS",
+  "defect": "A provider proposal could pass structural validation while omitting a newly required exact owned file and creating another new Python file with empty content, causing failure only after governed effect execution.",
+  "remediation": [
+    "require every absent exact owned path to be represented in the proposal before effects",
+    "reject empty content for newly created Python files before effects",
+    "treat both conditions as bounded output-contract correction errors",
+    "retain exact owned-file binding and Broker-only effect enforcement"
+  ],
+  "negative_space": [
+    "no scope expansion",
+    "no identity retry",
+    "no security retry",
+    "no Router policy change",
+    "no MPRF change",
+    "no Full MCP change",
+    "no Manual Action path"
+  ],
+  "evidence": {
+    "direct": "19 PASS / RC=0",
+    "focused": "225 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1598 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "New exact-file completeness and non-empty new-Python checks now fail before any governed effect; authority and security boundaries remain unchanged.",
+  "record_sha256": "e4fc5ff924b93e24305f3e66e7313e2b723a13886e2036062224b0e0e164f2ef"
+}

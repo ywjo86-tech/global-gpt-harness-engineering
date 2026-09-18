@@ -178,6 +178,56 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertTrue(result["model_failover_used"])
             self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
 
+    def test_missing_new_exact_owned_file_retries_before_any_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_one.py", "tests/test_two.py"]
+            request = worker(root, owned); calls = []
+            bad = self.proposal(content="def test_one():\n    assert True\n")
+            good = self.proposal(content="def test_one():\n    assert True\n")
+            good["writes"] = [
+                {"owned_file_id":"OWNED_0001","relative_path":"","content":"def test_one():\n    assert True\n"},
+                {"owned_file_id":"OWNED_0002","relative_path":"","content":"def test_two():\n    assert True\n"},
+            ]
+            def provider_runner(**kwargs):
+                self.assertFalse((root / owned[0]).exists())
+                self.assertFalse((root / owned[1]).exists())
+                calls.append(kwargs["prompt"]); payload = bad if len(calls) == 1 else good
+                return {"status":"completed","model":kwargs["model"],"provider_attempts":1,
+                        "model_attempts":{kwargs["model"]:1},"model_failover_used":False,
+                        "summary":json.dumps(payload),"context_metadata":{}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(("nvidia/fallback-a",)), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertIn("omits required new owned file", calls[1])
+            self.assertEqual((root / owned[0]).read_text(), "def test_one():\n    assert True\n")
+            self.assertEqual((root / owned[1]).read_text(), "def test_two():\n    assert True\n")
+            self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 2)
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+
+    def test_empty_new_python_test_retries_before_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            bad = self.proposal(content="")
+            good = self.proposal(content="def test_generated():\n    assert True\n")
+            def provider_runner(**kwargs):
+                self.assertFalse((root / owned[0]).exists())
+                calls.append(kwargs["prompt"]); payload = bad if len(calls) == 1 else good
+                return {"status":"completed","model":kwargs["model"],"provider_attempts":1,
+                        "model_attempts":{kwargs["model"]:1},"model_failover_used":False,
+                        "summary":json.dumps(payload),"context_metadata":{}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(("nvidia/fallback-a",)), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertIn("new Python content is empty", calls[1])
+            self.assertEqual((root / owned[0]).read_text(), "def test_generated():\n    assert True\n")
+            self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+
     def test_write_binding_error_retries_with_router_approved_fallback_without_early_effect(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
