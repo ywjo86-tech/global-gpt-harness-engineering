@@ -23,10 +23,11 @@ PACKAGE = "d" * 64
 WORKER_TASK = "TASK_015_WORKER"
 
 
-def decision():
+def decision(fallbacks=()):
     snapshot = ProviderEligibilitySnapshotV1(
         ELIGIBILITY_SCHEMA_V1, "S-ACTION", {"nvidia": True, "codex": False},
         {"nvidia": "nvidia/action-model"}, ("mprf",),
+        model_fallback_refs={"nvidia": tuple(fallbacks)} if fallbacks else None,
         provider_capabilities={"nvidia": (
             "reasoning", "patch_generation", "implementation_generation", "test_design", "integration",
         )},
@@ -132,7 +133,7 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
             self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
 
-    def test_invalid_json_twice_fails_without_persist_or_effect(self):
+    def test_invalid_json_three_times_fails_without_persist_or_effect(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
             request = worker(root, owned); calls = []
@@ -146,9 +147,36 @@ class ProviderActionExecutionTest(unittest.TestCase):
                     output_dir=root / "run", provider_runner=provider_runner,
                     security_scan=lambda _raw: True, timeout=30,
                 )
-            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(calls), 3)
             self.assertFalse((root / "run/provider-action-proposal.json").exists())
             self.assertFalse((root / owned[0]).exists())
+
+    def test_output_contract_retry_rotates_only_through_router_approved_models(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a", "nvidia/fallback-b"))
+            invalid = self.proposal(); invalid["unexpected"] = "metadata"
+            def provider_runner(**kwargs):
+                calls.append((kwargs["model"], tuple(kwargs["fallback_models"]), kwargs["prompt"]))
+                payload = invalid if len(calls) == 1 else self.proposal(content="value = 1\n")
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(payload), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=routed, baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual([item[0] for item in calls], ["nvidia/action-model", "nvidia/fallback-a"])
+            self.assertNotIn("nvidia/action-model", calls[1][1])
+            self.assertIn("schema mismatch", calls[1][2])
+            self.assertEqual(result["proposal_generation_models"], ["nvidia/action-model", "nvidia/fallback-a"])
+            self.assertEqual(result["provider_attempts"], 2)
+            self.assertTrue(result["model_failover_used"])
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
 
     def test_identity_mismatch_is_not_auto_corrected(self):
         with tempfile.TemporaryDirectory() as td:

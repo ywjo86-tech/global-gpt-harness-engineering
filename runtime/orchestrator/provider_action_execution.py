@@ -20,7 +20,7 @@ PROVIDER_ACTION_BACKEND = "PROVIDER_ACTION"
 MAX_PROPOSAL_WRITES = 64
 MAX_WRITE_BYTES = 256 * 1024
 MAX_PROPOSAL_BYTES = 1024 * 1024
-MAX_PROPOSAL_GENERATION_ATTEMPTS = 2
+MAX_PROPOSAL_GENERATION_ATTEMPTS = 3
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
 _CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",), "loop": ("workflow",)}
@@ -329,12 +329,24 @@ def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
     }
 
 
-def _correction_prompt(base_prompt: str) -> str:
+def _correction_prompt(base_prompt: str, reason: str) -> str:
+    bounded_reason = reason if reason in {
+        "provider ACTION proposal is not valid JSON",
+        "provider ACTION proposal must be an object",
+        "provider ACTION proposal is ambiguous",
+        "provider ACTION proposal schema mismatch",
+        "provider ACTION Python content is not syntactically valid",
+        "provider ACTION proposal write set is invalid",
+        "provider ACTION write schema mismatch",
+        "provider ACTION proposal summary is invalid",
+    } else "provider ACTION output contract mismatch"
     return (
         base_prompt
-        + "\nCORRECTION RETRY: The previous response did not satisfy the required JSON output contract. "
-          "Do not repeat analysis or prose. Return exactly one JSON object matching the required shape. "
-          "Do not change project/run/Gate/LV/plan/source identity or owned-file scope."
+        + f"\nCORRECTION RETRY: Previous bounded validation failure: {bounded_reason}. "
+          "Do not repeat analysis or prose. Return exactly one JSON object with exactly these top-level keys: "
+          "schema_version, project_id, run_id, gate_id, lv_id, plan_sha256, source_head, writes, summary. "
+          "Each writes item must contain exactly owned_file_id, relative_path, content. "
+          "Do not add metadata fields. Do not change project/run/Gate/LV/plan/source identity or owned-file scope."
     )
 
 
@@ -350,18 +362,36 @@ def execute_provider_action_proposal(
     result: Mapping[str, Any] = {}
     proposal: dict[str, Any] | None = None
     generation_attempts = 0
+    total_provider_attempts = 0
+    prior_contract_error = ""
+    approved_models = (decision.model_ref, *decision.model_fallback_refs)
+    contract_rejected_models: set[str] = set()
+    generation_models: list[str] = []
     for generation_attempt in range(1, MAX_PROPOSAL_GENERATION_ATTEMPTS + 1):
         generation_attempts = generation_attempt
+        requested_model = next(
+            (model for model in approved_models if model not in contract_rejected_models),
+            decision.model_ref,
+        )
+        remaining_models = tuple(
+            model for model in approved_models
+            if model != requested_model and model not in contract_rejected_models
+        )
         result = provider_runner(
-            prompt=prompt if generation_attempt == 1 else _correction_prompt(prompt),
+            prompt=prompt if generation_attempt == 1 else _correction_prompt(prompt, prior_contract_error),
             project_root=request.project_root, input_files=context_files,
-            model=decision.model_ref, require_explicit_model=True,
-            fallback_models=decision.model_fallback_refs, json_mode=True,
+            model=requested_model, require_explicit_model=True,
+            fallback_models=remaining_models, json_mode=True,
             timeout_seconds=float(min(timeout, 180)), max_tokens=8192,
         )
+        total_provider_attempts += int(result.get("provider_attempts", 0) or 0)
         if result.get("status") != "completed":
             error = str(result.get("provider_error_class", "provider_failure"))
             raise ProviderActionExecutionError(f"provider ACTION generation failed:{error}")
+        actual_model = str(result.get("model", requested_model)).strip() or requested_model
+        if actual_model not in approved_models:
+            raise ProviderActionExecutionError("provider ACTION returned model outside Router-approved chain")
+        generation_models.append(actual_model)
         try:
             proposal = validate_action_proposal(
                 _extract_json_object(str(result.get("summary", ""))), request=request,
@@ -371,6 +401,14 @@ def execute_provider_action_proposal(
         except ProviderActionExecutionError as exc:
             if generation_attempt >= MAX_PROPOSAL_GENERATION_ATTEMPTS or not _retryable_output_contract_error(exc):
                 raise
+            prior_contract_error = str(exc)
+            model_attempts = result.get("model_attempts", {})
+            if isinstance(model_attempts, Mapping):
+                contract_rejected_models.update(
+                    str(model) for model, count in model_attempts.items()
+                    if model in approved_models and isinstance(count, int) and count > 0
+                )
+            contract_rejected_models.add(actual_model)
     if proposal is None:
         raise ProviderActionExecutionError("provider ACTION proposal validation did not complete")
     proposal_digest = _digest({key: value for key, value in proposal.items()
@@ -419,9 +457,13 @@ def execute_provider_action_proposal(
         "routed_model": decision.model_ref,
         "actual_model": str(result.get("model", decision.model_ref)),
         "router_decision_digest": decision.decision_digest,
-        "provider_attempts": int(result.get("provider_attempts", 0)),
+        "provider_attempts": total_provider_attempts,
         "proposal_generation_attempts": generation_attempts,
-        "model_failover_used": bool(result.get("model_failover_used", False)),
+        "proposal_generation_models": generation_models,
+        "model_failover_used": (
+            any(model != decision.model_ref for model in generation_models)
+            or bool(result.get("model_failover_used", False))
+        ),
         "proposal_digest": proposal_digest,
         "proposal_path": str(proposal_path),
         "proposal_summary": proposal["summary"],

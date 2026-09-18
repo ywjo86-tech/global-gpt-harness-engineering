@@ -1,0 +1,35 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-OUTPUT-CONTRACT-FAILOVER-20260918",
+  "status": "ALL_PASS",
+  "defect": "TASK-015 could receive completed Provider ACTION responses that violated the exact proposal schema twice; the existing two generic retries could exhaust without trying another Router-approved model.",
+  "remediation": [
+    "increase output-contract generation attempts from two to three; no effect is allowed before exact proposal validation",
+    "feed the bounded validation reason into the correction prompt and repeat the exact allowed top-level/write keys",
+    "on retry, consume only model_ref/model_fallback_refs already present in the RouterDecision and rotate away from models whose completed output violated the contract",
+    "block any actual model that is outside the Router-approved chain",
+    "aggregate provider attempt evidence and record bounded generation model refs"
+  ],
+  "negative_space": [
+    "no new provider discovery or model choice outside RouterDecision",
+    "identity/scope/security failures remain non-retryable",
+    "no proposal persistence before validation/security acceptance",
+    "no Broker effect before exact proposal validation",
+    "no Full MCP/MPRF/Gate contract changes"
+  ],
+  "evidence": {
+    "direct_contract_tests": "15 PASS",
+    "focused_regression": "270 PASS / 6 opt-in skip / RC=0",
+    "full_regression": "1594 PASS / 12 skip / RC=0",
+    "bounded_live_probe": "same TASK-015 context returned exact 9-key schema with 2 exact write objects; no raw response persisted"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "Output-contract retries are bounded, effect-free until validation, and constrained to the Router-approved model chain; no material unresolved defect remains in this boundary.",
+  "record_sha256": "ca7a82a74b8fe2668cd73c1b049eb3617622452345f9f67bc5a2aa785c8db9c7"
+}
