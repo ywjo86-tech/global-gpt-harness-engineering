@@ -45,3 +45,10 @@ build/
 Thumbs.db
 .idea/
 .vscode/
+
+# Harness runtime-generated transient evidence
+runtime/orchestrator_runs/
+runtime/stage_gate.json
+runtime/stage_gate_request.json
+runtime/handoff_report.md
+runtime/worker_handoff.md
