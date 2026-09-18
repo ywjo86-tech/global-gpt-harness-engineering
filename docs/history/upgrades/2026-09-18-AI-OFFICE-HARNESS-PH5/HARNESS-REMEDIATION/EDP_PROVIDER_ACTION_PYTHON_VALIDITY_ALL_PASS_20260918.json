@@ -1,0 +1,37 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-PYTHON-VALIDITY-20260918",
+  "status": "ALL_PASS",
+  "defect": "TASK-015 provider proposal could pass JSON/schema validation yet contain syntactically invalid Python, and the worker later misclassified parse failure as a hardcoded-credential failure. Context selection also omitted lower-ranked but material API examples.",
+  "remediation": [
+    "AST-parse Python proposal content before persistence or Broker effect",
+    "treat syntax-only contract failure as bounded correction-retry eligible with maximum two generation attempts",
+    "increase deterministic read context from 8/60KiB to 12/96KiB without changing write scope",
+    "instruct provider to use only APIs/imports evidenced in supplied context",
+    "separate UNPARSEABLE_PYTHON from hardcoded-credential worker taxonomy"
+  ],
+  "negative_space": [
+    "Provider Router selection unchanged",
+    "MPRF unchanged",
+    "Full MCP unchanged",
+    "all product effects remain ProductionToolTransport/SingleToolBroker-only",
+    "identity/scope/security failures remain non-retryable",
+    "write scope unchanged"
+  ],
+  "evidence": {
+    "new_direct_regression": "125 PASS / 1 opt-in skip / RC=0",
+    "focused_regression": "215 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1591 PASS / 12 skip / RC=0",
+    "adversarial_checks": "10/10 PASS",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "No material unresolved defect remains in provider Python proposal validity, bounded retry, context bounding, or parse-failure taxonomy after direct, focused, full, and negative-space checks.",
+  "record_sha256": "e52fafc35968f0a76b238ea778d1b6633d66c525500c9bebb5fe7abfef2c7f86"
+}

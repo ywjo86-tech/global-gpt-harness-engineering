@@ -110,6 +110,28 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual(result["proposal_generation_attempts"], 2)
             self.assertEqual((root / owned[0]).read_text(), "created\n")
 
+    def test_invalid_python_gets_one_bounded_correction_before_any_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            invalid = self.proposal(content='value = (1 +\n')
+            valid = self.proposal(content='value = 1\n')
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"])
+                payload = invalid if len(calls) == 1 else valid
+                return {"status": "completed", "model": "nvidia/action-model", "provider_attempts": 1,
+                        "summary": json.dumps(payload), "context_metadata": {}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual(len(calls), 2)
+            self.assertIn("CORRECTION RETRY", calls[1])
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
+
     def test_invalid_json_twice_fails_without_persist_or_effect(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
@@ -189,7 +211,7 @@ class ProviderActionExecutionTest(unittest.TestCase):
             (root / "_workspace/secret.py").write_text("project_factory secret\n")
             request = worker(root, ["tests/test_project_factory_e2e.py"])
             selected = select_action_context_files(root, request, request.task.editable_scope)
-            self.assertLessEqual(len(selected), 8)
+            self.assertLessEqual(len(selected), 12)
             self.assertTrue(any("foundry" in item for item in selected))
             self.assertFalse(any(item.startswith("_workspace/") for item in selected))
 

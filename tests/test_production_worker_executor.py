@@ -1377,6 +1377,24 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             self.assertNotIn(candidate, serialized)
             self.assertNotIn(hashlib.sha256(candidate.encode()).hexdigest(), serialized)
 
+    def test_unparseable_python_is_not_misreported_as_hardcoded_credential(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); request = self._fixture(root)
+            def runner(argv, **kwargs):
+                (root / "app").mkdir(); (root / "tests").mkdir()
+                (root / "app/x.py").write_text("value = (1 +\n", encoding="utf-8")
+                (root / "tests/test_x.py").write_text("def test_x(): assert True\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "app/x.py", "tests/test_x.py"], check=True)
+                subprocess.run(["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@x",
+                               "commit", "-qm", "checkpoint"], check=True)
+                return subprocess.CompletedProcess(argv, 0, b"", b"")
+            with self.assertRaisesRegex(ProductionWorkerError, "OWNED_DIFF_UNPARSEABLE_PYTHON"):
+                execute_production_worker(request, executor=runner)
+            persisted = json.loads((root / "out/executor.process.json").read_text())
+            finding = persisted["owned_diff_security_validation"]["findings"][0]
+            self.assertEqual(finding["ast_node_category"], "UNPARSEABLE_PYTHON")
+            self.assertFalse(finding["hardcoded"])
+
     def test_normal_deduplicator_ast_has_no_credential_finding(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); (root / "app/services").mkdir(parents=True)

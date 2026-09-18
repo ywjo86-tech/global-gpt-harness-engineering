@@ -1,6 +1,7 @@
 """Provider-neutral ACTION proposal generation with governed Broker effects."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -19,6 +20,8 @@ MAX_PROPOSAL_WRITES = 64
 MAX_WRITE_BYTES = 256 * 1024
 MAX_PROPOSAL_BYTES = 1024 * 1024
 MAX_PROPOSAL_GENERATION_ATTEMPTS = 2
+MAX_CONTEXT_FILES = 12
+MAX_CONTEXT_BYTES = 96 * 1024
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
 _CONTEXT_EXCLUDED = frozenset({".git", ".venv", "node_modules", "_workspace", "dist", "build"})
 _CONTEXT_EXCLUDED_PREFIXES = ("docs/history/",)
@@ -130,6 +133,12 @@ def validate_action_proposal(
         if key in seen:
             raise ProviderActionExecutionError("provider ACTION write target is duplicated")
         seen.add(key)
+        target_path = (bindings[file_id] + relative_path) if directory_scope else bindings[file_id]
+        if target_path.endswith(".py"):
+            try:
+                ast.parse(content, filename=target_path)
+            except SyntaxError as exc:
+                raise ProviderActionExecutionError("provider ACTION Python content is not syntactically valid") from exc
         size = len(content.encode("utf-8"))
         total += size
         if size > MAX_WRITE_BYTES or total > MAX_PROPOSAL_BYTES:
@@ -193,11 +202,11 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
     for relative, _score in sorted(candidates.items(), key=lambda item: (-item[1], item[0])):
         path = root / relative
         size = path.stat().st_size
-        if len(selected) >= 8 or total + size > 60 * 1024:
+        if len(selected) >= MAX_CONTEXT_FILES or total + size > MAX_CONTEXT_BYTES:
             continue
         selected.append(relative)
         total += size
-        if len(selected) == 8:
+        if len(selected) == MAX_CONTEXT_FILES:
             break
     return selected
 
@@ -217,7 +226,8 @@ def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned
         f"Owned file mapping: {json.dumps(owned_rows, ensure_ascii=False)}\n"
         "Use the supplied read-only context files to match the existing codebase. For exact-file owned scopes set relative_path "
         "to an empty string. For directory scopes, provide a safe child relative_path. Each write content must be the COMPLETE "
-        "target file content, not a diff. Do not write outside the owned mapping.\n"
+        "target file content, not a diff. Do not write outside the owned mapping. For Python targets, return syntactically valid "
+        "Python and use only imports/APIs supported by the supplied context; do not invent missing module names or symbols.\n"
         "Return exactly one JSON object and no prose or Markdown fences. Required shape:\n"
         f"{{\"schema_version\":\"{PROPOSAL_SCHEMA_V1}\",\"project_id\":{json.dumps(identity['project_id'])},"
         f"\"run_id\":{json.dumps(identity['run_id'])},\"gate_id\":{json.dumps(identity['gate_id'])},"
@@ -243,6 +253,7 @@ def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
         "provider ACTION proposal must be an object",
         "provider ACTION proposal is ambiguous",
         "provider ACTION proposal schema mismatch",
+        "provider ACTION Python content is not syntactically valid",
         "provider ACTION proposal write set is invalid",
         "provider ACTION write schema mismatch",
         "provider ACTION proposal summary is invalid",

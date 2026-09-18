@@ -3216,7 +3216,11 @@ def execute_production_worker(request: WorkerRequest, *,
     }
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     if hardcoded_findings and not secret_handling_allowed:
-        raise ProductionWorkerError("OWNED_DIFF_HARDCODED_CREDENTIAL: production worker security validation failed")
+        if any(item.get("hardcoded") is True for item in hardcoded_findings):
+            raise ProductionWorkerError("OWNED_DIFF_HARDCODED_CREDENTIAL: production worker security validation failed")
+        if any(item.get("ast_node_category") == "UNPARSEABLE_PYTHON" for item in hardcoded_findings):
+            raise ProductionWorkerError("OWNED_DIFF_UNPARSEABLE_PYTHON: production worker security validation failed")
+        raise ProductionWorkerError("OWNED_DIFF_SECURITY_VALIDATION: production worker security validation failed")
     try:
         sealed_toolchain = request.extra_context.get("validation_toolchain", {})
         validation_plan = resolve_validation_commands(
