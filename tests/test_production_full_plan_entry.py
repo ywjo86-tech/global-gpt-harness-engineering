@@ -129,6 +129,35 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             self.assertEqual(result["status"], "BLOCK")
             self.assertEqual(result["reason"], "MISSING_PYTHON_MODULE:module_that_must_not_exist_fpce")
 
+
+    def test_mapping_root_is_durably_bound_and_process_local(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            mapping_root = root / "mappings"; mapping_root.mkdir()
+            payload = json.loads(path.read_text())
+            payload["mapping_root"] = str(mapping_root.resolve())
+            path.write_text(json.dumps(payload))
+            seen = []
+            class Result:
+                def to_dict(self):
+                    return {"status": "COMPLETED"}
+            def fake_run(_self, *args, **kwargs):
+                seen.append(__import__("os").environ.get("HARNESS_CONTRACT_MAPPING_ROOT"))
+                return Result()
+            before = __import__("os").environ.get("HARNESS_CONTRACT_MAPPING_ROOT")
+            with patch("runtime.orchestrator.production_full_plan_entry.DurableFullPlanSupervisor.run", new=fake_run):
+                out = run_job(path)
+            self.assertEqual(out["status"], "COMPLETED")
+            self.assertEqual(seen, [str(mapping_root.resolve())])
+            self.assertEqual(__import__("os").environ.get("HARNESS_CONTRACT_MAPPING_ROOT"), before)
+
+    def test_preflight_rejects_invalid_mapping_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            payload = json.loads(path.read_text()); payload["mapping_root"] = str(root / "missing")
+            path.write_text(json.dumps(payload))
+            self.assertEqual(preflight_job(load_job(path))["reason"], "MAPPING_ROOT_INVALID")
+
     def test_transient_supervisor_restarts_crashes_not_explicit_waits(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); path = self.make_job(root)

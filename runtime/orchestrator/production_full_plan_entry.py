@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
 from .durable_io import atomic_write_json
+from .contract_adapter import MAPPING_ROOT_ENV
 
 JOB_SCHEMA = "orchestration.production-full-plan-job.v1"
 
@@ -73,6 +74,9 @@ def load_job(path: str | Path) -> dict[str, Any]:
                 raise FullPlanJobError("Gate job requirement_evidence_paths_by_lv is invalid")
     if len(set(ids)) != len(ids):
         raise FullPlanJobError("Full Plan job contains duplicate Gates")
+    mapping_root = job.get("mapping_root")
+    if mapping_root is not None and (not isinstance(mapping_root, str) or not mapping_root):
+        raise FullPlanJobError("Full Plan job mapping_root is invalid")
     return job
 
 
@@ -116,6 +120,12 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
         probe = subprocess.run([str(python_executable), "-c", f"import {module}"], capture_output=True, text=True, check=False, timeout=20)
         if probe.returncode != 0:
             return {"status": "BLOCK", "state": "BLOCKED", "reason": f"MISSING_PYTHON_MODULE:{module}"}
+    mapping_root = job.get("mapping_root")
+    if mapping_root is not None:
+        candidate = Path(mapping_root)
+        if (not candidate.is_absolute() or not candidate.exists() or not candidate.is_dir()
+                or candidate.is_symlink() or candidate != candidate.resolve()):
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "MAPPING_ROOT_INVALID"}
     required_executables = job.get("required_executables", ["git"])
     if not isinstance(required_executables, list) or any(not isinstance(x, str) or not x for x in required_executables):
         return {"status": "BLOCK", "state": "BLOCKED", "reason": "REQUIRED_EXECUTABLES_INVALID"}
@@ -199,7 +209,17 @@ def run_job(path: str | Path) -> dict[str, Any]:
     supervisor = DurableFullPlanSupervisor(
         job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids, **policy,
     )
-    return supervisor.run(build_gate_executor(job), preflight=lambda _: preflight_job(job)).to_dict()
+    previous_mapping_root = os.environ.get(MAPPING_ROOT_ENV)
+    mapping_root = job.get("mapping_root")
+    if mapping_root is not None:
+        os.environ[MAPPING_ROOT_ENV] = str(mapping_root)
+    try:
+        return supervisor.run(build_gate_executor(job), preflight=lambda _: preflight_job(job)).to_dict()
+    finally:
+        if previous_mapping_root is None:
+            os.environ.pop(MAPPING_ROOT_ENV, None)
+        else:
+            os.environ[MAPPING_ROOT_ENV] = previous_mapping_root
 
 
 def transient_systemd_command(job_path: str | Path, *, unit_name: str | None = None) -> list[str]:
