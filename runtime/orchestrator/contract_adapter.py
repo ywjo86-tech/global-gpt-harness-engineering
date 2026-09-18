@@ -443,6 +443,28 @@ def _find_ledger_activation_commit(root: Path, relative_path: str, current: byte
     return None
 
 
+def canonical_gate_phase(mapping: ContractMapping) -> str | None:
+    """Return the validated canonical v2 Gate phase when one is authoritative.
+
+    Legacy ledgers intentionally return None so callers can retain their
+    historical text-based phase fallback. Canonical v2 ledgers are validated
+    through the same fail-closed path used by Gate orchestration before their
+    phase is exposed as project status.
+    """
+    path = mapping.gate_state_ledger_path
+    if path is None or not path.is_file() or path.is_symlink():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError as exc:
+        raise ContractMappingError("Gate State ledger must be valid UTF-8") from exc
+    payload = _ledger_payload(text)
+    if payload.get("schema_version") != "orchestration.canonical-gate-state.v2":
+        return None
+    validate_gate_state_ledger(mapping, [])
+    return str(payload["phase"])
+
+
 def validate_gate_state_ledger(mapping: ContractMapping, events: list[dict[str, Any]]) -> dict[str, Any] | None:
     path = mapping.gate_state_ledger_path
     if path is None:

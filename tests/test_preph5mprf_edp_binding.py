@@ -20,6 +20,16 @@ class PrePh5MprfEdpBindingTests(unittest.TestCase):
         observed = hashlib.sha256(standard.read_bytes()).hexdigest()
         self.assertEqual(observed, match.group(1))
 
+    def test_mapped_contract_phase_uses_canonical_gate_ledger(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        if root.name != "MULTI_PROVIDER_FOUNDATION":
+            self.skipTest("project identity binding requires MULTI_PROVIDER_FOUNDATION basename")
+        from runtime.orchestrator.contract_loader import load_contract
+
+        contract = load_contract(root)
+        self.assertEqual(contract.current_phase, "FINAL_CLOSURE")
+
+
 
 if __name__ == "__main__":
     unittest.main()

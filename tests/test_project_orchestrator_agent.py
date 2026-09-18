@@ -77,6 +77,19 @@ class ProjectOrchestratorBoundaryTest(unittest.TestCase):
             self.assertEqual(status["status_context"]["runtime_state_source"], "persisted")
             self.assertEqual(status["state"]["active_run_id"], "status-persisted-run")
 
+    def test_status_prefers_canonical_v2_gate_phase_for_mapped_project(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        if root.name != "MULTI_PROVIDER_FOUNDATION":
+            self.skipTest("project identity binding requires MULTI_PROVIDER_FOUNDATION basename")
+        state_path = root / "runtime" / "orchestrator_state.json"
+        self.assertFalse(state_path.exists())
+        with patch("runtime.orchestrator.engine.detect_codex_cli", return_value=True):
+            status = OrchestrationEngine(root).status()
+
+        self.assertEqual(status["contract"]["current_phase"], "FINAL_CLOSURE")
+        self.assertEqual(status["state"]["current_phase"], "FINAL_CLOSURE")
+        self.assertFalse(state_path.exists())
+
     def test_execution_agent_requires_ready_planning_artifact(self) -> None:
         with cloned_sample_project() as project:
             contract = load_contract(project)

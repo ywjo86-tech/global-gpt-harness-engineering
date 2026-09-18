@@ -5,7 +5,12 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
-from .contract_adapter import load_project_mapping, select_canonical_source, validate_mapping_sources
+from .contract_adapter import (
+    canonical_gate_phase,
+    load_project_mapping,
+    select_canonical_source,
+    validate_mapping_sources,
+)
 from .schemas import ExecutionContract, ProjectPaths
 
 REQUIRED_FILE_KEYS = [
@@ -125,7 +130,8 @@ def load_contract(
     changelog_text = _read_text(path_map["changelog"])
     app_log_text = _read_text(path_map["app_log"])
     orchestration_state_text = _read_text(path_map["orchestration_state_md"])
-    current_phase = _extract_current_phase(development_plan_text, orchestration_state_text)
+    ledger_phase = canonical_gate_phase(mapping) if mapping is not None else None
+    current_phase = ledger_phase or _extract_current_phase(development_plan_text, orchestration_state_text)
 
     return ExecutionContract(
         paths=paths,
