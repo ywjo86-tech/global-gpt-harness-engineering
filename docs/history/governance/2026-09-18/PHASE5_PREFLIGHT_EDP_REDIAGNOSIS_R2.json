@@ -1,0 +1,194 @@
+{
+  "adversarial_second_pass": {
+    "challenge": "Assume NVIDIA-only Full Plan readiness is falsely positive; inspect actual production worker dispatch rather than only Router/Engine tests and re-run current-date broad/Full MCP regressions.",
+    "count": 2,
+    "new_blocker_major": [
+      "EDP-P5-004",
+      "EDP-P5-005"
+    ]
+  },
+  "authority": {
+    "closure": "CLOSED",
+    "edp_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "gate": "GATE-010",
+    "phase": "FINAL_CLOSURE",
+    "phase5_authority": "NOT_AUTHORIZED",
+    "plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+    "scenario_provider_constraint": "NVIDIA_ONLY; CODEX MUST NOT BE INVOKED"
+  },
+  "baseline_main": "23eebd951f67fe5a3f6c27879ef4750ed256c057",
+  "closure_metrics": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 2,
+    "BLOCKER_COUNT": 1,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 1,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 3,
+    "PASS_CHALLENGE_OPEN_COUNT": 3,
+    "REGRESSION_REDIAGNOSIS_STATUS": "FAIL",
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "UNRESOLVED_MAJOR_COUNT": 2,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0
+  },
+  "diagnosis_branch": "diagnosis/phase5-preflight-edp-20260918",
+  "diagnosis_head_before_record": "220278b85902258797acea5344e7da6a437515da",
+  "evidence_matrix": [
+    {
+      "domain": "AUTHORITY",
+      "evidence": "Plan/EDP SHA valid; GATE-010 FINAL_CLOSURE CLOSED; PHASE5 remains NOT_AUTHORIZED.",
+      "result": "PASS"
+    },
+    {
+      "domain": "NVIDIA_CONNECTIVITY",
+      "evidence": "Governed live NVIDIA calls complete; intra-provider failover observed and succeeds.",
+      "result": "PASS"
+    },
+    {
+      "domain": "NVIDIA_LEGACY_DEFAULT",
+      "evidence": "Legacy default aligned to nvidia/nemotron-3-super-120b-a12b and live direct call completes.",
+      "result": "PASS"
+    },
+    {
+      "domain": "FULL_PLAN_CONTINUITY",
+      "evidence": "Synthetic four-gate DurableFullPlanSupervisor completed all gates with live NVIDIA-only workers.",
+      "result": "PASS"
+    },
+    {
+      "domain": "ACTION_NEGATIVE_SPACE",
+      "evidence": "Codex-ineligible filesystem_write ACTION returns ACTION_PROVIDER_BLOCKED/provider none.",
+      "result": "PASS"
+    },
+    {
+      "domain": "PRODUCTION_ENTRY_PROVIDER_AUTHORITY",
+      "evidence": "Production worker executor directly binds Codex CLI instead of Router-governed staged provider path.",
+      "result": "FAIL"
+    },
+    {
+      "domain": "FOCUSED_REGRESSION",
+      "evidence": "147 tests PASS.",
+      "result": "PASS"
+    },
+    {
+      "domain": "BROAD_REGRESSION",
+      "evidence": "1365 tests: 2 errors, 12 skipped.",
+      "result": "FAIL"
+    },
+    {
+      "domain": "FULL_MCP_REGRESSION",
+      "evidence": "78 tests with temporary mcp==2.2.0 venv: 3 failures.",
+      "result": "FAIL"
+    },
+    {
+      "domain": "MPRF_REGRESSION",
+      "evidence": "R1 had 30/30 PASS; no contrary MPRF evidence observed in R2.",
+      "result": "NOT_RERUN_AFTER_EARLY_FULL_MCP_STOP"
+    },
+    {
+      "domain": "STATIC",
+      "evidence": "git diff --check PASS; diagnosis branch clean before record.",
+      "result": "PASS"
+    }
+  ],
+  "exhaustion": "MATERIAL_DEFECT_SEARCH_EXHAUSTED_FOR_CURRENT_PREFLIGHT_SCOPE",
+  "final_decision": "FAIL_NO_GO_FOR_PHASE5; NVIDIA_ONLY_SUPERVISOR_PATH_PASS_BUT_PRODUCTION_FULL_PLAN_END_TO_END_NOT_READY",
+  "negative_space": [
+    "No Codex provider call was made during the NVIDIA-only scenario.",
+    "No source-tree mutation was performed by NVIDIA.",
+    "No PHASE 5 activation/deployment/provider expansion was performed.",
+    "No claim of end-to-end production Full Plan PASS is made because the production Worker boundary is Codex-bound.",
+    "No universal regression PASS is claimed while broad/Full MCP regressions remain open."
+  ],
+  "new_findings": [
+    {
+      "evidence": [
+        "runtime/orchestrator/production_worker_executor.py EXECUTOR_ID=codex-cli-production",
+        "Codex argv constructed directly",
+        "Approved Plan requires GPT Operator, Router authority, NVIDIA-primary/Codex-secondary and Codex-unavailable queue/manual boundary."
+      ],
+      "id": "EDP-P5-004",
+      "impact": "A real production Full Plan cannot be validated NVIDIA-only without either invoking Codex or stopping before the Worker boundary.",
+      "problem": "Production Full Plan Gate worker bypasses Provider Router and is hard-bound to Codex CLI.",
+      "required_correction": "Route production worker PREPARE/read-only work through governed Provider Router/NVIDIA; preserve Codex only for authorized ACTION stage and fail closed/queue when Codex unavailable.",
+      "severity": "BLOCKER",
+      "status": "OPEN"
+    },
+    {
+      "evidence": [
+        "Broad root: 1365 tests -> 2 errors / 12 skipped",
+        "Full MCP with mcp==2.2.0: 78 tests -> 3 failures",
+        "Failures include stale feature-branch assertion, missing transient PREFINAL run evidence, fixture missing TASK-to-LV projection, and SimpleNamespace fixture missing project_id."
+      ],
+      "id": "EDP-P5-005",
+      "impact": "Current-date clean operational qualification cannot reach universal regression PASS.",
+      "problem": "Post-integration regression suite is not fully environment/branch independent.",
+      "required_correction": "Rebind historical qualification tests to archived immutable evidence/current integration baseline and update fixture contracts for declarative mapping/project_id requirements without weakening runtime checks.",
+      "severity": "MAJOR",
+      "status": "OPEN"
+    }
+  ],
+  "pass_challenge": {
+    "open": [
+      "Can production Full Plan reach Worker without invoking Codex when only NVIDIA is allowed? NO.",
+      "Does broad current-date regression pass? NO.",
+      "Does Full MCP current-date regression pass in a reproducible mcp==2.2.0 environment? NO."
+    ],
+    "open_count": 3
+  },
+  "r1_finding_disposition": [
+    {
+      "detail": "Mapping alias/onboarding candidate exists on diagnosis branch and focused tests pass, but broad regression still has two compatibility errors and main is unchanged.",
+      "id": "EDP-P5-001",
+      "status": "PARTIAL_REMEDIATION_NOT_MAIN"
+    },
+    {
+      "detail": "Legacy NVIDIA_MODEL now equals governed primary model; direct default-path live call completes.",
+      "id": "EDP-P5-002",
+      "status": "RESOLVED_CONFIG"
+    },
+    {
+      "detail": "Expired publication fixture corrected; Full MCP suite no longer fails expiry but still has 3 historical-context failures (branch assertion + missing transient PREFINAL evidence).",
+      "id": "EDP-P5-003",
+      "status": "PARTIAL_REMEDIATION"
+    }
+  ],
+  "run_date": "2026-09-18",
+  "scenario": {
+    "description": "Hypothetical supplier delivery-risk dashboard; four read-only gates INTAKE -> PLAN -> REVIEW -> FINAL.",
+    "full_production_entry": {
+      "reason": "Current production Gate worker is Codex-bound (EXECUTOR_ID=codex-cli-production and argv invokes codex directly). Running it would violate the user NVIDIA-only constraint.",
+      "result": "FAIL_FOR_NVIDIA_ONLY_END_TO_END",
+      "status": "BLOCKED_NOT_EXECUTED_TO_WORKER"
+    },
+    "name": "VIRTUAL_SUPPLIER_RISK",
+    "negative_action_case": {
+      "action_capability": "filesystem_write",
+      "codex_eligible": false,
+      "provider_selected": "NONE",
+      "reason": "action_provider_unavailable",
+      "result": "PASS_FAIL_CLOSED",
+      "router_result": "ACTION_PROVIDER_BLOCKED"
+    },
+    "production_continuity_supervisor": {
+      "codex_invocations": 0,
+      "completed_gates": [
+        "INTAKE",
+        "PLAN",
+        "REVIEW",
+        "FINAL"
+      ],
+      "live_external_provider": true,
+      "observed_intra_provider_failover": "REVIEW used mistralai/mistral-nemotron after primary retryable failure",
+      "path": "DurableFullPlanSupervisor",
+      "primary_model": "nvidia/nemotron-3-super-120b-a12b",
+      "provider": "nvidia",
+      "source_mutation": false,
+      "status": "PASS"
+    }
+  },
+  "schema_version": "gch.edp.phase5-preflight.v2",
+  "scope": "Current Harness pre-PHASE-5 EDP re-diagnosis and NVIDIA-only hypothetical Full Plan operational verification"
+}
