@@ -1,0 +1,122 @@
+{
+  "schema_version": "gch.edp.phase5-preflight.v2",
+  "date": "2026-09-18",
+  "qualified_branch": "diagnosis/phase5-preflight-edp-20260918",
+  "qualified_head": "b317d50ef2fa682dfcb4cd949258440d1afed281",
+  "scope": "Current Harness EDP diagnosis + hypothetical NVIDIA-only Full Plan orchestration verification before PHASE 5",
+  "findings": [
+    {
+      "id": "EDP-P5-001",
+      "severity": "BLOCKER",
+      "status": "RESOLVED",
+      "evidence": "Logical project mapping now resolves uniquely by canonical Plan SHA; mapping/onboarding focused tests pass."
+    },
+    {
+      "id": "EDP-P5-002",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "evidence": "Legacy NVIDIA default aligned to nvidia/nemotron-3-super-120b-a12b; live direct default smoke completed."
+    },
+    {
+      "id": "EDP-P5-003",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "evidence": "Publication fixture authorization window made current-run relative; publication tests 9/9 PASS."
+    },
+    {
+      "id": "EDP-P5-004",
+      "severity": "BLOCKER",
+      "status": "OPEN",
+      "evidence": "Production Full Plan reached actual Gate/LV package + preflight but WAITING_PROVIDER with canonical Worker authority requiring pre-collected Codex readiness even though TASK-016 is read-only and user explicitly constrained scenario to NVIDIA-only.",
+      "impact": "Full Plan production orchestration cannot currently execute an NVIDIA-only read-only Gate when Codex is unavailable; provider-neutral capability routing is bypassed by unconditional Codex readiness prerequisite."
+    },
+    {
+      "id": "EDP-P5-005",
+      "severity": "MAJOR",
+      "status": "OPEN",
+      "evidence": "tests/test_production_integration.py actual-format fixture omits the now-required task-lv-authority-projection artifact; 1/6 test errors. Qualified broad excluding this known fixture: 1359 PASS / 12 skipped.",
+      "impact": "Broad suite cannot be claimed fully green until fixture follows current mapped contract shape."
+    }
+  ],
+  "scenario": {
+    "name": "Hypothetical supplier-evaluation project",
+    "constraint": "NVIDIA only; Codex ineligible/quota exhausted; no project mutation.",
+    "governed_prepare": {
+      "route": "NVIDIA",
+      "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+      "actual_model": "nvidia/ising-calibration-1.5-31b",
+      "intra_provider_failover": true,
+      "result": "COMPLETED",
+      "note": "primary returned server error, first fallback timed out, second NVIDIA-family fallback completed."
+    },
+    "governed_action_negative_test": {
+      "requested_capability": "filesystem_write",
+      "codex_eligible": false,
+      "result": "ACTION_PROVIDER_BLOCKED",
+      "automatic_nvidia_to_codex_fallback": false
+    },
+    "production_full_plan_entry": {
+      "preflight": "PASS",
+      "gate": "GATE-010",
+      "lv": "TASK-016",
+      "task_capabilities": [
+        "reasoning",
+        "read_only",
+        "evidence_analysis",
+        "diagnostics",
+        "review",
+        "documentation"
+      ],
+      "result": "WAITING_PROVIDER",
+      "reason": "canonical Worker authority blocked: pre-collected Codex readiness evidence is required",
+      "attention_artifact": "CREATED_PENDING",
+      "project_mutation": "NONE"
+    }
+  },
+  "regression": {
+    "focused_after_remediation": "190 PASS",
+    "additional_identity_regressions": "PASS",
+    "qualified_broad": "1359 PASS / 12 skipped",
+    "known_fixture_failure": "tests.test_production_integration: 1 error of 6",
+    "compileall": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "negative_space": [
+    "No provider-neutral production canonical Worker authority path exists for NVIDIA-only read-only Gate execution.",
+    "No current fully-green broad suite until production integration fixture includes current mapped projection artifact."
+  ],
+  "adversarial_second_pass": {
+    "result": "NEW_MATERIAL_FINDINGS",
+    "new_findings": [
+      "EDP-P5-004",
+      "EDP-P5-005"
+    ],
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 2
+  },
+  "pass_challenge": {
+    "open": [
+      "Can production Full Plan execute a read-only NVIDIA Gate with Codex unavailable? NO.",
+      "Can the complete broad suite reproduce with zero errors? NO."
+    ],
+    "PASS_CHALLENGE_OPEN_COUNT": 2
+  },
+  "closure_metrics": {
+    "BLOCKER_COUNT": 1,
+    "UNRESOLVED_MAJOR_COUNT": 1,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 2,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 2,
+    "PASS_CHALLENGE_OPEN_COUNT": 2,
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PARTIAL_PASS_WITH_OPEN_MATERIAL_FINDINGS"
+  },
+  "exhaustion": "MATERIAL_DEFECT_SEARCH: EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "final_decision": "FAIL_NO_GO_FOR_PHASE5_UNTIL_EDP-P5-004_AND_EDP-P5-005_RESOLVED"
+}
