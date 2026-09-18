@@ -126,12 +126,44 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
     root = Path(project_root).resolve()
     registry_root = _mapping_root(mapping_root)
     mapping_path = registry_root / f"{root.name}.json"
-    if not mapping_path.exists():
-        return None
+    if mapping_path.exists():
+        candidates = [mapping_path]
+    else:
+        candidates = sorted(
+            path for path in registry_root.glob("*.json")
+            if path.is_file() and not path.is_symlink()
+        )
+        bound: list[Path] = []
+        for candidate in candidates:
+            try:
+                candidate_payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ContractMappingError(f"malformed mapping entry: {candidate.name}") from exc
+            canonical = candidate_payload.get("canonical_implementation_source")
+            if not isinstance(canonical, dict):
+                continue
+            value = canonical.get("path")
+            if not isinstance(value, str) or not value or Path(value).is_absolute():
+                continue
+            try:
+                canonical_path = _resolve_project_path(root, value, "canonical_implementation_source.path")
+            except ContractMappingError:
+                continue
+            expected = canonical.get("sha256")
+            if canonical_path.is_file() and isinstance(expected, str) and sha256_file(canonical_path) == expected:
+                bound.append(candidate)
+        if not bound:
+            return None
+        if len(bound) != 1:
+            raise ContractMappingError("project mapping resolution is ambiguous")
+        mapping_path = bound[0]
     if mapping_path.is_symlink() or not mapping_path.is_file():
         raise ContractMappingError("mapping entry is missing, non-regular, or symlinked")
     payload = json.loads(mapping_path.read_text(encoding="utf-8"))
-    if payload.get("project_id") != root.name:
+    project_id = payload.get("project_id")
+    if not isinstance(project_id, str) or not project_id:
+        raise ContractMappingError("mapping project_id must be a non-empty string")
+    if mapping_path.stem == root.name and project_id != root.name:
         raise ContractMappingError("mapping project_id does not match the target project")
 
     raw_paths = payload.get("contract_paths")
@@ -190,7 +222,7 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         raise ContractMappingError("plan_sha_migrations is invalid")
     return ContractMapping(
         project_root=root,
-        project_id=root.name,
+        project_id=project_id,
         contract_paths=contract_paths,
         required_contract_keys=list(required),
         canonical_source=canonical_path,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import hashlib
 from contextlib import redirect_stdout
 from io import StringIO
 import json
@@ -514,6 +515,63 @@ class ContractLoaderTest(unittest.TestCase):
                 mapping = load_project_mapping(root)
                 with self.assertRaises(ContractMappingError):
                     select_canonical_source(mapping)
+
+
+    def test_mapping_loader_resolves_unique_plan_bound_project_id_alias(self):
+        with TemporaryDirectory() as d, TemporaryDirectory() as m:
+            root = Path(d) / "repository-root"; root.mkdir()
+            (root / "docs").mkdir()
+            plan = root / "docs" / "DEVELOPMENT_PLAN.txt"; plan.write_text("approved plan\n")
+            digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+            mapping_root = Path(m)
+            payload = {
+                "project_id": "LOGICAL_PROJECT_ID",
+                "contract_paths": {
+                    "development_plan": "docs/DEVELOPMENT_PLAN.txt",
+                    "changelog": "docs/DEVELOPMENT_PLAN.txt",
+                    "app_log": "docs/DEVELOPMENT_PLAN.txt",
+                    "orchestration_state_md": "docs/DEVELOPMENT_PLAN.txt",
+                },
+                "required_contract_keys": ["development_plan"],
+                "canonical_implementation_source": {"path": "docs/DEVELOPMENT_PLAN.txt", "sha256": digest},
+                "approved_source_reference": {"path": "docs/DEVELOPMENT_PLAN.txt", "sha256": digest},
+                "static_validation": {
+                    "business_lv_approval": "docs/DEVELOPMENT_PLAN.txt",
+                    "gate_state": "docs/DEVELOPMENT_PLAN.txt",
+                },
+            }
+            (mapping_root / "LOGICAL_PROJECT_ID.json").write_text(json.dumps(payload))
+            mapping = load_project_mapping(root, mapping_root=mapping_root)
+            self.assertIsNotNone(mapping)
+            self.assertEqual(mapping.project_id, "LOGICAL_PROJECT_ID")
+
+    def test_mapping_loader_fails_closed_on_ambiguous_plan_bound_aliases(self):
+        with TemporaryDirectory() as d, TemporaryDirectory() as m:
+            root = Path(d) / "repository-root"; root.mkdir()
+            (root / "docs").mkdir()
+            plan = root / "docs" / "DEVELOPMENT_PLAN.txt"; plan.write_text("approved plan\n")
+            digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+            mapping_root = Path(m)
+            base = {
+                "contract_paths": {
+                    "development_plan": "docs/DEVELOPMENT_PLAN.txt",
+                    "changelog": "docs/DEVELOPMENT_PLAN.txt",
+                    "app_log": "docs/DEVELOPMENT_PLAN.txt",
+                    "orchestration_state_md": "docs/DEVELOPMENT_PLAN.txt",
+                },
+                "required_contract_keys": ["development_plan"],
+                "canonical_implementation_source": {"path": "docs/DEVELOPMENT_PLAN.txt", "sha256": digest},
+                "approved_source_reference": {"path": "docs/DEVELOPMENT_PLAN.txt", "sha256": digest},
+                "static_validation": {
+                    "business_lv_approval": "docs/DEVELOPMENT_PLAN.txt",
+                    "gate_state": "docs/DEVELOPMENT_PLAN.txt",
+                },
+            }
+            for name in ("A", "B"):
+                payload = dict(base); payload["project_id"] = name
+                (mapping_root / f"{name}.json").write_text(json.dumps(payload))
+            with self.assertRaisesRegex(ContractMappingError, "ambiguous"):
+                load_project_mapping(root, mapping_root=mapping_root)
 
 
 if __name__ == "__main__":

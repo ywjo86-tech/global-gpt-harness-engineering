@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
 from dataclasses import replace
@@ -58,7 +59,8 @@ class FullMCPPublicationTest(unittest.TestCase):
             remote_url_fingerprint=probe.remote_url_fingerprint("origin"),
             allowed_path_digest=scope_digest(("owned/a.txt",)), expected_remote_head=self.baseline,
             protected_branch_policy_ref="ALLOW-APPROVED-NONFORCE", approval_ref="APPROVAL-TASK005",
-            issued_at="2026-09-17T00:00:00Z", expires_at="2026-09-18T00:00:00Z",
+            issued_at=(datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
+            expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
         )
         catalog = default_validation_catalog(); mutable = ("owned",); mutable_digest = scope_digest(mutable)
         contracts = []

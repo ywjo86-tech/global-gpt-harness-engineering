@@ -259,11 +259,12 @@ def _owned_from_rows(summary: dict[str, str], detail: dict[str, str]) -> list[st
 
 
 def load_gate_plan(project_root: str | Path, gate_id: str) -> GatePlan:
-    root, project_id = _safe_project(project_root)
+    root, root_project_id = _safe_project(project_root)
     match = _GATE_ID.fullmatch(gate_id)
     if not match: raise GateOrchestrationError("invalid Gate ID")
     mapping = load_project_mapping(root)
     if mapping is None: raise GateOrchestrationError("project declarative mapping is required")
+    project_id = mapping.project_id
     plan = mapping.canonical_source
     if sha256_file(plan) != mapping.canonical_sha256:
         raise GateOrchestrationError("canonical plan SHA mismatch")
