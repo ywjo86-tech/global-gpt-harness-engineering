@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -107,6 +108,18 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
                 out = run_job(path)
             self.assertEqual(out["status"], "COMPLETED")
             self.assertEqual(out["state"]["completed_gates"], ["G1", "G2", "G3"])
+
+    def test_preflight_preserves_virtualenv_symlink_executable(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            link = root / "venv-python"; link.symlink_to(Path(sys.executable))
+            payload = json.loads(path.read_text())
+            payload["python_executable"] = str(link)
+            payload["required_python_modules"] = ["json"]
+            path.write_text(json.dumps(payload))
+            result = preflight_job(load_job(path))
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["python"], str(link))
 
     def test_preflight_blocks_missing_required_python_module(self):
         with tempfile.TemporaryDirectory() as d:

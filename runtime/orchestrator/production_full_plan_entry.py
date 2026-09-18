@@ -104,7 +104,9 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
     harness = Path(str(job["harness_root"])).resolve()
     if not project.is_dir() or project.is_symlink() or not harness.is_dir() or harness.is_symlink():
         return {"status": "BLOCK", "state": "BLOCKED", "reason": "PROJECT_OR_HARNESS_ROOT_INVALID"}
-    python_executable = Path(str(job.get("python_executable") or sys.executable)).resolve()
+    python_executable = Path(str(job.get("python_executable") or sys.executable)).expanduser()
+    if not python_executable.is_absolute():
+        python_executable = (Path.cwd() / python_executable).absolute()
     if not python_executable.is_file() or not os.access(python_executable, os.X_OK):
         return {"status": "BLOCK", "state": "BLOCKED", "reason": "PYTHON_EXECUTABLE_INVALID"}
     required_modules = job.get("required_python_modules", [])
