@@ -224,7 +224,7 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
             projection = json.loads(projection_path.read_text(encoding="utf-8"))
             projected = resolve_task_lv_projection(
                 mapping.canonical_source.read_text(encoding="utf-8"), projection,
-                project_id=root.name, canonical_plan_sha256=mapping.canonical_sha256, gate_id=gate_id,
+                project_id=mapping.project_id, canonical_plan_sha256=mapping.canonical_sha256, gate_id=gate_id,
             )
         except Exception as exc:
             raise LVPreviewValidationError(f"TASK-to-LV authority projection validation failed: {exc}") from exc
