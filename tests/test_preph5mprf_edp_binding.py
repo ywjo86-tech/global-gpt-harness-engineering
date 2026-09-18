@@ -9,7 +9,10 @@ from pathlib import Path
 class PrePh5MprfEdpBindingTests(unittest.TestCase):
     def test_plan_bound_edp_standard_exists_and_matches_exact_sha(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        plan = (root / "docs" / "DEVELOPMENT_PLAN.txt").read_text(encoding="utf-8")
+        plan = (
+            root / "docs/history/upgrades/2026-09-18-AI-OFFICE-HARNESS-PH5/"
+            "DEVELOPMENT_PLAN.pre-AI-OFFICE-HARNESS-PH5.7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f.txt"
+        ).read_text(encoding="utf-8")
         match = re.search(
             r"(?m)^DESIGN_DIAGNOSIS_STANDARD_SHA256:\s*`([0-9a-f]{64})`\s*$",
             plan,

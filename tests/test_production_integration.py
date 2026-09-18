@@ -1,4 +1,4 @@
-import hashlib,json,subprocess,tempfile,unittest
+import hashlib,json,os,subprocess,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from tests.test_production_lifecycle import binding
@@ -17,17 +17,22 @@ class ProductionIntegrationTests(unittest.TestCase):
  def test_actual_format_project_fixtures_are_temporary_and_sources_unchanged(self):
   harness=Path(__file__).resolve().parents[1]
   plan_path=harness/"docs/DEVELOPMENT_PLAN.txt"
-  plan_sha=hashlib.sha256(plan_path.read_bytes()).hexdigest()
-  specs=[json.loads(path.read_text()) for path in (harness/"runtime/orchestrator/contract_mappings").glob("*.json")]
-  matches=[item for item in specs if item.get("canonical_implementation_source",{}).get("sha256")==plan_sha]
-  self.assertEqual(len(matches),1)
+  archived=harness/"docs/history/upgrades/2026-09-18-AI-OFFICE-HARNESS-PH5/DEVELOPMENT_PLAN.pre-AI-OFFICE-HARNESS-PH5.7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f.txt"
   before=hashlib.sha256(plan_path.read_bytes()).hexdigest()
   with tempfile.TemporaryDirectory() as d:
    target=Path(d)/"mapped-harness-fixture"
    subprocess.run(["git","clone","-q","--local","--no-hardlinks",str(harness),str(target)],check=True)
-   contract=load_contract(target,strict=True)
+   mapping_root=Path(d)/"mappings";mapping_root.mkdir()
+   spec=json.loads((harness/"runtime/orchestrator/contract_mappings/MULTI_PROVIDER_FOUNDATION.json").read_text())
+   archived_rel=archived.relative_to(harness).as_posix()
+   spec["canonical_implementation_source"]["path"]=archived_rel
+   spec["approved_source_reference"]["path"]=archived_rel
+   spec["contract_paths"]["development_plan"]=archived_rel
+   (mapping_root/"MULTI_PROVIDER_FOUNDATION.json").write_text(json.dumps(spec))
+   with patch.dict(os.environ,{"HARNESS_CONTRACT_MAPPING_ROOT":str(mapping_root)},clear=False):
+    contract=load_contract(target,strict=True)
    self.assertTrue(contract.development_plan_text)
-   self.assertEqual(contract.contract_mapping.get("project_id"),matches[0]["project_id"])
+   self.assertEqual(contract.contract_mapping.get("project_id"),"MULTI_PROVIDER_FOUNDATION")
    new=Path(d)/"new"
    (new/"docs/harness").mkdir(parents=True)
    (new/"logs").mkdir()

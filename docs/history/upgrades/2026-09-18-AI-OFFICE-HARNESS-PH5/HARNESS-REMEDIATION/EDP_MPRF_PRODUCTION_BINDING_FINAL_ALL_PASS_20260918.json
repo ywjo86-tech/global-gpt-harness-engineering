@@ -1,0 +1,62 @@
+{
+  "schema_version": "gch.edp-remediation-final.v1",
+  "protocol": "EDP-1.0",
+  "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+  "scope": "POST_MPRF_PRODUCTION_BINDING_AND_DURABLE_PROVIDER_WAIT",
+  "canonical_contract": {
+    "path": "docs/DEVELOPMENT_PLAN.txt",
+    "sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+    "status": "UNCHANGED_EXACT"
+  },
+  "resolved_findings": [
+    {"id":"EDP-PH5-MAJ-001","severity":"MAJOR","status":"RESOLVED","problem":"Production Full Plan consumed pre-MPRF static eligibility after MPRF activation","correction":"Production execution now consumes an approval-bound MPRF Router snapshot."},
+    {"id":"EDP-PH5-MAJ-002","severity":"MAJOR","status":"RESOLVED","problem":"Production MPRF composition to Router eligibility was absent","correction":"Added fail-closed production MPRF runtime/registry composition."},
+    {"id":"EDP-PH5-MAJ-003","severity":"MAJOR","status":"RESOLVED","problem":"Durable runtime provider readiness differed from interactive runtime","correction":"Production binding now resolves the approved runtime credential source without exposing its value."}
+  ],
+  "preserved_authorities": {
+    "provider_router": "UNCHANGED",
+    "mprf_core": "UNCHANGED",
+    "full_mcp": "UNCHANGED",
+    "ai_office_task_002_005": "UNCHANGED"
+  },
+  "evidence_matrix": [
+    {"domain_id":"D01","claim":"Canonical authority unchanged","evidence":"Approved plan exact SHA-256 preserved","result":"PASS"},
+    {"domain_id":"D02","claim":"Post-MPRF production uses MPRF source","evidence":"Production binding tests plus live MPRF snapshot","result":"PASS"},
+    {"domain_id":"D03","claim":"Pre-MPRF compatibility preserved","evidence":"Static compatibility regression","result":"PASS"},
+    {"domain_id":"D04","claim":"Router remains sole provider/model selector","evidence":"MPRF supplies facts; Router core unchanged","result":"PASS"},
+    {"domain_id":"D05","claim":"Provider-unavailable state is durable/resumable","evidence":"Provider route block classified as provider failure; continuity suite PASS","result":"PASS"},
+    {"domain_id":"D06","claim":"Credential value is not exposed","evidence":"Permission check and negative projection tests PASS","result":"PASS"},
+    {"domain_id":"D07","claim":"Historical baseline tests remain source-correct","evidence":"Historical tests bind archived predecessor","result":"PASS"},
+    {"domain_id":"D08","claim":"Broad regression","evidence":"1523 tests OK; 12 skipped","result":"PASS"},
+    {"domain_id":"D09","claim":"Syntax and whitespace integrity","evidence":"compileall PASS; diff-check PASS","result":"PASS"},
+    {"domain_id":"D10","claim":"Stable Core Protection","evidence":"Router/MPRF/Full MCP/AI Office core unchanged","result":"PASS"}
+  ],
+  "rtm": [
+    {"source_obligation":"REQ-002/REQ-008","target":"MPRF production binding and durable provider wait","validation":"binding and continuity tests","status":"PASS"},
+    {"source_obligation":"REQ-003/REQ-005","target":"MPRF facts to Router decision","validation":"Router integration tests","status":"PASS"},
+    {"source_obligation":"REQ-004","target":"Unavailable ACTION remains blocked","validation":"negative routing tests","status":"PASS"},
+    {"source_obligation":"REQ-021","target":"Reuse MPRF foundation","validation":"MPRF core unchanged","status":"PASS"},
+    {"source_obligation":"NFR-001/NFR-004","target":"Fail-closed behavior and broad regression","validation":"negative tests and full suite","status":"PASS"}
+  ],
+  "adversarial_second_pass": {"new_blocker_major":0,"status":"PASS"},
+  "pass_challenge": {"open_count":0,"status":"PASS"},
+  "closure_metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS"
+  },
+  "material_defect_search": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "final_decision": "ALL_PASS"
+}

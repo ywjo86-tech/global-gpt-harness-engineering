@@ -25,7 +25,7 @@ from .operator_control import (
 )
 from .provider_executor import execute_provider_task
 from .provider_handoff import build_provider_handoff
-from .provider_runtime_policy import collect_static_provider_eligibility
+from .provider_runtime_binding import collect_production_provider_eligibility
 from .provider_router import (
     ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2,
     STATE_CHANGING_CAPABILITIES, ProviderEligibilitySnapshotV1, RouterRequestV2, route_request,
@@ -319,13 +319,10 @@ class OrchestrationEngine:
     def _sha256_file(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    def _pre_mprf_eligibility_snapshot(self, run_id: str) -> ProviderEligibilitySnapshotV1:
-        # Keep the Engine's historical Codex CLI probe seam while sharing the
-        # approved file-backed provider/model policy with production Full Plan.
-        return collect_static_provider_eligibility(
-            run_id,
-            codex_ready_override=detect_codex_cli(),
-            extra_evidence_refs=("engine-cli-probe",),
+    def _provider_eligibility_snapshot(self, run_id: str, required_capabilities=()) -> ProviderEligibilitySnapshotV1:
+        return collect_production_provider_eligibility(
+            self.project_root, run_id, required_capabilities=required_capabilities,
+            codex_ready_override=detect_codex_cli(), extra_evidence_refs=("engine-cli-probe",),
         )
 
     @staticmethod
@@ -393,7 +390,7 @@ class OrchestrationEngine:
             last_directive_digest=directive.directive_digest,
         ))
 
-        snapshot = self._pre_mprf_eligibility_snapshot(run_id)
+        snapshot = self._provider_eligibility_snapshot(run_id, self._prepare_capabilities(task))
         request = RouterRequestV2(
             schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id=f"{task_id}-prepare-route",
             project_id=project_id, run_id=run_id, task_id=task_id, task_execution_id=task.task_execution_id,
@@ -517,7 +514,7 @@ class OrchestrationEngine:
             "state_change_required": True, "input_artifact_digests": list(prepared_artifacts),
             "gate_id": gate_id, "directive_id": f"{thread_id}-prepare-action",
         })
-        snapshot = self._pre_mprf_eligibility_snapshot(run_id)
+        snapshot = self._provider_eligibility_snapshot(run_id, action_capabilities)
         router_request = RouterRequestV2(
             schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id=f"{thread_id}-action-route",
             project_id=project_id, run_id=run_id, task_id=thread_id, task_execution_id=task_execution_id,

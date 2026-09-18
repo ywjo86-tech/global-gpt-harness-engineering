@@ -2388,7 +2388,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
         if adapters is None:
             from .execution_contract import READY
-            from .provider_runtime_policy import collect_static_provider_eligibility
+            from .provider_runtime_binding import ProviderRuntimeBindingError, collect_production_provider_eligibility
             from .provider_router import normalize_legacy_hybrid_request, route_request as route_provider_request
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
 
@@ -2397,14 +2397,17 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 codex_auth_readiness is not None
                 and getattr(codex_auth_readiness, "auth_status", None) == READY
             )
-            eligibility = collect_static_provider_eligibility(
-                lv_run_id,
-                codex_ready_override=codex_ready,
-                extra_evidence_refs=(
-                    "production-full-plan",
-                    "codex-readiness:ready" if codex_ready else "codex-readiness:unavailable",
-                ),
-            )
+            try:
+                eligibility = collect_production_provider_eligibility(
+                    root, lv_run_id, required_capabilities=selected_lv.required_capabilities,
+                    codex_ready_override=codex_ready,
+                    extra_evidence_refs=(
+                        "production-full-plan",
+                        "codex-readiness:ready" if codex_ready else "codex-readiness:unavailable",
+                    ),
+                )
+            except ProviderRuntimeBindingError as exc:
+                raise GateOrchestrationError(f"PROVIDER_ROUTE_BLOCKED:provider_runtime_binding:{exc}") from exc
             route_request_value = normalize_legacy_hybrid_request(
                 required_capabilities=selected_lv.required_capabilities,
                 eligibility_snapshot=eligibility,

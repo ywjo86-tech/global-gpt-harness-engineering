@@ -67,7 +67,7 @@ def _failure_class(reason: object) -> str:
         "canonical binding mismatch",
     )
     provider_markers = (
-        "BLOCKED_BY_PROVIDER", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_FAILURE",
+        "BLOCKED_BY_PROVIDER", "PROVIDER_ROUTE_BLOCKED:", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_FAILURE",
         "provider_failed", "Codex readiness", "nvidia_timeout", "provider readiness",
         "canonical Worker authority blocked: pre-collected Codex readiness evidence is required",
     )
