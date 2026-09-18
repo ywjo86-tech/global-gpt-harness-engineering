@@ -21,7 +21,7 @@ from runtime.orchestrator.production_worker_executor import (
     _independent_verification_steps,
     _independent_verification_provenance, _independent_verification_failure,
     _focused_execution_metadata,
-    _test_runner_metadata,
+    _test_runner_metadata, _bounded_validation_feedback,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
 from runtime.orchestrator.lv_execution_package import canonical_json_bytes
@@ -47,6 +47,14 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         self.assertTrue(_provider_action_security_scan(b"safe"))
         self.assertFalse(_provider_action_security_scan({"api_key": "secret-material-value"}))
         self.assertFalse(_provider_action_security_scan(object()))
+
+    def test_validation_feedback_is_bounded_and_redacted(self):
+        raw = (b"Traceback\nAttributeError: module 'unittest' has no attribute 'mock'\n"
+               b"api_key=secret-material-value\n")
+        feedback = _bounded_validation_feedback(raw, b"")
+        self.assertIn("AttributeError", feedback)
+        self.assertNotIn("secret-material-value", feedback)
+        self.assertLessEqual(len(feedback), 2000)
 
     def test_test_runner_metadata_is_bounded(self):
         failed = _test_runner_metadata(b"===== 1 failed, 2 passed in 0.1s =====", b"", 1)

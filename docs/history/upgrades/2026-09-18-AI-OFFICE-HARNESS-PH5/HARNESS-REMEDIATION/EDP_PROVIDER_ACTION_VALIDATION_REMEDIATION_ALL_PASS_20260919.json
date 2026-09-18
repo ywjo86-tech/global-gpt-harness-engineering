@@ -1,0 +1,43 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-VALIDATION-REMEDIATION-20260919",
+  "status": "ALL_PASS",
+  "defect": "Provider ACTION effects that passed structural/security checks but failed deterministic focused/full validation immediately blocked the Full Plan instead of receiving a bounded same-task correction opportunity.",
+  "remediation": [
+    "capture only redacted bounded validation exception summaries in memory",
+    "for Provider ACTION only, permit at most two validation-remediation attempts",
+    "reuse the Router-approved provider/model chain and current owned-file context",
+    "apply corrections only through the governed Broker",
+    "rerun security, sealed toolchain validation, focused/full/compile/diff after each correction"
+  ],
+  "non_retryable": [
+    "identity mismatch",
+    "scope expansion",
+    "security rejection",
+    "validation timeout",
+    "spawn failure"
+  ],
+  "negative_space": [
+    "no Manual Action sequencing",
+    "no Router authority change",
+    "no MPRF change",
+    "no Full MCP change",
+    "no raw validation output persisted",
+    "no owned scope expansion"
+  ],
+  "evidence": {
+    "targeted": "134 PASS / 1 opt-in skip / RC=0",
+    "focused": "298 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1600 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "Provider ACTION deterministic validation failures can now be corrected inside the same task under bounded Router/Broker authority; security, identity, scope, timeout, and spawn failures remain fail-closed.",
+  "record_sha256": "6ee23ce90f6d43dbbc516633032a30a113d2e857e00689e6d730ded3fd9ddf37"
+}

@@ -23,6 +23,7 @@ MAX_PROPOSAL_BYTES = 1024 * 1024
 MAX_PROPOSAL_GENERATION_ATTEMPTS = 3
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
+MAX_VALIDATION_FEEDBACK_CHARS = 2000
 _CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",), "loop": ("workflow",)}
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
 _CONTEXT_EXCLUDED = frozenset({".git", ".venv", "node_modules", "_workspace", "dist", "build"})
@@ -291,7 +292,7 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
     return selected
 
 
-def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned: list[str]) -> str:
+def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned: list[str], validation_feedback: str = "") -> str:
     owned_rows = [{"owned_file_id": file_id, "path": path} for file_id, path in _owned_map(owned).items()]
     identity = {
         "project_id": request.contract_summary.get("project_id"), "run_id": request.extra_context.get("run_id"),
@@ -299,6 +300,14 @@ def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned
         "plan_sha256": request.contract_summary.get("canonical_plan_sha256"), "source_head": baseline,
     }
     criteria = list(request.task.validation_criteria)
+    feedback = str(validation_feedback or "").strip()[:MAX_VALIDATION_FEEDBACK_CHARS]
+    remediation = (
+        "\nVALIDATION REMEDIATION: The currently materialized owned files failed independent validation. "
+        "Correct only the approved owned files using the supplied current-file context. "
+        "Do not broaden scope, change identity, or claim validation passed. "
+        f"Bounded validation feedback: {json.dumps(feedback, ensure_ascii=False)}\n"
+        if feedback else ""
+    )
     return (
         "Generate a governed ACTION change proposal only. Do not claim to have modified files, run shell, Git, tests, "
         "network, approvals, or state transitions. The Harness Execution Backend applies approved writes and validates them.\n"
@@ -310,7 +319,8 @@ def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned
         "Python and use only imports/APIs supported by the supplied context; do not invent missing module names or symbols. "
         "Treat supplied project imports as authoritative. If the task names a concept that has no supplied module, compose the "
         "existing APIs inside the owned files instead of inventing a new project module.\n"
-        "Return exactly one JSON object and no prose or Markdown fences. Required shape:\n"
+        + remediation
+        + "Return exactly one JSON object and no prose or Markdown fences. Required shape:\n"
         f"{{\"schema_version\":\"{PROPOSAL_SCHEMA_V1}\",\"project_id\":{json.dumps(identity['project_id'])},"
         f"\"run_id\":{json.dumps(identity['run_id'])},\"gate_id\":{json.dumps(identity['gate_id'])},"
         f"\"lv_id\":{json.dumps(identity['lv_id'])},\"plan_sha256\":{json.dumps(identity['plan_sha256'])},"
@@ -374,12 +384,14 @@ def _correction_prompt(base_prompt: str, reason: str) -> str:
 def execute_provider_action_proposal(
     request: WorkerRequest, *, decision: RouterDecisionV2, baseline: str,
     owned: list[str], output_dir: Path, provider_runner: Callable[..., Mapping[str, Any]],
-    security_scan: Callable[[bytes], bool], timeout: int,
+    security_scan: Callable[[bytes], bool], timeout: int, validation_feedback: str = "",
 ) -> dict[str, Any]:
     if not decision.eligible or decision.stage != "ACTION" or not decision.provider_ref or not decision.model_ref:
         raise ProviderActionExecutionError("provider ACTION route is not eligible")
     context_files = select_action_context_files(Path(request.project_root), request, owned)
-    prompt = build_action_proposal_prompt(request, baseline=baseline, owned=owned)
+    prompt = build_action_proposal_prompt(
+        request, baseline=baseline, owned=owned, validation_feedback=validation_feedback,
+    )
     result: Mapping[str, Any] = {}
     proposal: dict[str, Any] | None = None
     generation_attempts = 0
@@ -492,4 +504,5 @@ def execute_provider_action_proposal(
         "context_metadata": dict(result.get("context_metadata") or {}),
         "write_results": results,
         "governed_effect_evidence": [item.canonical_projection() for item in transport.governed_effect_evidence()],
+        "validation_feedback_applied": bool(str(validation_feedback or "").strip()),
     }

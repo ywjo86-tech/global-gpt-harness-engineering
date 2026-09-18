@@ -228,6 +228,28 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
             self.assertEqual(result["proposal_generation_attempts"], 2)
 
+    def test_validation_feedback_is_applied_to_remediation_prompt(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            (root / "tests").mkdir(); (root / owned[0]).write_text("def test_old():\n    assert False\n")
+            request = worker(root, owned); prompts = []
+            def provider_runner(**kwargs):
+                prompts.append(kwargs["prompt"])
+                return {"status":"completed","model":kwargs["model"],"provider_attempts":1,
+                        "model_attempts":{kwargs["model"]:1},"model_failover_used":False,
+                        "summary":json.dumps(self.proposal(content="def test_fixed():\n    assert True\n")),
+                        "context_metadata":{}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+                validation_feedback="AttributeError: module unittest has no attribute mock",
+            )
+            self.assertIn("VALIDATION REMEDIATION", prompts[0])
+            self.assertIn("AttributeError", prompts[0])
+            self.assertTrue(result["validation_feedback_applied"])
+            self.assertEqual((root / owned[0]).read_text(), "def test_fixed():\n    assert True\n")
+
     def test_write_binding_error_retries_with_router_approved_fallback_without_early_effect(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]

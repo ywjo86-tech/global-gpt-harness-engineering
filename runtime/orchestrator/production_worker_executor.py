@@ -77,6 +77,7 @@ EXECUTOR_VERSION = "1"
 ADAPTER_CONTRACT_VERSION = "SEM-025.v2"
 SUPPORTED_CODEX_VERSION = "0.150.1"
 STRUCTURED_EVENT_CONTRACT_VERSION = "codex-exec-jsonl.0.150.1.v1"
+MAX_PROVIDER_ACTION_VALIDATION_REMEDIATIONS = 2
 CHECKPOINT_GIT_USER_NAME = "Global GPT Harness"
 CHECKPOINT_GIT_USER_EMAIL = "harness@localhost.invalid"
 _SECRET = re.compile(r"(?i)(api[_-]?key|authorization|bearer|password|token)\s*[:=]\s*(\S+)")
@@ -2213,9 +2214,31 @@ def _test_runner_metadata(stdout: bytes, stderr: bytes, exit_code: int) -> dict[
             "test_exit_semantics": semantics}
 
 
+def _bounded_validation_feedback(stdout: bytes, stderr: bytes) -> str:
+    text = _redact((bytes(stdout or b"") + b"\n" + bytes(stderr or b"")).decode("utf-8", "replace"))
+    selected: list[str] = []
+    seen: set[str] = set()
+    pattern = re.compile(
+        r"^(?:AssertionError|AttributeError|ImportError|ModuleNotFoundError|NameError|TypeError|ValueError|KeyError|RuntimeError|SyntaxError|OSError|FileNotFoundError|PermissionError|NotImplementedError)(?::.*)?$"
+    )
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if pattern.match(line) or line.startswith("FAIL: ") or line.startswith("ERROR: "):
+            bounded = line[:400]
+            if bounded not in seen:
+                seen.add(bounded); selected.append(bounded)
+        if len(selected) >= 8:
+            break
+    if not selected:
+        return "validation command failed without classified exception text"
+    return " | ".join(selected)[:2000]
+
+
 def _command(root: Path, argv: list[str], timeout: int = 900, *,
              env: Mapping[str, str] | None = None,
-             classify_collection: bool = False) -> dict[str, Any]:
+             classify_collection: bool = False, capture_feedback: bool = False) -> dict[str, Any]:
     try:
         result = subprocess.run(argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 check=False, timeout=timeout, env=dict(env) if env is not None else None)
@@ -2223,15 +2246,21 @@ def _command(root: Path, argv: list[str], timeout: int = 900, *,
         result_meta = _test_runner_metadata(stdout, stderr, result.returncode) if _is_test_runner(argv) else {}
         collection_meta = (_collection_output_classification(stdout, stderr, root)
                            if classify_collection else {})
-        return {"command": argv, "exit_code": result.returncode, "timeout": False, **result_meta,
-                **collection_meta,
-                "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
-                "stderr_sha256": hashlib.sha256(stderr).hexdigest()}
+        payload = {"command": argv, "exit_code": result.returncode, "timeout": False, **result_meta,
+                   **collection_meta,
+                   "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                   "stderr_sha256": hashlib.sha256(stderr).hexdigest()}
+        if capture_feedback and result.returncode != 0:
+            payload["_transient_validation_feedback"] = _bounded_validation_feedback(stdout, stderr)
+        return payload
     except subprocess.TimeoutExpired as exc:
         result_meta = _test_runner_metadata(bytes(exc.stdout or b""), bytes(exc.stderr or b""), 124) if _is_test_runner(argv) else {}
-        return {"command": argv, "exit_code": 124, "timeout": True, **result_meta,
-                "stdout_sha256": hashlib.sha256(bytes(exc.stdout or b"")).hexdigest(),
-                "stderr_sha256": hashlib.sha256(bytes(exc.stderr or b"")).hexdigest()}
+        payload = {"command": argv, "exit_code": 124, "timeout": True, **result_meta,
+                   "stdout_sha256": hashlib.sha256(bytes(exc.stdout or b"")).hexdigest(),
+                   "stderr_sha256": hashlib.sha256(bytes(exc.stderr or b"")).hexdigest()}
+        if capture_feedback:
+            payload["_transient_validation_feedback"] = "validation command timed out"
+        return payload
     except OSError:
         return {"command": argv, "exit_code": None, "timeout": False, "spawn_error": True,
                 "stdout_sha256": hashlib.sha256(b"").hexdigest(),
@@ -3236,22 +3265,108 @@ def execute_production_worker(request: WorkerRequest, *,
     except (ValidationToolchainError, ProductionWorkerError) as exc:
         raise ProductionWorkerError(f"project-native validation toolchain is unavailable: {exc}") from exc
 
-    def run_validation_group(commands_to_run: Sequence[Sequence[str]]) -> dict[str, Any]:
+    def run_validation_group(
+        commands_to_run: Sequence[Sequence[str]], *, feedback_sink: list[str] | None = None,
+    ) -> dict[str, Any]:
         def execute(command_root: Path, command: list[str]) -> Mapping[str, Any]:
             normalized = list(command)
             if normalized and normalized[0] == ".venv/bin/python":
                 normalized[0] = str(command_root / ".venv" / "bin" / "python")
-            return _command(command_root, normalized, classify_collection=_is_test_runner(normalized))
+            result = _command(
+                command_root, normalized, classify_collection=_is_test_runner(normalized),
+                capture_feedback=feedback_sink is not None,
+            )
+            transient = result.pop("_transient_validation_feedback", "")
+            if feedback_sink is not None and transient:
+                feedback_sink.append(str(transient))
+            return result
         return run_command_group(root, commands_to_run, execute)
 
-    commands = {
-        "worker": {"command": argv, "exit_code": worker_exit, "timeout": timed_out,
-                   "stdout_sha256": hashlib.sha256(stdout).hexdigest(), "stderr_sha256": hashlib.sha256(stderr).hexdigest()},
-        "focused_test": run_validation_group(validation_plan.focused),
-        "full_regression": run_validation_group(validation_plan.full),
-        "compile_import": run_validation_group(validation_plan.compile),
-        "git_diff_check": _command(root, ["git", "diff", "--check"] if head == baseline else ["git", "diff", "--check", f"{baseline}..{head}"]),
-    }
+    def collect_validation_commands() -> tuple[dict[str, Any], list[str]]:
+        feedback: list[str] = []
+        command_set = {
+            "worker": {"command": argv, "exit_code": worker_exit, "timeout": timed_out,
+                       "stdout_sha256": hashlib.sha256(stdout).hexdigest(), "stderr_sha256": hashlib.sha256(stderr).hexdigest()},
+            "focused_test": run_validation_group(validation_plan.focused, feedback_sink=feedback),
+            "full_regression": run_validation_group(validation_plan.full, feedback_sink=feedback),
+            "compile_import": run_validation_group(validation_plan.compile, feedback_sink=feedback),
+            "git_diff_check": _command(
+                root, ["git", "diff", "--check"] if head == baseline else ["git", "diff", "--check", f"{baseline}..{head}"],
+                capture_feedback=True,
+            ),
+        }
+        transient = command_set["git_diff_check"].pop("_transient_validation_feedback", "")
+        if transient:
+            feedback.append(str(transient))
+        return command_set, feedback
+
+    commands, validation_feedback = collect_validation_commands()
+    validation_remediation_attempts = 0
+    validation_remediation_proposal_digests: list[str] = []
+    while True:
+        verification = _independent_verification_provenance(commands)
+        if verification["worker_verification_failure_step"] == "NONE":
+            break
+        validation_items = [commands.get(key) for key in ("focused_test", "full_regression", "compile_import", "git_diff_check")]
+        remediation_allowed = (
+            provider_action_execution
+            and validation_remediation_attempts < MAX_PROVIDER_ACTION_VALIDATION_REMEDIATIONS
+            and all(isinstance(item, Mapping) and not item.get("timeout") and not item.get("spawn_error") for item in validation_items)
+        )
+        if not remediation_allowed:
+            break
+        bounded_feedback = " | ".join(dict.fromkeys(item for item in validation_feedback if item))[:2000]
+        if not bounded_feedback:
+            bounded_feedback = "independent validation failed with a nonzero result; inspect current owned files and correct the implementation"
+        validation_remediation_attempts += 1
+        assert route_decision is not None
+        try:
+            remediation_result = execute_provider_action_proposal(
+                request, decision=route_decision, baseline=baseline, owned=owned,
+                output_dir=output / "validation-remediation" / f"attempt-{validation_remediation_attempts:02d}",
+                provider_runner=run_nvidia_reasoning_task, security_scan=_provider_action_security_scan,
+                timeout=timeout, validation_feedback=bounded_feedback,
+            )
+        except ProviderActionExecutionError as exc:
+            raise ProductionWorkerError(f"provider ACTION validation remediation failed: {exc}") from exc
+        process_evidence.setdefault("governed_effect_evidence", []).extend(remediation_result["governed_effect_evidence"])
+        process_evidence["provider_attempts"] = int(process_evidence.get("provider_attempts", 0)) + int(remediation_result.get("provider_attempts", 0))
+        process_evidence["model_failover_used"] = bool(process_evidence.get("model_failover_used")) or bool(remediation_result.get("model_failover_used"))
+        process_evidence["actual_model"] = remediation_result.get("actual_model", process_evidence.get("actual_model"))
+        validation_remediation_proposal_digests.append(str(remediation_result.get("proposal_digest", "")))
+        process_evidence["validation_remediation_attempts"] = validation_remediation_attempts
+        process_evidence["validation_remediation_proposal_digests"] = list(validation_remediation_proposal_digests)
+
+        lines = _git(root, "status", "--porcelain=v1", "-uall").stdout.splitlines()
+        changed = [line[3:] for line in lines if len(line) > 3]
+        outside = [path for path in changed if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned)]
+        if outside:
+            raise ProductionWorkerError(f"production executor changed files outside owned scope: {outside}")
+        hardcoded_findings = _hardcoded_credential_findings(root, changed)
+        process_evidence["owned_diff_security_validation"] = {
+            "status": "BLOCK" if hardcoded_findings and not secret_handling_allowed else "PASS",
+            "task_secret_handling_allowed": secret_handling_allowed,
+            "findings": hardcoded_findings,
+        }
+        if hardcoded_findings and not secret_handling_allowed:
+            if any(item.get("hardcoded") is True for item in hardcoded_findings):
+                raise ProductionWorkerError("OWNED_DIFF_HARDCODED_CREDENTIAL: production worker security validation failed")
+            if any(item.get("ast_node_category") == "UNPARSEABLE_PYTHON" for item in hardcoded_findings):
+                raise ProductionWorkerError("OWNED_DIFF_UNPARSEABLE_PYTHON: production worker security validation failed")
+            raise ProductionWorkerError("OWNED_DIFF_SECURITY_VALIDATION: production worker security validation failed")
+        try:
+            validation_plan = resolve_validation_commands(
+                root, owned, allow_deferred=False, python_executable=_sealed_external_validation_python(request),
+            )
+            if expected_profiles:
+                validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
+            if isinstance(sealed_toolchain, Mapping) and sealed_toolchain.get("deferred") is False:
+                if validation_plan.to_dict() != dict(sealed_toolchain):
+                    raise ValidationToolchainError("validation toolchain changed after sealing")
+        except (ValidationToolchainError, ProductionWorkerError) as exc:
+            raise ProductionWorkerError(f"project-native validation toolchain is unavailable after remediation: {exc}") from exc
+        commands, validation_feedback = collect_validation_commands()
+
     process_evidence.update(_focused_execution_metadata(commands.get("focused_test"), validation_plan.profile_ids))
     if validation_plan.profile_ids == ("PYTHON_PYTEST",):
         tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
@@ -3289,6 +3404,7 @@ def execute_production_worker(request: WorkerRequest, *,
     process_evidence.update(_independent_verification_provenance(commands))
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     validation_events = ["VALIDATION_STARTED"]
+    validation_events.extend("VALIDATION_REMEDIATION_COMPLETED" for _ in range(validation_remediation_attempts))
     validation_events.append("FOCUSED_TEST_COMPLETED")
     validation_events.append("FULL_REGRESSION_COMPLETED")
     verification = _independent_verification_provenance(commands)
