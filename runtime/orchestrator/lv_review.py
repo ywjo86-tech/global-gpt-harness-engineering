@@ -667,7 +667,13 @@ def _validate_execution_root(root: Path, project_id: str) -> Path:
     if not candidate.is_absolute() or not candidate.is_dir() or candidate.is_symlink():
         raise LVReviewError("production project root is missing or unsafe")
     resolved = candidate.resolve(strict=True)
-    if resolved != candidate or resolved.name != project_id:
+    if resolved != candidate:
+        raise LVReviewError("production project root identity is invalid")
+    mapping = load_project_mapping(candidate)
+    valid_project_ids = {candidate.name}
+    if mapping is not None:
+        valid_project_ids.add(mapping.project_id)
+    if project_id not in valid_project_ids:
         raise LVReviewError("production project root identity is invalid")
     current = Path(candidate.anchor)
     for part in candidate.parts[1:]:

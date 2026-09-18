@@ -148,9 +148,11 @@ def _ledger_binding(root: Path, mapping: Any, canonical_state: dict[str, Any]) -
 
 def _source_snapshot(root: Path, preview: dict[str, Any], ledger: dict[str, str]) -> dict[str, Any]:
     source_head = _git(root, "rev-parse", "HEAD").decode("ascii").strip()
+    mapping = load_project_mapping(root)
+    project_id = mapping.project_id if mapping is not None else root.name
     source_tree = _git(root, "rev-parse", "HEAD^{tree}").decode("ascii").strip()
     return {
-        "project_id": root.name,
+        "project_id": project_id,
         "source_head": source_head,
         "source_tree": source_tree,
         "source_index_fingerprint": _index_fingerprint(root),
@@ -309,7 +311,7 @@ def _manifest_payload(
         "run_id": run_id,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "package_status": PACKAGE_STATUS,
-        "project_id": root.name,
+        "project_id": mapping.project_id if mapping is not None else root.name,
         "project_root_fingerprint": _project_root_fingerprint(root),
         "package_input_sha256": package_input_hash,
         "source_snapshot_sha256": snapshot_hash,
@@ -436,9 +438,10 @@ def create_lv_execution_package(
         raise LVExecutionPackageError("canonical lifecycle evidence does not match the requested Gate/LV")
     ledger = _ledger_binding(root, mapping, canonical_state)
     source_snapshot = _source_snapshot(root, preview, ledger)
+    logical_project_id = mapping.project_id
     package_input = {
         "project_root": str(root),
-        "project_id": root.name,
+        "project_id": logical_project_id,
         "run_id": run_id,
         "gate_id": gate_id,
         "lv_id": lv_id,
@@ -462,7 +465,7 @@ def create_lv_execution_package(
     }
     package_input_hash = _sha256_bytes(canonical_json_bytes(package_input))
     contracts = tuple(approved_tool_authorization_contracts) or build_dec007_approved_contracts(
-        project_id=root.name, gate_id=gate_id, lv_id=lv_id, run_id=run_id,
+        project_id=logical_project_id, gate_id=gate_id, lv_id=lv_id, run_id=run_id,
         canonical_plan_sha256=preview["selected_canonical_plan"]["sha256"],
         owned_files=preview["approved_owned_files"],
         worker_task_id=lv_id,
@@ -482,7 +485,7 @@ def create_lv_execution_package(
     source_snapshot_hash = _sha256_bytes(canonical_json_bytes(source_snapshot))
     manifest_seed = {
         "run_id": run_id,
-        "project_id": root.name,
+        "project_id": logical_project_id,
         "gate_id": gate_id,
         "lv_id": lv_id,
         "task": task_manifest,
