@@ -1,0 +1,59 @@
+{
+  "schema_version": "ai-office.ph5.evidence.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "gate_id": "GATE-004",
+  "evidence_id": "EVD-009",
+  "purpose": "Office state/context durability",
+  "tasks": [
+    {
+      "task": "TASK-006",
+      "checkpoint_commit": "9601fad5a200ae9e73fc565f0b183e6c7bbce06e",
+      "evidence_sha256": "92efdafb68d4dd46a602c4fd8bb5ef739a029c8b64ffdd72d32ee21eaae43403",
+      "changed_files": [
+        "runtime/ai_office/contracts.py",
+        "runtime/ai_office/state_store.py",
+        "tests/test_ai_office_state_store.py"
+      ],
+      "validation_ids": [
+        "TEST-010"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    },
+    {
+      "task": "TASK-007",
+      "checkpoint_commit": "1dbf2eed64071b923fe2d7fe422373d45b515dae",
+      "evidence_sha256": "7bfc0756b42c9cdef5a217f27eef10b03fc6e7955e73b0f96ddfaf161da787f5",
+      "changed_files": [
+        "runtime/ai_office/context_assembly.py",
+        "runtime/ai_office/requirement_intake.py",
+        "tests/test_ai_office_requirement_context.py"
+      ],
+      "validation_ids": [
+        "TEST-011",
+        "TEST-012",
+        "TEST-013"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    }
+  ],
+  "tests": [
+    "TEST-010",
+    "TEST-011",
+    "TEST-012",
+    "TEST-013"
+  ],
+  "focused_validation": {
+    "result": "PASS",
+    "suite": "TEST-010~025",
+    "tests_run": 30,
+    "rc": 0
+  },
+  "authority_negative_space": {
+    "direct_core_imports": 0,
+    "dynamic_or_indirect_authority_hits": 0
+  },
+  "status": "PASS",
+  "record_sha256": "8b55c42c27d63afcb8f65b6babe91dbe6caf49071134e64ffa508ab31c11678a"
+}

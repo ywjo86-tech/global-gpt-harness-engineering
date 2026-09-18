@@ -1,0 +1,144 @@
+{
+  "router_request": {
+    "schema_version": "orchestration.router-request.v2",
+    "request_id": "req-ph5-gate-004-independent-review-r2",
+    "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+    "run_id": "ph5-gate-004-independent-review-r2",
+    "task_id": "GATE-004",
+    "task_execution_id": "ph5-gate-004-independent-review-r2-exec",
+    "directive_digest": "687c95f65f747c406ac014ba863393ddb43985b687d47c29da7ec2b106abd3bb",
+    "stage": "REVIEW",
+    "required_capabilities": [
+      "read_only",
+      "reasoning",
+      "review",
+      "security_review"
+    ],
+    "state_change_required": false,
+    "policy_profile": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+    "eligibility_snapshot_ref": "mprf-ph5-gate-004-independent-review-r2",
+    "eligibility_snapshot_digest": "0234768b6909423e222db3a41d8de3f5572aad165467e0afc3864d9d05722001",
+    "eligibility_snapshot": {
+      "schema_version": "orchestration.provider-eligibility-snapshot.v1",
+      "snapshot_id": "mprf-ph5-gate-004-independent-review-r2",
+      "provider_eligible": {
+        "codex": false,
+        "nvidia": true
+      },
+      "model_refs": {
+        "nvidia": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "evidence_refs": [
+        "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+        "provider-runtime-source:mprf",
+        "GATE-004:TEST-010-025:30-PASS",
+        "GATE-004:AST-AUTHORITY:PASS",
+        "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+        "nvidia-secret-source:process-environment"
+      ],
+      "failure_classes": {},
+      "model_fallback_refs": {
+        "nvidia": [
+          "mistralai/mistral-nemotron",
+          "nvidia/ising-calibration-1.5-31b",
+          "nvidia/nemotron-3.5-lightning-30b-a3b",
+          "google/gemma-4-31b-it"
+        ]
+      }
+    },
+    "request_source": "governed_v2",
+    "failure_class": "",
+    "failover_request_ref": ""
+  },
+  "router_decision": {
+    "schema_version": "orchestration.router-decision.v2",
+    "decision_id": "decision-req-ph5-gate-004-independent-review-r2",
+    "request_digest": "21b2ca181813aafaf19cdc93de4132416948d55f188fc7c029cae534a2e21393",
+    "stage": "REVIEW",
+    "provider_ref": "nvidia",
+    "model_ref": "nvidia/nemotron-3-super-120b-a12b",
+    "reason_code": "governed_read_stage_to_nvidia",
+    "required_capabilities": [
+      "read_only",
+      "reasoning",
+      "review",
+      "security_review"
+    ],
+    "eligible": true,
+    "eligibility_evidence_refs": [
+      "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+      "provider-runtime-source:mprf",
+      "GATE-004:TEST-010-025:30-PASS",
+      "GATE-004:AST-AUTHORITY:PASS",
+      "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+      "nvidia-secret-source:process-environment"
+    ],
+    "policy_version": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+    "action_state": "REVIEW_PENDING",
+    "model_fallback_refs": [
+      "mistralai/mistral-nemotron",
+      "nvidia/ising-calibration-1.5-31b",
+      "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "google/gemma-4-31b-it"
+    ],
+    "decision_digest": "8aed7905ae3cc0a30d80a6c3698adf5a61c6655ebff7acfd6c8787018876ca5b"
+  },
+  "review_evidence": {
+    "focused_tests": "TEST-010~025 mapped modules: 30 tests PASS RC=0",
+    "authority_ast": "0 direct Full MCP/MPRF/Provider Router internal imports from runtime/ai_office",
+    "task_commits": {
+      "TASK-006": "9601fad",
+      "TASK-007": "1dbf2ee",
+      "TASK-008": "f1db2f8",
+      "TASK-009": "9552663",
+      "TASK-010": "23b49a2",
+      "TASK-011": "892a4cb",
+      "TASK-012": "077264c",
+      "TASK-013": "130b3f1",
+      "TASK-014": "cc2e5d4"
+    },
+    "source_sha256": {
+      "__init__.py": "e9eb423e2915b4d5ced45de887d89901c9eeb5bf23dfc988c28a97efe111d3b4",
+      "agent_onboarding.py": "1283fcc1639d98b8d19acfb09035c189e8cf5bbdb508f981f82281361bf034b1",
+      "capability_governance.py": "dd04a14813e6f6eccd33e3571e802933019d6df725280b1006dadb67fccb71af",
+      "context_assembly.py": "f9e1ee7b4b40480496e3affaa16f9053a55e5d1119cf566760e2bc7ed451e644",
+      "contracts.py": "c7bdfed8a68587f96d874170844eae0c0ccb20f2b1a70bdfa1ead7b543adc389",
+      "execution_coordinator.py": "22fc66c1444f9427c04b9c8b421fef31835380b6d2d35c038df0abfc919b3694",
+      "foundry.py": "b22a40096f9bc8378fa6a14f3f6f2983309f87282714db03c006381f529710a5",
+      "governance.py": "8dec01357876d027be847862eaf97c5cc074a9f9c4ffac96963fa3b5ce5043bd",
+      "recovery_coordinator.py": "8145471a5e428332db6c5769b087479c0d57af5be4cd0f673529932810c9b523",
+      "reporting.py": "2a2c7256a166a7e17d7488a99ee118eaf7b18cc40bcbf90548b99b1824431d44",
+      "requirement_intake.py": "743913cafd5606a98cc520b945e2e6ac9c4c7b0cec8764ae8e0200fcbfe8c053",
+      "state_store.py": "cd5543e96ca82ef2eb959d6ea7023c4622273c10b3442cbe119d8d7b7ca2d2eb",
+      "workflow.py": "476115cb572f9f5fc57fb37950bbf2344fd9a364abffbd1f710127af7c5a528b"
+    },
+    "stable_core": "Full Plan runner/entry, Router, MPRF, Full MCP not modified by TASK-006~014"
+  },
+  "provider_result": {
+    "status": "completed",
+    "mode": "nvidia",
+    "provider": "nvidia",
+    "model": "nvidia/nemotron-3-super-120b-a12b",
+    "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+    "model_failover_used": false,
+    "model_failover_trace": [],
+    "model_attempts": {
+      "nvidia/nemotron-3-super-120b-a12b": 1,
+      "mistralai/mistral-nemotron": 0,
+      "nvidia/ising-calibration-1.5-31b": 0,
+      "nvidia/nemotron-3.5-lightning-30b-a3b": 0,
+      "google/gemma-4-31b-it": 0
+    },
+    "provider_attempts": 1,
+    "route_reason": "nvidia_read_only",
+    "summary": "{\n  \"gate\":\"GATE-004\",\n  \"decision\":\"GO\",\n  \"blockers\":[],\n  \"findings\":[\n    \"All 30 mapped tests (TEST-010~025) passed with RC=0\",\n    \"Authority AST scan found zero direct Full MCP/MPRF/Provider Router internal imports from runtime/ai_office\",\n    \"Task commits TASK-006 through TASK-014 present and accounted for\",\n    \"Source file hashes unchanged for core modules\",\n    \"Stable core (Full Plan runner/entry, Router, MPRF, Full MCP) reported unmodified by TASK-006~014\"\n  ],\n  \"evidence_assessment\":\"Evidence indicates no authority bypass and core authorities unchanged; however, assessment relies on static import analysis and does not rule out dynamic or indirect authority usage, nor verify runtime governance hooks.\"\n}",
+    "findings": [],
+    "warnings": [],
+    "errors": [],
+    "context_metadata": {
+      "file_count": 0,
+      "total_file_bytes": 0,
+      "redaction_applied": false
+    }
+  }
+}

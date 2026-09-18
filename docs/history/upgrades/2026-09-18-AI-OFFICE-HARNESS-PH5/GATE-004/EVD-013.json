@@ -1,0 +1,38 @@
+{
+  "schema_version": "ai-office.ph5.evidence.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "gate_id": "GATE-004",
+  "evidence_id": "EVD-013",
+  "purpose": "Foundry lifecycle",
+  "tasks": [
+    {
+      "task": "TASK-011",
+      "checkpoint_commit": "892a4cbb87d6425b7c83ac4a1cafd983477720a6",
+      "evidence_sha256": "c2f5c494279d4aeb804d0bd4cfe930eea9c988077ba32206aab6ee9206cb57f3",
+      "changed_files": [
+        "runtime/ai_office/foundry.py",
+        "tests/test_ai_office_foundry.py"
+      ],
+      "validation_ids": [
+        "TEST-019"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    }
+  ],
+  "tests": [
+    "TEST-019"
+  ],
+  "focused_validation": {
+    "result": "PASS",
+    "suite": "TEST-010~025",
+    "tests_run": 30,
+    "rc": 0
+  },
+  "authority_negative_space": {
+    "direct_core_imports": 0,
+    "dynamic_or_indirect_authority_hits": 0
+  },
+  "status": "PASS",
+  "record_sha256": "ec29124077511baa628ca2a4a6aa33a49093ff46b47b00cd72f6928d66b173b6"
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": "ai-office.ph5.evidence.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "gate_id": "GATE-004",
+  "evidence_id": "EVD-015",
+  "purpose": "Restart/resume state",
+  "tasks": [
+    {
+      "task": "TASK-006",
+      "checkpoint_commit": "9601fad5a200ae9e73fc565f0b183e6c7bbce06e",
+      "evidence_sha256": "92efdafb68d4dd46a602c4fd8bb5ef739a029c8b64ffdd72d32ee21eaae43403",
+      "changed_files": [
+        "runtime/ai_office/contracts.py",
+        "runtime/ai_office/state_store.py",
+        "tests/test_ai_office_state_store.py"
+      ],
+      "validation_ids": [
+        "TEST-010"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    },
+    {
+      "task": "TASK-013",
+      "checkpoint_commit": "130b3f1dba36adbf4fdc939301a9fb1d12d8dc74",
+      "evidence_sha256": "aa861a468fabce855964f00365029d2baa94839a4923983cf53d7ebf085a0808",
+      "changed_files": [
+        "runtime/ai_office/recovery_coordinator.py",
+        "tests/test_ai_office_recovery_coordination.py"
+      ],
+      "validation_ids": [
+        "TEST-023",
+        "TEST-024"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    }
+  ],
+  "tests": [
+    "TEST-023"
+  ],
+  "focused_validation": {
+    "result": "PASS",
+    "suite": "TEST-010~025",
+    "tests_run": 30,
+    "rc": 0
+  },
+  "authority_negative_space": {
+    "direct_core_imports": 0,
+    "dynamic_or_indirect_authority_hits": 0
+  },
+  "status": "PASS",
+  "record_sha256": "c16ae894da3d1f8985befae6e2a63c54bf97b3082946e1361261ea7c7dc2361d"
+}

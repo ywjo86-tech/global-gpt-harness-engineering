@@ -1,0 +1,38 @@
+{
+  "schema_version": "ai-office.ph5.evidence.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "gate_id": "GATE-004",
+  "evidence_id": "EVD-011",
+  "purpose": "Capability routing/eligibility",
+  "tasks": [
+    {
+      "task": "TASK-009",
+      "checkpoint_commit": "9552663913291aab301c47411e8f2c655e7e9474",
+      "evidence_sha256": "51cc1bdfd3164d620d02cb48ef58e94e129bb1ce004a6433b072ec668804df26",
+      "changed_files": [
+        "runtime/ai_office/capability_governance.py",
+        "tests/test_ai_office_capability_governance.py"
+      ],
+      "validation_ids": [
+        "TEST-016"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    }
+  ],
+  "tests": [
+    "TEST-016"
+  ],
+  "focused_validation": {
+    "result": "PASS",
+    "suite": "TEST-010~025",
+    "tests_run": 30,
+    "rc": 0
+  },
+  "authority_negative_space": {
+    "direct_core_imports": 0,
+    "dynamic_or_indirect_authority_hits": 0
+  },
+  "status": "PASS",
+  "record_sha256": "5bc63bbc134c5e6ccb66b98e81d59d7cc7ff2824618d0a44b589e7b8b57ae090"
+}

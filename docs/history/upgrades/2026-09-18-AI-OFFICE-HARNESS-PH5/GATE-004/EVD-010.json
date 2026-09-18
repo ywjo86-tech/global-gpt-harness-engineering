@@ -1,0 +1,54 @@
+{
+  "schema_version": "ai-office.ph5.evidence.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "gate_id": "GATE-004",
+  "evidence_id": "EVD-010",
+  "purpose": "Workflow/assignment separation",
+  "tasks": [
+    {
+      "task": "TASK-008",
+      "checkpoint_commit": "f1db2f86a7ab16a42762dc25459a0c781e1dee28",
+      "evidence_sha256": "b4198ba19bb206002186609865194dd04e68006c5c12b6afdffc01fea2ec06ef",
+      "changed_files": [
+        "runtime/ai_office/workflow.py",
+        "tests/test_ai_office_workflow.py"
+      ],
+      "validation_ids": [
+        "TEST-014"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    },
+    {
+      "task": "TASK-014",
+      "checkpoint_commit": "cc2e5d44ca226e259668df251295102a1b836e92",
+      "evidence_sha256": "be5cd25065c5329ce72ec0da0dc4becb7823978dff1f12f530f0c53bd2179fe2",
+      "changed_files": [
+        "runtime/ai_office/reporting.py",
+        "tests/test_ai_office_reporting.py"
+      ],
+      "validation_ids": [
+        "TEST-015",
+        "TEST-025"
+      ],
+      "completion_mode": "GPT_OPERATOR_MANUAL_ACTION",
+      "status": "completed"
+    }
+  ],
+  "tests": [
+    "TEST-014",
+    "TEST-015"
+  ],
+  "focused_validation": {
+    "result": "PASS",
+    "suite": "TEST-010~025",
+    "tests_run": 30,
+    "rc": 0
+  },
+  "authority_negative_space": {
+    "direct_core_imports": 0,
+    "dynamic_or_indirect_authority_hits": 0
+  },
+  "status": "PASS",
+  "record_sha256": "56bb39198cd5e42abbbc68fb8297bef12d57e72932c60d19a78745963a590ef0"
+}
