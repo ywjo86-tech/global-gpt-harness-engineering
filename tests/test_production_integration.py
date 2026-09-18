@@ -1,4 +1,4 @@
-import hashlib,json,tempfile,unittest
+import hashlib,json,subprocess,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from tests.test_production_lifecycle import binding
@@ -15,16 +15,29 @@ class ProductionIntegrationTests(unittest.TestCase):
   root=Path(d)/"art";publish(root,"a.json",kind="package",payload={"summary":"full immutable body"*50},binding=binding(),source_artifact_sha256=SRC,predecessor_digest=PRE);publish(root,"b.json",kind="review",payload={"summary":"checkpoint","review_evidence":["PASS"]},binding=binding(),source_artifact_sha256=SRC,predecessor_digest=PRE)
   return root,[{"path":"a.json","kind":"package","lv_id":"done"},{"path":"b.json","kind":"review","lv_id":"next","checkpoint_summary":"cp"}]
  def test_actual_format_project_fixtures_are_temporary_and_sources_unchanged(self):
-  harness=Path(__file__).resolve().parents[1];mapping=next((harness/"runtime/orchestrator/contract_mappings").glob("*.json"));spec=json.loads(mapping.read_text());source=harness.parent/spec["project_id"]
-  source_plan=source/Path(spec["canonical_implementation_source"]["path"])
-  if not source.is_dir() or not source_plan.is_file():self.skipTest("production integration smoke skipped: external mapped project is not available")
-  candidates=[(source,Path(spec["canonical_implementation_source"]["path"])),(harness,Path("docs/DEVELOPMENT_PLAN.txt"))]
-  before=[]
+  harness=Path(__file__).resolve().parents[1]
+  plan_path=harness/"docs/DEVELOPMENT_PLAN.txt"
+  plan_sha=hashlib.sha256(plan_path.read_bytes()).hexdigest()
+  specs=[json.loads(path.read_text()) for path in (harness/"runtime/orchestrator/contract_mappings").glob("*.json")]
+  matches=[item for item in specs if item.get("canonical_implementation_source",{}).get("sha256")==plan_sha]
+  self.assertEqual(len(matches),1)
+  before=hashlib.sha256(plan_path.read_bytes()).hexdigest()
   with tempfile.TemporaryDirectory() as d:
-   for index,(root,relative) in enumerate(candidates):
-    raw=(root/relative).read_bytes();before.append((root/relative,hashlib.sha256(raw).hexdigest()));target=Path(d)/f"fixture-{index}";(target/"docs/harness").mkdir(parents=True);(target/"logs").mkdir();(target/"AGENTS.md").write_bytes((root/"AGENTS.md").read_bytes());(target/"docs/DEVELOPMENT_PLAN.txt").write_bytes(raw);(target/"CHANGELOG.txt").write_text("fixture\n");(target/"logs/app.log").write_text("");(target/"docs/harness/orchestration-state.md").write_text("Current phase: Gate 1\n");self.assertTrue(load_contract(target,strict=True).development_plan_text)
-   new=Path(d)/"new";(new/"docs/harness").mkdir(parents=True);(new/"logs").mkdir();(new/"AGENTS.md").write_text("fixture\n");(new/"docs/DEVELOPMENT_PLAN.txt").write_text("Current phase: Gate 1\n");(new/"CHANGELOG.txt").write_text("fixture\n");(new/"logs/app.log").write_text("");(new/"docs/harness/orchestration-state.md").write_text("Current phase: Gate 1\n");self.assertEqual(load_contract(new,strict=True).current_phase,"Gate 1")
-  for path,digest in before:self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),digest)
+   target=Path(d)/"mapped-harness-fixture"
+   subprocess.run(["git","clone","-q","--local","--no-hardlinks",str(harness),str(target)],check=True)
+   contract=load_contract(target,strict=True)
+   self.assertTrue(contract.development_plan_text)
+   self.assertEqual(contract.contract_mapping.get("project_id"),matches[0]["project_id"])
+   new=Path(d)/"new"
+   (new/"docs/harness").mkdir(parents=True)
+   (new/"logs").mkdir()
+   (new/"AGENTS.md").write_text("fixture"+chr(10))
+   (new/"docs/DEVELOPMENT_PLAN.txt").write_text("Current phase: Gate 1"+chr(10))
+   (new/"CHANGELOG.txt").write_text("fixture"+chr(10))
+   (new/"logs/app.log").write_text("")
+   (new/"docs/harness/orchestration-state.md").write_text("Current phase: Gate 1"+chr(10))
+   self.assertEqual(load_contract(new,strict=True).current_phase,"Gate 1")
+  self.assertEqual(hashlib.sha256(plan_path.read_bytes()).hexdigest(),before)
  def test_production_builder_dedup_completed_cache_and_invalidation(self):
   with tempfile.TemporaryDirectory() as d:
    root,index=self.artifacts(d);builder=ProductionContextBuilder();args=dict(artifact_root=root,index=index,binding=binding(),source_sha256=SRC,predecessor=PRE,completed_lvs=["done"],audience="worker")

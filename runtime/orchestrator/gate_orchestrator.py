@@ -1207,10 +1207,15 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
                          canonical_worker_authority_provider: Any | None = None,
+                         provider_route_envelope: Mapping[str, Any] | None = None,
                          manual_action_package: Mapping[str, Any] | None = None,
                          manual_action_authorization: Mapping[str, Any] | None = None) -> GateControllerAdapters:
     from .lv_remediation import review_remediation
     from .lv_review import preflight_run
+    route_request = route_decision = None
+    if provider_route_envelope is not None:
+        from .provider_router import validate_router_envelope
+        route_request, route_decision = validate_router_envelope(provider_route_envelope)
     state: dict[str, Any] = {}
 
     def resumed(stage: str, status: str) -> dict[str, Any] | None:
@@ -1352,10 +1357,22 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                                       "canonical_plan_sha256":plan.canonical_plan_sha256},
                     state_snapshot={"branch":"sealed","head":actual_head},
                     extra_context={"execution_mode":"production",
-                                   "execution_backend":"GPT_OPERATOR_RECOVERY_VERIFICATION" if post_result_request_gap else "HOST_GATEWAY",
+                                   "execution_backend":(
+                                       "GPT_OPERATOR_RECOVERY_VERIFICATION" if post_result_request_gap
+                                       else "NVIDIA_READ_ONLY" if route_decision is not None and route_decision.provider_ref == "nvidia"
+                                       else "HOST_GATEWAY"
+                                   ),
                                    "run_id":run_id,"run_root":str(attempt_root),
-                                   "task_effect_requirement":"NONE_SATISFIED" if post_result_request_gap else "MUTATION_REQUIRED",
+                                   "task_effect_requirement":(
+                                       "NONE_SATISFIED" if post_result_request_gap
+                                       else "READ_ONLY_EXECUTION" if route_decision is not None and route_decision.provider_ref == "nvidia"
+                                       else "MUTATION_REQUIRED"
+                                   ),
                                    "allow_verification_only":post_result_request_gap,
+                                   "allow_read_only_execution":bool(
+                                       not post_result_request_gap and route_decision is not None and route_decision.provider_ref == "nvidia"
+                                   ),
+                                   "provider_route":dict(provider_route_envelope or {}),
                                    "change_target_count":0 if post_result_request_gap else len(selected.owned_files),
                                    "package_manifest_sha256":recovery_package["package_sha256"],
                                    "preflight_evidence_sha256":recovery_preflight["preflight_sha256"],
@@ -1725,9 +1742,23 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             contract_summary={"project_id": plan.project_id, "gate_id": plan.gate_id, "lv_id": lv_id,
                               "canonical_plan_sha256": plan.canonical_plan_sha256},
             state_snapshot={"branch": "sealed", "head": str(manifest.get("source_head", ""))},
-            extra_context={"execution_mode": "production", "execution_backend": "HOST_GATEWAY", "run_id": run_id, "run_root": str(package_root),
-                           "task_effect_requirement": execution_obligation,
+            extra_context={"execution_mode": "production",
+                           "execution_backend": (
+                               "NVIDIA_READ_ONLY"
+                               if route_decision is not None and route_decision.provider_ref == "nvidia"
+                               else "HOST_GATEWAY"
+                           ),
+                           "run_id": run_id, "run_root": str(package_root),
+                           "task_effect_requirement": (
+                               "READ_ONLY_EXECUTION"
+                               if route_decision is not None and route_decision.provider_ref == "nvidia"
+                               else execution_obligation
+                           ),
                            "allow_verification_only": execution_obligation == "NONE_SATISFIED",
+                           "allow_read_only_execution": bool(
+                               route_decision is not None and route_decision.provider_ref == "nvidia"
+                           ),
+                           "provider_route": dict(provider_route_envelope or {}),
                            "change_target_count":len(manifest.get("owned_files", [])),
                            "package_manifest_sha256": package_sha,
                            "preflight_evidence_sha256": state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"),
@@ -2356,10 +2387,59 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         if task_mapping is not None and getattr(task_mapping, "task_lv_projection_path", None) is not None:
             context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
         if adapters is None:
+            from .execution_contract import READY
+            from .provider_runtime_policy import collect_static_provider_eligibility
+            from .provider_router import normalize_legacy_hybrid_request, route_request as route_provider_request
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
+
+            selected_lv = plan.lvs[lv_index]
+            codex_ready = bool(
+                codex_auth_readiness is not None
+                and getattr(codex_auth_readiness, "auth_status", None) == READY
+            )
+            eligibility = collect_static_provider_eligibility(
+                lv_run_id,
+                codex_ready_override=codex_ready,
+                extra_evidence_refs=(
+                    "production-full-plan",
+                    "codex-readiness:ready" if codex_ready else "codex-readiness:unavailable",
+                ),
+            )
+            route_request_value = normalize_legacy_hybrid_request(
+                required_capabilities=selected_lv.required_capabilities,
+                eligibility_snapshot=eligibility,
+                request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                project_id=plan.project_id,
+                run_id=lv_run_id,
+                task_id=lv_id,
+                task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                directive_digest=_canonical_hash({
+                    "project_id": plan.project_id,
+                    "gate_id": gate_id,
+                    "lv_id": lv_id,
+                    "run_id": lv_run_id,
+                    "plan_sha256": plan.canonical_plan_sha256,
+                    "required_capabilities": list(selected_lv.required_capabilities),
+                }),
+            )
+            route_decision_value = route_provider_request(route_request_value)
+            provider_route_envelope = {
+                "request": route_request_value.to_dict(),
+                "decision": route_decision_value.to_dict(),
+            }
+            manual_route_authorized = (
+                route_decision_value.stage == "ACTION"
+                and (manual_action_packages_by_lv or {}).get(lv_id) is not None
+                and (manual_action_authorizations_by_lv or {}).get(lv_id) is not None
+            )
+            if not route_decision_value.eligible and not manual_route_authorized:
+                raise GateOrchestrationError(
+                    f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
+                )
             production_provider = build_production_canonical_worker_authority_provider(
                 codex_auth_readiness=codex_auth_readiness,
                 readiness_recheck_probes=codex_readiness_recheck_probes,
+                router_decision=route_decision_value,
             )
             incident_recovery = None
             if lv_resume:
@@ -2383,6 +2463,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 root, plan, auth, lv_id, lv_run_id, harness_root,
                 recovery=incident_recovery, diagnostic_run_id=run_id,
                 canonical_worker_authority_provider=production_provider,
+                provider_route_envelope=provider_route_envelope,
                 manual_action_package=(manual_action_packages_by_lv or {}).get(lv_id),
                 manual_action_authorization=(manual_action_authorizations_by_lv or {}).get(lv_id),
             )

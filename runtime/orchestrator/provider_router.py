@@ -296,6 +296,66 @@ class RouterDecisionV2:
         return {**self.unsigned_dict(), "decision_digest": self.decision_digest}
 
 
+def eligibility_snapshot_from_mapping(value: Mapping[str, Any]) -> ProviderEligibilitySnapshotV1:
+    if not isinstance(value, Mapping):
+        raise ProviderRouterContractError("eligibility snapshot mapping is invalid")
+    raw_fallbacks = value.get("model_fallback_refs", {})
+    if raw_fallbacks is None:
+        raw_fallbacks = {}
+    if not isinstance(raw_fallbacks, Mapping):
+        raise ProviderRouterContractError("eligibility fallback mapping is invalid")
+    return ProviderEligibilitySnapshotV1(
+        schema_version=str(value.get("schema_version", "")),
+        snapshot_id=str(value.get("snapshot_id", "")),
+        provider_eligible=dict(value.get("provider_eligible", {})),
+        model_refs=dict(value.get("model_refs", {})),
+        evidence_refs=tuple(value.get("evidence_refs", ())),
+        failure_classes=dict(value.get("failure_classes", {})),
+        model_fallback_refs={
+            str(provider): tuple(refs)
+            for provider, refs in raw_fallbacks.items()
+        } or None,
+    )
+
+
+def router_request_from_mapping(value: Mapping[str, Any]) -> RouterRequestV2:
+    if not isinstance(value, Mapping) or not isinstance(value.get("eligibility_snapshot"), Mapping):
+        raise ProviderRouterContractError("Router request mapping is invalid")
+    snapshot = eligibility_snapshot_from_mapping(value["eligibility_snapshot"])
+    return RouterRequestV2(
+        schema_version=str(value.get("schema_version", "")),
+        request_id=str(value.get("request_id", "")),
+        project_id=str(value.get("project_id", "")),
+        run_id=str(value.get("run_id", "")),
+        task_id=str(value.get("task_id", "")),
+        task_execution_id=str(value.get("task_execution_id", "")),
+        directive_digest=str(value.get("directive_digest", "")),
+        stage=str(value.get("stage", "")),
+        required_capabilities=tuple(value.get("required_capabilities", ())),
+        state_change_required=bool(value.get("state_change_required")),
+        policy_profile=str(value.get("policy_profile", "")),
+        eligibility_snapshot=snapshot,
+        eligibility_snapshot_ref=str(value.get("eligibility_snapshot_ref", "")),
+        eligibility_snapshot_digest=str(value.get("eligibility_snapshot_digest", "")),
+        request_source=str(value.get("request_source", ROUTER_REQUEST_SOURCE_V2)),
+        failure_class=str(value.get("failure_class", "")),
+        failover_request_ref=str(value.get("failover_request_ref", "")),
+    )
+
+
+def validate_router_envelope(value: Mapping[str, Any]) -> tuple[RouterRequestV2, RouterDecisionV2]:
+    if not isinstance(value, Mapping) or set(value) != {"request", "decision"}:
+        raise ProviderRouterContractError("provider route envelope is invalid")
+    request = router_request_from_mapping(value["request"])
+    supplied = value["decision"]
+    if not isinstance(supplied, Mapping):
+        raise ProviderRouterContractError("provider route decision is invalid")
+    decision = route_request(request)
+    if dict(supplied) != decision.to_dict():
+        raise ProviderRouterContractError("provider route decision is not canonical")
+    return request, decision
+
+
 def _blocked_decision(request: RouterRequestV2, reason: str, state: str) -> RouterDecisionV2:
     return RouterDecisionV2(
         schema_version=ROUTER_DECISION_SCHEMA_V2,

@@ -1407,6 +1407,24 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
         ):
             raise LVReviewError("verification-only provenance is invalid")
         return
+    if payload.get("completion_mode") == "READ_ONLY_EXECUTION":
+        authority = payload.get("verification_authority")
+        executor = payload.get("executor")
+        if (
+            not isinstance(authority, Mapping)
+            or authority.get("execution_obligation") != "READ_ONLY_EXECUTION"
+            or authority.get("provider") != "nvidia"
+            or not isinstance(authority.get("router_decision_digest"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", authority["router_decision_digest"])
+            or not isinstance(authority.get("canonical_authority_binding_digest"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", authority["canonical_authority_binding_digest"])
+            or not isinstance(executor, Mapping)
+            or executor.get("identity") != "nvidia-router-production"
+            or payload.get("changed_files") != []
+            or payload.get("governed_effect_evidence") != []
+        ):
+            raise LVReviewError("read-only NVIDIA provenance is invalid")
+        return
     if payload.get("completion_mode") == "GPT_OPERATOR_MANUAL_ACTION":
         executor = payload.get("executor")
         manual = payload.get("manual_action")

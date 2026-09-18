@@ -17,6 +17,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .lv_execution_package import canonical_json_bytes
+from .nvidia_adapter import run_nvidia_reasoning_task
+from .provider_router import (
+    NVIDIA_PROVIDER,
+    ProviderRouterContractError,
+    STATE_CHANGING_CAPABILITIES,
+    normalize_capabilities_v2,
+    validate_router_envelope,
+)
 from .schemas import WorkerRequest
 from .tool_authorization import build_contract_candidate
 from .validation_toolchain import (
@@ -59,6 +67,9 @@ def _production_host_execution_gateway(
 
 
 EXECUTOR_ID = "codex-cli-production"
+NVIDIA_EXECUTOR_ID = "nvidia-router-production"
+NVIDIA_READ_ONLY_BACKEND = "NVIDIA_READ_ONLY"
+READ_ONLY_EXECUTION_MODE = "READ_ONLY_EXECUTION"
 EXECUTOR_VERSION = "1"
 ADAPTER_CONTRACT_VERSION = "SEM-025.v2"
 SUPPORTED_CODEX_VERSION = "0.150.1"
@@ -2513,17 +2524,59 @@ def _verification_only_authorized(request: WorkerRequest) -> bool:
     )
 
 
+def _read_only_execution_authorized(request: WorkerRequest) -> bool:
+    """Permit NVIDIA execution only for a sealed, non-mutating Router decision."""
+    binding = request.extra_context.get("canonical_authority_binding")
+    binding_digest = request.extra_context.get("canonical_authority_binding_digest")
+    route = request.extra_context.get("provider_route")
+    if (
+        request.extra_context.get("allow_read_only_execution") is not True
+        or request.extra_context.get("task_effect_requirement") != "READ_ONLY_EXECUTION"
+        or not isinstance(binding, Mapping)
+        or binding.get("execution_obligation") != "READ_ONLY_EXECUTION"
+        or not isinstance(binding_digest, str)
+        or not binding_digest
+        or not isinstance(route, Mapping)
+    ):
+        return False
+    try:
+        routed_request, decision = validate_router_envelope(route)
+    except ProviderRouterContractError:
+        return False
+    capabilities = normalize_capabilities_v2(request.task.required_capabilities)
+    return (
+        decision.eligible
+        and decision.provider_ref == NVIDIA_PROVIDER
+        and decision.stage in {"PREPARE", "VERIFY", "REVIEW"}
+        and not STATE_CHANGING_CAPABILITIES.intersection(capabilities)
+        and not STATE_CHANGING_CAPABILITIES.intersection(decision.required_capabilities)
+        and tuple(decision.required_capabilities) == capabilities
+        and routed_request.project_id == str(request.contract_summary.get("project_id", ""))
+        and routed_request.run_id == str(request.extra_context.get("run_id", ""))
+        and routed_request.task_id == request.task.thread_id
+    )
+
+
 def execute_production_worker(request: WorkerRequest, *,
                               executor: Callable[..., subprocess.CompletedProcess[bytes]] | None = None,
                               timeout: int = 1800,
                               execution_backend: str | None = None,
                               gateway_transport: Callable[..., Mapping[str, Any]] | None = None) -> dict[str, Any]:
-    """Run the registered Codex executor and independently collect product evidence."""
+    """Run the Router-selected production executor and independently collect product evidence."""
     root = Path(request.project_root)
     if not root.is_absolute() or not root.is_dir() or root.is_symlink() or root.resolve() != root:
         raise ProductionWorkerError("production worker project root is unsafe")
     if request.extra_context.get("execution_mode") != "production":
         raise ProductionWorkerError("production executor requires production mode")
+    provider_route = request.extra_context.get("provider_route")
+    routed_request = route_decision = None
+    if provider_route:
+        try:
+            routed_request, route_decision = validate_router_envelope(provider_route)
+        except ProviderRouterContractError as exc:
+            raise ProductionWorkerError(f"PROVIDER_ROUTE_INVALID:{exc}") from exc
+        if not route_decision.eligible:
+            raise ProductionWorkerError(f"PROVIDER_ROUTE_BLOCKED:{route_decision.reason_code}")
     owned = _safe_scope(request.task.editable_scope)
     baseline = str(request.extra_context.get("source_snapshot", {}).get("source_head") or request.state_snapshot.get("head", ""))
     baseline_status = _git(root, "status", "--porcelain=v1", "-uall").stdout
@@ -2561,10 +2614,20 @@ def execute_production_worker(request: WorkerRequest, *,
         # The production gate always supplies run_root and an explicit backend.
         configured_backend = LOCAL_CHILD
     verification_only = _verification_only_authorized(request)
+    read_only_execution = _read_only_execution_authorized(request)
     if verification_only:
         configured_backend = "VERIFICATION_ONLY"
-    if configured_backend not in {LOCAL_CHILD, HOST_GATEWAY, "VERIFICATION_ONLY"}:
+    elif read_only_execution:
+        configured_backend = NVIDIA_READ_ONLY_BACKEND
+    if configured_backend not in {LOCAL_CHILD, HOST_GATEWAY, "VERIFICATION_ONLY", NVIDIA_READ_ONLY_BACKEND}:
         raise ProductionWorkerError("EXECUTION_BACKEND_REQUIRED")
+    if configured_backend == NVIDIA_READ_ONLY_BACKEND and not read_only_execution:
+        raise ProductionWorkerError("NVIDIA_READ_ONLY_AUTHORITY_REQUIRED")
+    if route_decision is not None:
+        if route_decision.provider_ref == NVIDIA_PROVIDER and configured_backend != NVIDIA_READ_ONLY_BACKEND:
+            raise ProductionWorkerError("NVIDIA_ROUTE_BACKEND_MISMATCH")
+        if route_decision.provider_ref != NVIDIA_PROVIDER and configured_backend == NVIDIA_READ_ONLY_BACKEND:
+            raise ProductionWorkerError("NVIDIA_ROUTE_BACKEND_MISMATCH")
     legacy_fixture = not request.extra_context.get("run_root")
     if configured_backend == LOCAL_CHILD and request.extra_context.get("execution_mode") == "production" and not legacy_fixture:
         raise ProductionWorkerError("LOCAL_CHILD_PRODUCTION_DISABLED")
@@ -2578,6 +2641,14 @@ def execute_production_worker(request: WorkerRequest, *,
             "execution_backend": "VERIFICATION_ONLY",
             "execution_request_id": "verification-only",
             "request_digest": hashlib.sha256(canonical_json_bytes(request.to_dict())).hexdigest(),
+            "gateway_contract_version": GATEWAY_CONTRACT_VERSION,
+        }
+    elif configured_backend == NVIDIA_READ_ONLY_BACKEND:
+        assert route_decision is not None
+        gateway_request = {
+            "execution_backend": NVIDIA_READ_ONLY_BACKEND,
+            "execution_request_id": f"nvidia-{route_decision.decision_digest[:32]}",
+            "request_digest": route_decision.request_digest,
             "gateway_contract_version": GATEWAY_CONTRACT_VERSION,
         }
     elif configured_backend == LOCAL_CHILD and (executor is not None or legacy_fixture):
@@ -2654,10 +2725,20 @@ def execute_production_worker(request: WorkerRequest, *,
             "host_writable": False, "harness_writable": True,
             "staging_binding": "NOT_APPLICABLE_VERIFICATION_ONLY",
         }
+    elif read_only_execution:
+        final_message_target_metadata = {
+            "target_scope": "RUN_ROOT", "codex_writable": False,
+            "host_writable": False, "harness_writable": True,
+            "staging_binding": "NVIDIA_ROUTER_RESPONSE",
+        }
     else:
         final_message_target_metadata = _validate_final_message_target(root, execution_last)
-    argv = (["verification-only", "sealed-none-satisfied"] if verification_only
-            else CodexExecutionAdapter().argv(root=root, last_message=execution_last))
+    argv = (
+        ["verification-only", "sealed-none-satisfied"]
+        if verification_only
+        else ["nvidia-router", route_decision.model_ref] if read_only_execution and route_decision is not None
+        else CodexExecutionAdapter().argv(root=root, last_message=execution_last)
+    )
     pending_paths = [line[3:] for line in baseline_status.splitlines() if len(line) > 3]
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
@@ -2710,6 +2791,58 @@ def execute_production_worker(request: WorkerRequest, *,
                 "signal": None, "stdout_sha256": hashlib.sha256(b"").hexdigest(),
                 "stderr_sha256": hashlib.sha256(b"").hexdigest(), "secret_like_output_detected": False,
                 "governed_effect_evidence": [], "hard_stop": True,
+            }
+        elif configured_backend == NVIDIA_READ_ONLY_BACKEND:
+            assert route_decision is not None
+            provider_result = run_nvidia_reasoning_task(
+                prompt=prompt,
+                project_root=str(root),
+                input_files=request.task.input_files,
+                model=route_decision.model_ref,
+                require_explicit_model=True,
+                fallback_models=route_decision.model_fallback_refs,
+                timeout_seconds=float(min(timeout, 120)),
+            )
+            if provider_result.get("status") != "completed":
+                raise ProductionWorkerError(
+                    f"NVIDIA_PROVIDER_FAILURE:{provider_result.get('provider_error_class', 'unknown')}"
+                )
+            summary = str(provider_result.get("summary", "")).strip()
+            if not summary:
+                raise ProductionWorkerError("NVIDIA_PROVIDER_FAILURE:empty_response")
+            final_bytes = summary.encode("utf-8")
+            _persist_private_final_message(last, final_bytes)
+            final_message_target_metadata.update(_validate_final_message(last))
+            stdout = final_bytes
+            stderr = b""
+            worker_exit = 0
+            timed_out = False
+            adapter_evidence = {
+                "contract_version": "NVIDIA_ROUTER_PRODUCTION.v1",
+                "backend": NVIDIA_READ_ONLY_BACKEND,
+                "strict": False,
+            }
+            process_evidence = {
+                "schema_version": "orchestration.production-worker-process.v1",
+                "pid": None,
+                "process_group_id": None,
+                "started_at": None,
+                "ended_at": None,
+                "termination": "EXITED",
+                "requested_signal": None,
+                "exit_code": 0,
+                "signal": None,
+                "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+                "secret_like_output_detected": False,
+                "governed_effect_evidence": [],
+                "provider": NVIDIA_PROVIDER,
+                "routed_model": route_decision.model_ref,
+                "actual_model": provider_result.get("model", route_decision.model_ref),
+                "router_decision_digest": route_decision.decision_digest,
+                "provider_attempts": provider_result.get("provider_attempts", 0),
+                "model_failover_used": bool(provider_result.get("model_failover_used", False)),
+                "hard_stop": True,
             }
         elif configured_backend == HOST_GATEWAY:
             try:
@@ -2903,9 +3036,12 @@ def execute_production_worker(request: WorkerRequest, *,
     else:
         changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", head).stdout.splitlines()
     verification_only = _verification_only_authorized(request)
-    if not changed and not verification_only:
+    read_only_execution = _read_only_execution_authorized(request)
+    if not changed and not (verification_only or read_only_execution):
         diagnostic = _redact(last.read_text(encoding="utf-8", errors="replace")[:500]) if last.is_file() else "no final message"
         raise ProductionWorkerError(f"production executor produced no product changes: {diagnostic}")
+    if read_only_execution and changed:
+        raise ProductionWorkerError("NVIDIA_READ_ONLY_MUTATION_DETECTED")
     outside = [path for path in changed if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned)]
     if outside:
         raise ProductionWorkerError(f"production executor changed files outside owned scope: {outside}")
@@ -3007,11 +3143,19 @@ def execute_production_worker(request: WorkerRequest, *,
            "plan_sha256": request.contract_summary["canonical_plan_sha256"]}
     evidence = {**ids, "schema_version":"orchestration.product-completion-evidence.v1",
         "status":"completed", "tests":list(request.task.validation_criteria),
-        "attempt":int(request.extra_context["attempt"]), "completion_mode":("VERIFICATION_ONLY" if not changed else "CODE_CHANGE"), "owned_files":owned,
+        "attempt":int(request.extra_context["attempt"]),
+        "completion_mode":(
+            READ_ONLY_EXECUTION_MODE if read_only_execution
+            else "VERIFICATION_ONLY" if verification_only
+            else "CODE_CHANGE"
+        ), "owned_files":owned,
         "changed_files":changed, "baseline_head":baseline, "baseline_tree":baseline_tree,
         "current_head":head, "current_tree":tree, "checkpoint_commit":head, "commands":commands,
         "staged_changes":False, "unstaged_changes":False, "review_verdict":"PASS",
-        "executor":{"identity":EXECUTOR_ID,"version":EXECUTOR_VERSION},
+        "executor":{
+            "identity": NVIDIA_EXECUTOR_ID if read_only_execution else EXECUTOR_ID,
+            "version":EXECUTOR_VERSION,
+        },
         "adapter_contract_version": ADAPTER_CONTRACT_VERSION,
         "structured_event_contract_version": STRUCTURED_EVENT_CONTRACT_VERSION,
         "structured_event_summary": process_evidence.get("structured_events", {}),
@@ -3020,9 +3164,15 @@ def execute_production_worker(request: WorkerRequest, *,
         ),
         "package_sha256":request.extra_context["package_manifest_sha256"],
         "verification_authority": ({
-            "execution_obligation": "NONE_SATISFIED",
+            "execution_obligation": (
+                "READ_ONLY_EXECUTION" if read_only_execution else "NONE_SATISFIED"
+            ),
             "canonical_authority_binding_digest": request.extra_context.get("canonical_authority_binding_digest", ""),
-        } if not changed else {}),
+            **({
+                "provider": NVIDIA_PROVIDER,
+                "router_decision_digest": route_decision.decision_digest if route_decision is not None else "",
+            } if read_only_execution else {}),
+        } if (read_only_execution or verification_only) else {}),
         "preflight_evidence_sha256":request.extra_context.get("preflight_evidence_sha256", ""),
         "validation_events": validation_events + ["WORKER_RESULT_SEALED"],
         **{key: process_evidence[key] for key in (

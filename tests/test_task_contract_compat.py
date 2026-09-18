@@ -206,6 +206,7 @@ class TaskContractCompatibilityTests(unittest.TestCase):
             projection_path = root / "docs" / "projection.json"
             projection_path.write_text(json.dumps(projection(plan_sha)), encoding="utf-8")
             mapping = SimpleNamespace(
+                project_id="task-project",
                 canonical_source=plan, canonical_sha256=plan_sha,
                 task_lv_projection_path=projection_path,
                 task_lv_projection_sha256=hashlib.sha256(projection_path.read_bytes()).hexdigest(),
@@ -228,6 +229,7 @@ class TaskContractCompatibilityTests(unittest.TestCase):
             projection_path = root / "docs" / "projection.json"
             projection_path.write_text(json.dumps(projection(plan_sha)), encoding="utf-8")
             mapping = SimpleNamespace(
+                project_id="task-project",
                 canonical_source=plan, canonical_sha256=plan_sha,
                 task_lv_projection_path=projection_path,
                 task_lv_projection_sha256=hashlib.sha256(projection_path.read_bytes()).hexdigest(),

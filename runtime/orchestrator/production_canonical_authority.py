@@ -34,6 +34,11 @@ from .tool_authorization import (
     owned_scope_digest,
     validate_contract as validate_tool_authorization_contract,
 )
+from .provider_router import (
+    NVIDIA_PROVIDER,
+    STATE_CHANGING_CAPABILITIES,
+    RouterDecisionV2,
+)
 from .migration_authority import MigrationAuthorityEvidence, load_migration_authority
 from .migration_quality_authority import (
     ApprovedMigrationQualityAuthority,
@@ -809,6 +814,7 @@ def build_production_canonical_worker_authority_provider(
     *,
     codex_auth_readiness: CodexAuthReadinessEvidence | None,
     readiness_recheck_probes: ReadinessProbeSet | None,
+    router_decision: RouterDecisionV2 | None = None,
     verify_git_provenance: bool = True,
 ):
     """Compose production canonical authority without collecting readiness."""
@@ -829,16 +835,24 @@ def build_production_canonical_worker_authority_provider(
         run_id: str,
         canonical_plan_sha256: str,
     ) -> Mapping[str, object]:
-        if codex_auth_readiness is None:
-            raise ProductionCanonicalAuthorityError(
-                "pre-collected Codex readiness evidence is required",
-                reason_taxonomy="PRODUCTION_CANONICAL_READINESS_REQUIRED",
-            )
-        if readiness_recheck_probes is None:
-            raise ProductionCanonicalAuthorityError(
-                "explicit launch-adjacent readiness recheck probes are required",
-                reason_taxonomy="PRODUCTION_CANONICAL_RECHECK_REQUIRED",
-            )
+        nvidia_read_only = bool(
+            router_decision is not None
+            and router_decision.eligible
+            and router_decision.provider_ref == NVIDIA_PROVIDER
+            and router_decision.stage in {"PREPARE", "VERIFY", "REVIEW"}
+            and not STATE_CHANGING_CAPABILITIES.intersection(router_decision.required_capabilities)
+        )
+        if not nvidia_read_only:
+            if codex_auth_readiness is None:
+                raise ProductionCanonicalAuthorityError(
+                    "pre-collected Codex readiness evidence is required",
+                    reason_taxonomy="PRODUCTION_CANONICAL_READINESS_REQUIRED",
+                )
+            if readiness_recheck_probes is None:
+                raise ProductionCanonicalAuthorityError(
+                    "explicit launch-adjacent readiness recheck probes are required",
+                    reason_taxonomy="PRODUCTION_CANONICAL_RECHECK_REQUIRED",
+                )
         if mode not in {"normal", "recovery"}:
             raise ProductionCanonicalAuthorityError(
                 "unsupported production canonical Worker mode",
@@ -927,11 +941,19 @@ def build_production_canonical_worker_authority_provider(
                 "contract_activation_digest": seed_digest,
                 "worker_task_id": worker_task_id,
                 "criterion_set_digest": seed_digest,
-                "execution_obligation": "MUTATION_REQUIRED",
+                "execution_obligation": "READ_ONLY_EXECUTION" if nvidia_read_only else "MUTATION_REQUIRED",
                 "preflight_evidence_digest": seed_digest,
-                "codex_auth_readiness_ref": getattr(codex_auth_readiness, "readiness_ref", "")
-                    or f"codex-readiness://{worker_task_id}#{seed_digest}",
-                "codex_auth_recheck_evidence_ref": f"codex-recheck://{worker_task_id}#{seed_digest}",
+                "codex_auth_readiness_ref": (
+                    f"not-applicable://nvidia-read-only#{seed_digest}"
+                    if nvidia_read_only
+                    else getattr(codex_auth_readiness, "readiness_ref", "")
+                         or f"codex-readiness://{worker_task_id}#{seed_digest}"
+                ),
+                "codex_auth_recheck_evidence_ref": (
+                    f"not-applicable://nvidia-read-only-recheck#{seed_digest}"
+                    if nvidia_read_only
+                    else f"codex-recheck://{worker_task_id}#{seed_digest}"
+                ),
                 "launch_authorization_digest": seed_digest,
                 "migration_authority_ref": f"migration-authority://dynamic-lv#{seed_digest}",
             }
@@ -950,6 +972,11 @@ def build_production_canonical_worker_authority_provider(
                     canonical_json_bytes(binding)
                 ).hexdigest(),
             }
+        if nvidia_read_only:
+            raise ProductionCanonicalAuthorityError(
+                "DEC-007 canonical mutation authority cannot be reused for NVIDIA read-only execution",
+                reason_taxonomy="PRODUCTION_CANONICAL_PROVIDER_AUTHORITY_MISMATCH",
+            )
         package_id, package_revision = production_canonical_package_identity(
             project_id=project_id,
             gate_id=gate_id,
@@ -957,6 +984,8 @@ def build_production_canonical_worker_authority_provider(
             run_id=run_id,
         )
 
+        assert codex_auth_readiness is not None
+        assert readiness_recheck_probes is not None
         authority_root = (
             Path(harness_root).resolve()
             / "_workspace"
