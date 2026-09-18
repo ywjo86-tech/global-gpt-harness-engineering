@@ -219,6 +219,25 @@ class ToolAuthorizationTests(unittest.TestCase):
             with self.assertRaises(ToolAuthorizationError): journal.begin(
                 self._identity(), {"authorization_status": "AUTHORIZED"})
 
+    def test_security_scanner_exception_is_receipted_fail_closed(self):
+        active = activate_contract(approved(), package_binding_sha256=PACKAGE, authorized_decisions=DECISIONS)
+        calls = []
+        with tempfile.TemporaryDirectory() as directory:
+            journal = ToolEffectJournal(directory)
+            broker = SingleToolBroker(
+                registry=ClosedOperationRegistry([self._registered()]),
+                contracts={"REGISTERED_TEST_RUNNER": active}, journal=journal,
+                launchers={"REGISTERED_TEST_RUNNER": lambda _: calls.append("effect") or {"status": "COMPLETED"}},
+                security_scan=lambda _: (_ for _ in ()).throw(TypeError("scanner-type")),
+            )
+            with self.assertRaisesRegex(ToolAuthorizationError, "security scan failed"):
+                broker.execute(self._identity(), {})
+            self.assertEqual(calls, ["effect"])
+            self.assertEqual(journal.recovery_state(self._identity()), "COMPLETED_NO_RERUN")
+            receipt = json.loads((Path(directory) / f"{self._identity().effect_id}.receipt.json").read_text())
+            self.assertEqual(receipt["execution_status"], "FAILED")
+            self.assertEqual(receipt["security_status"], "BLOCK")
+
     def test_concurrent_duplicate_has_one_launcher_invocation(self):
         active = activate_contract(approved(), package_binding_sha256=PACKAGE, authorized_decisions=DECISIONS)
         calls = []

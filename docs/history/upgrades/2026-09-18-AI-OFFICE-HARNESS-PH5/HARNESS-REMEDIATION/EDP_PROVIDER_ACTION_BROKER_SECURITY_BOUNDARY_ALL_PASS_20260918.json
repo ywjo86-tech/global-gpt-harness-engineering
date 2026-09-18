@@ -1,0 +1,60 @@
+{
+  "schema_version": "edp.remediation-closure.v1",
+  "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+  "remediation_id": "PROVIDER_ACTION_BROKER_SECURITY_BOUNDARY_20260918",
+  "canonical_plan_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "finding": {
+    "id": "MPA-BROKER-SEC-001",
+    "severity": "MAJOR",
+    "status": "RESOLVED",
+    "problem": "Provider ACTION Broker write launcher returned a structured mapping while the ACTION security scanner assumed bytes; scanner exceptions could leave an intent without a terminal receipt.",
+    "impact": "A valid governed multi-write ACTION could fail after the first write and produce ambiguous effect recovery evidence."
+  },
+  "remediation": [
+    "Normalize provider ACTION security scan inputs across bytes, bytearray, string, mapping, list, and tuple.",
+    "Detect credential-like keys in structured results before canonical-byte scanning.",
+    "Fail closed for unknown scanner input types.",
+    "Journal FAILED/BLOCK receipt when the post-launch security scanner raises."
+  ],
+  "evidence": {
+    "focused_regression": {
+      "status": "PASS",
+      "tests": 265,
+      "skipped": 6,
+      "rc": 0
+    },
+    "full_regression": {
+      "status": "PASS",
+      "tests": 1587,
+      "skipped": 12,
+      "rc": 0
+    },
+    "pass_challenge": {
+      "canonical_plan_sha": "PASS",
+      "structured_safe_result": "PASS",
+      "structured_secret_key_blocked": "PASS",
+      "unknown_result_type_blocked": "PASS",
+      "scanner_exception_terminal_receipt": "PASS",
+      "broker_only_effect_path": "PASS"
+    }
+  },
+  "closure_metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "PASS",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS"
+  },
+  "exhaustion_statement": "MATERIAL_DEFECT_SEARCH: EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "final_decision": "ALL_PASS"
+}

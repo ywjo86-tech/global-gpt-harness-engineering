@@ -5,7 +5,7 @@ from unittest.mock import patch
 from runtime.orchestrator.production_worker_executor import (
     EXECUTOR_ID, ProductionWorkerError, execute_production_worker,
     production_executor_manifest, _run_managed_child,
-    _prompt, _secret_findings, _secret_origin_classifications,
+    _prompt, _secret_findings, _provider_action_security_scan, _secret_origin_classifications,
     _hardcoded_credential_findings, _task_allows_secret_handling,
     _parse_unified_diff_lines, CodexExecutionAdapter, StructuredEventError,
     StructuredContentSecurityError,
@@ -42,6 +42,12 @@ def _usage() -> dict[str, int]:
 
 
 class ProductionWorkerExecutorTests(unittest.TestCase):
+    def test_provider_action_security_scan_normalizes_structured_broker_results(self):
+        self.assertTrue(_provider_action_security_scan({"status": "COMPLETED"}))
+        self.assertTrue(_provider_action_security_scan(b"safe"))
+        self.assertFalse(_provider_action_security_scan({"api_key": "secret-material-value"}))
+        self.assertFalse(_provider_action_security_scan(object()))
+
     def test_test_runner_metadata_is_bounded(self):
         failed = _test_runner_metadata(b"===== 1 failed, 2 passed in 0.1s =====", b"", 1)
         self.assertEqual(failed["test_runner_result_category"], "TEST_FAILURE")

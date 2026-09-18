@@ -566,7 +566,11 @@ class SingleToolBroker:
             # intent stranded as recovery-ambiguous evidence.
             self.journal.complete(identity, execution_status="FAILED", security_status="BLOCK")
             raise
-        security_ok = bool(self.security_scan(raw_private_result))
+        try:
+            security_ok = bool(self.security_scan(raw_private_result))
+        except Exception as exc:
+            self.journal.complete(identity, execution_status="FAILED", security_status="BLOCK")
+            raise ToolAuthorizationError("authorized tool output security scan failed") from exc
         self.journal.complete(identity, execution_status="COMPLETED",
                               security_status="PASS" if security_ok else "BLOCK")
         if not security_ok:

@@ -1658,6 +1658,44 @@ def _secret_findings(value: bytes) -> dict[str, int]:
     return findings
 
 
+def _provider_action_security_scan(value: Any) -> bool:
+    placeholders = {"", "none", "null", "unset", "not-set", "not_set", "missing",
+                    "redacted", "[redacted]", "<redacted>", "hidden", "masked"}
+
+    def structured_secret(item: Any) -> bool:
+        if isinstance(item, Mapping):
+            for key, child in item.items():
+                if isinstance(key, str) and _credential_identifier_category(key) is not None:
+                    if isinstance(child, bytes):
+                        candidate = child.decode("utf-8", "replace").strip().casefold()
+                    elif isinstance(child, str):
+                        candidate = child.strip().casefold()
+                    else:
+                        candidate = ""
+                    if candidate and candidate not in placeholders and set(candidate) != {"*"}:
+                        return True
+                if structured_secret(child):
+                    return True
+            return False
+        if isinstance(item, (list, tuple)):
+            return any(structured_secret(child) for child in item)
+        return False
+
+    if structured_secret(value):
+        return False
+    if isinstance(value, bytes):
+        raw = value
+    elif isinstance(value, bytearray):
+        raw = bytes(value)
+    elif isinstance(value, str):
+        raw = value.encode("utf-8")
+    elif isinstance(value, (Mapping, list, tuple)):
+        raw = canonical_json_bytes(value)
+    else:
+        return False
+    return not bool(_secret_findings(raw))
+
+
 def _secret_classifications(value: bytes) -> dict[str, dict[str, int]]:
     """Return aggregate, non-sensitive diagnostics for secret-like matches."""
     result: dict[str, dict[str, int]] = {}
@@ -2899,13 +2937,11 @@ def execute_production_worker(request: WorkerRequest, *,
             assert route_decision is not None
             if route_decision.provider_ref != NVIDIA_PROVIDER:
                 raise ProductionWorkerError("PROVIDER_ACTION_RUNNER_UNAVAILABLE")
-            def safe_provider_effect(raw: bytes) -> bool:
-                return not bool(_secret_findings(raw))
             try:
                 action_result = execute_provider_action_proposal(
                     request, decision=route_decision, baseline=baseline, owned=owned,
                     output_dir=output, provider_runner=run_nvidia_reasoning_task,
-                    security_scan=safe_provider_effect, timeout=timeout,
+                    security_scan=_provider_action_security_scan, timeout=timeout,
                 )
             except ProviderActionExecutionError as exc:
                 raise ProductionWorkerError(str(exc)) from exc
