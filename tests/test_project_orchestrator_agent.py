@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from runtime.agents.project_execution_agent import ProjectExecutionAgent
@@ -43,6 +44,38 @@ class ProjectOrchestratorBoundaryTest(unittest.TestCase):
             run_result = engine.run()
             self.assertIn("fanin_report", run_result)
             self.assertTrue((Path(project) / "runtime" / "fanout_plan.json").exists())
+
+    def test_status_projects_contract_phase_when_runtime_state_is_uninitialized(self) -> None:
+        with cloned_sample_project() as project:
+            contract = load_contract(project)
+            state_path = Path(project) / "runtime" / "orchestrator_state.json"
+            self.assertFalse(state_path.exists())
+            with patch("runtime.orchestrator.engine.detect_codex_cli", return_value=True):
+                engine = OrchestrationEngine(project)
+                status = engine.status()
+
+            self.assertEqual(status["contract"]["current_phase"], contract.current_phase)
+            self.assertEqual(status["state"]["current_phase"], contract.current_phase)
+            self.assertTrue(status["state"]["codex_cli_available"])
+            self.assertFalse(status["status_context"]["runtime_state_initialized"])
+            self.assertFalse(status["status_context"]["runtime_active"])
+            self.assertFalse(status["status_context"]["execution_mode_authoritative"])
+            self.assertEqual(status["status_context"]["project_phase_source"], "contract")
+            self.assertTrue(status["status_context"]["required_contract_files_valid"])
+            self.assertEqual(status["status_context"]["optional_missing_files"], [])
+            self.assertFalse(state_path.exists(), "status must not persist an uninitialized runtime state")
+
+    def test_status_preserves_persisted_runtime_state_and_identifies_source(self) -> None:
+        with cloned_sample_project() as project:
+            engine = OrchestrationEngine(project)
+            engine.plan(run_id="status-persisted-run")
+            status = engine.status()
+
+            self.assertTrue(status["status_context"]["runtime_state_initialized"])
+            self.assertTrue(status["status_context"]["runtime_active"])
+            self.assertTrue(status["status_context"]["execution_mode_authoritative"])
+            self.assertEqual(status["status_context"]["runtime_state_source"], "persisted")
+            self.assertEqual(status["state"]["active_run_id"], "status-persisted-run")
 
     def test_execution_agent_requires_ready_planning_artifact(self) -> None:
         with cloned_sample_project() as project:
