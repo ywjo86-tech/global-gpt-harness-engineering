@@ -22,14 +22,29 @@ class ValidationToolchainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             from unittest.mock import patch
             root=Path(d)
-            active=Path(d)/'approved-venv/bin/python'; active.parent.mkdir(parents=True); active.write_text(''); active.chmod(0o755)
-            with patch('runtime.orchestrator.validation_toolchain.sys.executable', str(active)), \
-                 patch('runtime.orchestrator.validation_toolchain.sys.prefix', str(active.parent.parent)), \
-                 patch('runtime.orchestrator.validation_toolchain.sys.base_prefix', '/usr'):
-                plan=resolve_validation_commands(root,['tests/test_a.py'],allow_deferred=False)
-            self.assertFalse(plan.deferred)
-            self.assertEqual(plan.profile_ids,('PYTHON_PYTEST',))
-            self.assertEqual(plan.focused[0][0],'.venv/bin/python')
+            external_root=Path(d).parent/'approved-validation-venv'; external_root.mkdir(exist_ok=True)
+            active=external_root/'python'; active.write_text(''); active.chmod(0o755)
+            try:
+                with patch('runtime.orchestrator.validation_toolchain.sys.executable', str(active)), \
+                     patch('runtime.orchestrator.validation_toolchain.sys.prefix', str(external_root)), \
+                     patch('runtime.orchestrator.validation_toolchain.sys.base_prefix', '/usr'):
+                    plan=resolve_validation_commands(root,['tests/test_a.py'],allow_deferred=False)
+                self.assertFalse(plan.deferred)
+                self.assertEqual(plan.profile_ids,('PYTHON_UNITTEST_EXTERNAL',))
+                self.assertEqual(plan.focused[0],(str(active),'-m','unittest','-v','tests.test_a'))
+                self.assertEqual(plan.full[0],(str(active),'-m','unittest','discover','-s','tests','-v'))
+            finally:
+                active.unlink(missing_ok=True); external_root.rmdir()
+
+    def test_explicit_external_python_is_exactly_bound_and_must_be_outside_project(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
+            root=Path(d); external=Path(e)/'python'; external.write_text(''); external.chmod(0o755)
+            plan=resolve_validation_commands(root,['tests/test_a.py'],python_executable=external)
+            self.assertEqual(plan.profile_ids,('PYTHON_UNITTEST_EXTERNAL',))
+            self.assertEqual(plan.focused[0][0],str(external))
+            inside=root/'python'; inside.write_text(''); inside.chmod(0o755)
+            with self.assertRaisesRegex(ValidationToolchainError,'outside project root'):
+                resolve_validation_commands(root,['tests/test_a.py'],python_executable=inside)
 
     def test_android_node_manifest_resolves_without_guessing_package_manager(self):
         with tempfile.TemporaryDirectory() as d:

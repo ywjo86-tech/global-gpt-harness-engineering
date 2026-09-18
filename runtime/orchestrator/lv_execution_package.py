@@ -7,6 +7,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -303,7 +304,10 @@ def _manifest_payload(
     policy_id = getattr(mapping, "interpreter_policy_id", None) or "PROJECT_VENV_READ_ONLY"
     source_head = source_snapshot["source_head"]
     try:
-        validation_toolchain = resolve_validation_commands(root, list(preview["approved_owned_files"]), allow_deferred=True).to_dict()
+        validation_toolchain = resolve_validation_commands(
+            root, list(preview["approved_owned_files"]), allow_deferred=True,
+            python_executable=(sys.executable if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER" else None),
+        ).to_dict()
     except ValidationToolchainError as exc:
         raise LVExecutionPackageError(f"project-native validation contract is invalid: {exc}") from exc
     return {

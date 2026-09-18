@@ -1779,6 +1779,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     "working_semantic_contract_version": manifest.get("working_semantic_contract_version"),
                     "working_development_plan_version": manifest.get("working_development_plan_version"),
                     "validation_toolchain": dict(manifest.get("validation_toolchain", {})),
+                    "interpreter_policy_id": manifest.get("interpreter_policy_id", "PROJECT_VENV_READ_ONLY"),
                     "gate_id": plan.gate_id, "lv_id": lv_id,
                     "approval_event_id": getattr(auth, "authorization_id", ""),
                     **canonical_extra,

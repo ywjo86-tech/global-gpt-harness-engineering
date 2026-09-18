@@ -130,10 +130,18 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
     if _git(root, "status", "--porcelain=v1", "-uall"):
         raise VerifiedCheckpointAdoptionError("project worktree is not clean")
     try:
-        validation_plan = resolve_validation_commands(root, owned, allow_deferred=False)
         toolchain_contract = manifest.get("validation_toolchain")
         expected_profiles = (toolchain_contract.get("profile_ids", [])
                              if isinstance(toolchain_contract, dict) else [])
+        external_python = None
+        if expected_profiles == ["PYTHON_UNITTEST_EXTERNAL"]:
+            focused = toolchain_contract.get("focused", [])
+            if not isinstance(focused, list) or not focused or not isinstance(focused[0], list) or not focused[0]:
+                raise ValidationToolchainError("sealed external Python interpreter binding is missing")
+            external_python = focused[0][0]
+        validation_plan = resolve_validation_commands(
+            root, owned, allow_deferred=False, python_executable=external_python,
+        )
         if expected_profiles:
             validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
     except ValidationToolchainError as exc:

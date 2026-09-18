@@ -1,7 +1,7 @@
 {
   "schema_version": "edp.remediation.v1",
   "id": "EDP-PH5-VALIDATION-APPROVED-VENV-20260918",
-  "status": "ALL_PASS",
+  "status": "SUPERSEDED",
   "defect": "Production Full Plan preflight accepted an explicit approved external venv, but Python validation later required only project-local .venv.",
   "remediation": [
     "allow active venv interpreter when project-local .venv is absent",
@@ -33,5 +33,7 @@
     "pass_challenge": 0
   },
   "exhaustion_statement": "No material unresolved defect remains in the approved-external-venv validation boundary after focused and full regression.",
-  "record_sha256": "ef83bae7dce0b669a5946de7d867fbe051f3a0ab56123eab22837648faf8c431"
+  "record_sha256": "ef83bae7dce0b669a5946de7d867fbe051f3a0ab56123eab22837648faf8c431",
+  "superseded_by": "EDP-PH5-EXTERNAL-INTERPRETER-BOUNDARY-20260918",
+  "correction_note": "The earlier record was sealed before the full immutable-external-interpreter propagation patch and its final regression; do not use it as closure authority."
 }

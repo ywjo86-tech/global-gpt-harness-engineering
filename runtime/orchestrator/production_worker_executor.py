@@ -9,7 +9,6 @@ import re
 import shlex
 import signal
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -2345,6 +2344,30 @@ def _independent_verification_provenance(commands: Mapping[str, Any]) -> dict[st
     }
 
 
+def _sealed_external_validation_python(request: WorkerRequest) -> str | None:
+    toolchain = request.extra_context.get("validation_toolchain")
+    policy = request.extra_context.get("interpreter_policy_id")
+    if policy != "IMMUTABLE_EXTERNAL_INTERPRETER":
+        return None
+    if not isinstance(toolchain, Mapping) or toolchain.get("profile_ids") != ["PYTHON_UNITTEST_EXTERNAL"]:
+        raise ProductionWorkerError("external Python validation contract is missing or mismatched")
+    executables: set[str] = set()
+    for field in ("focused", "full", "compile"):
+        groups = toolchain.get(field)
+        if not isinstance(groups, list) or not groups:
+            raise ProductionWorkerError("external Python validation command group is missing")
+        for command in groups:
+            if not isinstance(command, list) or not command or not isinstance(command[0], str):
+                raise ProductionWorkerError("external Python validation command is malformed")
+            executables.add(command[0])
+    if len(executables) != 1:
+        raise ProductionWorkerError("external Python validation interpreter binding is ambiguous")
+    executable = next(iter(executables))
+    if not Path(executable).is_absolute():
+        raise ProductionWorkerError("external Python validation interpreter must be absolute")
+    return executable
+
+
 def _focused_execution_metadata(result: Mapping[str, Any] | None = None, profiles: Sequence[str] = ()) -> dict[str, str]:
     """Describe the production focused callsite without command, path, env, or output."""
     if not isinstance(result, Mapping):
@@ -2360,12 +2383,14 @@ def _focused_execution_metadata(result: Mapping[str, Any] | None = None, profile
     else:
         exit_class = "UNKNOWN"
     profile_set = tuple(profiles)
-    python_only = profile_set in {(), ("PYTHON_PYTEST",)}
+    python_pytest = profile_set in {(), ("PYTHON_PYTEST",)}
+    python_external = profile_set == ("PYTHON_UNITTEST_EXTERNAL",)
+    python_only = python_pytest or python_external
     return {
         "focused_runner_source": "PROJECT_REGISTERED_TOOLCHAIN",
         "focused_runner_kind": "PROJECT_PYTHON_MODULE" if python_only else "PROJECT_NATIVE_MULTI_TOOLCHAIN",
-        "focused_command_builder_id": "PROJECT_PYTHON_MODULE_PYTEST_V1" if python_only else "PROJECT_NATIVE_MANIFEST_V1",
-        "focused_argv_shape_id": "RUNNER_QUIET_SCOPED_TARGETS" if python_only else "MANIFEST_DECLARED_COMMAND_GROUP",
+        "focused_command_builder_id": ("PROJECT_PYTHON_MODULE_UNITTEST_EXTERNAL_V1" if python_external else "PROJECT_PYTHON_MODULE_PYTEST_V1" if python_pytest else "PROJECT_NATIVE_MANIFEST_V1"),
+        "focused_argv_shape_id": ("RUNNER_VERBOSE_SCOPED_MODULES" if python_external else "RUNNER_QUIET_SCOPED_TARGETS" if python_pytest else "MANIFEST_DECLARED_COMMAND_GROUP"),
         "focused_test_scope_source_id": "OWNED_TEST_FILE_PROJECTION" if python_only else "OWNED_SCOPE_TOOLCHAIN_PROJECTION",
         "focused_cwd_source_id": "WORKER_PROJECT_ROOT",
         "focused_env_projection_id": "INHERITED_PROCESS_ENV",
@@ -2844,8 +2869,11 @@ def execute_production_worker(request: WorkerRequest, *,
     if (pre_result_partial_recovery and pending_paths
             and all((root / scope.rstrip("/")).exists() for scope in owned)):
         try:
-            resolve_validation_commands(root, owned, allow_deferred=False)
-        except ValidationToolchainError:
+            resolve_validation_commands(
+                root, owned, allow_deferred=False,
+                python_executable=_sealed_external_validation_python(request),
+            )
+        except (ValidationToolchainError, ProductionWorkerError):
             materialized_partial_recovery = False
         else:
             materialized_partial_recovery = True
@@ -3190,20 +3218,25 @@ def execute_production_worker(request: WorkerRequest, *,
     if hardcoded_findings and not secret_handling_allowed:
         raise ProductionWorkerError("OWNED_DIFF_HARDCODED_CREDENTIAL: production worker security validation failed")
     try:
-        validation_plan = resolve_validation_commands(root, owned, allow_deferred=False)
         sealed_toolchain = request.extra_context.get("validation_toolchain", {})
+        validation_plan = resolve_validation_commands(
+            root, owned, allow_deferred=False,
+            python_executable=_sealed_external_validation_python(request),
+        )
         expected_profiles = sealed_toolchain.get("profile_ids", []) if isinstance(sealed_toolchain, Mapping) else []
         if expected_profiles:
             validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
-    except ValidationToolchainError as exc:
+        if isinstance(sealed_toolchain, Mapping) and sealed_toolchain.get("deferred") is False:
+            if validation_plan.to_dict() != dict(sealed_toolchain):
+                raise ValidationToolchainError("validation toolchain changed after sealing")
+    except (ValidationToolchainError, ProductionWorkerError) as exc:
         raise ProductionWorkerError(f"project-native validation toolchain is unavailable: {exc}") from exc
 
     def run_validation_group(commands_to_run: Sequence[Sequence[str]]) -> dict[str, Any]:
         def execute(command_root: Path, command: list[str]) -> Mapping[str, Any]:
             normalized = list(command)
             if normalized and normalized[0] == ".venv/bin/python":
-                project_python = command_root / ".venv" / "bin" / "python"
-                normalized[0] = str(project_python if project_python.is_file() else Path(sys.executable))
+                normalized[0] = str(command_root / ".venv" / "bin" / "python")
             return _command(command_root, normalized, classify_collection=_is_test_runner(normalized))
         return run_command_group(root, commands_to_run, execute)
 
@@ -3222,6 +3255,19 @@ def execute_production_worker(request: WorkerRequest, *,
         process_evidence.update(_bounded_collection_diagnostics(
             root, python, python, tests, commands["focused_test"],
         ))
+    elif validation_plan.profile_ids == ("PYTHON_UNITTEST_EXTERNAL",):
+        tests = [path for path in owned if path.startswith("tests/") and path.endswith(".py")]
+        process_evidence.update({
+            "runner_environment_identity": "HOST_ENV",
+            "cwd_binding_match": "YES",
+            "project_root_import_path_present": "YES",
+            "test_targets_resolvable": "YES" if all((root / item).is_file() for item in tests) else "NO",
+            "pytest_config_load_status": "NOT_APPLICABLE",
+            "plugin_load_status": "NOT_APPLICABLE",
+            "collection_failure_phase": "NOT_APPLICABLE",
+            "import_failure_family": "NOT_APPLICABLE",
+            "dependency_presence_class": "NOT_APPLICABLE",
+        })
     else:
         process_evidence.update({
             "runner_environment_identity": "PROJECT_NATIVE",

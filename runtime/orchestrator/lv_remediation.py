@@ -560,17 +560,24 @@ def _run_checks(root: Path, owned: list[str], manifest: dict[str, Any] | None = 
     checks = _scan_owned_files(root, content_paths)
     interpreter = root / ".venv" / "bin" / "python"
     expected_profiles: list[str] = []
+    toolchain: dict[str, Any] = {}
     if manifest is not None:
         try:
             parent_manifest = _json(_harness_root() / "_workspace" / "orchestration-runs" / manifest["parent_run_id"] / "package.manifest.json")
-            toolchain = parent_manifest.get("validation_toolchain")
-            if isinstance(toolchain, dict) and isinstance(toolchain.get("profile_ids"), list):
-                expected_profiles = list(toolchain["profile_ids"])
+            raw_toolchain = parent_manifest.get("validation_toolchain")
+            if isinstance(raw_toolchain, dict) and isinstance(raw_toolchain.get("profile_ids"), list):
+                toolchain = dict(raw_toolchain)
+                expected_profiles = list(raw_toolchain["profile_ids"])
         except Exception:
             expected_profiles = []
     try:
         if not expected_profiles or expected_profiles == ["PYTHON_PYTEST"]:
             _validate_remediation_interpreter(root, manifest)
+        elif expected_profiles == ["PYTHON_UNITTEST_EXTERNAL"]:
+            focused = toolchain.get("focused", [])
+            if not isinstance(focused, list) or not focused or not isinstance(focused[0], list) or not focused[0]:
+                raise LVRemediationError("external remediation interpreter binding is missing")
+            interpreter = Path(str(focused[0][0]))
         else:
             interpreter = Path("/usr/bin/python3")
         test_results, test_error = _run_tests(root, interpreter, owned, expected_profiles=expected_profiles)

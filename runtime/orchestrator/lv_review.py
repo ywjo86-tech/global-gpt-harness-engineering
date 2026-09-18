@@ -721,7 +721,19 @@ def _preflight(
     policy_id = manifest.get("interpreter_policy_id") or "PROJECT_VENV_READ_ONLY"
     if policy_id not in {"PROJECT_VENV_READ_ONLY", "IMMUTABLE_EXTERNAL_INTERPRETER"}:
         raise LVReviewError("unknown or missing interpreter policy")
-    interpreter = interpreter or (Path("/usr/bin/python3") if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER" else root / ".venv" / "bin" / "python")
+    if interpreter is None:
+        if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER":
+            toolchain = manifest.get("validation_toolchain")
+            profile_ids = toolchain.get("profile_ids", []) if isinstance(toolchain, Mapping) else []
+            if profile_ids == ["PYTHON_UNITTEST_EXTERNAL"]:
+                focused = toolchain.get("focused", [])
+                if not isinstance(focused, list) or not focused or not isinstance(focused[0], list) or not focused[0]:
+                    raise LVReviewError("sealed external interpreter binding is missing")
+                interpreter = Path(str(focused[0][0]))
+            else:
+                interpreter = Path("/usr/bin/python3")
+        else:
+            interpreter = root / ".venv" / "bin" / "python"
     expected_interpreter = root / ".venv" / "bin" / "python"
     interpreter_fingerprint = _validate_external_interpreter(interpreter) if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER" else _validate_interpreter(root, interpreter)
     git_before = _capture_git_evidence(root)
@@ -1741,7 +1753,7 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
                allow_test_only: bool = False, expected_profiles: list[str] | None = None,
                changed_files: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
     expected_profiles = list(expected_profiles or [])
-    native_requested = bool(expected_profiles and expected_profiles != ["PYTHON_PYTEST"])
+    native_requested = bool(expected_profiles and expected_profiles not in (["PYTHON_PYTEST"], ["PYTHON_UNITTEST_EXTERNAL"]))
     if native_requested:
         try:
             plan = resolve_validation_commands(root, owned_files, allow_deferred=False)
@@ -2696,7 +2708,7 @@ def review_run(
         toolchain_contract = context["manifest"].get("validation_toolchain")
         expected_profiles = (list(toolchain_contract.get("profile_ids", []))
                              if isinstance(toolchain_contract, Mapping) else [])
-        native_validation = bool(expected_profiles and expected_profiles != ["PYTHON_PYTEST"])
+        native_validation = bool(expected_profiles and expected_profiles not in (["PYTHON_PYTEST"], ["PYTHON_UNITTEST_EXTERNAL"]))
         owned_test_files = _owned_python_test_files(
             context["project_root"], list(context["manifest"]["owned_files"]), list(actual["changed_files"])
         )

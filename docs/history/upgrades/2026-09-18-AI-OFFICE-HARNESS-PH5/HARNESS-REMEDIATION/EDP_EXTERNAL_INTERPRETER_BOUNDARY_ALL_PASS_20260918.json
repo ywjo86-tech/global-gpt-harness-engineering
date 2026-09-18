@@ -1,0 +1,34 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-EXTERNAL-INTERPRETER-BOUNDARY-20260918",
+  "status": "ALL_PASS",
+  "defect": "The Full Plan job approved an immutable external Python venv, but package/worker/review/remediation/checkpoint validation did not carry one sealed interpreter identity end-to-end.",
+  "remediation": [
+    "seal immutable external interpreter into validation toolchain only when project mapping policy authorizes it",
+    "use unittest external profile to avoid undeclared pytest dependency",
+    "propagate interpreter policy through Gate worker context",
+    "worker/review/remediation/checkpoint consume the same sealed interpreter binding",
+    "legacy project-local PYTHON_PYTEST behavior remains unchanged"
+  ],
+  "negative_space": [
+    "no system-Python substitution for immutable external profile",
+    "no provider/model selection change",
+    "no validation bypass",
+    "no owned-scope expansion",
+    "no change to Full Plan/Router/MPRF/Full MCP authority"
+  ],
+  "evidence": {
+    "focused": "226 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1589 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "External interpreter identity is now sealed and consumed consistently across package, execution, review, remediation, and verified-checkpoint paths; no material unresolved boundary defect remains.",
+  "record_sha256": "b4759ce5ebc0b833943d0682afbaafb409e7089cc76e43dc9aae1e463ad0d829"
+}
