@@ -1,0 +1,50 @@
+{
+  "authority": {
+    "edp_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "gate_state": "GATE-010 FINAL_CLOSURE CLOSED",
+    "phase5_execution_authorized": false,
+    "plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f"
+  },
+  "closure_metrics": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "BLOCKER_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0
+  },
+  "date": "2026-09-18",
+  "exhaustion": "MATERIAL_DEFECT_SEARCH_EXHAUSTED_FOR_REQUESTED_PRE_PHASE5_SCOPE_POST_SEAL",
+  "final_decision": "ALL_PASS_REQUALIFIED_POST_SEAL; PHASE5_NOT_STARTED_AND_REMAINS_SEPARATE_AUTHORITY",
+  "included_remediations": [
+    "EDP-P5-004",
+    "EDP-P5-005",
+    "1096ce5 legacy Gate NO_GO fail-closed hardening"
+  ],
+  "qualified_branch": "diagnosis/phase5-preflight-edp-20260918",
+  "qualified_head_before_record": "8e3e4d7a29ea3f8123fa866c25bb468054e453c7",
+  "regression": {
+    "broad": "PASS 1369 / skipped 12",
+    "compileall": "PASS",
+    "focused": "PASS 245 / skipped 1",
+    "full_mcp": "PASS 78",
+    "git_diff_check": "PASS",
+    "mprf": "PASS 30"
+  },
+  "safety": {
+    "automatic_cross_provider_fallback_absent": "PASS",
+    "legacy_no_go_fail_closed": "PASS",
+    "nvidia_state_change_prohibited": "PASS",
+    "phase5_activation_absent": "PASS",
+    "provider_router_authority": "PASS"
+  },
+  "schema_version": "gch.edp.phase5-preflight-final.v2",
+  "scope": "Post-seal requalification including legacy NO_GO fail-closed hardening and final approval record binding"
+}
