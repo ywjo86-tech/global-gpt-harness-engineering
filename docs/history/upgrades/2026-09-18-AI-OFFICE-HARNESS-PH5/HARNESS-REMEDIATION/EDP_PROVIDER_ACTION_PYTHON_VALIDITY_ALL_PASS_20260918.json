@@ -1,7 +1,7 @@
 {
   "schema_version": "edp.remediation.v1",
   "id": "EDP-PH5-PROVIDER-ACTION-PYTHON-VALIDITY-20260918",
-  "status": "ALL_PASS",
+  "status": "SUPERSEDED",
   "defect": "TASK-015 provider proposal could pass JSON/schema validation yet contain syntactically invalid Python, and the worker later misclassified parse failure as a hardcoded-credential failure. Context selection also omitted lower-ranked but material API examples.",
   "remediation": [
     "AST-parse Python proposal content before persistence or Broker effect",
@@ -33,5 +33,7 @@
     "pass_challenge": 0
   },
   "exhaustion_statement": "No material unresolved defect remains in provider Python proposal validity, bounded retry, context bounding, or parse-failure taxonomy after direct, focused, full, and negative-space checks.",
-  "record_sha256": "e52fafc35968f0a76b238ea778d1b6633d66c525500c9bebb5fe7abfef2c7f86"
+  "record_sha256": "e52fafc35968f0a76b238ea778d1b6633d66c525500c9bebb5fe7abfef2c7f86",
+  "superseded_by": "EDP-PH5-PROVIDER-ACTION-CONTEXT-CONTRACT-20260918",
+  "correction_note": "r10 exposed that the prior 12-file context bound exceeded Context Sanitizer DEFAULT_MAX_FILES=8. Syntax prevalidation remains valid, but this record is not closure authority."
 }

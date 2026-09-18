@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .codex_dynamic_transport import ToolRequestEnvelope
+from .context_sanitizer import DEFAULT_MAX_FILES, DEFAULT_MAX_TOTAL_BYTES
 from .production_tool_transport import ProductionToolTransport
 from .provider_router import RouterDecisionV2
 from .schemas import WorkerRequest
@@ -20,8 +21,9 @@ MAX_PROPOSAL_WRITES = 64
 MAX_WRITE_BYTES = 256 * 1024
 MAX_PROPOSAL_BYTES = 1024 * 1024
 MAX_PROPOSAL_GENERATION_ATTEMPTS = 2
-MAX_CONTEXT_FILES = 12
-MAX_CONTEXT_BYTES = 96 * 1024
+MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
+MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
+_CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",)}
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
 _CONTEXT_EXCLUDED = frozenset({".git", ".venv", "node_modules", "_workspace", "dist", "build"})
 _CONTEXT_EXCLUDED_PREFIXES = ("docs/history/",)
@@ -185,6 +187,10 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
             continue
         lower_path = relative.lower()
         score = sum(30 for token in tokens if token in lower_path)
+        for token in tokens:
+            for alias in _CONTEXT_SEMANTIC_ALIASES.get(token, ()):
+                if alias in lower_path:
+                    score += 60
         try:
             preview = path.read_text(encoding="utf-8", errors="replace")[:4096].lower()
         except OSError:

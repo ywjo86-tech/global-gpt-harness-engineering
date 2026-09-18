@@ -1,0 +1,42 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-CONTEXT-CONTRACT-20260918",
+  "status": "ALL_PASS",
+  "defects": [
+    "provider ACTION selector allowed 12 files while Context Sanitizer permits 8",
+    "TASK-015 Project Factory context could omit foundry API evidence",
+    "provider-generated Python could be syntactically invalid before Broker effect",
+    "unparseable Python was previously misclassified as credential failure"
+  ],
+  "remediation": [
+    "bind provider context file/byte limits directly to Context Sanitizer defaults",
+    "bounded semantic alias scoring keeps factory\u2192foundry evidence inside the same 8-file boundary",
+    "AST-parse Python proposal content before persistence/effect and allow only bounded contract correction retry",
+    "preserve distinct UNPARSEABLE_PYTHON worker taxonomy"
+  ],
+  "negative_space": [
+    "Context Sanitizer limits were not weakened",
+    "Provider Router selection unchanged",
+    "MPRF unchanged",
+    "Full MCP unchanged",
+    "Broker remains sole product effect path",
+    "owned write scope unchanged",
+    "identity/scope/security failures remain non-retryable"
+  ],
+  "evidence": {
+    "selector_real_task": "8 files / 29099 bytes / foundry included / sanitizer PASS",
+    "provider_action_direct": "13 PASS",
+    "focused_regression": "218 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1592 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "Selector, sanitizer, provider syntax, retry, Broker effect and downstream taxonomy boundaries are aligned with no material unresolved defect in this remediation scope.",
+  "record_sha256": "2051bf20f67ef94ecb0a2bfd08aea385bf3d44bfacdf1b95e0997c4ede298462"
+}

@@ -211,9 +211,22 @@ class ProviderActionExecutionTest(unittest.TestCase):
             (root / "_workspace/secret.py").write_text("project_factory secret\n")
             request = worker(root, ["tests/test_project_factory_e2e.py"])
             selected = select_action_context_files(root, request, request.task.editable_scope)
-            self.assertLessEqual(len(selected), 12)
+            self.assertLessEqual(len(selected), 8)
             self.assertTrue(any("foundry" in item for item in selected))
             self.assertFalse(any(item.startswith("_workspace/") for item in selected))
+
+    def test_semantic_alias_keeps_factory_foundry_context_inside_sanitizer_bound(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "tests").mkdir()
+            owned = ["tests/test_project_factory_e2e.py"]
+            request = worker(root, owned)
+            request.task.input = "Implement project factory integration coverage"
+            (root / "tests/test_foundry.py").write_text("def test_foundry_project(): pass\n")
+            for index in range(12):
+                (root / f"tests/test_project_{index:02d}.py").write_text("def test_project(): pass\n")
+            selected = select_action_context_files(root, request, owned)
+            self.assertLessEqual(len(selected), 8)
+            self.assertIn("tests/test_foundry.py", selected)
 
     def test_identity_mismatch_fails_before_write(self):
         with tempfile.TemporaryDirectory() as td:
