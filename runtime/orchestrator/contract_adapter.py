@@ -258,6 +258,17 @@ def validate_mapping_sources(mapping: ContractMapping) -> list[str]:
 
 
 def _approval_events(text: str) -> list[dict[str, Any]]:
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ContractMappingError("approval event JSON is malformed") from exc
+        if isinstance(value, dict) and value.get("schema_version") == "orchestration.production-approval-log.v2":
+            raw_events = value.get("events")
+            if not isinstance(raw_events, list) or any(not isinstance(item, dict) for item in raw_events):
+                raise ContractMappingError("production approval log events must be objects")
+            return [dict(item) for item in raw_events]
     events: list[dict[str, Any]] = []
     for block in re.findall(r"```json\s*(\{.*?\})\s*```", text, flags=re.DOTALL):
         try:
@@ -271,6 +282,17 @@ def _approval_events(text: str) -> list[dict[str, Any]]:
 
 
 def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[str, Any]:
+    stripped = text.strip()
+    production_log_input = False
+    if stripped.startswith("{"):
+        try:
+            document = json.loads(stripped)
+        except json.JSONDecodeError:
+            document = None
+        production_log_input = bool(
+            isinstance(document, dict)
+            and document.get("schema_version") == "orchestration.production-approval-log.v2"
+        )
     required = {
         "approval_id",
         "target_type",
@@ -309,6 +331,7 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
     approval_ids: set[str] = set()
     lineage_heads: dict[tuple[object, object], dict[str, Any]] = {}
     record_hashes_valid = True
+    production_chain_valid = True
     for index, event in enumerate(raw_events, start=1):
         if event.get("schema_version") == "orchestration.production-approval.v2":
             production_events.append(event)
@@ -319,7 +342,10 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
                     known_supersedes=approval_ids,
                 )
             except ValueError as exc:
+                production_chain_valid = False
                 errors.append(f"event {index} production v2 validation failed: {exc}")
+            if production_log_input and event.get("plan_sha256") not in allowed_plan_hashes:
+                errors.append(f"event {index} plan SHA-256 is not bound to a mapped source")
             continue
         events.append(event)
         approval_id = event.get("approval_id")
@@ -363,8 +389,16 @@ def validate_approval_state(text: str, allowed_plan_hashes: set[str]) -> dict[st
         "event_count": len(events) + len(production_events),
         "schema_valid": not errors,
         "chain_links_valid": not any("previous_record_hash" in error for error in errors),
-        "record_hashes_valid": bool(events) and record_hashes_valid,
-        "plan_hash_bound": bool(events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in events),
+        "record_hashes_valid": (
+            bool(production_events) and production_chain_valid
+            if production_log_input
+            else bool(events) and record_hashes_valid
+        ),
+        "plan_hash_bound": (
+            bool(production_events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in production_events)
+            if production_log_input
+            else bool(events) and all(event.get("plan_sha256") in allowed_plan_hashes for event in events)
+        ),
         "errors": errors,
         "production_events": production_events,
     }

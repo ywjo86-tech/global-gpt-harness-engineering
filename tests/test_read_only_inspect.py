@@ -14,6 +14,7 @@ from runtime.orchestrator.approval_hash import calculate_record_hash, canonical_
 from runtime.orchestrator.cli import main
 from runtime.orchestrator.contract_adapter import load_project_mapping, sha256_file
 from runtime.orchestrator.read_only_inspector import _validate_approval_state
+from runtime.orchestrator.production_approval import calculate_v2_record_hash
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -307,6 +308,47 @@ class ReadOnlyInspectTest(unittest.TestCase):
         )
         self.assertTrue(report["schema_valid"], report["errors"])
         self.assertTrue(report["record_hashes_valid"])
+
+    def test_production_v2_json_log_is_accepted_and_plan_bound(self) -> None:
+        plan_hash = "a" * 64
+        event = {
+            "schema_version": "orchestration.production-approval.v2",
+            "event_id": "APR-GATE-005-TEST", "event_type": "APPROVED",
+            "project_id": "P1", "gate_id": "GATE-005", "plan_sha256": plan_hash,
+            "branch": "main", "baseline_head": "b" * 40,
+            "approved_at": "2026-08-25T00:00:00Z", "recorded_at": "2026-08-25T00:00:00Z",
+            "approval_mode": "GATE_BY_GATE", "canonical_lv_scope": ["TASK-015"],
+            "owned_file_scope": {"TASK-015": ["tests/test_x.py"]},
+            "completion_conditions_sha256": "c" * 64, "predecessor": None, "supersedes": None,
+            "authorization_source": "USER_OWNER", "record_hash": "0" * 64,
+        }
+        event["record_hash"] = calculate_v2_record_hash(event)
+        text = json.dumps({"schema_version": "orchestration.production-approval-log.v2", "events": [event]})
+        report = _validate_approval_state(text, {plan_hash})
+        self.assertTrue(report["schema_valid"], report["errors"])
+        self.assertTrue(report["record_hashes_valid"])
+        self.assertTrue(report["plan_hash_bound"])
+        self.assertEqual(report["event_count"], 1)
+        self.assertEqual(len(report["production_events"]), 1)
+
+    def test_production_v2_json_log_rejects_unmapped_plan(self) -> None:
+        plan_hash = "a" * 64
+        event = {
+            "schema_version": "orchestration.production-approval.v2",
+            "event_id": "APR-GATE-005-TEST", "event_type": "APPROVED",
+            "project_id": "P1", "gate_id": "GATE-005", "plan_sha256": plan_hash,
+            "branch": "main", "baseline_head": "b" * 40,
+            "approved_at": "2026-08-25T00:00:00Z", "recorded_at": "2026-08-25T00:00:00Z",
+            "approval_mode": "GATE_BY_GATE", "canonical_lv_scope": ["TASK-015"],
+            "owned_file_scope": {"TASK-015": ["tests/test_x.py"]},
+            "completion_conditions_sha256": "c" * 64, "predecessor": None, "supersedes": None,
+            "authorization_source": "USER_OWNER", "record_hash": "0" * 64,
+        }
+        event["record_hash"] = calculate_v2_record_hash(event)
+        text = json.dumps({"schema_version": "orchestration.production-approval-log.v2", "events": [event]})
+        report = _validate_approval_state(text, {"d" * 64})
+        self.assertFalse(report["schema_valid"])
+        self.assertFalse(report["plan_hash_bound"])
 
     def test_different_target_lineages_each_start_at_version_one(self) -> None:
         plan_hash = "a" * 64
