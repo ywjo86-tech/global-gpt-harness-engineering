@@ -91,6 +91,60 @@ class ProviderActionExecutionTest(unittest.TestCase):
         with self.assertRaisesRegex(ProviderActionExecutionError, "ambiguous"):
             _extract_json_object(two)
 
+    def test_invalid_json_gets_one_bounded_correction_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"])
+                summary = "analysis only" if len(calls) == 1 else json.dumps(self.proposal())
+                return {"status": "completed", "model": "nvidia/action-model", "provider_attempts": 1,
+                        "summary": summary, "context_metadata": {}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual(len(calls), 2)
+            self.assertIn("CORRECTION RETRY", calls[1])
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+            self.assertEqual((root / owned[0]).read_text(), "created\n")
+
+    def test_invalid_json_twice_fails_without_persist_or_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            def provider_runner(**_kwargs):
+                calls.append(1)
+                return {"status": "completed", "model": "nvidia/action-model", "provider_attempts": 1,
+                        "summary": "not json", "context_metadata": {}}
+            with self.assertRaisesRegex(ProviderActionExecutionError, "not valid JSON"):
+                execute_provider_action_proposal(
+                    request, decision=decision(), baseline="a" * 40, owned=owned,
+                    output_dir=root / "run", provider_runner=provider_runner,
+                    security_scan=lambda _raw: True, timeout=30,
+                )
+            self.assertEqual(len(calls), 2)
+            self.assertFalse((root / "run/provider-action-proposal.json").exists())
+            self.assertFalse((root / owned[0]).exists())
+
+    def test_identity_mismatch_is_not_auto_corrected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []; bad = self.proposal(); bad["source_head"] = "f" * 40
+            def provider_runner(**_kwargs):
+                calls.append(1)
+                return {"status": "completed", "model": "nvidia/action-model", "provider_attempts": 1,
+                        "summary": json.dumps(bad), "context_metadata": {}}
+            with self.assertRaisesRegex(ProviderActionExecutionError, "identity mismatch"):
+                execute_provider_action_proposal(
+                    request, decision=decision(), baseline="a" * 40, owned=owned,
+                    output_dir=root / "run", provider_runner=provider_runner,
+                    security_scan=lambda _raw: True, timeout=30,
+                )
+            self.assertEqual(len(calls), 1)
+            self.assertFalse((root / owned[0]).exists())
+
     def test_valid_proposal_writes_only_through_governed_broker(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]

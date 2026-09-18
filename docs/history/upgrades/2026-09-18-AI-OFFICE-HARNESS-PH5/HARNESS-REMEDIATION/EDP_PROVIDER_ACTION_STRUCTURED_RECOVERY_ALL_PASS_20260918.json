@@ -1,0 +1,46 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "title": "Provider ACTION Structured Proposal Recovery",
+  "date": "2026-09-18",
+  "source_authority": "standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md",
+  "finding": {
+    "id": "MPA-STRUCT-001",
+    "severity": "MAJOR",
+    "status": "RESOLVED",
+    "problem": "Eligible provider ACTION could return prose/non-JSON and hard-block Full Plan before any governed effect."
+  },
+  "corrections": [
+    "extract one exact/fenced/embedded proposal object while rejecting ambiguity",
+    "allow one bounded correction retry only for output-contract shape errors",
+    "never retry identity/scope/binding/security violations",
+    "never persist rejected raw provider output",
+    "retain ProductionToolTransport/SingleToolBroker as sole product-effect path"
+  ],
+  "evidence": {
+    "provider_action_tests": "11 PASS",
+    "focused_regression": "260 PASS / 6 skipped / RC=0",
+    "full_regression": "1584 PASS / 12 skipped / RC=0",
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "canonical_plan_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d"
+  },
+  "closure_metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS"
+  },
+  "material_defect_search": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "decision": "ALL_PASS"
+}
