@@ -680,7 +680,10 @@ def validate_global_gate_bindings(project_root: str | Path, gate_id: str, *, req
         owned_files_by_lv=owned,
     )
     harness = Path(harness_root)
-    isolation = ProjectIsolation(harness, root, project_id, project_id, {project_id: project_id})
+    isolation_project_id = root.name
+    isolation = ProjectIsolation(
+        harness, root, isolation_project_id, project_id, {project_id: isolation_project_id}
+    )
     namespaces = {kind: str(isolation.namespace_path(kind, "validation.json")) for kind in ("approval", "state", "artifact", "run", "secret")}
     return {
         "status": "VALIDATED", "mutation_performed": False, "project_id": project_id,
