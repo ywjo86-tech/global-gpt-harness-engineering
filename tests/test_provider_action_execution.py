@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from runtime.orchestrator.provider_action_execution import (
-    PROPOSAL_SCHEMA_V1, ProviderActionExecutionError,
+    PROPOSAL_SCHEMA_V1, ProviderActionExecutionError, _extract_json_object,
     execute_provider_action_proposal, select_action_context_files,
 )
 from runtime.orchestrator.provider_router import (
@@ -78,6 +78,19 @@ class ProviderActionExecutionTest(unittest.TestCase):
             "writes": [{"owned_file_id": owned_id, "relative_path": "", "content": content}],
             "summary": "implement bounded E2E fixture",
         }
+    def test_extracts_single_fenced_proposal_from_provider_prose(self):
+        proposal = self.proposal()
+        raw = "Here is the requested proposal.\n```json\n" + json.dumps(proposal) + "\n```\nDone."
+        self.assertEqual(dict(_extract_json_object(raw)), proposal)
+
+    def test_extracts_single_embedded_proposal_but_rejects_multiple(self):
+        proposal = self.proposal()
+        one = "analysis before\n" + json.dumps(proposal) + "\nanalysis after"
+        self.assertEqual(dict(_extract_json_object(one)), proposal)
+        two = json.dumps(proposal) + "\n" + json.dumps(proposal)
+        with self.assertRaisesRegex(ProviderActionExecutionError, "ambiguous"):
+            _extract_json_object(two)
+
     def test_valid_proposal_writes_only_through_governed_broker(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]

@@ -38,17 +38,51 @@ def _digest(value: object) -> str:
 
 def _extract_json_object(text: str) -> Mapping[str, Any]:
     raw = str(text).strip()
-    if raw.startswith("```") and raw.endswith("```"):
-        lines = raw.splitlines()
-        if len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"}:
-            raw = "\n".join(lines[1:-1]).strip()
     try:
         value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ProviderActionExecutionError("provider ACTION proposal is not valid JSON") from exc
-    if not isinstance(value, Mapping):
+    except json.JSONDecodeError:
+        value = None
+    if isinstance(value, Mapping):
+        return value
+    if value is not None:
         raise ProviderActionExecutionError("provider ACTION proposal must be an object")
-    return value
+
+    fenced: list[Mapping[str, Any]] = []
+    for block in re.findall(r"```(?:json)?[ \t]*\r?\n(.*?)\r?\n```", raw, flags=re.DOTALL | re.IGNORECASE):
+        try:
+            candidate = json.loads(block.strip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, Mapping):
+            fenced.append(candidate)
+    schema_fenced = [item for item in fenced if item.get("schema_version") == PROPOSAL_SCHEMA_V1]
+    if len(schema_fenced) == 1:
+        return schema_fenced[0]
+    if len(schema_fenced) > 1:
+        raise ProviderActionExecutionError("provider ACTION proposal is ambiguous")
+    if len(fenced) == 1:
+        return fenced[0]
+
+    decoder = json.JSONDecoder()
+    embedded: list[Mapping[str, Any]] = []
+    seen_spans: set[tuple[int, int]] = set()
+    for index, char in enumerate(raw):
+        if char != "{":
+            continue
+        try:
+            candidate, end = decoder.raw_decode(raw, index)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(candidate, Mapping) or (index, end) in seen_spans:
+            continue
+        seen_spans.add((index, end))
+        if candidate.get("schema_version") == PROPOSAL_SCHEMA_V1:
+            embedded.append(candidate)
+    if len(embedded) == 1:
+        return embedded[0]
+    if len(embedded) > 1:
+        raise ProviderActionExecutionError("provider ACTION proposal is ambiguous")
+    raise ProviderActionExecutionError("provider ACTION proposal is not valid JSON")
 
 
 def _owned_map(owned: list[str]) -> dict[str, str]:
