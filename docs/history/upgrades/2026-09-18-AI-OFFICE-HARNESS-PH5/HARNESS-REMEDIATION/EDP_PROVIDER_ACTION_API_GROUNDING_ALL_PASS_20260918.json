@@ -1,0 +1,48 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-API-GROUNDING-20260918",
+  "status": "ALL_PASS",
+  "defect": "TASK-015 context remained test-heavy; provider invented absent runtime.ai_office.project_factory and runtime.ai_office.daily_loop modules despite syntax-valid output.",
+  "remediation": [
+    "derive one-hop local Python source dependencies from high-ranked context examples",
+    "prefer dependency modules whose stem overlaps parent test filename tokens",
+    "bounded semantic aliases map factory\u2192foundry and loop\u2192workflow without changing sanitizer bounds",
+    "prompt treats supplied imports/APIs as authoritative and forbids invented project modules",
+    "retain pre-effect AST syntax validation and bounded correction retry"
+  ],
+  "negative_space": [
+    "Context Sanitizer remains 8 files / 64KiB",
+    "no network lookup added",
+    "Provider Router selection unchanged",
+    "MPRF unchanged",
+    "Full MCP unchanged",
+    "Broker remains sole mutation path",
+    "owned write scope unchanged"
+  ],
+  "evidence": {
+    "real_task_context": [
+      "runtime/ai_office/workflow.py",
+      "runtime/ai_office/context_assembly.py",
+      "runtime/orchestrator/office_execution_backend_adapter.py",
+      "runtime/ai_office/foundry.py",
+      "tests/test_ai_office_workflow.py",
+      "tests/test_ai_office_execution_integration.py",
+      "tests/test_ai_office_requirement_context.py",
+      "tests/test_ai_office_foundry.py"
+    ],
+    "real_task_sanitizer": "8 files / 36029 bytes / PASS",
+    "direct_regression": "14 PASS",
+    "focused_regression": "219 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1593 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "Provider ACTION context now includes bounded local source dependencies for the representative factory/workflow concepts while preserving sanitizer, authority and mutation boundaries.",
+  "record_sha256": "60c28256ace4371367479bf3f5e8ba813c685825bb59b68147b7bca67578cd83"
+}

@@ -1,7 +1,7 @@
 {
   "schema_version": "edp.remediation.v1",
   "id": "EDP-PH5-PROVIDER-ACTION-CONTEXT-CONTRACT-20260918",
-  "status": "ALL_PASS",
+  "status": "SUPERSEDED",
   "defects": [
     "provider ACTION selector allowed 12 files while Context Sanitizer permits 8",
     "TASK-015 Project Factory context could omit foundry API evidence",
@@ -38,5 +38,7 @@
     "pass_challenge": 0
   },
   "exhaustion_statement": "Selector, sanitizer, provider syntax, retry, Broker effect and downstream taxonomy boundaries are aligned with no material unresolved defect in this remediation scope.",
-  "record_sha256": "2051bf20f67ef94ecb0a2bfd08aea385bf3d44bfacdf1b95e0997c4ede298462"
+  "record_sha256": "2051bf20f67ef94ecb0a2bfd08aea385bf3d44bfacdf1b95e0997c4ede298462",
+  "superseded_by": "EDP-PH5-PROVIDER-ACTION-API-GROUNDING-20260918",
+  "correction_note": "r11 proved selector/sanitizer bounds were aligned but API grounding was still insufficient: provider invented absent project_factory/daily_loop modules. This record is not final closure authority."
 }

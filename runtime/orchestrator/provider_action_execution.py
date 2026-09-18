@@ -23,7 +23,7 @@ MAX_PROPOSAL_BYTES = 1024 * 1024
 MAX_PROPOSAL_GENERATION_ATTEMPTS = 2
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
-_CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",)}
+_CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",), "loop": ("workflow",)}
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
 _CONTEXT_EXCLUDED = frozenset({".git", ".venv", "node_modules", "_workspace", "dist", "build"})
 _CONTEXT_EXCLUDED_PREFIXES = ("docs/history/",)
@@ -160,6 +160,46 @@ def _context_tokens(request: WorkerRequest, owned: list[str]) -> set[str]:
     return {item for item in _TOKEN.findall(text) if item not in stop}
 
 
+def _local_python_dependencies(root: Path, relative: str) -> tuple[str, ...]:
+    path = root / relative
+    if path.suffix != ".py" or not path.is_file() or path.is_symlink():
+        return ()
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=relative)
+    except (OSError, SyntaxError):
+        return ()
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            modules.add(node.module)
+            base = node.module.replace(".", "/")
+            for alias in node.names:
+                child = root / f"{base}/{alias.name}.py"
+                if child.is_file() and not child.is_symlink():
+                    modules.add(f"{node.module}.{alias.name}")
+    resolved: set[str] = set()
+    for module in modules:
+        module_path = module.replace(".", "/")
+        for candidate in (root / f"{module_path}.py", root / module_path / "__init__.py"):
+            if candidate.is_file() and not candidate.is_symlink():
+                try:
+                    resolved.add(candidate.relative_to(root).as_posix())
+                except ValueError:
+                    pass
+                break
+    parent_tokens = set(Path(relative).stem.lower().split("_"))
+    return tuple(sorted(
+        resolved,
+        key=lambda item: (
+            item.endswith("/__init__.py"),
+            -len(parent_tokens.intersection(set(Path(item).stem.lower().split("_")))),
+            item,
+        ),
+    ))
+
+
 def select_action_context_files(project_root: Path, request: WorkerRequest, owned: list[str]) -> list[str]:
     """Select a bounded deterministic read context; it never expands write scope."""
     root = project_root.resolve()
@@ -203,6 +243,27 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
                 score += 40
         if score:
             candidates[relative] = max(candidates.get(relative, 0), score)
+    ranked = sorted(candidates.items(), key=lambda item: (-item[1], item[0]))
+    dependency_budget = max(1, MAX_CONTEXT_FILES // 2)
+    dependency_count = 0
+    for relative, parent_score in ranked[:MAX_CONTEXT_FILES]:
+        if dependency_count >= dependency_budget:
+            break
+        for dependency in _local_python_dependencies(root, relative):
+            dep_path = root / dependency
+            dep_parts = dependency.split("/")
+            if (any(part in _CONTEXT_EXCLUDED or part.startswith(".env") for part in dep_parts)
+                    or any(dependency.startswith(prefix) for prefix in _CONTEXT_EXCLUDED_PREFIXES)):
+                continue
+            try:
+                dep_size = dep_path.stat().st_size
+            except OSError:
+                continue
+            if dep_size <= 0 or dep_size > 16 * 1024:
+                continue
+            candidates[dependency] = max(candidates.get(dependency, 0), parent_score + 25)
+            dependency_count += 1
+            break
     selected: list[str] = []
     total = 0
     for relative, _score in sorted(candidates.items(), key=lambda item: (-item[1], item[0])):
@@ -233,7 +294,9 @@ def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned
         "Use the supplied read-only context files to match the existing codebase. For exact-file owned scopes set relative_path "
         "to an empty string. For directory scopes, provide a safe child relative_path. Each write content must be the COMPLETE "
         "target file content, not a diff. Do not write outside the owned mapping. For Python targets, return syntactically valid "
-        "Python and use only imports/APIs supported by the supplied context; do not invent missing module names or symbols.\n"
+        "Python and use only imports/APIs supported by the supplied context; do not invent missing module names or symbols. "
+        "Treat supplied project imports as authoritative. If the task names a concept that has no supplied module, compose the "
+        "existing APIs inside the owned files instead of inventing a new project module.\n"
         "Return exactly one JSON object and no prose or Markdown fences. Required shape:\n"
         f"{{\"schema_version\":\"{PROPOSAL_SCHEMA_V1}\",\"project_id\":{json.dumps(identity['project_id'])},"
         f"\"run_id\":{json.dumps(identity['run_id'])},\"gate_id\":{json.dumps(identity['gate_id'])},"

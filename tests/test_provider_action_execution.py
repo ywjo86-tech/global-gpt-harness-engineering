@@ -228,6 +228,29 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertLessEqual(len(selected), 8)
             self.assertIn("tests/test_foundry.py", selected)
 
+    def test_dependency_aware_context_prefers_matching_local_source_modules(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "tests").mkdir(); (root / "runtime/ai_office").mkdir(parents=True)
+            owned = ["tests/test_project_factory_e2e.py", "tests/test_daily_loop_e2e.py"]
+            request = worker(root, owned)
+            request.task.input = "Cover project factory and daily loop workflow integration"
+            (root / "runtime/ai_office/foundry.py").write_text("def create_operating_contract(): pass\n")
+            (root / "runtime/ai_office/workflow.py").write_text("def next_state(): pass\n")
+            (root / "runtime/ai_office/state_store.py").write_text("class Store: pass\n")
+            (root / "tests/test_ai_office_foundry.py").write_text(
+                "from runtime.ai_office.foundry import create_operating_contract\n"
+            )
+            (root / "tests/test_ai_office_workflow.py").write_text(
+                "from runtime.ai_office.state_store import Store\n"
+                "from runtime.ai_office.workflow import next_state\n"
+            )
+            for index in range(10):
+                (root / f"tests/test_project_context_{index:02d}.py").write_text("def test_project(): pass\n")
+            selected = select_action_context_files(root, request, owned)
+            self.assertLessEqual(len(selected), 8)
+            self.assertIn("runtime/ai_office/foundry.py", selected)
+            self.assertIn("runtime/ai_office/workflow.py", selected)
+
     def test_identity_mismatch_fails_before_write(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
