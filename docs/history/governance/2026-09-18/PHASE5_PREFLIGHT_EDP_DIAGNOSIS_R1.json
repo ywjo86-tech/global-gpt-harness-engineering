@@ -1,0 +1,204 @@
+{
+  "schema_version": "gch.edp.phase5-preflight.v1",
+  "run_date": "2026-09-18",
+  "scope": "Current main Harness readiness before PHASE 5 + NVIDIA-only Full Plan operational verification",
+  "source_head": "23eebd951f67fe5a3f6c27879ef4750ed256c057",
+  "edp_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+  "authority": {
+    "canonical_plan_sha256": "7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f",
+    "gate": "GATE-010",
+    "phase": "FINAL_CLOSURE",
+    "closure": "CLOSED",
+    "user_directive": "Diagnose current Harness under EDP and run a hypothetical Full Plan orchestration scenario using NVIDIA only because Codex quota is exhausted."
+  },
+  "frozen_obligations": [
+    "Preserve current closed MPRF baseline and PHASE 5 NOT_AUTHORIZED boundary.",
+    "Full Plan orchestration must be exercised through production Full Plan entry path for scenario validation.",
+    "NVIDIA-only scenario may execute reasoning/read-only PREPARE work; state-changing ACTION must fail closed when Codex is ineligible.",
+    "NVIDIA must not mutate project state and NVIDIA-to-Codex automatic fallback remains prohibited.",
+    "Provider/model selection remains Router authority; direct adapter defaults must not define governed runtime authority.",
+    "All diagnosis domains require evidence, RTM, negative-space, adversarial challenge and closure metrics."
+  ],
+  "evidence_matrix": [
+    {
+      "domain": "AUTH-001",
+      "claim": "main and origin/main identity",
+      "evidence": "23eebd951f67fe5a3f6c27879ef4750ed256c057 == origin/main; clean at start",
+      "result": "PASS"
+    },
+    {
+      "domain": "AUTH-002",
+      "claim": "EDP binding",
+      "evidence": "EDP SHA 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf matches approved Plan binding",
+      "result": "PASS"
+    },
+    {
+      "domain": "STATE-001",
+      "claim": "canonical closure",
+      "evidence": "GATE-010 / FINAL_CLOSURE / CLOSED",
+      "result": "PASS"
+    },
+    {
+      "domain": "PROV-001",
+      "claim": "governed NVIDIA connectivity",
+      "evidence": "explicit Router-pool model nvidia/nemotron-3-super-120b-a12b completed live smoke in 1 attempt",
+      "result": "PASS"
+    },
+    {
+      "domain": "PROV-002",
+      "claim": "direct NVIDIA default consistency",
+      "evidence": "~/.config/gch/nvidia.env NVIDIA_MODEL=meta/llama-3.1-8b-instruct; direct adapter smoke failed nvidia_client_error while governed explicit model passed",
+      "result": "FAIL",
+      "finding": "EDP-P5-002"
+    },
+    {
+      "domain": "MAP-001",
+      "claim": "declarative mapping registration on canonical repository root",
+      "evidence": "mapping file is named MULTI_PROVIDER_FOUNDATION.json but loader indexes by root.name global-gpt-harness-engineering.json; load_project_mapping(root)=None",
+      "result": "FAIL",
+      "finding": "EDP-P5-001"
+    },
+    {
+      "domain": "TEST-001",
+      "claim": "focused orchestration/provider regression",
+      "evidence": "271 tests PASS / 3 skipped after correcting nonexistent test module in diagnostic command",
+      "result": "PASS"
+    },
+    {
+      "domain": "TEST-002",
+      "claim": "MPRF suite",
+      "evidence": "30/30 PASS",
+      "result": "PASS"
+    },
+    {
+      "domain": "TEST-003",
+      "claim": "broad repository regression",
+      "evidence": "1363 tests: 1 failure + 3 errors + 12 skipped; all four failures are mapping/onboarding failures",
+      "result": "FAIL",
+      "finding": "EDP-P5-001"
+    },
+    {
+      "domain": "TEST-004",
+      "claim": "Full MCP suite current-date reproducibility",
+      "evidence": "60 tests: 8 failures + 4 errors; publication fixtures use authorization expires_at 2026-09-18T00:00:00Z and are expired at current UTC runtime",
+      "result": "FAIL",
+      "finding": "EDP-P5-003"
+    },
+    {
+      "domain": "STATIC-001",
+      "claim": "compile and diff integrity",
+      "evidence": "compileall PASS; git diff --check PASS",
+      "result": "PASS"
+    }
+  ],
+  "rtm": [
+    {
+      "obligation": "Current baseline authority valid",
+      "target": "Plan + Gate ledger + status",
+      "proof": "SHA/GATE/status inspection",
+      "status": "PASS"
+    },
+    {
+      "obligation": "Full Plan onboarding executable",
+      "target": "contract mapping + gate plan loader",
+      "proof": "onboarding/broad tests",
+      "status": "FAIL",
+      "finding": "EDP-P5-001"
+    },
+    {
+      "obligation": "NVIDIA governed route usable",
+      "target": "Router pool explicit model -> NVIDIA adapter",
+      "proof": "live governed smoke",
+      "status": "PASS"
+    },
+    {
+      "obligation": "NVIDIA-only no mutation / no auto Codex fallback",
+      "target": "Router ACTION eligibility and provider executor",
+      "proof": "code + focused tests; scenario pending",
+      "status": "PENDING"
+    },
+    {
+      "obligation": "Regression evidence reproducible",
+      "target": "broad + Full MCP suites",
+      "proof": "current-date execution",
+      "status": "FAIL",
+      "finding": "EDP-P5-001/003"
+    }
+  ],
+  "findings": [
+    {
+      "id": "EDP-P5-001",
+      "severity": "BLOCKER",
+      "status": "OPEN",
+      "owner": "Harness governance/orchestration remediation",
+      "artifact": "runtime/orchestrator/contract_mappings/MULTI_PROVIDER_FOUNDATION.json + contract_adapter loader",
+      "problem": "Canonical repository root cannot resolve its declarative project mapping because loader requires <root.name>.json and matching project_id, while the installed mapping is keyed by MULTI_PROVIDER_FOUNDATION.",
+      "impact": "Full Plan onboarding/load_gate_plan fails closed; a realistic production Full Plan scenario cannot be authorized on current main until repaired.",
+      "required_correction": "Introduce an authority-safe alias/mapping resolution that preserves project_id MULTI_PROVIDER_FOUNDATION without weakening root identity checks; regression onboarding and Gate 008-010 plan loading.",
+      "regression_scope": "mapping/onboarding, status, gate loader, Full Plan entry, broad suite"
+    },
+    {
+      "id": "EDP-P5-002",
+      "severity": "MAJOR",
+      "status": "OPEN",
+      "owner": "NVIDIA configuration/runtime remediation",
+      "artifact": "~/.config/gch/nvidia.env + nvidia_adapter default path",
+      "problem": "Legacy NVIDIA_MODEL default is meta/llama-3.1-8b-instruct and live direct-adapter smoke fails, while governed Router pool explicit model succeeds.",
+      "impact": "Any legacy/non-governed NVIDIA call without explicit Router model can fail despite healthy NVIDIA service, producing misleading provider outages.",
+      "required_correction": "Align/remove legacy default dependency so governed Router-selected model is authoritative; preserve Router-only model selection for governed path.",
+      "regression_scope": "nvidia adapter, provider executor/router, legacy compatibility tests"
+    },
+    {
+      "id": "EDP-P5-003",
+      "severity": "MAJOR",
+      "status": "OPEN",
+      "owner": "Full MCP test/evidence maintenance",
+      "artifact": "tests/full_mcp/test_git_publication.py",
+      "problem": "Publication authorization fixture expires at 2026-09-18T00:00:00Z; current-date suite now fails authorization before intended assertions.",
+      "impact": "Full MCP regression suite is time-fragile and no longer reproducible on current date; masks real publication regressions.",
+      "required_correction": "Use a deterministic clock/frozen time or test-relative valid authorization window without weakening runtime expiry enforcement.",
+      "regression_scope": "Full MCP publication + full suite + broad suite"
+    }
+  ],
+  "negative_space": [
+    "No current-date passing Full MCP publication regression evidence exists.",
+    "No canonical root-resolvable MPRF mapping exists under loader's current identity rule.",
+    "No completed production Full Plan NVIDIA-only scenario evidence can exist until onboarding blocker is remediated."
+  ],
+  "adversarial_second_pass": {
+    "challenge": "Assume readiness PASS is wrong; inspect time-sensitive tests, mapping identity, governed-vs-legacy NVIDIA paths and production Full Plan entry requirements.",
+    "new_findings": [
+      "EDP-P5-001",
+      "EDP-P5-002",
+      "EDP-P5-003"
+    ],
+    "adversarial_new_blocker_major": 3
+  },
+  "pass_challenge": {
+    "open": [
+      "Can production Full Plan resolve canonical project mapping? NO.",
+      "Can current Full MCP suite reproduce publication safety tests? NO.",
+      "Can legacy NVIDIA default path be trusted? NO."
+    ],
+    "open_count": 3
+  },
+  "closure_metrics": {
+    "BLOCKER_COUNT": 1,
+    "UNRESOLVED_MAJOR_COUNT": 2,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 3,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 1,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 3,
+    "PASS_CHALLENGE_OPEN_COUNT": 3,
+    "SOURCE_AUTHORITY_STATUS": "VALID_WITH_RUNTIME_BINDING_DEFECTS",
+    "REGRESSION_REDIAGNOSIS_STATUS": "NOT_APPLICABLE_PRE_REMEDIATION"
+  },
+  "exhaustion": "MATERIAL_DEFECT_SEARCH: EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "final_decision": "FAIL_NO_GO_FOR_PHASE5_OR_PRODUCTION_FULL_PLAN_SCENARIO_UNTIL_REMEDIATION"
+}
