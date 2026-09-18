@@ -1,0 +1,27 @@
+{
+  "schema_version": "ai-office.ph5.evidence.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "focused_validation": {
+    "command": "python3 -m unittest -v tests.test_ai_office_execution_contract tests.test_ai_office_execution_integration tests.test_ai_office_manual_action_coordination tests.test_ai_office_observability_boundary",
+    "result": "PASS",
+    "tests_run": 14,
+    "rc": 0
+  },
+  "task_commits": {
+    "TASK-002": "7e787b924645a6a9db94c6bd175a5fb59dbc76e8",
+    "TASK-003": "d8d448f505eac3ded81e5e9cf4ad882620b37e9e",
+    "TASK-004": "ba1ce338979526969599f2ecf563c0a06bc8d081",
+    "TASK-005": "949cca9c293b2ca74aea411349b3d5d9674d5f5b"
+  },
+  "evidence_id": "EVD-007",
+  "title": "Action observability projection",
+  "task_id": "TASK-005",
+  "tests": [
+    "TEST-007",
+    "TEST-008"
+  ],
+  "status": "PASS",
+  "independent_review_ref": "docs/history/upgrades/2026-09-18-AI-OFFICE-HARNESS-PH5/GATE-003/GATE003_INDEPENDENT_REVIEW_RAW.json",
+  "independent_review_sha256": "1e4d7ef66012aa85b0c63541bd813cd3f58d5d15f563305ff7ef1d1ed7aaab88",
+  "record_sha256": "49ef44f002e2fc214f334b8f3729ab9fa59882e3b19d3c3583a3f5cfeef2861e"
+}

@@ -1,0 +1,109 @@
+{
+  "router_request": {
+    "schema_version": "orchestration.router-request.v2",
+    "request_id": "req-ph5-gate-002-independent-review-r2",
+    "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+    "run_id": "ph5-gate-002-independent-review-r2",
+    "task_id": "GATE-002",
+    "task_execution_id": "ph5-gate-002-independent-review-r2-exec",
+    "directive_digest": "approved-contract-gate-review",
+    "stage": "REVIEW",
+    "required_capabilities": [
+      "read_only",
+      "reasoning",
+      "review",
+      "security_review"
+    ],
+    "state_change_required": false,
+    "policy_profile": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+    "eligibility_snapshot_ref": "mprf-ph5-gate-002-independent-review-r2",
+    "eligibility_snapshot_digest": "5ff2e6608c6a094e8d59f9a417e66aac9c74ab6b57c8799cae786ad0e34cf65c",
+    "eligibility_snapshot": {
+      "schema_version": "orchestration.provider-eligibility-snapshot.v1",
+      "snapshot_id": "mprf-ph5-gate-002-independent-review-r2",
+      "provider_eligible": {
+        "codex": false,
+        "nvidia": true
+      },
+      "model_refs": {
+        "nvidia": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "evidence_refs": [
+        "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+        "provider-runtime-source:mprf",
+        "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+        "nvidia-secret-source:process-environment"
+      ],
+      "failure_classes": {},
+      "model_fallback_refs": {
+        "nvidia": [
+          "mistralai/mistral-nemotron",
+          "nvidia/ising-calibration-1.5-31b",
+          "nvidia/nemotron-3.5-lightning-30b-a3b",
+          "google/gemma-4-31b-it"
+        ]
+      }
+    },
+    "request_source": "governed_v2",
+    "failure_class": "",
+    "failover_request_ref": ""
+  },
+  "router_decision": {
+    "schema_version": "orchestration.router-decision.v2",
+    "decision_id": "decision-req-ph5-gate-002-independent-review-r2",
+    "request_digest": "02ad95bb31548b62076cdafbffc08b94de99a2c0253cd26b0ea2df29faf785f9",
+    "stage": "REVIEW",
+    "provider_ref": "nvidia",
+    "model_ref": "nvidia/nemotron-3-super-120b-a12b",
+    "reason_code": "governed_read_stage_to_nvidia",
+    "required_capabilities": [
+      "read_only",
+      "reasoning",
+      "review",
+      "security_review"
+    ],
+    "eligible": true,
+    "eligibility_evidence_refs": [
+      "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+      "provider-runtime-source:mprf",
+      "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+      "nvidia-secret-source:process-environment"
+    ],
+    "policy_version": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+    "action_state": "REVIEW_PENDING",
+    "model_fallback_refs": [
+      "mistralai/mistral-nemotron",
+      "nvidia/ising-calibration-1.5-31b",
+      "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "google/gemma-4-31b-it"
+    ],
+    "decision_digest": "8c6ed9332a4245ab312bdbcd92cf3fd461de7bc7f2c2d782aab09829f81937ad"
+  },
+  "provider_result": {
+    "status": "completed",
+    "mode": "nvidia",
+    "provider": "nvidia",
+    "model": "nvidia/nemotron-3-super-120b-a12b",
+    "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+    "model_failover_used": false,
+    "model_failover_trace": [],
+    "model_attempts": {
+      "nvidia/nemotron-3-super-120b-a12b": 1,
+      "mistralai/mistral-nemotron": 0,
+      "nvidia/ising-calibration-1.5-31b": 0,
+      "nvidia/nemotron-3.5-lightning-30b-a3b": 0,
+      "google/gemma-4-31b-it": 0
+    },
+    "provider_attempts": 1,
+    "route_reason": "nvidia_read_only",
+    "summary": "{\n  \"gate\": \"GATE-002\",\n  \"decision\": \"GO\",\n  \"blockers\": [],\n  \"findings\": [],\n  \"evidence_assessment\": \"All TEST-002~006 pass (14/14 PH5 suite). AST check shows zero runtime.full_mcp imports and zero FullMCPBackendAdapter calls. Implementation enforces authorization/effect lineage (READ_ONLY blocks effect_ref, STATE_CHANGING requires effect_ref for COMPLETED). Typed unavailable mutation behavior is enforced via validation. Read-only mutation is zero (no effect_ref allowed for READ_ONLY). Manual Action identity is bounded (handoff digest and identity validated on resume). No AI Office provider/model selection appears (forbidden keys/text rejected). No backend leakage, authority bypass, silent fallback, or unbound Manual Action detected.\"\n}",
+    "findings": [],
+    "warnings": [],
+    "errors": [],
+    "context_metadata": {
+      "file_count": 6,
+      "total_file_bytes": 39338,
+      "redaction_applied": false
+    }
+  }
+}

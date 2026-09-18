@@ -1,0 +1,118 @@
+{
+  "router_request": {
+    "schema_version": "orchestration.router-request.v2",
+    "request_id": "req-ph5-gate-003-independent-review-r2",
+    "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+    "run_id": "ph5-gate-003-independent-review-r2",
+    "task_id": "GATE-003",
+    "task_execution_id": "ph5-gate-003-independent-review-r2-exec",
+    "directive_digest": "approved-contract-gate-review",
+    "stage": "REVIEW",
+    "required_capabilities": [
+      "read_only",
+      "reasoning",
+      "review"
+    ],
+    "state_change_required": false,
+    "policy_profile": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+    "eligibility_snapshot_ref": "mprf-ph5-gate-003-independent-review-r2",
+    "eligibility_snapshot_digest": "de859029d72b418ec210c6d2e0dfbc77b34f7ddc8411fed4f090c3fd1c34491c",
+    "eligibility_snapshot": {
+      "schema_version": "orchestration.provider-eligibility-snapshot.v1",
+      "snapshot_id": "mprf-ph5-gate-003-independent-review-r2",
+      "provider_eligible": {
+        "codex": false,
+        "nvidia": true
+      },
+      "model_refs": {
+        "nvidia": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "evidence_refs": [
+        "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+        "provider-runtime-source:mprf",
+        "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+        "nvidia-secret-source:process-environment"
+      ],
+      "failure_classes": {},
+      "model_fallback_refs": {
+        "nvidia": [
+          "mistralai/mistral-nemotron",
+          "nvidia/ising-calibration-1.5-31b",
+          "nvidia/nemotron-3.5-lightning-30b-a3b",
+          "google/gemma-4-31b-it"
+        ]
+      }
+    },
+    "request_source": "governed_v2",
+    "failure_class": "",
+    "failover_request_ref": ""
+  },
+  "router_decision": {
+    "schema_version": "orchestration.router-decision.v2",
+    "decision_id": "decision-req-ph5-gate-003-independent-review-r2",
+    "request_digest": "852916270069575d02b8b4e84f1aa1f86d8df30352af3d9d05472e72d8a56a02",
+    "stage": "REVIEW",
+    "provider_ref": "nvidia",
+    "model_ref": "nvidia/nemotron-3-super-120b-a12b",
+    "reason_code": "governed_read_stage_to_nvidia",
+    "required_capabilities": [
+      "read_only",
+      "reasoning",
+      "review"
+    ],
+    "eligible": true,
+    "eligibility_evidence_refs": [
+      "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+      "provider-runtime-source:mprf",
+      "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+      "nvidia-secret-source:process-environment"
+    ],
+    "policy_version": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+    "action_state": "REVIEW_PENDING",
+    "model_fallback_refs": [
+      "mistralai/mistral-nemotron",
+      "nvidia/ising-calibration-1.5-31b",
+      "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "google/gemma-4-31b-it"
+    ],
+    "decision_digest": "e26cbc7796162bb4eff532b97a7f4484349d4c1d7f8a590526c8749477eaeb25"
+  },
+  "provider_result": {
+    "status": "completed",
+    "mode": "nvidia",
+    "provider": "nvidia",
+    "model": "nvidia/ising-calibration-1.5-31b",
+    "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+    "model_failover_used": true,
+    "model_failover_trace": [
+      {
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "error_class": "nvidia_timeout",
+        "model_attempt": 1
+      },
+      {
+        "model": "mistralai/mistral-nemotron",
+        "error_class": "nvidia_server_error",
+        "model_attempt": 1
+      }
+    ],
+    "model_attempts": {
+      "nvidia/nemotron-3-super-120b-a12b": 1,
+      "mistralai/mistral-nemotron": 1,
+      "nvidia/ising-calibration-1.5-31b": 1,
+      "nvidia/nemotron-3.5-lightning-30b-a3b": 0,
+      "google/gemma-4-31b-it": 0
+    },
+    "provider_attempts": 3,
+    "route_reason": "nvidia_read_only",
+    "summary": "{\"gate\": \"GATE-003\", \"decision\": \"GO\", \"blockers\": [], \"findings\": [], \"evidence_assessment\": \"The implementation successfully separates the action and provider observability domains, with each domain maintaining its own immutable source references and digests. The correlated observation structure correctly links these distinct domains without merging their truths, and the adapters do not contain any store mutators or emit raw sensitive payloads.\"}",
+    "findings": [],
+    "warnings": [],
+    "errors": [],
+    "context_metadata": {
+      "file_count": 3,
+      "total_file_bytes": 16471,
+      "redaction_applied": false
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "schema_version": "ai-office.ph5.gate-decision.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "focused_validation": {
+    "command": "python3 -m unittest -v tests.test_ai_office_execution_contract tests.test_ai_office_execution_integration tests.test_ai_office_manual_action_coordination tests.test_ai_office_observability_boundary",
+    "result": "PASS",
+    "tests_run": 14,
+    "rc": 0
+  },
+  "task_commits": {
+    "TASK-002": "7e787b924645a6a9db94c6bd175a5fb59dbc76e8",
+    "TASK-003": "d8d448f505eac3ded81e5e9cf4ad882620b37e9e",
+    "TASK-004": "ba1ce338979526969599f2ecf563c0a06bc8d081",
+    "TASK-005": "949cca9c293b2ca74aea411349b3d5d9674d5f5b"
+  },
+  "gate_id": "GATE-003",
+  "decision": "GO",
+  "required_tasks": [
+    "TASK-005"
+  ],
+  "required_tests": [
+    "TEST-007",
+    "TEST-008",
+    "TEST-009"
+  ],
+  "required_evidence": [
+    "EVD-007",
+    "EVD-008"
+  ],
+  "review": {
+    "raw_path": "docs/history/upgrades/2026-09-18-AI-OFFICE-HARNESS-PH5/GATE-003/GATE003_INDEPENDENT_REVIEW_RAW.json",
+    "raw_sha256": "1e4d7ef66012aa85b0c63541bd813cd3f58d5d15f563305ff7ef1d1ed7aaab88",
+    "review": {
+      "gate": "GATE-003",
+      "decision": "GO",
+      "blockers": [],
+      "findings": [],
+      "evidence_assessment": "The implementation successfully separates the action and provider observability domains, with each domain maintaining its own immutable source references and digests. The correlated observation structure correctly links these distinct domains without merging their truths, and the adapters do not contain any store mutators or emit raw sensitive payloads."
+    },
+    "router_decision": {
+      "schema_version": "orchestration.router-decision.v2",
+      "decision_id": "decision-req-ph5-gate-003-independent-review-r2",
+      "request_digest": "852916270069575d02b8b4e84f1aa1f86d8df30352af3d9d05472e72d8a56a02",
+      "stage": "REVIEW",
+      "provider_ref": "nvidia",
+      "model_ref": "nvidia/nemotron-3-super-120b-a12b",
+      "reason_code": "governed_read_stage_to_nvidia",
+      "required_capabilities": [
+        "read_only",
+        "reasoning",
+        "review"
+      ],
+      "eligible": true,
+      "eligibility_evidence_refs": [
+        "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+        "provider-runtime-source:mprf",
+        "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+        "nvidia-secret-source:process-environment"
+      ],
+      "policy_version": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+      "action_state": "REVIEW_PENDING",
+      "model_fallback_refs": [
+        "mistralai/mistral-nemotron",
+        "nvidia/ising-calibration-1.5-31b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "google/gemma-4-31b-it"
+      ],
+      "decision_digest": "e26cbc7796162bb4eff532b97a7f4484349d4c1d7f8a590526c8749477eaeb25"
+    },
+    "provider_status": "completed",
+    "actual_model": "nvidia/ising-calibration-1.5-31b",
+    "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+    "model_failover_used": true
+  },
+  "source_domain_ownership": {
+    "action_domain": "PRESERVED",
+    "provider_domain": "PRESERVED",
+    "canonical_event_duplication": "ZERO",
+    "raw_sensitive_payload_duplication": "ZERO"
+  },
+  "blockers": [],
+  "record_sha256": "9e8e403f1861c7ab25ed1b56fa41ab058f92fab52176352f60f55610808bd24a"
+}

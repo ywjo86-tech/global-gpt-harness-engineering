@@ -1,0 +1,90 @@
+{
+  "schema_version": "ai-office.ph5.gate-decision.v1",
+  "contract_sha256": "f3cfae7deb67d6c464932f8fe97f1736263a6c1640874db44c66a9401fa4344d",
+  "focused_validation": {
+    "command": "python3 -m unittest -v tests.test_ai_office_execution_contract tests.test_ai_office_execution_integration tests.test_ai_office_manual_action_coordination tests.test_ai_office_observability_boundary",
+    "result": "PASS",
+    "tests_run": 14,
+    "rc": 0
+  },
+  "task_commits": {
+    "TASK-002": "7e787b924645a6a9db94c6bd175a5fb59dbc76e8",
+    "TASK-003": "d8d448f505eac3ded81e5e9cf4ad882620b37e9e",
+    "TASK-004": "ba1ce338979526969599f2ecf563c0a06bc8d081",
+    "TASK-005": "949cca9c293b2ca74aea411349b3d5d9674d5f5b"
+  },
+  "gate_id": "GATE-002",
+  "decision": "GO",
+  "required_tasks": [
+    "TASK-002",
+    "TASK-003",
+    "TASK-004"
+  ],
+  "required_tests": [
+    "TEST-002",
+    "TEST-003",
+    "TEST-004",
+    "TEST-005",
+    "TEST-006"
+  ],
+  "required_evidence": [
+    "EVD-003",
+    "EVD-004",
+    "EVD-005",
+    "EVD-006"
+  ],
+  "review": {
+    "raw_path": "docs/history/upgrades/2026-09-18-AI-OFFICE-HARNESS-PH5/GATE-002/GATE002_INDEPENDENT_REVIEW_RAW.json",
+    "raw_sha256": "e1a31e0f83d87ec96eb2323acd5a19ee73d581fdf91dfeb1e04fae463c32e8e8",
+    "review": {
+      "gate": "GATE-002",
+      "decision": "GO",
+      "blockers": [],
+      "findings": [],
+      "evidence_assessment": "All TEST-002~006 pass (14/14 PH5 suite). AST check shows zero runtime.full_mcp imports and zero FullMCPBackendAdapter calls. Implementation enforces authorization/effect lineage (READ_ONLY blocks effect_ref, STATE_CHANGING requires effect_ref for COMPLETED). Typed unavailable mutation behavior is enforced via validation. Read-only mutation is zero (no effect_ref allowed for READ_ONLY). Manual Action identity is bounded (handoff digest and identity validated on resume). No AI Office provider/model selection appears (forbidden keys/text rejected). No backend leakage, authority bypass, silent fallback, or unbound Manual Action detected."
+    },
+    "router_decision": {
+      "schema_version": "orchestration.router-decision.v2",
+      "decision_id": "decision-req-ph5-gate-002-independent-review-r2",
+      "request_digest": "02ad95bb31548b62076cdafbffc08b94de99a2c0253cd26b0ea2df29faf785f9",
+      "stage": "REVIEW",
+      "provider_ref": "nvidia",
+      "model_ref": "nvidia/nemotron-3-super-120b-a12b",
+      "reason_code": "governed_read_stage_to_nvidia",
+      "required_capabilities": [
+        "read_only",
+        "reasoning",
+        "review",
+        "security_review"
+      ],
+      "eligible": true,
+      "eligibility_evidence_refs": [
+        "mprf-baseline-approval-sha256:d453a90207f6eab7a93ef22a899c053a6c4223bf68aad0dba7c9733d89726539",
+        "provider-runtime-source:mprf",
+        "nvidia-model-pool-sha256:b0ef6638d70a0673676ff201b43356a2e17686616d5d7a56b1f2061693ee807d",
+        "nvidia-secret-source:process-environment"
+      ],
+      "policy_version": "NVIDIA_PRIMARY_CODEX_SECONDARY_V1",
+      "action_state": "REVIEW_PENDING",
+      "model_fallback_refs": [
+        "mistralai/mistral-nemotron",
+        "nvidia/ising-calibration-1.5-31b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "google/gemma-4-31b-it"
+      ],
+      "decision_digest": "8c6ed9332a4245ab312bdbcd92cf3fd461de7bc7f2c2d782aab09829f81937ad"
+    },
+    "provider_status": "completed",
+    "actual_model": "nvidia/nemotron-3-super-120b-a12b",
+    "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+    "model_failover_used": false
+  },
+  "negative_space": {
+    "full_mcp_imports": 0,
+    "full_mcp_adapter_calls": 0,
+    "read_only_mutation": "ZERO",
+    "provider_model_selection_from_ai_office": "ZERO"
+  },
+  "blockers": [],
+  "record_sha256": "99bba5d76ffa3936d53d06c32aa144c04cf335c312f897475ec2f38b9f269495"
+}
