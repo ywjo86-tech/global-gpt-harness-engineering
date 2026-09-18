@@ -14,7 +14,7 @@ from runtime.agents import ProjectExecutionAgent, ProjectOrchestratorAgent
 
 from .approval_gate import CAUTION, DANGEROUS, approval_prompt_for
 from .codex_adapter import create_manual_task, detect_codex_cli, run_task_prompt
-from .contract_loader import ContractLoadError, MANAGED_PROJECT_ROLE, load_contract
+from .contract_loader import ContractLoadError, ENGINE_HOST_ROLE, MANAGED_PROJECT_ROLE, load_contract
 from .execution_modes import CODEX_CLI, HYBRID, MANUAL, MOCK, NVIDIA, normalize_execution_mode
 from .fanin import build_fanin_report_from_collection, render_fanin_markdown
 from .fanout import build_fanout_plan, write_json
@@ -1126,10 +1126,32 @@ class OrchestrationEngine:
         return decision.to_dict()
 
     def status(self, run_id: str | None = None) -> dict[str, object]:
+        contract = self._load_contract()
         state = self.store.state
+        persisted_state = self.store.state_path.exists()
+        state_payload = state.to_dict()
+        codex_available_now = detect_codex_cli()
+        if not persisted_state and not state.active_run_id:
+            # RuntimeState schema defaults are not authoritative project status.
+            # Project the immutable contract phase and current Codex readiness
+            # into this read-only view without persisting a runtime state file.
+            state_payload["current_phase"] = contract.current_phase
+            state_payload["codex_cli_available"] = codex_available_now
         payload: dict[str, object] = {
-            "state": state.to_dict(),
-            "contract": self.contract.summary() if self.contract else None,
+            "state": state_payload,
+            "contract": contract.summary(),
+            "status_context": {
+                "project_current_phase": contract.current_phase,
+                "project_phase_source": "contract",
+                "runtime_state_initialized": persisted_state,
+                "runtime_state_source": "persisted" if persisted_state else "uninitialized_default",
+                "runtime_active": bool(state.active_run_id),
+                "execution_mode_authoritative": bool(state.active_run_id),
+                "codex_cli_available_now": codex_available_now,
+                "required_contract_files_valid": True,
+                "optional_missing_files": list(contract.missing_files)
+                if self.contract_role == ENGINE_HOST_ROLE else [],
+            },
         }
         resolved_run_id = run_id or state.active_run_id
         if resolved_run_id:
