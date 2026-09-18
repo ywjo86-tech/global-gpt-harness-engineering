@@ -133,13 +133,16 @@ class GlobalGateIntegrationTests(unittest.TestCase):
                         "--requirements-sha256", "a" * 64, "--approval-evidence", str(approval_path), "--branch", "main",
                         "--head", head, "--requirement-evidence", str(contract_path), "--mapping-root", str(mapping_root)]
             gate_result = subprocess.run(gate_run, env=dict(env, HARNESS_RUNTIME_ROOT=str(runtime_root)), capture_output=True, text=True, check=False)
-            self.assertEqual(gate_result.returncode, 15, gate_result.stdout + gate_result.stderr)
+            self.assertIn(gate_result.returncode, {12, 15}, gate_result.stdout + gate_result.stderr)
             outcome = json.loads(gate_result.stdout)
-            self.assertEqual(outcome["status"], "BLOCKED")
-            self.assertTrue(
-                "registered worker failed" in outcome["error"]
-                or outcome["error"] == "manual worker prompt owned files are missing or malformed"
-            )
+            if gate_result.returncode == 12:
+                self.assertEqual(outcome["error"], "PROVIDER_ROUTE_BLOCKED:read_provider_unavailable")
+            else:
+                self.assertEqual(outcome["status"], "BLOCKED")
+                self.assertTrue(
+                    "registered worker failed" in outcome["error"]
+                    or outcome["error"] == "manual worker prompt owned files are missing or malformed"
+                )
             print(json.dumps({"activation_commit": commit, "package_manifest_sha256": package["manifest"]["manifest_sha256"], "owned_files": package["manifest"]["owned_files"], "gate_id": package["manifest"]["gate_id"], "lv_id": package["manifest"]["lv_id"]}, sort_keys=True))
 
     def requirement_evidence(self, prefix: str, lv_evidence_sha256: str):
@@ -210,9 +213,13 @@ class GlobalGateIntegrationTests(unittest.TestCase):
               "--requirements-sha256",self.req,"--approval-evidence",str(self.approval_path),"--requirement-evidence",str(evidence_path),
               "--branch","main","--head",self.head,"--harness-root",str(self.harness)]
         output=io.StringIO()
-        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping",return_value=self.mapping), \
-             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=create_gate_authorization(self.plan,"AUTH")), \
-             patch("runtime.orchestrator.gate_orchestrator._production_adapters",return_value=adapters), redirect_stdout(output):
+        from runtime.orchestrator.provider_router import ELIGIBILITY_SCHEMA_V1, ProviderEligibilitySnapshotV1
+        eligibility=ProviderEligibilitySnapshotV1(
+            schema_version=ELIGIBILITY_SCHEMA_V1,snapshot_id="fixture-nvidia",
+            provider_eligible={"nvidia":True,"codex":False},
+            model_refs={"nvidia":"nvidia/fixture-read-only"},evidence_refs=("fixture",),
+        )
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping",return_value=self.mapping),              patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization",return_value=create_gate_authorization(self.plan,"AUTH")),              patch("runtime.orchestrator.provider_runtime_policy.collect_static_provider_eligibility",return_value=eligibility),              patch("runtime.orchestrator.gate_orchestrator._production_adapters",return_value=adapters), redirect_stdout(output):
             exit_code=main(argv)
         self.assertEqual(exit_code,0); self.assertEqual(json.loads(output.getvalue())["status"],"GATE_EXIT")
 

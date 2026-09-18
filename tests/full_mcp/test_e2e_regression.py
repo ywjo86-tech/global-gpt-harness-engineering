@@ -72,33 +72,20 @@ class RepresentativeLifecycleTests(unittest.TestCase):
 
 
 class GovernanceIsolationTests(unittest.TestCase):
-    def test_worktree_preserved_boundaries_and_gate_order(self) -> None:
+    def test_archived_full_mcp_baseline_preserves_boundaries_and_gate_order(self) -> None:
         repo = Path(__file__).resolve().parents[2]
-        canonical = Path("/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering")
-        branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo, text=True).strip()
-        self.assertEqual(branch, "preph5mprf/multi-provider-foundation")
+        manifest_path = repo / "docs/history/upgrades/2026-09-16-UPGRADE-003/MCP_STABLE_BASELINE_FINAL_MANIFEST_20260917.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["branch"], "upgrade-003/full-mcp")
+        self.assertEqual(manifest["baseline_commit_sha"], "0848dab7596f59a7eae98f223b47636bad27b4bd")
+        self.assertEqual(manifest["qualified_source_parent_sha"], "fffe93a330d59c8dd91f60abde2bf4c53cd0542e")
+        self.assertEqual(manifest["final_baseline_approval_status"], "APPROVED_SEALED")
+        self.assertEqual(manifest["phase5_handoff_status"], "CANDIDATE_NOT_AUTHORIZED")
+        self.assertFalse(manifest["operational_boundary"]["phase5_execution_authorized"])
         self.assertEqual(
-            subprocess.call(["git", "merge-base", "--is-ancestor",
-                             "0bdfad12c438f4f101d3fdeafda9daac8d5069b4", "HEAD"], cwd=repo),
+            subprocess.call(["git", "merge-base", "--is-ancestor", manifest["baseline_commit_sha"], "HEAD"], cwd=repo),
             0,
         )
-        self.assertEqual(
-            subprocess.call(["git", "merge-base", "--is-ancestor",
-                             "0848dab7596f59a7eae98f223b47636bad27b4bd", "HEAD"], cwd=repo),
-            0,
-        )
-        self.assertEqual(
-            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=canonical, text=True).strip(),
-            "fffe93a330d59c8dd91f60abde2bf4c53cd0542e",
-        )
-        prefinal = repo / "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/indexes/PREFINAL.json"
-        self.assertTrue(prefinal.is_file())
-        approved_prefinal = Path(
-            "/home/ywjo/AI-Workspace/project-workspace/.worktrees/GH-FULL-MCP-PH4/UPGRADE-003/"
-            "_workspace/full-mcp/20260916T123217Z-bd92159d/attempts/2/indexes/PREFINAL.json"
-        )
-        self.assertEqual(hashlib.sha256(prefinal.read_bytes()).hexdigest(),
-                         hashlib.sha256(approved_prefinal.read_bytes()).hexdigest())
 
 
 
