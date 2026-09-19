@@ -238,7 +238,7 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
     # Registered worker execution materializes request/result beside the
     # immutable six-file package.  They are separately schema-bound below and
     # are not part of the package manifest itself.
-    allowed = expected | {"worker.request.json", "worker.result.json", "worker.result.private-01.json",
+    allowed = expected | {"worker.request.json", "manual-action.request.json", "worker.result.json", "worker.result.private-01.json",
                           "executor.process.json", "executor.last-message.txt", "executor.prompt.txt", "executor.prompt.sha256",
                           "worker_handoff.md", "handoff_report.md", "preflight",
                           "RUN_STARTED.json", "diagnostics.json"}
@@ -1171,6 +1171,13 @@ def classify_derived_preflight_status(root: Path, manifest: dict[str, Any]) -> d
             "missing_fields": missing, "evidence_sha256": detached}
 
 
+def _worker_request_path_for_result(package_root: Path, worker_payload: Mapping[str, Any]) -> Path:
+    manual = package_root / "manual-action.request.json"
+    if worker_payload.get("completion_mode") == "GPT_OPERATOR_MANUAL_ACTION" and manual.is_file() and not manual.is_symlink():
+        return manual
+    return package_root / "worker.request.json"
+
+
 def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, source_root: Path,
                                           result_path: Path, review_request_path: Path,
                                           project_root: Path | None = None) -> dict[str, Any]:
@@ -1185,7 +1192,13 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
         if (not manifest_sidecar.is_file() or manifest_sidecar.is_symlink()
                 or manifest_sidecar.read_text(encoding="ascii").strip() != manifest_sha):
             raise LVReviewError("package manifest sidecar is invalid")
-        worker_request_path = package_root / "worker.request.json"
+        worker_raw = result_path.read_bytes()
+        worker_payload = json.loads(worker_raw)
+        if (not isinstance(worker_payload, dict) or worker_payload.get("status") != "completed"
+                or any(worker_payload.get(field) != manifest.get(field) for field in ("project_id", "gate_id", "lv_id"))
+                or worker_payload.get("run_id") != run_id):
+            raise LVReviewError("sealed worker result binding is invalid")
+        worker_request_path = _worker_request_path_for_result(package_root, worker_payload)
         worker_request_raw = worker_request_path.read_bytes()
         worker_request = json.loads(worker_request_raw)
         if not isinstance(worker_request, dict) or canonical_json_bytes(worker_request) != worker_request_raw:
@@ -1198,12 +1211,6 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
                 or contract.get("canonical_plan_sha256") != manifest.get("canonical_plan_sha256")
                 or extra.get("run_id") != run_id or extra.get("package_manifest_sha256") != manifest_sha):
             raise LVReviewError("worker request binding is invalid")
-        worker_raw = result_path.read_bytes()
-        worker_payload = json.loads(worker_raw)
-        if (not isinstance(worker_payload, dict) or worker_payload.get("status") != "completed"
-                or any(worker_payload.get(field) != manifest.get(field) for field in ("project_id", "gate_id", "lv_id"))
-                or worker_payload.get("run_id") != run_id):
-            raise LVReviewError("sealed worker result binding is invalid")
         required = {"schema_version", "run_id", "project_id", "gate_id", "lv_id", "review_attempt",
                     "package_manifest_sha256", "worker_result_sha256", "canonical_plan_sha256",
                     "approval_id", "approval_record_hash", "production_transition_sha256",
@@ -1855,7 +1862,7 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     if not root.is_dir() or root.is_symlink():
         raise LVReviewError("immutable input directory is missing or unsafe")
     entries = list(root.iterdir())
-    ignored = {"preflight", "worker.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md"}
+    ignored = {"preflight", "worker.request.json", "manual-action.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md"}
     ignored_dirs = {path.name for path in entries if path.is_dir() and path.name.startswith("review-attempt-")}
     ignored |= ignored_dirs
     if any(path.is_symlink() or (not path.is_file() and path.name not in ignored) for path in entries):

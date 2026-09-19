@@ -584,8 +584,10 @@ def prepare_post_result_missing_request_recovery(
             raise RecoveryError("post-result recovery source artifact is unsafe")
     package_root = paths[0].parent
     request_path = package_root / "worker.request.json"
-    if request_path.exists() or request_path.is_symlink():
-        raise RecoveryError("post-result recovery requires the original worker request to be absent")
+    manual_request_path = package_root / "manual-action.request.json"
+    if (request_path.exists() or request_path.is_symlink()
+            or manual_request_path.exists() or manual_request_path.is_symlink()):
+        raise RecoveryError("post-result recovery requires all original worker request evidence to be absent")
     try:
         manifest, preflight, worker, review_request = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:

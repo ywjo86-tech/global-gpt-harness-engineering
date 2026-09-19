@@ -1203,6 +1203,20 @@ def _recovery_gateway_retry_id(attempt_root: Path, recovery_id: str) -> str | No
     return "exec-retry-" + hashlib.sha256(seed).hexdigest()[:32]
 
 
+def _persist_manual_action_request(package_root: Path, payload: Mapping[str, Any]) -> Path:
+    """Create/replay the Manual Action request without replacing Provider request evidence."""
+    path = package_root / "manual-action.request.json"
+    data = canonical_json_bytes(payload)
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != data:
+            raise GateControllerError("WORKER_REQUEST_REQUIRED: manual action request replay conflict")
+        return path
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data); handle.flush(); os.fsync(handle.fileno())
+    return path
+
+
 def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
@@ -1568,6 +1582,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 execution_evidence = [
                     package_root / "preflight" / "preflight.evidence.json",
                     package_root / "worker.request.json",
+                    package_root / "manual-action.request.json",
                     package_root / "worker.result.json",
                     *sorted(package_root.glob("production.review-request-*.json")),
                 ]
@@ -1581,6 +1596,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 execution_evidence = [
                     package_root / "preflight" / "preflight.evidence.json",
                     package_root / "worker.request.json",
+                    package_root / "manual-action.request.json",
                     package_root / "worker.result.json",
                     *sorted(package_root.glob("production.review-request-*.json")),
                 ]
@@ -1686,6 +1702,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             state["worker_payload"] = existing_result
             state["worker_result_path"] = result
             return sealed("WORKER", "COMPLETED", _file_sha(result), payload=existing_result)
+        if (manual_action_package is None) != (manual_action_authorization is None):
+            raise GateControllerError("manual action package and authorization must be supplied together")
+        manual_action_bound = manual_action_package is not None and manual_action_authorization is not None
+        runtime_request_path = package_root / ("manual-action.request.json" if manual_action_bound else "worker.request.json")
         task = TaskSlice(
             thread_id=lv_id, assigned_agent="implementation_agent",
             input=str(manifest.get("task", {}).get("purpose", "sealed LV worker")),
@@ -1693,11 +1713,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             editable_scope=list(manifest.get("owned_files", [])), forbidden_scope=[], merge_point="GATE_EXIT",
             required_capabilities=list(next(item for item in plan.lvs if item.lv_id == lv_id).required_capabilities),
             run_id=run_id, run_root=str(package_root), task_prompt_path=str(package_root / "worker_prompt.md"),
-            output_dir=str(package_root), result_path=str(result), worker_request_path=str(package_root / "worker.request.json"),
+            output_dir=str(package_root), result_path=str(result), worker_request_path=str(runtime_request_path),
         )
-        if (manual_action_package is None) != (manual_action_authorization is None):
-            raise GateControllerError("manual action package and authorization must be supplied together")
-        if manual_action_package is not None and manual_action_authorization is not None:
+        if manual_action_bound:
             from .production_manual_action import build_manual_worker_request, execute_gpt_operator_manual_action
             manual_preflight_sha = str(state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"))
             try:
@@ -1706,15 +1724,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     preflight_evidence_sha256=manual_preflight_sha, package_manifest_sha256=package_sha,
                     approval_event_id=getattr(auth, "authorization_id", ""), action_package=manual_action_package,
                 )
-                request_path = package_root / "worker.request.json"
-                request_bytes = canonical_json_bytes(manual_request.to_dict())
-                if request_path.exists() or request_path.is_symlink():
-                    if request_path.is_symlink() or request_path.read_bytes() != request_bytes:
-                        raise GateControllerError("WORKER_REQUEST_REQUIRED: manual request replay conflict")
-                else:
-                    fd = os.open(request_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-                    with os.fdopen(fd, "wb") as handle:
-                        handle.write(request_bytes); handle.flush(); os.fsync(handle.fileno())
+                request_path = _persist_manual_action_request(package_root, manual_request.to_dict())
                 worker_payload = execute_gpt_operator_manual_action(
                     project_root=root, package_root=package_root, manifest=manifest,
                     preflight_evidence_sha256=manual_preflight_sha,
@@ -2470,9 +2480,12 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 incident_preflight = incident_root / "preflight" / "preflight.evidence.json"
                 incident_worker = incident_root / "worker.result.json"
                 incident_request = incident_root / "worker.request.json"
+                incident_manual_request = incident_root / "manual-action.request.json"
                 review_requests = sorted(incident_root.glob("production.review-request-*.json")) if incident_root.is_dir() else []
                 if (incident_manifest.is_file() and incident_preflight.is_file() and incident_worker.is_file()
-                        and not incident_request.exists() and not incident_request.is_symlink() and len(review_requests) == 1):
+                        and not incident_request.exists() and not incident_request.is_symlink()
+                        and not incident_manual_request.exists() and not incident_manual_request.is_symlink()
+                        and len(review_requests) == 1):
                     from .recovery_contract import prepare_post_result_missing_request_recovery
                     incident_recovery = prepare_post_result_missing_request_recovery(
                         harness_root, project_root=root, package_manifest_path=incident_manifest,

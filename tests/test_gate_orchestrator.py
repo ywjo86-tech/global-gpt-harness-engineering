@@ -100,6 +100,31 @@ class GateOrchestratorTests(unittest.TestCase):
         self.auth = create_gate_authorization(self.plan, "AUTH-G1")
 
 
+    def test_manual_action_request_is_create_once_and_preserves_provider_request(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _persist_manual_action_request
+        from runtime.orchestrator.gate_controller import GateControllerError
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            provider = package / "worker.request.json"
+            provider.write_bytes(b"provider-request")
+            first = _persist_manual_action_request(package, {"kind":"manual", "sequence":1})
+            self.assertEqual(provider.read_bytes(), b"provider-request")
+            self.assertEqual(first.name, "manual-action.request.json")
+            same = _persist_manual_action_request(package, {"kind":"manual", "sequence":1})
+            self.assertEqual(first, same)
+            with self.assertRaisesRegex(GateControllerError, "manual action request replay conflict"):
+                _persist_manual_action_request(package, {"kind":"manual", "sequence":2})
+
+    def test_review_selects_manual_request_for_manual_result_with_legacy_fallback(self) -> None:
+        from runtime.orchestrator.lv_review import _worker_request_path_for_result
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            normal = package / "worker.request.json"; normal.write_text("{}")
+            self.assertEqual(_worker_request_path_for_result(package, {"completion_mode":"GPT_OPERATOR_MANUAL_ACTION"}), normal)
+            manual = package / "manual-action.request.json"; manual.write_text("{}")
+            self.assertEqual(_worker_request_path_for_result(package, {"completion_mode":"GPT_OPERATOR_MANUAL_ACTION"}), manual)
+            self.assertEqual(_worker_request_path_for_result(package, {"completion_mode":"PROVIDER_ACTION"}), normal)
+
     def test_fresh_run_cannot_rehydrate_existing_package_namespace(self) -> None:
         from runtime.orchestrator.canonical_paths import canonical_lv_path
         from runtime.orchestrator.gate_controller import GateControllerError

@@ -126,9 +126,14 @@ class PostResultRequestRecoveryTests(unittest.TestCase):
                 self.project, ["/bin/sh", "-c", "true"]
             )
 
+    def test_manual_action_request_blocks_missing_request_recovery(self):
+        (self.package / "manual-action.request.json").write_text("{}", encoding="utf-8")
+        with self.assertRaisesRegex(RecoveryError, "request evidence to be absent"):
+            self.prepare()
+
     def test_existing_request_blocks_post_result_recovery(self):
         (self.package / "worker.request.json").write_text("{}")
-        with self.assertRaisesRegex(RecoveryError, "requires the original worker request to be absent"):
+        with self.assertRaisesRegex(RecoveryError, "request evidence to be absent"):
             self.prepare()
 
 
