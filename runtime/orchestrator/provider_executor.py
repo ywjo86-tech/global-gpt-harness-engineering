@@ -6,12 +6,34 @@ from typing import Any, Callable
 from .codex_adapter import create_manual_task, run_task_prompt
 from .execution_modes import CODEX_CLI, MANUAL
 from .nvidia_adapter import run_nvidia_reasoning_task
+from .provider_adapter_registry import ProviderAdapterRegistry
 from .provider_router import (
     CODEX_PROVIDER, LOCAL_PROVIDER, MANUAL_PROVIDER, NVIDIA_PROVIDER,
     RouterDecisionV2, route_provider,
 )
 from .result_normalizer import normalize_worker_result, render_worker_handoff_markdown
 from .schemas import TaskSlice
+
+
+def _run_nvidia_governed_adapter(task: TaskSlice, decision: RouterDecisionV2, project_root: str) -> dict[str, Any]:
+    return run_nvidia_reasoning_task(
+        prompt=task.input, output_dir=task.output_dir, project_root=project_root,
+        input_files=task.input_files, model=decision.model_ref, require_explicit_model=True,
+        fallback_models=decision.model_fallback_refs,
+    )
+
+
+def _run_codex_governed_adapter(task: TaskSlice, decision: RouterDecisionV2, project_root: str) -> dict[str, Any]:
+    return run_task_prompt(
+        task.task_prompt_path, task.output_dir, CODEX_CLI, project_root=project_root,
+        required_capabilities=task.required_capabilities, model_ref=decision.model_ref,
+    )
+
+
+DEFAULT_PROVIDER_ADAPTER_REGISTRY = ProviderAdapterRegistry({
+    NVIDIA_PROVIDER: _run_nvidia_governed_adapter,
+    CODEX_PROVIDER: _run_codex_governed_adapter,
+})
 
 
 def _persist_nvidia_result(payload: dict[str, Any], task: TaskSlice) -> dict[str, Any]:
@@ -31,6 +53,7 @@ def _execute_governed(
     *,
     decision: RouterDecisionV2,
     project_root: str,
+    adapter_registry: ProviderAdapterRegistry | None = None,
 ) -> dict[str, Any]:
     if not decision.eligible:
         return {
@@ -62,27 +85,20 @@ def _execute_governed(
             "next_step": "DURABLE_FULL_PLAN_ACTION_BACKEND_REQUIRED",
         }
 
-    if decision.provider_ref == NVIDIA_PROVIDER:
-        payload = run_nvidia_reasoning_task(
-            prompt=task.input,
-            output_dir=task.output_dir,
-            project_root=project_root,
-            input_files=task.input_files,
-            model=decision.model_ref,
-            require_explicit_model=True,
-            fallback_models=decision.model_fallback_refs,
-        )
-    elif decision.provider_ref == CODEX_PROVIDER:
-        payload = run_task_prompt(
-            task.task_prompt_path,
-            task.output_dir,
-            CODEX_CLI,
-            project_root=project_root,
-            required_capabilities=task.required_capabilities,
-            model_ref=decision.model_ref,
-        )
-    else:
-        return {"status": "failed", "errors": ["router_decision_provider_invalid"]}
+    registry = adapter_registry or DEFAULT_PROVIDER_ADAPTER_REGISTRY
+    adapter = registry.resolve(decision.provider_ref)
+    if adapter is None:
+        return {
+            "status": "action_provider_blocked" if decision.stage == "ACTION" else "route_blocked",
+            "mode": "hybrid", "provider": decision.provider_ref, "model": decision.model_ref,
+            "route_reason": "provider_adapter_unavailable",
+            "router_decision_digest": decision.decision_digest,
+            "runtime_stage": decision.stage, "action_state": "ROUTE_BLOCKED",
+            "required_capabilities": list(decision.required_capabilities),
+            "errors": ["provider_adapter_unavailable"],
+            "next_step": "PROVIDER_ADAPTER_REGISTRATION_REQUIRED",
+        }
+    payload = dict(adapter(task, decision, project_root))
 
     if decision.provider_ref == CODEX_PROVIDER and str(payload.get("status", "")) in {"manual_fallback", "manual_pending"}:
         return {
@@ -123,9 +139,12 @@ def execute_provider_task(
     project_root: str,
     local_worker: Callable[[TaskSlice], dict[str, Any]],
     router_decision: RouterDecisionV2 | None = None,
+    adapter_registry: ProviderAdapterRegistry | None = None,
 ) -> dict[str, Any]:
     if router_decision is not None:
-        return _execute_governed(task, decision=router_decision, project_root=project_root)
+        return _execute_governed(
+            task, decision=router_decision, project_root=project_root, adapter_registry=adapter_registry
+        )
 
     decision = route_provider(mode, task.required_capabilities)
     if decision.provider == LOCAL_PROVIDER:
