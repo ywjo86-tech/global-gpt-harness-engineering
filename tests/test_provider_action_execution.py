@@ -513,6 +513,32 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertNotIn("tests/test_two.py", selected)
 
 
+    def test_candidate_validation_failure_retries_before_any_broker_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []; validations = []
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"])
+                content = "BROKEN = True\n" if len(calls) == 1 else "FIXED = True\n"
+                return {"status": "completed", "model": "nvidia/action-model", "provider_attempts": 1,
+                        "summary": json.dumps(self.proposal(content=content)), "context_metadata": {}}
+            def candidate_validator(proposal):
+                validations.append(proposal["writes"][0]["content"])
+                self.assertFalse((root / "run/provider-action-effects").exists())
+                return "AssertionError: candidate contract mismatch" if "BROKEN" in validations[-1] else ""
+            result = execute_provider_action_proposal(
+                request, decision=decision(), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30, candidate_validator=candidate_validator,
+            )
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(validations), 2)
+            self.assertIn("candidate focused validation failed", calls[1])
+            self.assertEqual((root / owned[0]).read_text(), "FIXED = True\n")
+            receipts = list((root / "run/provider-action-effects").glob("*.receipt.json"))
+            self.assertEqual(len(receipts), 1)
+            self.assertEqual(result["proposal_generation_attempts"], 2)
+
     def test_identity_mismatch_fails_before_write(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]

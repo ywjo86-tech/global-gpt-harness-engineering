@@ -480,6 +480,8 @@ def _write_private_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
     message = str(exc)
+    if message.startswith("provider ACTION candidate focused validation failed:"):
+        return True
     return message in {
         "provider ACTION proposal is not valid JSON",
         "provider ACTION proposal must be an object",
@@ -497,7 +499,10 @@ def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
 
 
 def _correction_prompt(base_prompt: str, reason: str) -> str:
-    bounded_reason = reason if reason in {
+    if reason.startswith("provider ACTION candidate focused validation failed:"):
+        bounded_reason = reason[:MAX_VALIDATION_FEEDBACK_CHARS]
+    else:
+        bounded_reason = reason if reason in {
         "provider ACTION proposal is not valid JSON",
         "provider ACTION proposal must be an object",
         "provider ACTION proposal is ambiguous",
@@ -510,7 +515,7 @@ def _correction_prompt(base_prompt: str, reason: str) -> str:
         "provider ACTION write binding is invalid",
         "provider ACTION relative path binding is invalid",
         "provider ACTION proposal summary is invalid",
-    } else "provider ACTION output contract mismatch"
+        } else "provider ACTION output contract mismatch"
     return (
         base_prompt
         + f"\nCORRECTION RETRY: Previous bounded validation failure: {bounded_reason}. "
@@ -526,6 +531,7 @@ def _generate_validated_proposal(
     context_files: list[str], provider_runner: Callable[..., Mapping[str, Any]], timeout: int,
     validation_feedback: str = "", target_owned_file_id: str | None = None,
     required_exact_paths: set[str] | None = None,
+    candidate_validator: Callable[[Mapping[str, Any]], str] | None = None,
 ) -> tuple[dict[str, Any], Mapping[str, Any], int, int, list[str]]:
     prompt = build_action_proposal_prompt(
         request, baseline=baseline, owned=owned, validation_feedback=validation_feedback,
@@ -575,6 +581,12 @@ def _generate_validated_proposal(
                 writes = proposal["writes"]
                 if len(writes) != 1 or writes[0]["owned_file_id"] != target_owned_file_id:
                     raise ProviderActionExecutionError("provider ACTION segment write set is invalid")
+            if candidate_validator is not None:
+                candidate_failure = str(candidate_validator(proposal) or "").strip()
+                if candidate_failure:
+                    raise ProviderActionExecutionError(
+                        "provider ACTION candidate focused validation failed: " + candidate_failure[:MAX_VALIDATION_FEEDBACK_CHARS]
+                    )
             break
         except ProviderActionExecutionError as exc:
             if generation_attempt >= MAX_PROPOSAL_GENERATION_ATTEMPTS or not _retryable_output_contract_error(exc):
@@ -620,6 +632,7 @@ def execute_provider_action_proposal(
     request: WorkerRequest, *, decision: RouterDecisionV2, baseline: str,
     owned: list[str], output_dir: Path, provider_runner: Callable[..., Mapping[str, Any]],
     security_scan: Callable[[bytes], bool], timeout: int, validation_feedback: str = "",
+    candidate_validator: Callable[[Mapping[str, Any]], str] | None = None,
 ) -> dict[str, Any]:
     if not decision.eligible or decision.stage != "ACTION" or not decision.provider_ref or not decision.model_ref:
         raise ProviderActionExecutionError("provider ACTION route is not eligible")
@@ -660,7 +673,7 @@ def execute_provider_action_proposal(
                 request, decision=decision, baseline=baseline, owned=owned,
                 context_files=segment_context, provider_runner=provider_runner, timeout=timeout,
                 validation_feedback=segment_feedback, target_owned_file_id=file_id,
-                required_exact_paths={path},
+                required_exact_paths={path}, candidate_validator=candidate_validator,
             )
             segments.append(segment)
             result = segment_result
@@ -678,7 +691,7 @@ def execute_provider_action_proposal(
         proposal, result, attempts, provider_attempts, models = _generate_validated_proposal(
             request, decision=decision, baseline=baseline, owned=owned,
             context_files=context_files_seen, provider_runner=provider_runner, timeout=timeout,
-            validation_feedback=validation_feedback,
+            validation_feedback=validation_feedback, candidate_validator=candidate_validator,
         )
         total_generation_attempts = attempts
         total_provider_attempts = provider_attempts

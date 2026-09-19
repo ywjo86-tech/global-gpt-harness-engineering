@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import io
 import json
 import os
 import re
 import shlex
 import signal
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -2404,6 +2406,71 @@ def _independent_verification_provenance(commands: Mapping[str, Any]) -> dict[st
     }
 
 
+def _provider_action_candidate_focused_validator(
+    *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
+) -> Callable[[Mapping[str, Any]], str]:
+    toolchain = request.extra_context.get("validation_toolchain")
+    focused = toolchain.get("focused") if isinstance(toolchain, Mapping) else None
+    if not isinstance(focused, list) or not focused:
+        raise ProductionWorkerError("candidate validation focused toolchain is missing")
+
+    def validate(proposal: Mapping[str, Any]) -> str:
+        if not _provider_action_security_scan(canonical_json_bytes(proposal)):
+            return "candidate proposal failed security validation"
+        writes = proposal.get("writes")
+        if not isinstance(writes, list) or not writes:
+            return "candidate proposal has no writes"
+        with tempfile.TemporaryDirectory(prefix="gch-provider-candidate-") as directory:
+            sandbox = Path(directory)
+            archived = subprocess.run(
+                ["git", "archive", "--format=tar", baseline], cwd=root,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=min(timeout, 120),
+            )
+            if archived.returncode != 0:
+                return "candidate baseline archive failed"
+            with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
+                archive.extractall(sandbox, filter="data")
+            for path in owned:
+                if path.endswith("/"):
+                    continue
+                source = root / path
+                if source.is_file():
+                    target = sandbox / path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(source.read_bytes())
+            candidate_test_modules: list[str] = []
+            for write in writes:
+                file_id = str(write.get("owned_file_id", ""))
+                match = re.fullmatch(r"OWNED_(\d{4})", file_id)
+                if not match:
+                    return "candidate owned-file binding is invalid"
+                index = int(match.group(1)) - 1
+                if index < 0 or index >= len(owned):
+                    return "candidate owned-file binding is invalid"
+                base_path = owned[index]
+                relative = str(write.get("relative_path", ""))
+                target_path = base_path + relative if base_path.endswith("/") else base_path
+                target = sandbox / target_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(str(write.get("content", "")), encoding="utf-8")
+                if target_path.startswith("tests/") and target_path.endswith(".py") and not base_path.endswith("/"):
+                    candidate_test_modules.append(target_path[:-3].replace("/", "."))
+            commands = [list(item) for item in focused if isinstance(item, list) and item]
+            if candidate_test_modules and commands:
+                python_executable = commands[0][0]
+                commands = [[python_executable, "-m", "unittest", "-v", *candidate_test_modules]]
+            for command in commands:
+                result = subprocess.run(
+                    command, cwd=sandbox, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False, timeout=min(timeout, 180),
+                )
+                if result.returncode != 0:
+                    return _bounded_validation_feedback(result.stdout, result.stderr)
+        return ""
+
+    return validate
+
+
 def _sealed_external_validation_python(request: WorkerRequest) -> str | None:
     toolchain = request.extra_context.get("validation_toolchain")
     policy = request.extra_context.get("interpreter_policy_id")
@@ -3362,6 +3429,9 @@ def execute_production_worker(request: WorkerRequest, *,
                 output_dir=output / "validation-remediation" / f"attempt-{validation_remediation_attempts:02d}",
                 provider_runner=run_nvidia_reasoning_task, security_scan=_provider_action_security_scan,
                 timeout=timeout, validation_feedback=bounded_feedback,
+                candidate_validator=_provider_action_candidate_focused_validator(
+                    root=root, baseline=baseline, owned=owned, request=request, timeout=timeout,
+                ),
             )
         except ProviderActionExecutionError as exc:
             raise ProductionWorkerError(f"provider ACTION validation remediation failed: {exc}") from exc
