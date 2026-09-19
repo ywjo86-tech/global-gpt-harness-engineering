@@ -1,3 +1,6 @@
+# MVP Goal Pass Canonical Gate State
+
+```json
 {
   "approval_record_hash": "0ed83d1c5c1e9c0b454746b7bb1c04b89467ac9b09c6e9c452e9fc2f3b64c04b",
   "closure_status": "PREDECESSOR_CLOSED",
@@ -8,3 +11,4 @@
   "project_id": "MVP-PROVIDER-EXECUTION-TARGET",
   "schema_version": "orchestration.canonical-gate-state.v2"
 }
+```
