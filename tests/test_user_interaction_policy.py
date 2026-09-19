@@ -161,5 +161,19 @@ class UserDecisionPolicyTests(unittest.TestCase):
         self.assertFalse(evaluate_attention_delivery(event, cancelled, now=now).eligible)
 
 
+    def test_recovered_stall_and_resolved_decision_are_suppressed(self) -> None:
+        created = datetime(2026, 9, 19, 8, 5, tzinfo=UTC)
+        stall = {"kind":"STALLED_SUSPECTED","delivery_class":"STALL_CONFIRMED",
+                 "created_at":created.isoformat(),"reason":"NO_SEMANTIC_PROGRESS"}
+        recovered = {"state":"RUNNING","last_error":None,
+                     "last_semantic_progress_at":(created + timedelta(seconds=10)).isoformat()}
+        self.assertFalse(evaluate_attention_delivery(stall, recovered, now=created + timedelta(seconds=20)).eligible)
+        decision = {"kind":"WAITING_APPROVAL","delivery_class":"IMMEDIATE_DECISION",
+                    "created_at":created.isoformat(),"reason":"approval required"}
+        resumed = {"state":"RECOVERING","last_error":None,
+                   "last_semantic_progress_at":(created + timedelta(seconds=5)).isoformat()}
+        self.assertFalse(evaluate_attention_delivery(decision, resumed, now=created + timedelta(seconds=6)).eligible)
+
+
 if __name__ == "__main__":
     unittest.main()

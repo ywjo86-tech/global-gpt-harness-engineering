@@ -124,18 +124,21 @@ def evaluate_attention_delivery(event: Mapping[str, Any], state: Mapping[str, An
     state_name = str(state.get("state") or "UNKNOWN")
     if state_name in SUPPRESSED_TERMINAL_STATES:
         return AttentionDeliveryAssessment(False, delivery_class, "terminal state suppresses stale incident")
-    if delivery_class == IMMEDIATE_DECISION:
-        return AttentionDeliveryAssessment(True, delivery_class, "user decision is required immediately")
+
+    created = _timestamp(event.get("created_at"))
+    semantic = _timestamp(state.get("last_semantic_progress_at") or state.get("last_progress_at"))
     if delivery_class == STALL_CONFIRMED:
+        if created is not None and semantic is not None and semantic > created:
+            return AttentionDeliveryAssessment(False, delivery_class, "semantic progress superseded the stall incident")
         return AttentionDeliveryAssessment(True, delivery_class, "stall/liveness anomaly already met alert threshold")
 
     event_reason = str(event.get("reason") or "")
     current_reason = str(state.get("last_error") or state.get("terminal_reason") or "")
     if not current_reason or (event_reason and current_reason != event_reason):
         return AttentionDeliveryAssessment(False, delivery_class, "incident is no longer current")
+    if delivery_class == IMMEDIATE_DECISION:
+        return AttentionDeliveryAssessment(True, delivery_class, "user decision is required immediately")
 
-    created = _timestamp(event.get("created_at"))
-    semantic = _timestamp(state.get("last_semantic_progress_at") or state.get("last_progress_at"))
     if created is None:
         return AttentionDeliveryAssessment(False, delivery_class, "incident timestamp is invalid")
     anchor = max(created, semantic) if semantic is not None else created

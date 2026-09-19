@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .durable_io import atomic_write_json, canonical_json_bytes
-from .user_interaction_policy import DELIVERY_CLASSES
+from .user_interaction_policy import DEFERRED_INCIDENT, DELIVERY_CLASSES, infer_delivery_class
 
 SCHEMA_VERSION = "orchestration.user-attention.v1"
 
@@ -147,17 +147,25 @@ class AttentionOutbox:
             pass
         return delivered
 
-    def deliver(self, sender: Callable[[Mapping[str, Any]], str], *, channel: str) -> list[str]:
-        """Deliver pending records through an outbound-only sender.
+    def deliver(
+        self, sender: Callable[[Mapping[str, Any]], str], *, channel: str,
+        eligible_event_ids: set[str] | frozenset[str] | None = None,
+    ) -> list[str]:
+        """Deliver only policy-eligible pending records through an outbound sender.
 
-        The sender receives immutable event data and returns an external receipt.
-        There is intentionally no callback for approval/resume/action execution.
+        Deferred incidents are not deliverable by default; a read-only policy layer
+        must explicitly supply their eligible event IDs. Immediate-decision and
+        confirmed-stall records remain directly deliverable.
         """
+        eligible = set(eligible_event_ids or ())
         delivered: list[str] = []
         for event in self.pending():
+            event_id = str(event["event_id"])
+            if infer_delivery_class(event) == DEFERRED_INCIDENT and event_id not in eligible:
+                continue
             receipt = sender(dict(event))
             if not isinstance(receipt, str) or not receipt.strip():
                 raise AttentionOutboxError("notification sender returned no receipt")
-            self.mark_delivered(str(event["event_id"]), channel=channel, receipt=receipt)
-            delivered.append(str(event["event_id"]))
+            self.mark_delivered(event_id, channel=channel, receipt=receipt)
+            delivered.append(event_id)
         return delivered

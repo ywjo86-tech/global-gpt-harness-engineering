@@ -112,12 +112,14 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
     def test_attention_outbox_is_idempotent_and_outbound_only(self):
         with tempfile.TemporaryDirectory() as d:
             outbox = AttentionOutbox(Path(d) / "run", project_id="proj", run_id="run")
-            first = outbox.publish(kind="BLOCKED", state="BLOCKED", reason="reason", state_sha256="a" * 64)
-            second = outbox.publish(kind="BLOCKED", state="BLOCKED", reason="reason", state_sha256="a" * 64)
+            first = outbox.publish(kind="BLOCKED", state="BLOCKED", reason="reason", state_sha256="a" * 64, delivery_class="DEFERRED_INCIDENT")
+            second = outbox.publish(kind="BLOCKED", state="BLOCKED", reason="reason", state_sha256="a" * 64, delivery_class="DEFERRED_INCIDENT")
             self.assertEqual(first["event_id"], second["event_id"])
             self.assertEqual(len(outbox.pending()), 1)
             seen = []
-            delivered = outbox.deliver(lambda event: seen.append(dict(event)) or "receipt-1", channel="test")
+            self.assertEqual(outbox.deliver(lambda event: seen.append(dict(event)) or "too-early", channel="test"), [])
+            self.assertEqual(seen, [])
+            delivered = outbox.deliver(lambda event: seen.append(dict(event)) or "receipt-1", channel="test", eligible_event_ids={first["event_id"]})
             self.assertEqual(delivered, [first["event_id"]])
             self.assertEqual(seen[0]["direction"], "OUTBOUND_ONLY")
             self.assertEqual(seen[0]["control_authority"], "NONE")
