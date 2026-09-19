@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .codex_adapter import create_manual_task, run_task_prompt
 from .execution_modes import CODEX_CLI, MANUAL
@@ -16,11 +16,13 @@ from .schemas import TaskSlice
 
 
 def _run_nvidia_governed_adapter(task: TaskSlice, decision: RouterDecisionV2, project_root: str) -> dict[str, Any]:
-    return run_nvidia_reasoning_task(
+    payload = dict(run_nvidia_reasoning_task(
         prompt=task.input, output_dir=task.output_dir, project_root=project_root,
         input_files=task.input_files, model=decision.model_ref, require_explicit_model=True,
         fallback_models=decision.model_fallback_refs,
-    )
+    ))
+    payload["_provider_adapter_persistence"] = {"source": "nvidia", "mode": "nvidia"}
+    return payload
 
 
 def _run_codex_governed_adapter(task: TaskSlice, decision: RouterDecisionV2, project_root: str) -> dict[str, Any]:
@@ -36,9 +38,11 @@ DEFAULT_PROVIDER_ADAPTER_REGISTRY = ProviderAdapterRegistry({
 })
 
 
-def _persist_nvidia_result(payload: dict[str, Any], task: TaskSlice) -> dict[str, Any]:
+def _persist_governed_result(
+    payload: dict[str, Any], task: TaskSlice, *, source: str, mode: str
+) -> dict[str, Any]:
     normalized = normalize_worker_result(
-        payload, task=task, source="nvidia", mode="nvidia", output_dir=task.output_dir
+        payload, task=task, source=source, mode=mode, output_dir=task.output_dir
     )
     result_path = Path(task.result_path or Path(task.output_dir) / "result.json")
     handoff_path = Path(task.handoff_report_path or Path(task.output_dir) / "handoff_report.md")
@@ -46,6 +50,10 @@ def _persist_nvidia_result(payload: dict[str, Any], task: TaskSlice) -> dict[str
     result_path.write_text(__import__("json").dumps(normalized, indent=2, ensure_ascii=False), encoding="utf-8")
     handoff_path.write_text(render_worker_handoff_markdown(normalized), encoding="utf-8")
     return normalized
+
+
+def _persist_nvidia_result(payload: dict[str, Any], task: TaskSlice) -> dict[str, Any]:
+    return _persist_governed_result(payload, task, source="nvidia", mode="nvidia")
 
 
 def _execute_governed(
@@ -99,27 +107,28 @@ def _execute_governed(
             "next_step": "PROVIDER_ADAPTER_REGISTRATION_REQUIRED",
         }
     payload = dict(adapter(task, decision, project_root))
+    persistence = payload.pop("_provider_adapter_persistence", None)
 
-    if decision.provider_ref == CODEX_PROVIDER and str(payload.get("status", "")) in {"manual_fallback", "manual_pending"}:
+    if str(payload.get("status", "")) in {"manual_fallback", "manual_pending"}:
         return {
-            "status": "action_provider_blocked",
+            "status": "action_provider_blocked" if decision.stage == "ACTION" else "route_blocked",
             "mode": "hybrid",
-            "provider": "",
-            "model": "",
-            "route_reason": "codex_unavailable_manual_action_candidate",
+            "provider": decision.provider_ref,
+            "model": decision.model_ref,
+            "route_reason": "provider_unavailable_manual_action_candidate",
             "router_decision_digest": decision.decision_digest,
             "runtime_stage": decision.stage,
-            "action_state": "ACTION_PROVIDER_BLOCKED",
+            "action_state": "ACTION_PROVIDER_BLOCKED" if decision.stage == "ACTION" else "ROUTE_BLOCKED",
             "manual_action_candidate": payload.get("manual_execution_path", ""),
             "backend_failure_class": payload.get("backend_failure_class", ""),
-            "errors": [str(payload.get("reason", "codex unavailable"))],
+            "errors": [str(payload.get("reason", "provider unavailable"))],
             "next_step": "GPT_AUTHORIZED_MANUAL_ACTION_OR_QUEUE_BLOCK",
         }
 
-    actual_model = str(payload.get("model", "")).strip() if decision.provider_ref == NVIDIA_PROVIDER else decision.model_ref
+    actual_model = str(payload.get("model", decision.model_ref)).strip() or decision.model_ref
     payload.update({
         "provider": decision.provider_ref,
-        "model": actual_model or decision.model_ref,
+        "model": actual_model,
         "routed_model": decision.model_ref,
         "route_reason": decision.reason_code,
         "router_decision_digest": decision.decision_digest,
@@ -127,8 +136,10 @@ def _execute_governed(
         "action_state": "ACTION_RUNNING" if decision.stage == "ACTION" else f"{decision.stage}_RUNNING",
         "required_capabilities": list(decision.required_capabilities),
     })
-    if decision.provider_ref == NVIDIA_PROVIDER:
-        return _persist_nvidia_result(payload, task)
+    if isinstance(persistence, Mapping):
+        source = str(persistence.get("source", decision.provider_ref)).strip() or decision.provider_ref
+        mode = str(persistence.get("mode", source)).strip() or source
+        return _persist_governed_result(payload, task, source=source, mode=mode)
     return payload
 
 

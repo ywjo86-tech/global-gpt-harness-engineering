@@ -161,6 +161,30 @@ class ProductionMPRFBindingTests(unittest.TestCase):
         self.assertEqual(_failure_class("PROVIDER_ROUTE_BLOCKED:read_provider_unavailable"), "PROVIDER_FAILURE")
         self.assertEqual(_failure_class("PROVIDER_ROUTE_BLOCKED:action_provider_unavailable"), "PROVIDER_FAILURE")
 
+    def test_model_fallback_projection_is_provider_neutral(self):
+        from runtime.orchestrator.provider_router import ProviderEligibilitySnapshotV1, ELIGIBILITY_SCHEMA_V1
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); self._activate_mprf(root); pool = self._provider_config(root)
+            source = ProviderEligibilitySnapshotV1(
+                ELIGIBILITY_SCHEMA_V1, "source", {"nvidia": True, "codex": True},
+                {"nvidia": "nvidia/primary", "codex": "codex/primary"}, ("source",),
+                model_fallback_refs={"nvidia": ("nvidia/f1",), "codex": ("codex/f1", "codex/f2")},
+                provider_capabilities={
+                    "nvidia": ("reasoning", "read_only"),
+                    "codex": ("reasoning", "read_only", "native_tool_action"),
+                },
+            )
+            with patch.dict(os.environ, {"GCH_NVIDIA_MODEL_POOL": str(pool)}, clear=True), patch(
+                "runtime.orchestrator.provider_runtime_binding.runtime_policy.collect_static_provider_eligibility",
+                return_value=source,
+            ):
+                snapshot = collect_production_provider_eligibility(
+                    root, "fallback-neutral", required_capabilities=("reasoning",),
+                    codex_ready_override=True,
+                )
+            self.assertEqual(snapshot.model_fallback_refs["nvidia"], ("nvidia/f1",))
+            self.assertEqual(snapshot.model_fallback_refs["codex"], ("codex/f1", "codex/f2"))
+
 
 if __name__ == "__main__":
     unittest.main()

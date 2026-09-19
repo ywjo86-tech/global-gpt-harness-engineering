@@ -150,10 +150,11 @@ def _mprf_snapshot_from_policy(
     snapshot = runtime.export_router_snapshot(
         f"mprf-{run_id}", tuple(dict.fromkeys(refs)), tuple(required_capabilities)
     )
-    fallback_refs = None
-    nvidia_fallbacks = tuple((source.model_fallback_refs or {}).get(NVIDIA_PROVIDER, ()))
-    if NVIDIA_PROVIDER in snapshot.model_refs and nvidia_fallbacks:
-        fallback_refs = {NVIDIA_PROVIDER: nvidia_fallbacks}
+    fallback_refs = {
+        provider: tuple(refs)
+        for provider, refs in dict(source.model_fallback_refs or {}).items()
+        if provider in snapshot.model_refs and tuple(refs)
+    } or None
     return ProviderEligibilitySnapshotV1(
         ELIGIBILITY_SCHEMA_V1, snapshot.snapshot_id, snapshot.provider_eligible, snapshot.model_refs,
         snapshot.evidence_refs, snapshot.failure_classes, fallback_refs, source.provider_capabilities,

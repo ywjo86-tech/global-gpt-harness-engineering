@@ -154,7 +154,7 @@ class ProductionProviderRouterIntegrationTests(unittest.TestCase):
             root = Path(directory)
             request = self._request(root)
             request.task.required_capabilities.append("filesystem_write")
-            with self.assertRaisesRegex(Exception, "NVIDIA_READ_ONLY_AUTHORITY_REQUIRED"):
+            with self.assertRaisesRegex(Exception, "PROVIDER_READ_ONLY_AUTHORITY_REQUIRED"):
                 execute_production_worker(request)
 
 

@@ -1256,9 +1256,14 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
     from .lv_remediation import review_remediation
     from .lv_review import preflight_run
     route_request = route_decision = None
+    route_backend = None
+    route_read_only = False
     if provider_route_envelope is not None:
         from .provider_router import validate_router_envelope
+        from .provider_execution_registry import PROVIDER_READ_ONLY_BACKEND, execution_backend_for_route
         route_request, route_decision = validate_router_envelope(provider_route_envelope)
+        route_backend = execution_backend_for_route(route_request, route_decision)
+        route_read_only = route_backend == PROVIDER_READ_ONLY_BACKEND
     state: dict[str, Any] = {}
 
     def resumed(stage: str, status: str) -> dict[str, Any] | None:
@@ -1402,23 +1407,16 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     extra_context={"execution_mode":"production",
                                    "execution_backend":(
                                        "GPT_OPERATOR_RECOVERY_VERIFICATION" if post_result_request_gap
-                                       else "PROVIDER_ACTION" if route_decision is not None and route_decision.stage == "ACTION"
-                                            and route_decision.provider_ref != "codex"
-                                       else "NVIDIA_READ_ONLY" if route_decision is not None and route_decision.provider_ref == "nvidia"
-                                       else "HOST_GATEWAY"
+                                       else (route_backend or "HOST_GATEWAY")
                                    ),
                                    "run_id":run_id,"run_root":str(attempt_root),
                                    "task_effect_requirement":(
                                        "NONE_SATISFIED" if post_result_request_gap
-                                       else "READ_ONLY_EXECUTION" if route_decision is not None and route_decision.provider_ref == "nvidia"
-                                            and route_decision.stage != "ACTION"
+                                       else "READ_ONLY_EXECUTION" if route_read_only
                                        else "MUTATION_REQUIRED"
                                    ),
                                    "allow_verification_only":post_result_request_gap,
-                                   "allow_read_only_execution":bool(
-                                       not post_result_request_gap and route_decision is not None
-                                       and route_decision.provider_ref == "nvidia" and route_decision.stage != "ACTION"
-                                   ),
+                                   "allow_read_only_execution":bool(not post_result_request_gap and route_read_only),
                                    "provider_route":dict(provider_route_envelope or {}),
                                    "change_target_count":0 if post_result_request_gap else len(selected.owned_files),
                                    "package_manifest_sha256":recovery_package["package_sha256"],
@@ -1793,26 +1791,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                               "canonical_plan_sha256": plan.canonical_plan_sha256},
             state_snapshot={"branch": "sealed", "head": str(manifest.get("source_head", ""))},
             extra_context={"execution_mode": "production",
-                           "execution_backend": (
-                               "PROVIDER_ACTION"
-                               if route_decision is not None and route_decision.stage == "ACTION"
-                                  and route_decision.provider_ref != "codex"
-                               else "NVIDIA_READ_ONLY"
-                               if route_decision is not None and route_decision.provider_ref == "nvidia"
-                               else "HOST_GATEWAY"
-                           ),
+                           "execution_backend": (route_backend or "HOST_GATEWAY"),
                            "run_id": run_id, "run_root": str(package_root),
                            "task_effect_requirement": (
-                               "READ_ONLY_EXECUTION"
-                               if route_decision is not None and route_decision.provider_ref == "nvidia"
-                                  and route_decision.stage != "ACTION"
-                               else execution_obligation
+                               "READ_ONLY_EXECUTION" if route_read_only else execution_obligation
                            ),
                            "allow_verification_only": execution_obligation == "NONE_SATISFIED",
-                           "allow_read_only_execution": bool(
-                               route_decision is not None and route_decision.provider_ref == "nvidia"
-                               and route_decision.stage != "ACTION"
-                           ),
+                           "allow_read_only_execution": bool(route_read_only),
                            "provider_route": dict(provider_route_envelope or {}),
                            "change_target_count":len(manifest.get("owned_files", [])),
                            "package_manifest_sha256": package_sha,

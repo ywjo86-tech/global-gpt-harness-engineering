@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import inspect
 import unittest
 from pathlib import Path
 
@@ -38,6 +39,12 @@ def third_decision():
 
 
 class ProviderAdapterRegistryTest(unittest.TestCase):
+    def test_governed_dispatch_core_has_no_builtin_provider_postselection_branch(self):
+        from runtime.orchestrator import provider_executor
+        source = inspect.getsource(provider_executor._execute_governed)
+        self.assertNotIn("CODEX_PROVIDER", source)
+        self.assertNotIn("NVIDIA_PROVIDER", source)
+
     def test_third_provider_executes_through_injected_adapter_without_core_branch(self) -> None:
         calls = []
         def adapter(task_obj, decision, project_root):

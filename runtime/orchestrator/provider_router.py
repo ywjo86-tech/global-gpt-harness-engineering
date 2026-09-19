@@ -82,6 +82,10 @@ FAILURE_CLASSES_V1 = frozenset({
     "CHECKPOINT_FAILURE", "EXECUTION_BACKEND_FAILURE", "ACTION_SIDE_EFFECT_AMBIGUOUS",
     "RECOVERY_REQUIRED", "UNKNOWN_FAILURE",
 })
+EXECUTION_PROFILE_NATIVE_TOOL = "NATIVE_TOOL"
+EXECUTION_PROFILE_PROVIDER_GENERATION = "PROVIDER_GENERATION"
+EXECUTION_PROFILES_V1 = frozenset({EXECUTION_PROFILE_NATIVE_TOOL, EXECUTION_PROFILE_PROVIDER_GENERATION})
+
 REROUTE_ELIGIBLE_FAILURE_CLASSES_V1 = frozenset({
     "MODEL_FAILURE", "PROVIDER_FAILURE", "RATE_LIMIT", "QUOTA_EXHAUSTION", "NETWORK_FAILURE",
     "INVALID_RESPONSE",
@@ -291,6 +295,7 @@ class RouterDecisionV2:
     policy_version: str
     action_state: str
     model_fallback_refs: tuple[str, ...] = ()
+    execution_profile: str = ""
 
     def __post_init__(self) -> None:
         if self.schema_version != ROUTER_DECISION_SCHEMA_V2:
@@ -304,6 +309,8 @@ class RouterDecisionV2:
             raise ProviderRouterContractError("duplicate RouterDecision fallback model")
         if self.model_ref and self.model_ref in self.model_fallback_refs:
             raise ProviderRouterContractError("RouterDecision fallback repeats primary model")
+        if self.execution_profile and self.execution_profile not in EXECUTION_PROFILES_V1:
+            raise ProviderRouterContractError("RouterDecision execution profile is invalid")
 
     def unsigned_dict(self) -> dict[str, Any]:
         payload = {
@@ -316,6 +323,8 @@ class RouterDecisionV2:
         }
         if self.model_fallback_refs:
             payload["model_fallback_refs"] = list(self.model_fallback_refs)
+        if self.execution_profile:
+            payload["execution_profile"] = self.execution_profile
         return payload
 
     @property
@@ -510,6 +519,11 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
         "governed_action_by_neutral_rank" if request.stage == "ACTION" else "governed_read_by_neutral_rank"
     )
     action_state = "ACTION_PENDING" if request.stage == "ACTION" else f"{request.stage}_PENDING"
+    provider_caps = set((request.eligibility_snapshot.provider_capabilities or {}).get(provider, ()))
+    execution_profile = (
+        EXECUTION_PROFILE_NATIVE_TOOL if "native_tool_action" in provider_caps
+        else EXECUTION_PROFILE_PROVIDER_GENERATION
+    )
     return RouterDecisionV2(
         schema_version=ROUTER_DECISION_SCHEMA_V2,
         decision_id=f"decision-{request.request_id}", request_digest=request.request_digest,
@@ -517,5 +531,5 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
         required_capabilities=request.required_capabilities, eligible=True,
         eligibility_evidence_refs=tuple(request.eligibility_snapshot.evidence_refs),
         policy_version=GOVERNED_POLICY_V1, action_state=action_state,
-        model_fallback_refs=fallback_refs,
+        model_fallback_refs=fallback_refs, execution_profile=execution_profile,
     )
