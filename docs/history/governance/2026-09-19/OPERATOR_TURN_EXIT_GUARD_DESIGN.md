@@ -18,7 +18,7 @@ Prevent an Operator turn from being treated as finished while executable work re
 - Exit Guard is read-only classification. It MUST NOT dispatch, resume, reroute, approve, patch, select a provider/model, or mutate orchestration state.
 
 ## Required dispositions
-`CONTINUE_EXECUTION`, `REQUEST_USER_DECISION`, `NOTIFY_STALLED`, `ALLOW_COMPLETION_RESPONSE`.
+`CONTINUE_EXECUTION`, `REQUEST_USER_DECISION`, `NOTIFY_STALLED`, `REPORT_TERMINAL_STOP`, `ALLOW_COMPLETION_RESPONSE`.
 
 ## Requirements
 - **OEG-MUST-001:** `READY`, `DISPATCHED`, `RUNNING`, `VERIFYING`, `RECOVERING` with executable/incomplete work => `CONTINUE_EXECUTION`.
@@ -37,6 +37,7 @@ Prevent an Operator turn from being treated as finished while executable work re
 - **OEG-MUST-014:** Router/MPRF/Full MCP/AI Office authority negative-space remains unchanged.
 - **OEG-MUST-015:** historical Full Plan state remains readable; no state schema rewrite is required.
 - **OEG-MUST-016:** final-response allowance fails closed on malformed or incomplete Full Plan state.
+- **OEG-MUST-017:** explicit user cancellation may produce `REPORT_TERMINAL_STOP`; it is final-report eligible but never successful completion.
 
 ## Completion obligations
 The caller may supply named booleans such as `EDP_ALL_PASS`, `STABLE_BASELINE_SEALED`, or project-specific exit criteria. Any false/missing required obligation blocks `ALLOW_COMPLETION_RESPONSE` and returns `CONTINUE_EXECUTION` when no user decision/stall notification is due.

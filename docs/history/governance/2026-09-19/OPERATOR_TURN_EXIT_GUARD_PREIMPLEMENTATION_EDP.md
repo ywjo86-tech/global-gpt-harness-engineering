@@ -22,7 +22,7 @@
 | Provider authority | Router alone selects implementation provider | implementation workflow requirement | PASS |
 
 ## RTM
-OEG-MUST-001..016 → `operator_exit_guard.py` assessment/tests → `production_full_plan_entry.py` output binding → focused/full regression → final EDP.
+OEG-MUST-001..017 → `operator_exit_guard.py` assessment/tests → `production_full_plan_entry.py` output binding → focused/full regression → final EDP.
 
 ## Negative-space findings closed in design
 - **OEG-F01:** helper-only guard could be bypassed. Closed by mandatory production-entry result binding plus standalone pre-final check.
@@ -31,7 +31,7 @@ OEG-MUST-001..016 → `operator_exit_guard.py` assessment/tests → `production_
 - **OEG-F04:** duplicating R2 timing would drift. Closed by importing/reusing R2 evaluator.
 
 ## Adversarial second pass
-Counterexamples tested conceptually: R30-like `TASK-017 ready`, provider wait at 299s, provider wait at 300s, recovered incident, genuine approval, cancelled run, malformed state, all gates complete but EDP false. No authority transfer is necessary to classify any case.
+Counterexamples tested conceptually: R30-like `TASK-017 ready`, provider wait at 299s, provider wait at 300s, recovered incident, genuine approval, cancelled run (terminal-report only), malformed state, all gates complete but EDP false. No authority transfer is necessary to classify any case.
 
 ## Metrics
 `BLOCKER_COUNT=0`
