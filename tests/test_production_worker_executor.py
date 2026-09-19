@@ -1395,6 +1395,22 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             self.assertNotIn(candidate, serialized)
             self.assertNotIn(hashlib.sha256(candidate.encode()).hexdigest(), serialized)
 
+    def test_authorization_reference_identifiers_are_not_credentials(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); (root / "app").mkdir()
+            (root / "app/x.py").write_text(
+                "def build():\n"
+                "    delegated_authorization_ref = 'delegated:auth-001'\n"
+                "    authorization_binding_ref = 'auth:binding-001'\n"
+                "    authorization = 'synthetic-realistic-material-123456'\n"
+                "    return delegated_authorization_ref, authorization_binding_ref, authorization\n",
+                encoding="utf-8",
+            )
+            findings = _hardcoded_credential_findings(root, ["app/x.py"])
+            self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0]["identifier_category"], "authorization")
+            self.assertTrue(findings[0]["hardcoded"])
+
     def test_unparseable_python_is_not_misreported_as_hardcoded_credential(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); request = self._fixture(root)

@@ -1730,7 +1730,10 @@ def _literal_length_bucket(value: str | bytes) -> str:
 
 
 def _credential_identifier_category(identifier: str) -> str | None:
-    match = _CREDENTIAL_IDENTIFIER.search(identifier.replace(".", "_"))
+    normalized = identifier.replace(".", "_").replace("-", "_").casefold()
+    if normalized.endswith(("_ref", "_reference", "_id", "_digest", "_sha256", "_fingerprint")):
+        return None
+    match = _CREDENTIAL_IDENTIFIER.search(normalized)
     return match.group(1).lower().replace("-", "_") if match else None
 
 

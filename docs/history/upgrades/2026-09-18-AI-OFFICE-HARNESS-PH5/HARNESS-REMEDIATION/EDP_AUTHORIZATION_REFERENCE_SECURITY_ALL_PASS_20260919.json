@@ -1,0 +1,32 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-AUTHORIZATION-REFERENCE-SECURITY-20260919",
+  "status": "ALL_PASS",
+  "defect": "Owned-diff credential scanner treated authorization reference identifiers such as delegated_authorization_ref and authorization_binding_ref as literal credentials, blocking non-secret governance reference IDs.",
+  "remediation": [
+    "credential identifier classification excludes only explicit metadata/reference suffixes: _ref, _reference, _id, _digest, _sha256, _fingerprint",
+    "direct authorization/api_key/token/password/secret literals remain classified and blocked"
+  ],
+  "negative_space": [
+    "no literal values or hashes added to evidence",
+    "no secret-handling capability granted",
+    "provider/Broker/Router/MPRF authority unchanged",
+    "suffix exception applies only to identifier classification, not output secret regex scanning"
+  ],
+  "evidence": {
+    "targeted": "139 PASS / 1 opt-in skip",
+    "wide": "259 PASS / 6 skip",
+    "full_regression": "1605 PASS / 12 skip / RC=0",
+    "r19_generated_files_recheck": "0 credential findings after classifier fix",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "Authorization reference IDs are no longer misclassified as credentials while direct hardcoded credential literals remain fail-closed.",
+  "record_sha256": "718e5301e139bb92f3f2671203e54efa7221c058770e684249e1d622b3801073"
+}
