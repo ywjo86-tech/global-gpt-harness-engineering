@@ -54,6 +54,7 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
     gates = [str(item["gate_id"]) for item in job["gates"]]
     supervisor = DurableFullPlanSupervisor(
         job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+        authority_core_sha256=str(job.get("authority_core_sha256") or ""),
         **dict(job.get("policy") or {}),
     )
     try:
@@ -138,6 +139,7 @@ def _active_jobs_under(root: Path) -> list[str]:
             gates = [str(item["gate_id"]) for item in job["gates"]]
             state, _ = DurableFullPlanSupervisor(
                 job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+                authority_core_sha256=str(job.get("authority_core_sha256") or ""),
                 **dict(job.get("policy") or {}),
             ).load()
         except Exception:

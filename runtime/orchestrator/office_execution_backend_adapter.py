@@ -53,6 +53,13 @@ class OfficeExecutionBackendAdapter:
             "execution_package_digest": request.execution_package_digest,
             "execution_contract_ref": request.execution_contract_ref,
             "execution_contract_digest": request.execution_contract_digest,
+            "full_plan_assignment_binding": {
+                "assignment_ref": request.full_plan_assignment_ref,
+                "assignment_digest": request.full_plan_assignment_digest,
+                "gate_id": request.full_plan_gate_id,
+                "run_id": request.full_plan_run_id,
+                "task_id": request.full_plan_task_id,
+            },
         }
 
     @staticmethod

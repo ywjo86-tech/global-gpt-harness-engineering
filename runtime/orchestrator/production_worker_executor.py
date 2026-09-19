@@ -20,6 +20,7 @@ from typing import Any, Callable, Mapping
 
 from .lv_execution_package import canonical_json_bytes
 from .nvidia_adapter import run_nvidia_reasoning_task
+from .git_provenance import GitProvenanceError, touched_paths_between
 from .provider_router import (
     NVIDIA_PROVIDER,
     ProviderRouterContractError,
@@ -2802,12 +2803,12 @@ def execute_production_worker(request: WorkerRequest, *,
     current_before = _git(root, "rev-parse", "HEAD").stdout.strip()
     adoption = current_before != baseline
     if adoption:
-        ancestor = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", baseline, current_before], check=False)
-        if ancestor.returncode != 0:
-            raise ProductionWorkerError("production worker baseline is dirty or drifted")
-        adopted_changed = _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", current_before).stdout.splitlines()
+        try:
+            adopted_changed = list(touched_paths_between(root, baseline, current_before))
+        except GitProvenanceError as exc:
+            raise ProductionWorkerError("production worker baseline is dirty or drifted") from exc
         if not adopted_changed or any(path not in owned for path in adopted_changed):
-            raise ProductionWorkerError("production worker adoption scope violation")
+            raise ProductionWorkerError("HISTORICAL_OUT_OF_SCOPE_TOUCH: production worker adoption scope violation")
     prompt = _prompt(request, baseline, owned)
     prompt_bytes = prompt.encode()
     # Runtime instructions are authoritative evidence and must never carry

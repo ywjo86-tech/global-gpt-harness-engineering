@@ -23,7 +23,8 @@ def request(effect: str = "STATE_CHANGING") -> OfficeExecutionRequestV1:
     return OfficeExecutionRequestV1(
         OFFICE_EXECUTION_REQUEST_SCHEMA_V1, "proj", "run", "workflow", "task", "task-exec",
         "intent-ref", D, effect, "gov-ref", D, "risk-ref", D, "delegated-auth", D,
-        "auth-binding", D, "execution-package", D, "execution-contract", D, "corr",
+        "auth-binding", D, "execution-package", D, "execution-contract", D,
+        "full-plan-assignment", D, "GATE-005", "full-plan-run", "task", "corr",
     )
 
 
@@ -75,6 +76,13 @@ class AIOfficeExecutionContractTest(unittest.TestCase):
                 ).to_dict(),
                 "provider_ref": "anything",
             })
+
+
+    def test_002_execution_requires_exact_full_plan_task_binding(self) -> None:
+        values = request().to_dict()
+        values["full_plan_task_id"] = "other-task"
+        with self.assertRaisesRegex(OfficeExecutionContractError, "FULL_PLAN_ASSIGNMENT_BINDING_MISMATCH"):
+            OfficeExecutionRequestV1(**values)
 
     def test_003_public_boundary_has_no_full_mcp_import_or_concrete_backend_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]

@@ -13,6 +13,7 @@ from runtime.orchestrator.production_full_plan_entry import (
     build_gate_executor,
     load_job,
     preflight_job,
+    register_job,
     run_job,
     transient_systemd_command,
 )
@@ -172,6 +173,43 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             self.assertIn("TimeoutStopSec=15s", joined)
             self.assertIn("--working-directory=", joined)
             self.assertIn("production_full_plan_entry", joined)
+
+    def test_register_job_forbids_same_run_authority_rebind(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            first = load_job(path); register_job(first)
+            second = load_job(path); second["gates"][0]["requirements_sha256"] = "c" * 64
+            with self.assertRaisesRegex(FullPlanJobError, "RUN_ID_REBIND_FORBIDDEN"):
+                register_job(second)
+
+    def test_preflight_detects_executor_generation_drift(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            (root/"a.txt").write_text("a")
+            subprocess.run(["git", "-C", str(root), "add", "a.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "a"], check=True)
+            job = load_job(path); canonical = register_job(job)
+            sealed = load_job(canonical)
+            self.assertEqual(preflight_job(sealed)["status"], "PASS")
+            (root/"b.txt").write_text("b")
+            subprocess.run(["git", "-C", str(root), "add", "b.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "b"], check=True)
+            self.assertEqual(preflight_job(sealed)["reason"], "EXECUTOR_GENERATION_DRIFT")
+
+    def test_preflight_detects_uncommitted_executor_runtime_source_drift(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); path = self.make_job(root, ("G1",))
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+            (root/"runtime").mkdir(); (root/"runtime/executor.py").write_text("VALUE = 1\n")
+            subprocess.run(["git", "-C", str(root), "add", "runtime/executor.py"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "runtime"], check=True)
+            canonical = register_job(load_job(path)); sealed = load_job(canonical)
+            self.assertEqual(preflight_job(sealed)["status"], "PASS")
+            (root/"runtime/executor.py").write_text("VALUE = 2\n")
+            self.assertEqual(preflight_job(sealed)["reason"], "EXECUTOR_RUNTIME_SOURCE_DRIFT")
 
 
 if __name__ == "__main__":

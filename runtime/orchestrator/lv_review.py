@@ -52,6 +52,7 @@ from .task_contract_compat import resolve_task_lv_projection, TaskContractProjec
 from .validation_toolchain import (
     ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
 )
+from .git_provenance import GitProvenanceError, touched_paths_between
 from .lv_execution_package import (
     LVExecutionPackageError,
     _index_fingerprint,
@@ -642,9 +643,12 @@ def _assert_source_snapshot(
         owned = manifest.get("owned_files")
         if not isinstance(owned, list) or not owned or any(not isinstance(item, str) or not item for item in owned):
             raise LVReviewError("safe descendant source owned scope is invalid")
-        changed = _git(root, "diff", "--name-only", f"{sealed_head}..{current['source_head']}").decode("utf-8").splitlines()
+        try:
+            changed = touched_paths_between(root, sealed_head, current["source_head"])
+        except GitProvenanceError as exc:
+            raise LVReviewError("source snapshot provenance verification failed") from exc
         if any(any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in changed):
-            raise LVReviewError("safe descendant source changed owned scope")
+            raise LVReviewError("safe descendant source historically changed owned scope")
         identity_fields = ()
     for field in identity_fields:
         value = current[field]

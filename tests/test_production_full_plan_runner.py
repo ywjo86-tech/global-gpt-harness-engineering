@@ -279,6 +279,27 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             self.assertEqual(out.state["queue"][0]["attempt"], 2)
             self.assertTrue(out.state["queue"][0]["resume"])
 
+    def test_26_authority_core_drift_is_rejected_on_reload(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup = self.supervisor(d, gates=["G1"], authority_core_sha256="a" * 64)
+            state, _ = sup.load(); sup._persist(state, {"event": "SEALED"})
+            with self.assertRaisesRegex(ProductionFullPlanError, "RUN_AUTHORITY_DRIFT"):
+                self.supervisor(d, gates=["G1"], authority_core_sha256="b" * 64).load()
+
+    def test_27_heartbeat_does_not_count_as_semantic_progress_and_stall_is_alerted(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = self.supervisor(
+                d, gates=["G1"], retry_budget=0, gate_timeout_seconds=0.12,
+                heartbeat_seconds=0.01, lease_seconds=0.03, stall_alert_seconds=0.04,
+            ).run(always_hang)
+            self.assertEqual(out.status, "BLOCKED")
+            events = (Path(d)/"_workspace/production-full-plan/proj/run/events.jsonl").read_text()
+            self.assertIn('"event":"HEARTBEAT"', events)
+            self.assertIn('"event":"STALLED_SUSPECTED"', events)
+            attention_dir = Path(d)/"_workspace/production-full-plan/proj/run/attention/pending"
+            kinds = {json.loads(path.read_text())["kind"] for path in attention_dir.glob("*.json")}
+            self.assertIn("STALLED_SUSPECTED", kinds)
+
 
 if __name__ == "__main__":
     unittest.main()

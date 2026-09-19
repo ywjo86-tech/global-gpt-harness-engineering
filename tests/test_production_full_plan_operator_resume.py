@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from runtime.orchestrator.production_full_plan_entry import register_job
+from runtime.orchestrator.production_full_plan_entry import load_registered_job, register_job
 from runtime.orchestrator.production_full_plan_operator_resume import (
     FullPlanOperatorResumeError,
     _operator_resume_lock,
@@ -143,7 +143,7 @@ class ProductionFullPlanOperatorResumeTests(unittest.TestCase):
         self.assertEqual(result["from_state"], "WAITING_PROVIDER")
         self.assertEqual(result["to_state"], "RECOVERING")
         self.assertEqual(supervisor.resume_calls, ["WAITING_PROVIDER"])
-        registered = json.loads(self.job_path.read_text(encoding="utf-8"))
+        registered = load_registered_job(self.job_path)
         spec = registered["gates"][0]
         self.assertEqual(spec["manual_action_package_paths_by_lv"]["TASK-015"], str(action_path.resolve()))
         self.assertEqual(spec["manual_action_authorization_paths_by_lv"]["TASK-015"], str(auth_path.resolve()))

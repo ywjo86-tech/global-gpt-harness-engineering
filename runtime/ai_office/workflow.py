@@ -25,6 +25,29 @@ TRANSITIONS: Mapping[str, Mapping[str, str]] = {
 
 class WorkflowContractError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class FullPlanCompletionRefV1:
+    full_plan_run_id: str
+    gate_id: str
+    gate_ref: str
+    gate_digest: str
+    fanin_ref: str
+    fanin_digest: str
+
+    def __post_init__(self) -> None:
+        for field in ("full_plan_run_id", "gate_id", "gate_ref", "fanin_ref"):
+            object.__setattr__(self, field, _text(getattr(self, field), field))
+        for field in ("gate_digest", "fanin_digest"):
+            value = _text(getattr(self, field), field)
+            if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+                raise WorkflowContractError(f"invalid {field}")
+            object.__setattr__(self, field, value)
+
+    @property
+    def completion_digest(self) -> str:
+        return canonical_digest(asdict(self))
 def _text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > 512:
         raise WorkflowContractError(f"invalid {label}")
@@ -115,7 +138,10 @@ class WorkflowCoordinator:
         self.department_id = _text(department_id, "department_id")
         self.schedule_ref = _text(schedule_ref, "schedule_ref")
 
-    def transition(self, event: str, *, reason_ref: str, external_assignment_ref: str = "") -> OfficeRunV1:
+    def transition(
+        self, event: str, *, reason_ref: str, external_assignment_ref: str = "",
+        full_plan_completion: FullPlanCompletionRefV1 | None = None,
+    ) -> OfficeRunV1:
         current = self.store.load()
         target = next_state(current.workflow_state, event)
         refs = current.workflow_refs
@@ -124,10 +150,22 @@ class WorkflowCoordinator:
                 raise WorkflowContractError("assignment ref is accepted only at Full Plan handoff")
             ref = _text(external_assignment_ref, "external_assignment_ref")
             refs = tuple(dict.fromkeys((*refs, f"full-plan-assignment:{ref}")))
+        if event == "GATE_GO_REFERENCED":
+            if not isinstance(full_plan_completion, FullPlanCompletionRefV1):
+                raise WorkflowContractError("FULL_PLAN_COMPLETION_BINDING_MISMATCH")
+            refs = tuple(dict.fromkeys((
+                *refs,
+                f"full-plan-gate:{full_plan_completion.gate_ref}",
+                f"full-plan-fanin:{full_plan_completion.fanin_ref}",
+                f"full-plan-completion:{full_plan_completion.completion_digest}",
+            )))
+        elif full_plan_completion is not None:
+            raise WorkflowContractError("Full Plan completion ref is accepted only at Gate GO")
         updated = self.store.transition(to_state=target, reason_ref=reason_ref, workflow_refs=refs)
         assignment_refs = [ref.split(":", 1)[1] for ref in updated.workflow_refs if ref.startswith("full-plan-assignment:")]
+        fanin_refs = [ref.split(":", 1)[1] for ref in updated.workflow_refs if ref.startswith("full-plan-fanin:")]
         return OfficeRunV1(
             OFFICE_RUN_SCHEMA_V1, self.office_id, self.department_id, updated.run_id,
             self.schedule_ref, updated.workflow_state, updated.revision,
-            assignment_refs[-1] if assignment_refs else "", "",
+            assignment_refs[-1] if assignment_refs else "", fanin_refs[-1] if fanin_refs else "",
         )

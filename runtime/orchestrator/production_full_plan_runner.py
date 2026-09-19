@@ -65,6 +65,9 @@ def _failure_class(reason: object) -> str:
         "read-only static validation failed",
         "LV preview requires an active canonical Gate state",
         "canonical binding mismatch",
+        "RUN_ID_REBIND_FORBIDDEN", "RUN_AUTHORITY_DRIFT", "FRESH_RUN_NAMESPACE_COLLISION",
+        "STALE_PACKAGE_BINDING", "EXECUTOR_GENERATION_DRIFT", "HISTORICAL_OUT_OF_SCOPE_TOUCH",
+        "FULL_PLAN_ASSIGNMENT_BINDING_MISMATCH", "FULL_PLAN_COMPLETION_BINDING_MISMATCH",
     )
     provider_markers = (
         "BLOCKED_BY_PROVIDER", "PROVIDER_ROUTE_BLOCKED:", "NO_ELIGIBLE_PROVIDER", "WAITING_PROVIDER", "PROVIDER_FAILURE",
@@ -88,12 +91,15 @@ def _seal(state: Mapping[str, Any]) -> dict[str, Any]:
     return value
 
 
-def _validate_state(state: Mapping[str, Any], *, project_id: str, run_id: str, gates: Sequence[str]) -> dict[str, Any]:
+def _validate_state(state: Mapping[str, Any], *, project_id: str, run_id: str, gates: Sequence[str],
+                    authority_core_sha256: str = "") -> dict[str, Any]:
     value = dict(state)
     if value.get("schema_version") != SCHEMA_VERSION:
         raise ProductionFullPlanError("incompatible Full Plan state schema")
     if value.get("project_id") != project_id or value.get("run_id") != run_id or value.get("gates") != list(gates):
         raise ProductionFullPlanError("Full Plan state binding mismatch")
+    if authority_core_sha256 and value.get("authority_core_sha256") != authority_core_sha256:
+        raise ProductionFullPlanError("RUN_AUTHORITY_DRIFT")
     if value.get("state") not in ALL_STATES:
         raise ProductionFullPlanError("invalid Full Plan state")
     digest = value.get("state_sha256")
@@ -175,7 +181,8 @@ class DurableFullPlanSupervisor:
                  min_memory_available_bytes: int = 128 * 1024 * 1024,
                  max_cpu_load_per_cpu_milli: int = 2500,
                  max_io_pressure_full_avg10_milli: int = 50000,
-                 max_queue_depth: int = 64,
+                 max_queue_depth: int = 64, stall_alert_seconds: float = 300.0,
+                 authority_core_sha256: str = "",
                  resource_probe: Callable[[str | Path], Mapping[str, int]] | None = None):
         root = Path(harness_root).resolve()
         if not root.is_dir() or root.is_symlink():
@@ -186,7 +193,8 @@ class DurableFullPlanSupervisor:
         self.gates = tuple(_safe_id(gate, "Gate ID") for gate in gates)
         if not self.gates or len(set(self.gates)) != len(self.gates):
             raise ProductionFullPlanError("Full Plan Gate order is empty or duplicated")
-        if retry_budget < 0 or gate_timeout_seconds <= 0 or heartbeat_seconds <= 0 or lease_seconds <= heartbeat_seconds:
+        if (retry_budget < 0 or gate_timeout_seconds <= 0 or heartbeat_seconds <= 0
+                or lease_seconds <= heartbeat_seconds or stall_alert_seconds <= 0):
             raise ProductionFullPlanError("invalid Full Plan runtime policy")
         self.retry_budget = retry_budget
         self.gate_timeout_seconds = float(gate_timeout_seconds)
@@ -198,6 +206,11 @@ class DurableFullPlanSupervisor:
         self.max_cpu_load_per_cpu_milli = int(max_cpu_load_per_cpu_milli)
         self.max_io_pressure_full_avg10_milli = int(max_io_pressure_full_avg10_milli)
         self.max_queue_depth = int(max_queue_depth)
+        self.stall_alert_seconds = float(stall_alert_seconds)
+        self.authority_core_sha256 = str(authority_core_sha256 or "")
+        if self.authority_core_sha256 and (len(self.authority_core_sha256) != 64
+                or any(ch not in "0123456789abcdef" for ch in self.authority_core_sha256)):
+            raise ProductionFullPlanError("invalid authority core digest")
         if min(self.min_disk_free_bytes, self.min_inode_free, self.min_memory_available_bytes, self.max_queue_depth) < 0:
             raise ProductionFullPlanError("invalid resource budget")
         self.resource_probe = resource_probe or resource_snapshot
@@ -238,7 +251,12 @@ class DurableFullPlanSupervisor:
             "lease": None,
             "epoch": 0,
             "dead_letter": [],
+            "authority_core_sha256": self.authority_core_sha256,
             "last_progress_at": _now(),
+            "last_liveness_at": _now(),
+            "last_semantic_progress_at": _now(),
+            "progress_sequence": 0,
+            "last_semantic_event": "INITIALIZED",
             "last_error": None,
             "recovery_count": 0,
             "terminal_reason": None,
@@ -254,7 +272,10 @@ class DurableFullPlanSupervisor:
             raise ProductionFullPlanError("corrupt Full Plan state generation") from exc
         if not isinstance(value, dict):
             raise ProductionFullPlanError("Full Plan state generation is not an object")
-        return _validate_state(value, project_id=self.project_id, run_id=self.run_id, gates=self.gates)
+        return _validate_state(
+            value, project_id=self.project_id, run_id=self.run_id, gates=self.gates,
+            authority_core_sha256=self.authority_core_sha256,
+        )
 
     def load(self) -> tuple[dict[str, Any], bool]:
         if not self.state_path.exists() and not self.state_path.with_suffix(".json.prev").exists():
@@ -283,8 +304,14 @@ class DurableFullPlanSupervisor:
         finally:
             os.close(fd)
 
-    def _persist(self, state: dict[str, Any], event: Mapping[str, Any]) -> dict[str, Any]:
-        state["last_progress_at"] = _now()
+    def _persist(self, state: dict[str, Any], event: Mapping[str, Any], *, semantic: bool = True) -> dict[str, Any]:
+        now = _now()
+        state["last_liveness_at"] = now
+        if semantic:
+            state["last_progress_at"] = now
+            state["last_semantic_progress_at"] = now
+            state["progress_sequence"] = int(state.get("progress_sequence", 0)) + 1
+            state["last_semantic_event"] = str(event.get("event") or "STATE_CHANGE")
         sealed = _seal(state)
         durable_json_save(self.state_path, sealed)
         self._append_line(self.events_path, {**dict(event), "state_sha256": sealed["state_sha256"]})
@@ -297,7 +324,7 @@ class DurableFullPlanSupervisor:
                                            "state": state.get("state"), **extra})
         safe_details = {
             key: value for key, value in extra.items()
-            if key in {"attempt", "next_attempt", "resources", "wait_state"}
+            if key in {"attempt", "next_attempt", "resources", "wait_state", "elapsed_seconds", "current_stage"}
         }
         self.attention_outbox.publish(
             kind=kind, state=str(state.get("state") or "UNKNOWN"), reason=reason,
@@ -480,6 +507,7 @@ class DurableFullPlanSupervisor:
                               "worker_pid": process.pid, "epoch": state["epoch"]})
         started = time.monotonic()
         last_heartbeat = started
+        stall_alerted = False
         while process.is_alive():
             elapsed = time.monotonic() - started
             if elapsed >= self.gate_timeout_seconds:
@@ -491,12 +519,25 @@ class DurableFullPlanSupervisor:
                 parent.close()
                 return "TIMEOUT", {"reason": "GATE_EXECUTION_TIMEOUT", "elapsed_seconds": elapsed}
             now = time.monotonic()
+            if not stall_alerted and elapsed >= self.stall_alert_seconds:
+                stall_alerted = True
+                self._append_line(self.events_path, {
+                    "event": "STALLED_SUSPECTED", "gate_id": item["gate_id"],
+                    "worker_pid": process.pid, "epoch": state["epoch"],
+                    "elapsed_seconds": int(elapsed),
+                    "last_semantic_event": state.get("last_semantic_event"),
+                })
+                self._alert(
+                    "STALLED_SUSPECTED", state, gate_id=item["gate_id"],
+                    reason="NO_SEMANTIC_PROGRESS", elapsed_seconds=int(elapsed),
+                    current_stage=state.get("last_semantic_event"),
+                )
             if now - last_heartbeat >= self.heartbeat_seconds:
                 lease = dict(state.get("lease") or {})
                 lease["heartbeat_at"] = _now()
                 state["lease"] = lease
                 self._persist(state, {"event": "HEARTBEAT", "gate_id": item["gate_id"],
-                                      "worker_pid": process.pid, "epoch": state["epoch"]})
+                                      "worker_pid": process.pid, "epoch": state["epoch"]}, semantic=False)
                 last_heartbeat = now
             process.join(timeout=min(0.2, self.heartbeat_seconds))
         process.join(timeout=1.0)

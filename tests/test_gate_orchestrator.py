@@ -99,6 +99,23 @@ class GateOrchestratorTests(unittest.TestCase):
             self.plan = load_gate_plan(self.root, "GATE-1")
         self.auth = create_gate_authorization(self.plan, "AUTH-G1")
 
+
+    def test_fresh_run_cannot_rehydrate_existing_package_namespace(self) -> None:
+        from runtime.orchestrator.canonical_paths import canonical_lv_path
+        from runtime.orchestrator.gate_controller import GateControllerError
+        from runtime.orchestrator.gate_orchestrator import _production_adapters
+        run_id = "fresh-collision"
+        lv_id = self.plan.lvs[0].lv_id
+        package_root = canonical_lv_path(
+            self.root.parent, project_id=self.plan.project_id, run_id=run_id,
+            gate_id=self.plan.gate_id, lv_id=lv_id,
+        )
+        package_root.mkdir(parents=True, exist_ok=True)
+        (package_root / "package.manifest.json").write_text("{}", encoding="utf-8")
+        adapters = _production_adapters(self.root, self.plan, self.auth, lv_id, run_id, self.root.parent)
+        with self.assertRaisesRegex(GateControllerError, "FRESH_RUN_NAMESPACE_COLLISION"):
+            adapters.package({"resume": False})
+
     def test_capability_handoff_projection_mismatch_is_blocked(self) -> None:
         projection = {"used_assets": ["candidate-a"], "candidate_use_authorized": True}
         handoff = {"review": {"capability": {"used_assets": [], "candidate_use_authorized": True}}}

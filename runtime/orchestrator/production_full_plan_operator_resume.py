@@ -21,8 +21,10 @@ from .durable_io import atomic_write_json
 from .production_full_plan_entry import (
     canonical_job_path,
     load_job,
+    load_registered_job,
     transient_systemd_command,
 )
+from .production_run_authority import RunAuthorityError, bind_manual_action_paths
 from .production_full_plan_runner import DurableFullPlanSupervisor
 from .production_manual_action import validate_action_package
 
@@ -66,7 +68,7 @@ def _canonical_registered_job(job_path: str | Path) -> tuple[Path, dict[str, Any
     canonical = canonical_job_path(requested)
     if canonical.is_symlink() or not canonical.is_file():
         raise FullPlanOperatorResumeError("durable Full Plan job is not registered")
-    registered = load_job(canonical)
+    registered = load_registered_job(canonical)
     identity = ("project_root", "harness_root", "project_id", "run_id")
     if any(str(requested.get(key)) != str(registered.get(key)) for key in identity):
         raise FullPlanOperatorResumeError("registered Full Plan job identity mismatch")
@@ -114,7 +116,8 @@ def _bind_manual_action_and_resume_locked(
     gate_ids = [str(item["gate_id"]) for item in job["gates"]]
     supervisor = DurableFullPlanSupervisor(
         harness, project_id=str(job["project_id"]), run_id=str(job["run_id"]),
-        gates=gate_ids, **dict(job.get("policy") or {}),
+        gates=gate_ids, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
+        **dict(job.get("policy") or {}),
     )
     state, _ = supervisor.load()
     if state.get("state") != "WAITING_PROVIDER":
@@ -174,12 +177,15 @@ def _bind_manual_action_and_resume_locked(
     old_auth = auth_paths.get(lv_id)
     if old_package not in {None, str(action_file)} or old_auth not in {None, str(auth_file)}:
         raise FullPlanOperatorResumeError("conflicting Manual Action is already bound for LV")
-    package_paths[lv_id] = str(action_file)
-    auth_paths[lv_id] = str(auth_file)
-    spec["manual_action_package_paths_by_lv"] = package_paths
-    spec["manual_action_authorization_paths_by_lv"] = auth_paths
-    job["gates"] = [spec if item.get("gate_id") == gate_id else dict(item) for item in job["gates"]]
-    atomic_write_json(canonical, job)
+    try:
+        bind_manual_action_paths(
+            job, gate_id=gate_id, lv_id=lv_id,
+            action_path=str(action_file), authorization_path=str(auth_file),
+        )
+    except RunAuthorityError as exc:
+        if str(exc) == "RUNTIME_BINDING_CONFLICT":
+            raise FullPlanOperatorResumeError("conflicting Manual Action is already bound for LV") from exc
+        raise FullPlanOperatorResumeError(str(exc)) from exc
 
     resumed = supervisor.resume_wait("WAITING_PROVIDER")
     launch_result: dict[str, Any] = {"requested": False, "returncode": None}

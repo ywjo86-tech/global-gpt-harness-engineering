@@ -113,6 +113,11 @@ class OfficeExecutionRequestV1:
     execution_package_digest: str
     execution_contract_ref: str
     execution_contract_digest: str
+    full_plan_assignment_ref: str
+    full_plan_assignment_digest: str
+    full_plan_gate_id: str
+    full_plan_run_id: str
+    full_plan_task_id: str
     correlation_id: str
 
     def __post_init__(self) -> None:
@@ -128,6 +133,7 @@ class OfficeExecutionRequestV1:
             (self.authorization_binding_ref, "authorization_binding_ref"),
             (self.execution_package_ref, "execution_package_ref"),
             (self.execution_contract_ref, "execution_contract_ref"),
+            (self.full_plan_assignment_ref, "full_plan_assignment_ref"),
         ):
             _safe_ref(value, label)
         for value, label in (
@@ -138,8 +144,17 @@ class OfficeExecutionRequestV1:
             (self.authorization_binding_digest, "authorization_binding_digest"),
             (self.execution_package_digest, "execution_package_digest"),
             (self.execution_contract_digest, "execution_contract_digest"),
+            (self.full_plan_assignment_digest, "full_plan_assignment_digest"),
         ):
             _sha(value, label)
+        for value, label in (
+            (self.full_plan_gate_id, "full_plan_gate_id"),
+            (self.full_plan_run_id, "full_plan_run_id"),
+            (self.full_plan_task_id, "full_plan_task_id"),
+        ):
+            _safe_id(value, label)
+        if self.full_plan_task_id != self.task_id:
+            raise OfficeExecutionContractError("FULL_PLAN_ASSIGNMENT_BINDING_MISMATCH")
         if self.expected_effect_semantics not in EFFECT_SEMANTICS:
             raise OfficeExecutionContractError("expected_effect_semantics is invalid")
         if self.expected_effect_semantics == "STATE_CHANGING" and not all((

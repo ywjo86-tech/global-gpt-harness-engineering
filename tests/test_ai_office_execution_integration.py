@@ -14,7 +14,8 @@ def request(effect: str = "STATE_CHANGING") -> OfficeExecutionRequestV1:
     return OfficeExecutionRequestV1(
         OFFICE_EXECUTION_REQUEST_SCHEMA_V1, "proj", "run", "workflow", "task", "task-exec",
         "intent-ref", D, effect, "gov-ref", D, "risk-ref", D, "delegated-auth", D,
-        "auth-binding", D, "execution-package", D, "execution-contract", D, "corr",
+        "auth-binding", D, "execution-package", D, "execution-contract", D,
+        "full-plan-assignment", D, "GATE-005", "full-plan-run", "task", "corr",
     )
 
 
@@ -33,6 +34,8 @@ class AIOfficeExecutionIntegrationTest(unittest.TestCase):
         self.assertEqual(req.authorization_binding_digest,
                          captured["authorization_lineage"]["authorization_binding_digest"])
         self.assertEqual("STATE_CHANGING", captured["expected_effect_semantics"])
+        self.assertEqual("full-plan-assignment", captured["full_plan_assignment_binding"]["assignment_ref"])
+        self.assertEqual("task", captured["full_plan_assignment_binding"]["task_id"])
 
     def test_004_read_only_cannot_receive_mutation_effect(self) -> None:
         req = request("READ_ONLY")

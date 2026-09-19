@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
+from .git_provenance import GitProvenanceError, touched_paths_between
 from .lv_execution_package import canonical_json_bytes
 from .operator_control import ManualActionAuthorizationV1, OperatorDirectiveV1
 from .schemas import TaskSlice, WorkerRequest
@@ -92,9 +93,12 @@ def _assert_safe_descendant_source(root: Path, *, sealed_head: str, current_head
     ancestor = _git(root, "merge-base", "--is-ancestor", sealed_head, current_head)
     if ancestor.returncode != 0:
         raise ProductionManualActionError("manual action source is not a safe descendant")
-    changed = _git_text(root, "diff", "--name-only", f"{sealed_head}..{current_head}").splitlines()
+    try:
+        changed = touched_paths_between(root, sealed_head, current_head)
+    except GitProvenanceError as exc:
+        raise ProductionManualActionError("manual action source is not a safe descendant") from exc
     if any(_within(path, owned_files) for path in changed):
-        raise ProductionManualActionError("manual action safe descendant changed owned scope")
+        raise ProductionManualActionError("manual action safe descendant historically changed owned scope")
     return True
 
 

@@ -1436,6 +1436,13 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         caller_owned = context.get("owned_files")
         persist_diagnostic(issue059_stage="RESOLVER", canonical_resolver_invoked=True,
                            next_lv_package_mode="REHYDRATED" if manifest_path.is_file() else "NEW")
+        if manifest_path.is_file() and not context.get("resume"):
+            if callable(package_transition):
+                package_transition(package_transition_semantics="BLOCK",
+                                   package_transition_phase="PRECONDITION",
+                                   package_dispatch_call_phase="RAISED")
+            persist_diagnostic(package_freshness="COLLISION", package_resume_authorized=False)
+            raise GateControllerError("FRESH_RUN_NAMESPACE_COLLISION")
         try:
             expected_owned, scope_diagnostics = resolve_canonical_owned_scope(
                 plan, auth, lv_id, caller_owned if isinstance(caller_owned, list) else None,

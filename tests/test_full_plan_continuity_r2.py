@@ -200,8 +200,10 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
             source = root / "job.json"
             source.write_text(json.dumps(payload), encoding="utf-8")
             registered = register_job(load_job(source))
+            registered_job = load_job(registered)
             sup = DurableFullPlanSupervisor(
-                root, project_id="proj", run_id="repair-run", gates=["G1"], retry_budget=0,
+                root, project_id="proj", run_id="repair-run", gates=["G1"],
+                authority_core_sha256=registered_job["authority_core_sha256"], retry_budget=0,
                 gate_timeout_seconds=1, heartbeat_seconds=.03, lease_seconds=.08,
                 min_disk_free_bytes=0, min_inode_free=0, min_memory_available_bytes=0,
             )

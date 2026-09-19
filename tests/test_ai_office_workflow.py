@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from runtime.ai_office.state_store import AIOfficeStateStore
-from runtime.ai_office.workflow import WorkflowContractError, WorkflowCoordinator, next_state
+from runtime.ai_office.workflow import FullPlanCompletionRefV1, WorkflowContractError, WorkflowCoordinator, next_state
 
 
 class AIOfficeWorkflowTest(unittest.TestCase):
@@ -48,6 +48,24 @@ class AIOfficeWorkflowTest(unittest.TestCase):
                     reason_ref="reason:governance",
                     external_assignment_ref="assignment:illegal-rewrite",
                 )
+
+    def test_014_complete_requires_bound_full_plan_gate_and_fanin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, coordinator = self.make(directory)
+            for event, reason in (("REQUIREMENT_ACCEPTED","reason:intake"), ("CONTEXT_ASSEMBLED","reason:context")):
+                coordinator.transition(event, reason_ref=reason)
+            coordinator.transition("FULL_PLAN_HANDOFF_REFERENCED", reason_ref="reason:handoff", external_assignment_ref="assignment:external-001")
+            coordinator.transition("GOVERNANCE_READY", reason_ref="reason:governance")
+            coordinator.transition("EXECUTION_ACCEPTED", reason_ref="reason:execution")
+            coordinator.transition("RESULT_REFS_COMPLETE", reason_ref="reason:result")
+            with self.assertRaisesRegex(WorkflowContractError, "FULL_PLAN_COMPLETION_BINDING_MISMATCH"):
+                coordinator.transition("GATE_GO_REFERENCED", reason_ref="reason:gate")
+            completion = FullPlanCompletionRefV1(
+                "full-plan-run", "GATE-005", "gate:go", "a" * 64, "fanin:complete", "b" * 64,
+            )
+            run = coordinator.transition("GATE_GO_REFERENCED", reason_ref="reason:gate", full_plan_completion=completion)
+            self.assertEqual(run.workflow_state, "COMPLETE")
+            self.assertEqual(run.external_fanin_ref, "fanin:complete")
 
 
 if __name__ == "__main__":

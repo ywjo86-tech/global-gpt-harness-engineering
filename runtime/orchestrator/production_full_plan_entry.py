@@ -14,6 +14,11 @@ from typing import Any, Mapping
 from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
 from .durable_io import atomic_write_json
 from .contract_adapter import MAPPING_ROOT_ENV
+from .production_run_authority import (
+    RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
+    merge_runtime_bindings, seal_authority_core, validate_authority_core,
+    validate_executor_runtime,
+)
 
 JOB_SCHEMA = "orchestration.production-full-plan-job.v1"
 
@@ -97,10 +102,46 @@ def canonical_job_path(job: Mapping[str, Any]) -> Path:
 
 
 def register_job(job: Mapping[str, Any]) -> Path:
-    """Persist the authorized job so a boot reconciler can rediscover it."""
-    path = canonical_job_path(job)
-    atomic_write_json(path, dict(job))
+    """Persist an immutable authority core and controlled runtime bindings."""
+    incoming_bindings = extract_runtime_bindings(job)
+    sealed = seal_authority_core(job)
+    path = canonical_job_path(sealed)
+    if path.exists():
+        if path.is_symlink() or not path.is_file():
+            raise FullPlanJobError("unsafe registered Full Plan job")
+        existing = _load_json(path)
+        try:
+            existing_sha = validate_authority_core(existing)
+        except RunAuthorityError as exc:
+            raise FullPlanJobError(str(exc)) from exc
+        if existing_sha != sealed["authority_core_sha256"]:
+            raise FullPlanJobError("RUN_ID_REBIND_FORBIDDEN")
+        sealed = existing
+    else:
+        atomic_write_json(path, sealed)
+    for gate_id, gate_bindings in incoming_bindings.items():
+        packages = gate_bindings.get("manual_action_package_paths_by_lv", {})
+        auths = gate_bindings.get("manual_action_authorization_paths_by_lv", {})
+        if set(packages) != set(auths):
+            raise FullPlanJobError("manual action package/authorization LV coverage mismatch")
+        for lv_id in sorted(packages):
+            try:
+                bind_manual_action_paths(
+                    sealed, gate_id=gate_id, lv_id=lv_id,
+                    action_path=str(packages[lv_id]), authorization_path=str(auths[lv_id]),
+                )
+            except RunAuthorityError as exc:
+                raise FullPlanJobError(str(exc)) from exc
     return path
+
+
+def load_registered_job(path: str | Path) -> dict[str, Any]:
+    core = load_job(path)
+    try:
+        validate_authority_core(core)
+        return merge_runtime_bindings(core)
+    except RunAuthorityError as exc:
+        raise FullPlanJobError(str(exc)) from exc
 
 
 def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
@@ -145,6 +186,14 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
                                capture_output=True, text=True, check=False, timeout=10)
         if probe.returncode != 0 or probe.stdout.strip() != expected_branch:
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "GIT_BRANCH_MISMATCH"}
+    if job.get("authority_core_sha256"):
+        try:
+            validate_authority_core(job)
+        except RunAuthorityError as exc:
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": str(exc)}
+        runtime_ok, runtime_reason = validate_executor_runtime(job)
+        if not runtime_ok:
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": runtime_reason}
     return {"status": "PASS", "git_common_dir": common, "python": str(python_executable)}
 
 
@@ -202,12 +251,14 @@ def build_gate_executor(job: Mapping[str, Any]):
 
 
 def run_job(path: str | Path) -> dict[str, Any]:
-    job = load_job(path)
-    register_job(job)
+    requested = load_job(path)
+    canonical = register_job(requested)
+    job = load_registered_job(canonical)
     gate_ids = [str(item["gate_id"]) for item in job["gates"]]
     policy = dict(job.get("policy") or {})
     supervisor = DurableFullPlanSupervisor(
-        job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids, **policy,
+        job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids,
+        authority_core_sha256=str(job.get("authority_core_sha256") or ""), **policy,
     )
     previous_mapping_root = os.environ.get(MAPPING_ROOT_ENV)
     mapping_root = job.get("mapping_root")

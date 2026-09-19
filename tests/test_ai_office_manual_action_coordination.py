@@ -12,7 +12,8 @@ def request() -> OfficeExecutionRequestV1:
     return OfficeExecutionRequestV1(
         OFFICE_EXECUTION_REQUEST_SCHEMA_V1, "proj", "run", "workflow", "task", "task-exec",
         "intent-ref", D, "STATE_CHANGING", "gov-ref", D, "risk-ref", D, "delegated-auth", D,
-        "auth-binding", D, "execution-package", D, "execution-contract", D, "corr",
+        "auth-binding", D, "execution-package", D, "execution-contract", D,
+        "full-plan-assignment", D, "GATE-005", "full-plan-run", "task", "corr",
     )
 
 

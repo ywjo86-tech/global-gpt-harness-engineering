@@ -53,6 +53,7 @@ class ProductionFullPlanBootTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); registered = self.registered(root); job = load_job(registered)
             sup = DurableFullPlanSupervisor(root, project_id="proj", run_id="run", gates=["G1"],
+                                            authority_core_sha256=job["authority_core_sha256"],
                                             retry_budget=0, gate_timeout_seconds=1, heartbeat_seconds=.03,
                                             lease_seconds=.08, min_disk_free_bytes=0, min_inode_free=0,
                                             min_memory_available_bytes=0)
@@ -63,8 +64,9 @@ class ProductionFullPlanBootTests(unittest.TestCase):
 
     def test_completed_run_is_not_relaunched(self):
         with tempfile.TemporaryDirectory() as d:
-            root = Path(d); registered = self.registered(root)
+            root = Path(d); registered = self.registered(root); job = load_job(registered)
             sup = DurableFullPlanSupervisor(root, project_id="proj", run_id="run", gates=["G1"],
+                                            authority_core_sha256=job["authority_core_sha256"],
                                             retry_budget=0, gate_timeout_seconds=1, heartbeat_seconds=.03,
                                             lease_seconds=.08, min_disk_free_bytes=0, min_inode_free=0,
                                             min_memory_available_bytes=0)
