@@ -13,6 +13,7 @@ from runtime.mprf.contracts import (
 )
 from runtime.mprf.registry import REGISTRY_SCHEMA_V1, ProviderModelRegistryV1
 from runtime.mprf.runtime import MPRFRuntimeV1, RUNTIME_SCHEMA_V1
+from runtime.mprf.lifecycle import LifecycleStateV1
 
 from . import provider_runtime_policy as runtime_policy
 from .provider_router import ELIGIBILITY_SCHEMA_V1, ProviderEligibilitySnapshotV1
@@ -112,8 +113,9 @@ def _mprf_approval(project_root: str | Path) -> tuple[bool, str]:
 
 
 def _mprf_snapshot_from_policy(
-    project_root: str | Path, run_id: str, *, codex_ready_override: bool | None,
-    extra_evidence_refs: Iterable[str],
+    project_root: str | Path, run_id: str, *, required_capabilities: Iterable[str],
+    codex_ready_override: bool | None, extra_evidence_refs: Iterable[str],
+    lifecycle_state: LifecycleStateV1 | None = None,
 ) -> ProviderEligibilitySnapshotV1:
     active, approval_ref = _mprf_approval(project_root)
     if not active:
@@ -141,11 +143,13 @@ def _mprf_snapshot_from_policy(
     registry = ProviderModelRegistryV1(
         REGISTRY_SCHEMA_V1, f"production-mprf-{run_id}", 1, providers, tuple(models), tuple(admissions)
     )
-    runtime = MPRFRuntimeV1(RUNTIME_SCHEMA_V1, registry)
+    runtime = MPRFRuntimeV1(RUNTIME_SCHEMA_V1, registry, lifecycle_state)
     refs = [approval_ref, "provider-runtime-source:mprf"]
     refs.extend(ref for ref in source.evidence_refs if ref != "pre-mprf-static-policy")
     refs.extend(env_refs)
-    snapshot = runtime.export_router_snapshot(f"mprf-{run_id}", tuple(dict.fromkeys(refs)))
+    snapshot = runtime.export_router_snapshot(
+        f"mprf-{run_id}", tuple(dict.fromkeys(refs)), tuple(required_capabilities)
+    )
     fallback_refs = None
     nvidia_fallbacks = tuple((source.model_fallback_refs or {}).get(NVIDIA_PROVIDER, ()))
     if NVIDIA_PROVIDER in snapshot.model_refs and nvidia_fallbacks:
@@ -159,12 +163,13 @@ def _mprf_snapshot_from_policy(
 def collect_production_provider_eligibility(
     project_root: str | Path, run_id: str, *, required_capabilities: Iterable[str] = (),
     codex_ready_override: bool | None = None, extra_evidence_refs: Iterable[str] = (),
+    lifecycle_state: LifecycleStateV1 | None = None,
 ) -> ProviderEligibilitySnapshotV1:
-    del required_capabilities  # MPRF v1 admission preserves the qualified Router capability contract.
     try:
         return _mprf_snapshot_from_policy(
-            project_root, run_id, codex_ready_override=codex_ready_override,
-            extra_evidence_refs=extra_evidence_refs,
+            project_root, run_id, required_capabilities=tuple(required_capabilities),
+            codex_ready_override=codex_ready_override, extra_evidence_refs=extra_evidence_refs,
+            lifecycle_state=lifecycle_state,
         )
     except ProviderRuntimeBindingError:
         raise

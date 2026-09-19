@@ -48,6 +48,35 @@ class GateOrchestrationError(ValueError):
     pass
 
 
+def _codex_eligibility_override(codex_auth_readiness: Any | None) -> bool | None:
+    """Project pre-collected readiness without treating absence as unavailability."""
+    if codex_auth_readiness is None:
+        return None
+    from .execution_contract import READY
+    return getattr(codex_auth_readiness, "auth_status", None) == READY
+
+
+def _resolve_lv_codex_readiness(*, project_id: str, gate_id: str, lv_id: str, run_id: str,
+                                existing: Any | None, probes: Any | None) -> tuple[Any | None, Any | None]:
+    """Collect launch-bound Codex readiness for this LV; failure only excludes Codex."""
+    if existing is not None:
+        return existing, probes
+    from .codex_readiness import CodexReadinessError, collect_codex_auth_readiness, default_probe_set
+    from .production_canonical_authority import production_canonical_package_identity
+    package_id, package_revision = production_canonical_package_identity(
+        project_id=project_id, gate_id=gate_id, lv_id=lv_id, run_id=run_id
+    )
+    resolved_probes = probes or default_probe_set()
+    try:
+        readiness = collect_codex_auth_readiness(
+            run_id=run_id, worker_task_id=lv_id, package_id=package_id,
+            package_revision=package_revision, probes=resolved_probes,
+        )
+    except CodexReadinessError:
+        return None, resolved_probes
+    return readiness, resolved_probes
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -2420,17 +2449,18 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
 
             selected_lv = plan.lvs[lv_index]
-            codex_ready = bool(
-                codex_auth_readiness is not None
-                and getattr(codex_auth_readiness, "auth_status", None) == READY
+            resolved_codex_readiness, resolved_codex_probes = _resolve_lv_codex_readiness(
+                project_id=plan.project_id, gate_id=gate_id, lv_id=lv_id, run_id=lv_run_id,
+                existing=codex_auth_readiness, probes=codex_readiness_recheck_probes,
             )
+            codex_override = _codex_eligibility_override(resolved_codex_readiness)
             try:
                 eligibility = collect_production_provider_eligibility(
                     root, lv_run_id, required_capabilities=selected_lv.required_capabilities,
-                    codex_ready_override=codex_ready,
+                    codex_ready_override=False if codex_override is None else codex_override,
                     extra_evidence_refs=(
                         "production-full-plan",
-                        "codex-readiness:ready" if codex_ready else "codex-readiness:unavailable",
+                        "codex-readiness:ready" if codex_override is True else "codex-readiness:unavailable",
                     ),
                 )
             except ProviderRuntimeBindingError as exc:
@@ -2467,8 +2497,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
                 )
             production_provider = build_production_canonical_worker_authority_provider(
-                codex_auth_readiness=codex_auth_readiness,
-                readiness_recheck_probes=codex_readiness_recheck_probes,
+                codex_auth_readiness=resolved_codex_readiness,
+                readiness_recheck_probes=resolved_codex_probes,
                 router_decision=route_decision_value,
             )
             incident_recovery = None

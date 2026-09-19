@@ -15,6 +15,10 @@ from runtime.orchestrator.provider_router import (
 from runtime.orchestrator.provider_runtime_binding import (
     ProviderRuntimeBindingError, collect_production_provider_eligibility,
 )
+from runtime.mprf.lifecycle import (
+    HEALTHY, LIFECYCLE_FACT_SCHEMA_V1, LIFECYCLE_STATE_SCHEMA_V1, QUOTA_AVAILABLE, RATE_AVAILABLE,
+    LifecycleFactV1, LifecycleStateV1,
+)
 
 
 class ProductionMPRFBindingTests(unittest.TestCase):
@@ -106,6 +110,25 @@ class ProductionMPRFBindingTests(unittest.TestCase):
             self.assertTrue(snapshot.snapshot_id.startswith("pre-mprf-"))
             self.assertFalse(snapshot.provider_eligible["nvidia"])
             self.assertIn("pre-mprf-static-policy", snapshot.evidence_refs)
+
+
+    def test_production_binding_consumes_lifecycle_and_required_capabilities_when_supplied(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); self._activate_mprf(root); pool = self._provider_config(root)
+            lifecycle = LifecycleStateV1(
+                LIFECYCLE_STATE_SCHEMA_V1, 1,
+                (LifecycleFactV1(
+                    LIFECYCLE_FACT_SCHEMA_V1, "nvidia", "nvidia/fixture-primary", 1, 1,
+                    HEALTHY, QUOTA_AVAILABLE, RATE_AVAILABLE, frozenset({"reasoning"}),
+                ),),
+            )
+            with patch.dict(os.environ, {"GCH_NVIDIA_MODEL_POOL": str(pool)}, clear=True):
+                snapshot = collect_production_provider_eligibility(
+                    root, "lifecycle-run", required_capabilities=("reasoning", "review"),
+                    codex_ready_override=False, lifecycle_state=lifecycle,
+                )
+            self.assertFalse(snapshot.provider_eligible["nvidia"])
+            self.assertNotIn("nvidia", snapshot.model_refs)
 
     def test_mprf_snapshot_flows_into_router_without_mprf_selection_authority(self):
         with tempfile.TemporaryDirectory() as td:

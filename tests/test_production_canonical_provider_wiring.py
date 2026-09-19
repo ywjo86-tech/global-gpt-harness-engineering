@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.orchestrator.gate_orchestrator import execute_gate
+from runtime.orchestrator.gate_orchestrator import _codex_eligibility_override, execute_gate
 from runtime.orchestrator.production_canonical_authority import (
     ProductionCanonicalAuthorityError,
     _canonical_materialization_created_at,
@@ -19,6 +19,16 @@ class ProductionCanonicalProviderWiringTests(unittest.TestCase):
         self.assertIn("codex_readiness_recheck_probes", sig.parameters)
         self.assertIsNone(sig.parameters["codex_auth_readiness"].default)
         self.assertIsNone(sig.parameters["codex_readiness_recheck_probes"].default)
+
+
+    def test_missing_precollected_codex_readiness_preserves_auto_detection(self):
+        self.assertIsNone(_codex_eligibility_override(None))
+        class Ready:
+            auth_status = "READY"
+        class NotReady:
+            auth_status = "NOT_READY"
+        self.assertIs(_codex_eligibility_override(Ready()), True)
+        self.assertIs(_codex_eligibility_override(NotReady()), False)
 
     def test_package_identity_is_deterministic(self):
         kwargs = dict(
