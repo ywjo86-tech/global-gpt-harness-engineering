@@ -125,7 +125,7 @@ class ProductionMPRFBindingTests(unittest.TestCase):
             )
             action_decision = route_request(action)
             self.assertTrue(action_decision.eligible)
-            self.assertEqual(action_decision.reason_code, "governed_action_by_capability_fit")
+            self.assertEqual(action_decision.reason_code, "governed_action_by_neutral_rank")
             self.assertEqual(action_decision.provider_ref, "nvidia")
             self.assertIn("patch_generation", snapshot.provider_capabilities["nvidia"])
 

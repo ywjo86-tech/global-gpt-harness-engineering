@@ -307,7 +307,7 @@ class IntegratedE2EQualificationTests(unittest.TestCase):
         self.assertTrue(decision.eligible)
         self.assertEqual(decision.provider_ref, CODEX_PROVIDER)
         self.assertEqual(decision.model_ref, "codex/model-b")
-        self.assertEqual(decision.reason_code, "governed_read_by_capability_fit")
+        self.assertEqual(decision.reason_code, "governed_read_by_neutral_rank")
 
         with tempfile.TemporaryDirectory() as td:
             provider_store = ProviderRuntimeEventStoreV1(Path(td).resolve(), "negative-run")

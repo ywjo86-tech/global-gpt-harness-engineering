@@ -423,9 +423,9 @@ def _provider_capability_set(snapshot: ProviderEligibilitySnapshotV1, provider: 
 
 def _select_provider(request: RouterRequestV2) -> tuple[str, str] | None:
     required = set(provider_generation_requirements(request))
-    candidates: list[tuple[int, str, str]] = []
-    for provider in sorted(request.eligibility_snapshot.provider_eligible):
-        if not bool(request.eligibility_snapshot.provider_eligible.get(provider, False)):
+    candidates: list[tuple[str, str, str]] = []
+    for provider, eligible in request.eligibility_snapshot.provider_eligible.items():
+        if not bool(eligible):
             continue
         model = str(request.eligibility_snapshot.model_refs.get(provider, "")).strip()
         if not model:
@@ -433,14 +433,18 @@ def _select_provider(request: RouterRequestV2) -> tuple[str, str] | None:
         capabilities = _provider_capability_set(request.eligibility_snapshot, provider)
         if not required.issubset(capabilities):
             continue
-        # Narrower capability fit wins. Provider identity is used only as a
-        # stable lexical tie-breaker; no stage/provider priority is encoded.
-        excess = len(capabilities - required)
-        candidates.append((excess, provider, model))
+        # Candidate identity is never a priority key. All eligible/capable
+        # candidates are ranked by a request-bound cryptographic digest so the
+        # result is deterministic without Codex/NVIDIA/capability-count/lexical bias.
+        material = f"{request.request_digest}:{provider}:{model}".encode("utf-8")
+        candidates.append((hashlib.sha256(material).hexdigest(), provider, model))
     if not candidates:
         return None
-    _excess, provider, model = min(candidates)
-    return provider, model
+    best_rank = min(rank for rank, _, _ in candidates)
+    winners = [(provider, model) for rank, provider, model in candidates if rank == best_rank]
+    if len(winners) != 1:
+        return None
+    return winners[0]
 
 
 def _blocked_decision(request: RouterRequestV2, reason: str, state: str) -> RouterDecisionV2:
@@ -486,7 +490,7 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
         return _blocked_decision(request, reason, blocked_state)
     provider, model_ref = selected
     fallback_refs = tuple((request.eligibility_snapshot.model_fallback_refs or {}).get(provider, ()))
-    reason = "governed_action_by_capability_fit" if request.stage == "ACTION" else "governed_read_by_capability_fit"
+    reason = "governed_action_by_neutral_rank" if request.stage == "ACTION" else "governed_read_by_neutral_rank"
     action_state = "ACTION_PENDING" if request.stage == "ACTION" else f"{request.stage}_PENDING"
     return RouterDecisionV2(
         schema_version=ROUTER_DECISION_SCHEMA_V2,
