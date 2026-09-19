@@ -1,0 +1,88 @@
+{
+  "schema_version": "gch.edp-result.v1",
+  "protocol": "EDP-1.0",
+  "date": "2026-09-19",
+  "project_id": "MVP-PROVIDER-EXECUTION-TARGET",
+  "decision": "ALL_PASS",
+  "canonical_plan_sha256": "752fe45ab0f3b44f62b0e6f37ec230617585c08efa36c7a9b995cf48c00fce85",
+  "final_implementation_commit": "e2052e4cc7ce1d0cf7f4753bcd4a6cb9747c3d0d",
+  "final_run_id": "mvp-provider-execution-goal-pass-20260919-r6",
+  "findings": [
+    {
+      "id": "MVP-F001",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "summary": "canonical Gate State bootstrap format"
+    },
+    {
+      "id": "MVP-F002",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "summary": "Provider to Manual Action request replay conflict"
+    },
+    {
+      "id": "MVP-F003",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "summary": "R3 invalid Provider self-modification blocked by validation"
+    },
+    {
+      "id": "MVP-F004",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "summary": "Full Plan mapping environment leaked into Manual Action validation"
+    },
+    {
+      "id": "MVP-F005",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "summary": "60 second model timeout lacked headroom; corrected to 90 seconds"
+    },
+    {
+      "id": "MVP-N001",
+      "severity": "NOTE",
+      "status": "CLOSED",
+      "summary": "unrelated transient UDS startup test race; isolated 5/5 and final full rerun PASS"
+    }
+  ],
+  "evidence": {
+    "provider_action_focused_pass": 35,
+    "authority_recovery_focused_pass": 140,
+    "full_regression_tests": 1634,
+    "full_regression_skipped": 16,
+    "full_regression_rc": 0,
+    "compileall": "PASS",
+    "diff_check": "PASS",
+    "target_clean": true,
+    "executor_clean": true,
+    "r6_full_plan_state": "COMPLETED",
+    "r6_terminal_reason": "ALL_GATES_COMPLETED",
+    "r6_reviewer_verdict": "PASS",
+    "original_dirty_patch_sha256": "9e6a5afff9ffe787320b875d491d5b82c2727a4813cd63acf93ba3f86b40f6f0"
+  },
+  "metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "PASS",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "PROVIDER_ROUTER_INTEGRITY": "PASS",
+    "MPRF_INTEGRITY": "PASS",
+    "FULL_MCP_AUTHORITY_INTEGRITY": "PASS",
+    "GPT_OPERATOR_MANUAL_ACTION_COMPATIBILITY": "PASS",
+    "ORIGINAL_DIRTY_PATCH_PRESERVATION": "PASS",
+    "FULL_PLAN_COMPLETION": "PASS",
+    "MATERIAL_DEFECT_SEARCH": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+    "EDP_DECISION": "ALL_PASS"
+  }
+}
