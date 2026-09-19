@@ -1,0 +1,35 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-PROVIDER-ACTION-SEGMENTED-PROPOSAL-20260919",
+  "status": "ALL_PASS",
+  "defect": "Multi-file ACTION generation required one large JSON proposal, producing repeated schema/empty-content failures before any effect.",
+  "remediation": [
+    "segment generation only when multiple exact owned files are all new or validation remediation is active",
+    "preserve original owned-file IDs and full authority while allowing one target ID per generation segment",
+    "validate identity, binding, syntax, required target and security before aggregating segments",
+    "persist/apply only after every segment validates; failed segment leaves zero Broker effects",
+    "record segment count and model-generation provenance in production process evidence"
+  ],
+  "negative_space": [
+    "no owned scope expansion",
+    "no provider/model hardcoding",
+    "no direct provider filesystem authority",
+    "no partial Broker effect before aggregate validation",
+    "identity/security failures remain fail-closed",
+    "Full Plan / Router / MPRF / Full MCP authority unchanged"
+  ],
+  "evidence": {
+    "direct_segment_tests": "21 PASS",
+    "focused_regression": "223 PASS / 1 opt-in skip / RC=0",
+    "full_regression": "1601 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "No material unresolved defect remains in the segmented generation boundary before production r18 validation.",
+  "record_sha256": "f7f806468ad4cd482344fe67619d0fac3a3b673c13e05edb5b7a798580d78a05"
+}

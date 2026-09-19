@@ -99,6 +99,8 @@ def _owned_map(owned: list[str]) -> dict[str, str]:
 def validate_action_proposal(
     payload: Mapping[str, Any], *, request: WorkerRequest,
     decision: RouterDecisionV2, baseline: str, owned: list[str],
+    allowed_owned_file_ids: set[str] | None = None,
+    required_exact_paths: set[str] | None = None,
 ) -> dict[str, Any]:
     expected = {"schema_version", "project_id", "run_id", "gate_id", "lv_id",
                 "plan_sha256", "source_head", "writes", "summary"}
@@ -127,7 +129,9 @@ def validate_action_proposal(
         file_id = str(item.get("owned_file_id", ""))
         relative_path = str(item.get("relative_path", ""))
         content = item.get("content")
-        if file_id not in bindings or not isinstance(content, str):
+        if (file_id not in bindings
+                or (allowed_owned_file_ids is not None and file_id not in allowed_owned_file_ids)
+                or not isinstance(content, str)):
             raise ProviderActionExecutionError("provider ACTION write binding is invalid")
         directory_scope = bindings[file_id].endswith("/")
         if directory_scope == (not relative_path):
@@ -154,10 +158,10 @@ def validate_action_proposal(
         for item in normalized
         if not bindings[item["owned_file_id"]].endswith("/")
     }
-    required_new_exact = {
+    required_new_exact = (set(required_exact_paths) if required_exact_paths is not None else {
         path for path in owned
         if not path.endswith("/") and not (Path(request.project_root) / path).exists()
-    }
+    })
     if not required_new_exact.issubset(written_exact):
         raise ProviderActionExecutionError("provider ACTION proposal omits required new owned file")
     summary = str(payload.get("summary", "")).strip()
@@ -292,8 +296,17 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
     return selected
 
 
-def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned: list[str], validation_feedback: str = "") -> str:
-    owned_rows = [{"owned_file_id": file_id, "path": path} for file_id, path in _owned_map(owned).items()]
+def build_action_proposal_prompt(
+    request: WorkerRequest, *, baseline: str, owned: list[str], validation_feedback: str = "",
+    target_owned_file_id: str | None = None,
+) -> str:
+    owned_mapping = _owned_map(owned)
+    if target_owned_file_id is not None:
+        if target_owned_file_id not in owned_mapping:
+            raise ProviderActionExecutionError("provider ACTION segment target is invalid")
+        owned_rows = [{"owned_file_id": target_owned_file_id, "path": owned_mapping[target_owned_file_id]}]
+    else:
+        owned_rows = [{"owned_file_id": file_id, "path": path} for file_id, path in owned_mapping.items()]
     identity = {
         "project_id": request.contract_summary.get("project_id"), "run_id": request.extra_context.get("run_id"),
         "gate_id": request.contract_summary.get("gate_id"), "lv_id": request.contract_summary.get("lv_id"),
@@ -301,6 +314,11 @@ def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned
     }
     criteria = list(request.task.validation_criteria)
     feedback = str(validation_feedback or "").strip()[:MAX_VALIDATION_FEEDBACK_CHARS]
+    segment = (
+        f"\nSEGMENT TARGET: Generate exactly one write for {target_owned_file_id} and no other owned_file_id. "
+        "The content must be the complete target file content.\n"
+        if target_owned_file_id else ""
+    )
     remediation = (
         "\nVALIDATION REMEDIATION: The currently materialized owned files failed independent validation. "
         "Correct only the approved owned files using the supplied current-file context. "
@@ -319,6 +337,7 @@ def build_action_proposal_prompt(request: WorkerRequest, *, baseline: str, owned
         "Python and use only imports/APIs supported by the supplied context; do not invent missing module names or symbols. "
         "Treat supplied project imports as authoritative. If the task names a concept that has no supplied module, compose the "
         "existing APIs inside the owned files instead of inventing a new project module.\n"
+        + segment
         + remediation
         + "Return exactly one JSON object and no prose or Markdown fences. Required shape:\n"
         f"{{\"schema_version\":\"{PROPOSAL_SCHEMA_V1}\",\"project_id\":{json.dumps(identity['project_id'])},"
@@ -381,16 +400,15 @@ def _correction_prompt(base_prompt: str, reason: str) -> str:
     )
 
 
-def execute_provider_action_proposal(
-    request: WorkerRequest, *, decision: RouterDecisionV2, baseline: str,
-    owned: list[str], output_dir: Path, provider_runner: Callable[..., Mapping[str, Any]],
-    security_scan: Callable[[bytes], bool], timeout: int, validation_feedback: str = "",
-) -> dict[str, Any]:
-    if not decision.eligible or decision.stage != "ACTION" or not decision.provider_ref or not decision.model_ref:
-        raise ProviderActionExecutionError("provider ACTION route is not eligible")
-    context_files = select_action_context_files(Path(request.project_root), request, owned)
+def _generate_validated_proposal(
+    request: WorkerRequest, *, decision: RouterDecisionV2, baseline: str, owned: list[str],
+    context_files: list[str], provider_runner: Callable[..., Mapping[str, Any]], timeout: int,
+    validation_feedback: str = "", target_owned_file_id: str | None = None,
+    required_exact_paths: set[str] | None = None,
+) -> tuple[dict[str, Any], Mapping[str, Any], int, int, list[str]]:
     prompt = build_action_proposal_prompt(
         request, baseline=baseline, owned=owned, validation_feedback=validation_feedback,
+        target_owned_file_id=target_owned_file_id,
     )
     result: Mapping[str, Any] = {}
     proposal: dict[str, Any] | None = None
@@ -400,6 +418,7 @@ def execute_provider_action_proposal(
     approved_models = (decision.model_ref, *decision.model_fallback_refs)
     contract_rejected_models: set[str] = set()
     generation_models: list[str] = []
+    allowed_ids = {target_owned_file_id} if target_owned_file_id else None
     for generation_attempt in range(1, MAX_PROPOSAL_GENERATION_ATTEMPTS + 1):
         generation_attempts = generation_attempt
         requested_model = next(
@@ -429,7 +448,12 @@ def execute_provider_action_proposal(
             proposal = validate_action_proposal(
                 _extract_json_object(str(result.get("summary", ""))), request=request,
                 decision=decision, baseline=baseline, owned=owned,
+                allowed_owned_file_ids=allowed_ids, required_exact_paths=required_exact_paths,
             )
+            if target_owned_file_id is not None:
+                writes = proposal["writes"]
+                if len(writes) != 1 or writes[0]["owned_file_id"] != target_owned_file_id:
+                    raise ProviderActionExecutionError("provider ACTION segment write set is invalid")
             break
         except ProviderActionExecutionError as exc:
             if generation_attempt >= MAX_PROPOSAL_GENERATION_ATTEMPTS or not _retryable_output_contract_error(exc):
@@ -444,10 +468,91 @@ def execute_provider_action_proposal(
             contract_rejected_models.add(actual_model)
     if proposal is None:
         raise ProviderActionExecutionError("provider ACTION proposal validation did not complete")
+    return proposal, result, generation_attempts, total_provider_attempts, generation_models
+
+
+def _combine_segmented_proposals(
+    proposals: list[dict[str, Any]], *, request: WorkerRequest,
+    decision: RouterDecisionV2, baseline: str, owned: list[str],
+) -> dict[str, Any]:
+    if not proposals:
+        raise ProviderActionExecutionError("provider ACTION segmented proposal is empty")
+    writes = [write for proposal in proposals for write in proposal["writes"]]
+    summaries = [str(proposal["summary"]).strip() for proposal in proposals if str(proposal["summary"]).strip()]
+    payload = {
+        "schema_version": PROPOSAL_SCHEMA_V1,
+        "project_id": request.contract_summary.get("project_id"),
+        "run_id": request.extra_context.get("run_id"),
+        "gate_id": request.contract_summary.get("gate_id"),
+        "lv_id": request.contract_summary.get("lv_id"),
+        "plan_sha256": request.contract_summary.get("canonical_plan_sha256"),
+        "source_head": baseline,
+        "writes": writes,
+        "summary": " | ".join(summaries)[:2048] or "segmented governed action proposal",
+    }
+    return validate_action_proposal(
+        payload, request=request, decision=decision, baseline=baseline, owned=owned,
+    )
+
+
+def execute_provider_action_proposal(
+    request: WorkerRequest, *, decision: RouterDecisionV2, baseline: str,
+    owned: list[str], output_dir: Path, provider_runner: Callable[..., Mapping[str, Any]],
+    security_scan: Callable[[bytes], bool], timeout: int, validation_feedback: str = "",
+) -> dict[str, Any]:
+    if not decision.eligible or decision.stage != "ACTION" or not decision.provider_ref or not decision.model_ref:
+        raise ProviderActionExecutionError("provider ACTION route is not eligible")
+    bindings = _owned_map(owned)
+    exact_bindings = [(file_id, path) for file_id, path in bindings.items() if not path.endswith("/")]
+    all_exact = len(exact_bindings) == len(bindings)
+    all_missing = bool(exact_bindings) and all(not (Path(request.project_root) / path).exists() for _, path in exact_bindings)
+    segmented = len(exact_bindings) > 1 and all_exact and (all_missing or bool(str(validation_feedback or "").strip()))
+    proposal: dict[str, Any]
+    result: Mapping[str, Any] = {}
+    total_generation_attempts = 0
+    total_provider_attempts = 0
+    generation_models: list[str] = []
+    context_files_seen: list[str] = []
+    context_metadata: dict[str, Any] = {}
+    if segmented:
+        segments: list[dict[str, Any]] = []
+        for file_id, path in exact_bindings:
+            segment_context = select_action_context_files(Path(request.project_root), request, [path])
+            for item in segment_context:
+                if item not in context_files_seen:
+                    context_files_seen.append(item)
+            segment, segment_result, attempts, provider_attempts, models = _generate_validated_proposal(
+                request, decision=decision, baseline=baseline, owned=owned,
+                context_files=segment_context, provider_runner=provider_runner, timeout=timeout,
+                validation_feedback=validation_feedback, target_owned_file_id=file_id,
+                required_exact_paths={path},
+            )
+            segments.append(segment)
+            result = segment_result
+            total_generation_attempts += attempts
+            total_provider_attempts += provider_attempts
+            generation_models.extend(models)
+            meta = segment_result.get("context_metadata")
+            if isinstance(meta, Mapping):
+                context_metadata[file_id] = dict(meta)
+        proposal = _combine_segmented_proposals(
+            segments, request=request, decision=decision, baseline=baseline, owned=owned,
+        )
+    else:
+        context_files_seen = select_action_context_files(Path(request.project_root), request, owned)
+        proposal, result, attempts, provider_attempts, models = _generate_validated_proposal(
+            request, decision=decision, baseline=baseline, owned=owned,
+            context_files=context_files_seen, provider_runner=provider_runner, timeout=timeout,
+            validation_feedback=validation_feedback,
+        )
+        total_generation_attempts = attempts
+        total_provider_attempts = provider_attempts
+        generation_models.extend(models)
+        meta = result.get("context_metadata")
+        if isinstance(meta, Mapping):
+            context_metadata = dict(meta)
     proposal_digest = _digest({key: value for key, value in proposal.items()
                                if key not in {"provider_ref", "model_ref"}})
-    # Provider output is untrusted until the existing production security scan
-    # accepts the complete proposal.  Never persist raw rejected content.
     if not security_scan(_canonical(proposal)):
         raise ProviderActionExecutionError("provider ACTION proposal failed security validation")
     proposal_path = output_dir / "provider-action-proposal.json"
@@ -485,14 +590,17 @@ def execute_provider_action_proposal(
         if response.status != "COMPLETED" or response.security_status != "PASS":
             raise ProviderActionExecutionError("provider ACTION Broker effect was not completed")
         results.append({"status": response.status, "security_status": response.security_status})
+    actual_model = str(result.get("model", decision.model_ref)).strip() or decision.model_ref
     return {
         "provider": decision.provider_ref,
         "routed_model": decision.model_ref,
-        "actual_model": str(result.get("model", decision.model_ref)),
+        "actual_model": actual_model,
         "router_decision_digest": decision.decision_digest,
         "provider_attempts": total_provider_attempts,
-        "proposal_generation_attempts": generation_attempts,
+        "proposal_generation_attempts": total_generation_attempts,
         "proposal_generation_models": generation_models,
+        "proposal_segment_count": len(exact_bindings) if segmented else 1,
+        "segmented_generation": segmented,
         "model_failover_used": (
             any(model != decision.model_ref for model in generation_models)
             or bool(result.get("model_failover_used", False))
@@ -500,8 +608,8 @@ def execute_provider_action_proposal(
         "proposal_digest": proposal_digest,
         "proposal_path": str(proposal_path),
         "proposal_summary": proposal["summary"],
-        "context_files": context_files,
-        "context_metadata": dict(result.get("context_metadata") or {}),
+        "context_files": context_files_seen,
+        "context_metadata": context_metadata,
         "write_results": results,
         "governed_effect_evidence": [item.canonical_projection() for item in transport.governed_effect_evidence()],
         "validation_feedback_applied": bool(str(validation_feedback or "").strip()),
