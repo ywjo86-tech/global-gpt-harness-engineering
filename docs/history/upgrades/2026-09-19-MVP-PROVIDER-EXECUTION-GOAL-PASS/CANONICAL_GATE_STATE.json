@@ -1,0 +1,10 @@
+{
+  "approval_record_hash": "0ed83d1c5c1e9c0b454746b7bb1c04b89467ac9b09c6e9c452e9fc2f3b64c04b",
+  "closure_status": "PREDECESSOR_CLOSED",
+  "gate_id": "GATE-001",
+  "gate_status": "READY_FOR_TRANSITION",
+  "phase": "MVP_GOAL_PASS",
+  "plan_sha256": "752fe45ab0f3b44f62b0e6f37ec230617585c08efa36c7a9b995cf48c00fce85",
+  "project_id": "MVP-PROVIDER-EXECUTION-TARGET",
+  "schema_version": "orchestration.canonical-gate-state.v2"
+}
