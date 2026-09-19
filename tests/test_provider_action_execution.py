@@ -190,7 +190,7 @@ class ProviderActionExecutionTest(unittest.TestCase):
             def provider_runner(**_kwargs):
                 calls.append(1)
                 return {"status": "completed", "model": "nvidia/action-model", "provider_attempts": 1,
-                        "summary": "not json", "context_metadata": {}}
+                        "summary": "api_key=very-secret-value not json", "context_metadata": {}}
             with self.assertRaisesRegex(ProviderActionExecutionError, "not valid JSON"):
                 execute_provider_action_proposal(
                     request, decision=decision(), baseline="a" * 40, owned=owned,
@@ -200,6 +200,15 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual(len(calls), 3)
             self.assertFalse((root / "run/provider-action-proposal.json").exists())
             self.assertFalse((root / owned[0]).exists())
+            evidence_files = sorted((root / "run/provider-action-response-evidence").glob("*.json"))
+            self.assertEqual(len(evidence_files), 3)
+            for evidence_file in evidence_files:
+                payload = json.loads(evidence_file.read_text(encoding="utf-8"))
+                rendered = json.dumps(payload, ensure_ascii=False)
+                self.assertNotIn("very-secret-value", rendered)
+                self.assertIn("[REDACTED_SECRET]", rendered)
+                self.assertEqual(len(payload["raw_response_sha256"]), 64)
+                self.assertEqual(evidence_file.stat().st_mode & 0o777, 0o600)
 
     def test_output_contract_retry_rotates_only_through_router_approved_models(self):
         with tempfile.TemporaryDirectory() as td:

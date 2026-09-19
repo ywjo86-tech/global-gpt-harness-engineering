@@ -43,6 +43,11 @@ MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
 MAX_CONTEXT_FILE_BYTES = DEFAULT_MAX_FILE_BYTES
 MAX_VALIDATION_FEEDBACK_CHARS = 4096
 MAX_REMEDIATION_OWNED_CONTEXT_BYTES = 32 * 1024
+MAX_RESPONSE_EVIDENCE_TEXT_CHARS = 256 * 1024
+_RESPONSE_SECRET_PATTERN = re.compile(
+    r"(?i)(api[_-]?key|authorization|bearer|password|secret|token)\s*[:=]\s*([^\s]+)"
+)
+_RESPONSE_BARE_SECRET_PATTERN = re.compile(r"(?i)\b(?:sk|nvapi)-[A-Za-z0-9._-]{8,}\b")
 _CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",), "loop": ("workflow",)}
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
 _CONTEXT_EXCLUDED = frozenset({".git", ".venv", "node_modules", "_workspace", "dist", "build"})
@@ -518,6 +523,46 @@ def _write_private_json(path: Path, payload: Mapping[str, Any]) -> None:
         handle.write(data); handle.flush(); os.fsync(handle.fileno())
 
 
+def _sanitize_provider_response_text(value: object) -> str:
+    text = str(value or "")
+    redacted = _RESPONSE_SECRET_PATTERN.sub(lambda m: f"{m.group(1)}=[REDACTED_SECRET]", text)
+    redacted = _RESPONSE_BARE_SECRET_PATTERN.sub("[REDACTED_SECRET]", redacted)
+    for key, secret in os.environ.items():
+        if secret and re.search(r"(?i)(key|token|secret|password|authorization)", key):
+            redacted = redacted.replace(secret, "[REDACTED_SECRET]")
+    return redacted[:MAX_RESPONSE_EVIDENCE_TEXT_CHARS]
+
+
+def _persist_provider_response_evidence(
+    evidence_dir: Path, *, result: Mapping[str, Any], decision: RouterDecisionV2,
+    requested_model: str, generation_attempt: int, target_owned_file_id: str | None,
+) -> Path:
+    raw = json.dumps(dict(result), sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    label = re.sub(r"[^A-Za-z0-9_.-]+", "_", target_owned_file_id or "ALL")[:96] or "ALL"
+    payload = {
+        "schema_version": "orchestration.provider-action-response-evidence.v1",
+        "provider_ref": decision.provider_ref,
+        "requested_model": requested_model,
+        "generation_attempt": generation_attempt,
+        "target_owned_file_id": target_owned_file_id or "",
+        "status": str(result.get("status", "")),
+        "actual_model": str(result.get("model", "")),
+        "response_keys": sorted(str(key) for key in result.keys()),
+        "raw_response_sha256": hashlib.sha256(raw).hexdigest(),
+        "sanitized_summary": _sanitize_provider_response_text(result.get("summary", "")),
+    }
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    for ordinal in range(1, 1000):
+        suffix = "" if ordinal == 1 else f"-r{ordinal}"
+        path = evidence_dir / f"{label}-attempt-{generation_attempt:02d}{suffix}.json"
+        try:
+            _write_private_json(path, payload)
+            return path
+        except FileExistsError:
+            continue
+    raise ProviderActionExecutionError("provider ACTION response evidence namespace exhausted")
+
+
 def _retryable_output_contract_error(exc: ProviderActionExecutionError) -> bool:
     message = str(exc)
     if message.startswith("provider ACTION candidate focused validation failed:"):
@@ -569,7 +614,7 @@ def _correction_prompt(base_prompt: str, reason: str) -> str:
 def _generate_validated_proposal(
     request: WorkerRequest, *, decision: RouterDecisionV2, baseline: str, owned: list[str],
     context_files: list[str], provider_runner: Callable[..., Mapping[str, Any]], timeout: int,
-    validation_feedback: str = "", target_owned_file_id: str | None = None,
+    evidence_dir: Path, validation_feedback: str = "", target_owned_file_id: str | None = None,
     required_exact_paths: set[str] | None = None,
     candidate_validator: Callable[[Mapping[str, Any]], str] | None = None,
 ) -> tuple[dict[str, Any], Mapping[str, Any], int, int, list[str]]:
@@ -602,6 +647,10 @@ def _generate_validated_proposal(
             # budget, preventing multiplicative fallback latency.
             fallback_models=(), max_retries=0, json_mode=True,
             timeout_seconds=float(min(timeout, MAX_PROVIDER_ACTION_MODEL_TIMEOUT_SECONDS)), max_tokens=8192,
+        )
+        _persist_provider_response_evidence(
+            evidence_dir, result=result, decision=decision, requested_model=requested_model,
+            generation_attempt=generation_attempt, target_owned_file_id=target_owned_file_id,
         )
         total_provider_attempts += int(result.get("provider_attempts", 0) or 0)
         generation_models.append(requested_model)
@@ -716,6 +765,7 @@ def execute_provider_action_proposal(
             segment, segment_result, attempts, provider_attempts, models = _generate_validated_proposal(
                 request, decision=decision, baseline=baseline, owned=owned,
                 context_files=segment_context, provider_runner=provider_runner, timeout=timeout,
+                evidence_dir=output_dir / "provider-action-response-evidence",
                 validation_feedback=segment_feedback, target_owned_file_id=file_id,
                 required_exact_paths={path}, candidate_validator=candidate_validator,
             )
@@ -735,6 +785,7 @@ def execute_provider_action_proposal(
         proposal, result, attempts, provider_attempts, models = _generate_validated_proposal(
             request, decision=decision, baseline=baseline, owned=owned,
             context_files=context_files_seen, provider_runner=provider_runner, timeout=timeout,
+            evidence_dir=output_dir / "provider-action-response-evidence",
             validation_feedback=validation_feedback, candidate_validator=candidate_validator,
         )
         total_generation_attempts = attempts
