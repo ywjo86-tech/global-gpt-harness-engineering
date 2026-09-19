@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .production_attention import AttentionOutbox
+from .user_interaction_policy import STALL_CONFIRMED, evaluate_attention_delivery
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -44,7 +45,28 @@ def discover_registered_jobs(search_root: str | Path) -> list[dict[str, Any]]:
     return sorted(jobs, key=lambda item: (item["project_id"], item["run_id"], item["harness_root"]))
 
 
-def discover_pending_attention(search_root: str | Path, *, stale_after_seconds: int = 120) -> list[dict[str, Any]]:
+def _age_seconds(value: object, *, now: datetime) -> float:
+    if not isinstance(value, str):
+        return -1.0
+    try:
+        observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return -1.0
+    if observed.tzinfo is None:
+        return -1.0
+    return (now - observed.astimezone(timezone.utc)).total_seconds()
+
+
+def discover_pending_attention(
+    search_root: str | Path, *, stale_after_seconds: int = 120,
+    user_attention_after_seconds: int = 300, now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    if stale_after_seconds <= 0 or user_attention_after_seconds <= 0:
+        raise ValueError("attention thresholds must be positive")
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("attention clock must be timezone-aware")
+    current = current.astimezone(timezone.utc)
     rows: list[dict[str, Any]] = []
     for job in discover_registered_jobs(search_root):
         harness = Path(job["harness_root"])
@@ -53,38 +75,40 @@ def discover_pending_attention(search_root: str | Path, *, stale_after_seconds: 
         outbox = AttentionOutbox(run_base, project_id=job["project_id"], run_id=job["run_id"])
         pending = outbox.pending()
         for event in pending:
+            assessment = evaluate_attention_delivery(
+                event, state, now=current, threshold_seconds=user_attention_after_seconds,
+            )
+            if not assessment.eligible:
+                continue
             rows.append({
-                "project_id": job["project_id"],
-                "run_id": job["run_id"],
+                "project_id": job["project_id"], "run_id": job["run_id"],
                 "state": str(state.get("state") or event.get("state") or "UNKNOWN"),
                 "current_gate": state.get("current_gate") or event.get("gate_id"),
                 "last_semantic_progress_at": state.get("last_semantic_progress_at") or state.get("last_progress_at"),
-                "event_id": event.get("event_id"),
-                "kind": event.get("kind"),
-                "reason": event.get("reason"),
-                "created_at": event.get("created_at"),
+                "event_id": event.get("event_id"), "kind": event.get("kind"),
+                "reason": event.get("reason"), "created_at": event.get("created_at"),
+                "delivery_class": assessment.delivery_class,
                 "harness_root": job["harness_root"],
             })
         active = {"READY", "DISPATCHED", "RUNNING", "VERIFYING", "RECOVERING"}
         last_live = state.get("last_liveness_at") or state.get("last_progress_at")
-        if str(state.get("state")) in active and isinstance(last_live, str):
-            try:
-                observed = datetime.fromisoformat(last_live.replace("Z", "+00:00"))
-                age = (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
-            except (ValueError, TypeError):
-                age = -1
-            if age >= stale_after_seconds:
-                seed = f"{job['project_id']}|{job['run_id']}|{state.get('state')}|{last_live}"
-                event_id = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-                if event_id not in {str(item.get("event_id")) for item in pending}:
-                    rows.append({
-                        "project_id": job["project_id"], "run_id": job["run_id"],
-                        "state": str(state.get("state")), "current_gate": state.get("current_gate"),
-                        "last_semantic_progress_at": state.get("last_semantic_progress_at") or state.get("last_progress_at"),
-                        "event_id": event_id, "kind": "SUPERVISOR_OR_WORKER_LIVENESS_LOST",
-                        "reason": "NO_RECENT_LIVENESS_HEARTBEAT", "created_at": last_live,
-                        "harness_root": job["harness_root"], "synthetic_read_only": True,
-                    })
+        last_semantic = state.get("last_semantic_progress_at") or state.get("last_progress_at") or last_live
+        live_age = _age_seconds(last_live, now=current)
+        semantic_age = _age_seconds(last_semantic, now=current)
+        if (str(state.get("state")) in active and live_age >= stale_after_seconds
+                and semantic_age >= user_attention_after_seconds):
+            seed = f"{job['project_id']}|{job['run_id']}|{state.get('state')}|{last_live}"
+            event_id = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+            if event_id not in {str(item.get("event_id")) for item in pending}:
+                rows.append({
+                    "project_id": job["project_id"], "run_id": job["run_id"],
+                    "state": str(state.get("state")), "current_gate": state.get("current_gate"),
+                    "last_semantic_progress_at": last_semantic, "event_id": event_id,
+                    "kind": "SUPERVISOR_OR_WORKER_LIVENESS_LOST",
+                    "reason": "NO_RECENT_LIVENESS_HEARTBEAT", "created_at": last_live,
+                    "delivery_class": STALL_CONFIRMED, "harness_root": job["harness_root"],
+                    "synthetic_read_only": True,
+                })
     return sorted(rows, key=lambda item: (str(item.get("created_at") or ""), str(item.get("event_id") or "")))
 
 
@@ -92,8 +116,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Discover pending Full Plan attention events")
     parser.add_argument("--search-root", required=True)
     parser.add_argument("--stale-after-seconds", type=int, default=120)
+    parser.add_argument("--user-attention-after-seconds", type=int, default=300)
     args = parser.parse_args(argv)
-    print(json.dumps({"pending": discover_pending_attention(args.search_root, stale_after_seconds=args.stale_after_seconds)}, ensure_ascii=False, indent=2))
+    print(json.dumps({"pending": discover_pending_attention(
+        args.search_root, stale_after_seconds=args.stale_after_seconds,
+        user_attention_after_seconds=args.user_attention_after_seconds,
+    )}, ensure_ascii=False, indent=2))
     return 0
 
 

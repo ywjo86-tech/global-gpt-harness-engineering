@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .durable_io import atomic_write_json, canonical_json_bytes
+from .user_interaction_policy import DELIVERY_CLASSES
 
 SCHEMA_VERSION = "orchestration.user-attention.v1"
 
@@ -48,7 +49,10 @@ class AttentionOutbox:
         self.delivered_dir = self.base / "delivered"
 
     def publish(self, *, kind: str, state: str, reason: str, gate_id: str | None = None,
-                state_sha256: str | None = None, details: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                state_sha256: str | None = None, details: Mapping[str, Any] | None = None,
+                delivery_class: str | None = None) -> dict[str, Any]:
+        if delivery_class is not None and delivery_class not in DELIVERY_CLASSES:
+            raise AttentionOutboxError("invalid attention delivery class")
         identity = {
             "project_id": self.project_id,
             "run_id": self.run_id,
@@ -76,6 +80,8 @@ class AttentionOutbox:
             "direction": "OUTBOUND_ONLY",
             "control_authority": "NONE",
         }
+        if delivery_class is not None:
+            payload["delivery_class"] = delivery_class
         target = self.pending_dir / f"{event_id}.json"
         delivered = self.delivered_dir / f"{event_id}.json"
         if delivered.is_file():
