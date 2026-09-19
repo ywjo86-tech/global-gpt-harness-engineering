@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
+from .contract_adapter import MAPPING_ROOT_ENV
 from .git_provenance import GitProvenanceError, touched_paths_between
 from .lv_execution_package import canonical_json_bytes
 from .operator_control import ManualActionAuthorizationV1, OperatorDirectiveV1
@@ -117,9 +118,14 @@ def _command(root: Path, argv: Sequence[str], *, timeout: int = 180) -> dict[str
             raise ProductionManualActionError("manual action Python command is not approved")
     if executable == "git" and command[1:3] != ["diff", "--check"]:
         raise ProductionManualActionError("manual action Git command is not approved")
+    validation_env = dict(os.environ)
+    # The active Full Plan mapping root is control-plane context for the Gate
+    # process, not product-validation input. Inheriting it makes unrelated
+    # mapping/ledger unit tests resolve against the live production project.
+    validation_env.pop(MAPPING_ROOT_ENV, None)
     try:
         cp = subprocess.run(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            check=False, timeout=timeout)
+                            check=False, timeout=timeout, env=validation_env)
         timed_out = False
     except subprocess.TimeoutExpired as exc:
         cp = None

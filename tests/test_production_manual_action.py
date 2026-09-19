@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from runtime.orchestrator.operator_control import MANUAL_ACTION_AUTH_SCHEMA, OPERATOR_DIRECTIVE_SCHEMA, ManualActionAuthorizationV1, OperatorDirectiveV1
 from runtime.orchestrator.provider_router import ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2, ProviderEligibilitySnapshotV1, RouterRequestV2, route_request
-from runtime.orchestrator.production_manual_action import ACTION_SCHEMA, ProductionManualActionError, build_manual_worker_request, command_plan_digest, editable_scope_digest, execute_gpt_operator_manual_action
+from runtime.orchestrator.production_manual_action import ACTION_SCHEMA, ProductionManualActionError, _command, build_manual_worker_request, command_plan_digest, editable_scope_digest, execute_gpt_operator_manual_action
 from runtime.orchestrator.lv_review import LVReviewError, _validate_production_baseline, _validate_production_provenance
 from runtime.orchestrator.schemas import TaskSlice
 
@@ -53,6 +54,21 @@ class ProductionManualActionTests(unittest.TestCase):
         action["action_package_digest"] = digest(action)
         auth = ManualActionAuthorizationV1(MANUAL_ACTION_AUTH_SCHEMA,"P","R","T12","E12","G","GPT_OPERATOR",action["action_package_digest"],editable_scope_digest(["a.py"]),command_plan_digest(commands),"AUTH12")
         return action, auth.to_dict()
+
+    def test_validation_command_does_not_inherit_active_contract_mapping_root(self):
+        probe = self.root / "test_env_probe.py"
+        probe.write_text(
+            "import os, unittest\n"
+            "class EnvProbe(unittest.TestCase):\n"
+            "    def test_mapping_root_is_not_inherited(self):\n"
+            "        self.assertNotIn('HARNESS_CONTRACT_MAPPING_ROOT', os.environ)\n",
+            encoding="utf-8",
+        )
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"HARNESS_CONTRACT_MAPPING_ROOT": "/tmp/live-mapping"}):
+            result = _command(self.root, ["python3", "-m", "unittest", "-q", "test_env_probe"])
+        self.assertEqual(result["exit_code"], 0)
+        self.assertFalse(result["timeout"])
 
     def test_manual_worker_request_binds_review_identity(self):
         action, _ = self.make()
