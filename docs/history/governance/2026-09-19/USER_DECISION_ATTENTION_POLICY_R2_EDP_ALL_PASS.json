@@ -1,0 +1,47 @@
+{
+  "schema_version": "edp.final.v1",
+  "date": "2026-09-19",
+  "protocol": "EDP-1.0",
+  "decision": "ALL_PASS",
+  "baseline_before_remediation": "ee27f8bd0718a49a390a0f82b933c7fec0b8d9a1",
+  "design_commit": "3bb79e34204db999cee725bebef8bd8405eaf166",
+  "implementation_commits": [
+    "032782e3f873e46b8a50ebc5b7326bfa02ffb0eb",
+    "0d13e1df11ceb5b3fe20b954f38c7ee4cba676ea",
+    "88f0b46a3eae636ad57d65d385bc14cf327fc908",
+    "2976bca14501fc051b22ef658b190333a12074d4"
+  ],
+  "regression": {
+    "core_focused_pass": 236,
+    "full_mcp_focused_pass": 78,
+    "full_repository_pass": 1656,
+    "full_repository_skipped": 16,
+    "full_repository_rc": 0,
+    "compileall": "PASS",
+    "diff_check": "PASS",
+    "authority_negative_space": "PASS",
+    "adversarial_runtime_probes": "PASS"
+  },
+  "metrics": {
+    "blocker_count": 0,
+    "unresolved_major_count": 0,
+    "unresolved_minor_count": 0,
+    "must_requirement_coverage_pct": 100,
+    "must_traceability_coverage_pct": 100,
+    "domain_evidence_coverage_pct": 100,
+    "negative_space_open_material_count": 0,
+    "cross_document_conflict_count": 0,
+    "broken_reference_count": 0,
+    "unresolved_material_tbd_count": 0,
+    "unresolved_material_open_question_count": 0,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge_open_count": 0
+  },
+  "source_authority_status": "VALID",
+  "regression_rediagnosis_status": "PASS",
+  "material_defect_search": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+  "unrelated_dirty_patch": {
+    "status": "UNCHANGED",
+    "sha256": "9e6a5afff9ffe787320b875d491d5b82c2727a4813cd63acf93ba3f86b40f6f0"
+  }
+}
