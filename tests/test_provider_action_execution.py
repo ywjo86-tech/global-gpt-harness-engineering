@@ -7,6 +7,7 @@ from pathlib import Path
 
 from runtime.orchestrator.provider_action_execution import (
     PROPOSAL_SCHEMA_V1, ProviderActionExecutionError, _extract_json_object,
+    _normalize_provider_proposal_shape,
     _bounded_remediation_owned_context, _validation_feedback_for_target,
     _feedback_trace_paths, _remediation_priority_paths, build_action_proposal_prompt,
     execute_provider_action_proposal, select_action_context_files,
@@ -94,6 +95,52 @@ class ProviderActionExecutionTest(unittest.TestCase):
         two = json.dumps(proposal) + "\n" + json.dumps(proposal)
         with self.assertRaisesRegex(ProviderActionExecutionError, "ambiguous"):
             _extract_json_object(two)
+
+    def test_missing_non_authoritative_summary_is_normalized_only(self):
+        payload = self.proposal(content="value = 1\n")
+        payload.pop("summary")
+        normalized = _normalize_provider_proposal_shape(payload)
+        self.assertEqual(normalized["summary"], "governed provider action proposal")
+        self.assertEqual({k: v for k, v in normalized.items() if k != "summary"}, payload)
+
+    def test_missing_identity_is_never_normalized(self):
+        payload = self.proposal(content="value = 1\n")
+        payload.pop("summary")
+        payload.pop("project_id")
+        normalized = _normalize_provider_proposal_shape(payload)
+        self.assertNotIn("summary", normalized)
+        self.assertNotIn("project_id", normalized)
+
+    def test_segment_prompt_example_uses_exact_target_owned_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_one.py", "tests/test_two.py"]
+            request = worker(root, owned)
+            prompt = build_action_proposal_prompt(
+                request, baseline="a" * 40, owned=owned, target_owned_file_id="OWNED_0002",
+            )
+            self.assertIn('"owned_file_id":"OWNED_0002"', prompt)
+            self.assertIn("Generate exactly one write for OWNED_0002", prompt)
+
+    def test_missing_summary_provider_output_applies_without_contract_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            payload = self.proposal(content="value = 1\n"); payload.pop("summary")
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"])
+                return {"status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                        "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                        "summary": json.dumps(payload), "context_metadata": {}}
+            result = execute_provider_action_proposal(
+                request, decision=decision(), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(result["proposal_generation_attempts"], 1)
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            proposal = json.loads((root / "run/provider-action-proposal.json").read_text())
+            self.assertEqual(proposal["summary"], "governed provider action proposal")
 
     def test_invalid_json_gets_one_bounded_correction_retry(self):
         with tempfile.TemporaryDirectory() as td:

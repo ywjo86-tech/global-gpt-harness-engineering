@@ -98,6 +98,22 @@ def _owned_map(owned: list[str]) -> dict[str, str]:
     return {f"OWNED_{index:04d}": path for index, path in enumerate(owned, 1)}
 
 
+def _normalize_provider_proposal_shape(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize only non-authoritative presentation metadata.
+
+    Identity, source binding, and writes are never inferred.  The sole tolerated
+    omission is ``summary`` because it has no mutation or authority semantics.
+    """
+    normalized = dict(payload)
+    required_without_summary = {
+        "schema_version", "project_id", "run_id", "gate_id", "lv_id",
+        "plan_sha256", "source_head", "writes",
+    }
+    if set(normalized) == required_without_summary and normalized.get("schema_version") == PROPOSAL_SCHEMA_V1:
+        normalized["summary"] = "governed provider action proposal"
+    return normalized
+
+
 def validate_action_proposal(
     payload: Mapping[str, Any], *, request: WorkerRequest,
     decision: RouterDecisionV2, baseline: str, owned: list[str],
@@ -447,6 +463,7 @@ def build_action_proposal_prompt(
         + current_target_context
         if feedback else ""
     )
+    example_owned_file_id = target_owned_file_id or "OWNED_0001"
     return (
         "Generate a governed ACTION change proposal only. Do not claim to have modified files, run shell, Git, tests, "
         "network, approvals, or state transitions. The Harness Execution Backend applies approved writes and validates them.\n"
@@ -465,7 +482,7 @@ def build_action_proposal_prompt(
         f"\"run_id\":{json.dumps(identity['run_id'])},\"gate_id\":{json.dumps(identity['gate_id'])},"
         f"\"lv_id\":{json.dumps(identity['lv_id'])},\"plan_sha256\":{json.dumps(identity['plan_sha256'])},"
         f"\"source_head\":{json.dumps(identity['source_head'])},"
-        "\"writes\":[{\"owned_file_id\":\"OWNED_0001\",\"relative_path\":\"\",\"content\":\"complete content\"}],"
+        f"\"writes\":[{{\"owned_file_id\":{json.dumps(example_owned_file_id)},\"relative_path\":\"\",\"content\":\"complete content\"}}],"
         "\"summary\":\"bounded implementation summary\"}"
     )
 
@@ -573,7 +590,7 @@ def _generate_validated_proposal(
         generation_models.append(actual_model)
         try:
             proposal = validate_action_proposal(
-                _extract_json_object(str(result.get("summary", ""))), request=request,
+                _normalize_provider_proposal_shape(_extract_json_object(str(result.get("summary", "")))), request=request,
                 decision=decision, baseline=baseline, owned=owned,
                 allowed_owned_file_ids=allowed_ids, required_exact_paths=required_exact_paths,
             )

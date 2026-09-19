@@ -1,0 +1,24 @@
+{
+  "schema_version": "edp.closure.v1",
+  "title": "R23 Provider Proposal Schema Normalization",
+  "status": "ALL_PASS",
+  "protocol": "EDP-1.0",
+  "blocker": 0,
+  "unresolved_major": 0,
+  "must_traceability_percent": 100,
+  "correction": {
+    "normalize_only": "missing_non_authoritative_summary",
+    "segment_prompt_exact_target": true,
+    "authority_expansion": false,
+    "retry_expansion": false,
+    "sanitizer_expansion": false
+  },
+  "evidence": {
+    "direct": "31 PASS",
+    "focused": "300 PASS / 1 skip",
+    "full_regression": "1614 PASS / 12 skip / RC=0",
+    "syntax": "PASS",
+    "diff_check": "PASS"
+  },
+  "production_follow_up": "fresh run required before TASK-015 completion claim"
+}
