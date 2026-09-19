@@ -23,6 +23,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .durable_io import DurableIOError, atomic_write_bytes, durable_json_save, resource_snapshot
 from .production_attention import AttentionOutbox
+from .user_interaction_policy import DEFERRED_INCIDENT, IMMEDIATE_DECISION, STALL_CONFIRMED
 
 
 SCHEMA_VERSION = "orchestration.production-full-plan.v1"
@@ -326,11 +327,16 @@ class DurableFullPlanSupervisor:
             key: value for key, value in extra.items()
             if key in {"attempt", "next_attempt", "resources", "wait_state", "elapsed_seconds", "current_stage"}
         }
+        delivery_class = (
+            IMMEDIATE_DECISION if kind in {"WAITING_APPROVAL", "USER_DECISION_REQUIRED"}
+            else STALL_CONFIRMED if kind == "STALLED_SUSPECTED"
+            else DEFERRED_INCIDENT
+        )
         self.attention_outbox.publish(
             kind=kind, state=str(state.get("state") or "UNKNOWN"), reason=reason,
             gate_id=str(gate_id) if gate_id else None,
             state_sha256=str(state.get("state_sha256") or "") or None,
-            details=safe_details,
+            details=safe_details, delivery_class=delivery_class,
         )
 
     def _acquire_run_lock(self):

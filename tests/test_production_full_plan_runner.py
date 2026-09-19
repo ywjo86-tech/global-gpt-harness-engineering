@@ -144,6 +144,34 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             self.assertEqual(out.status, "WAITING_APPROVAL")
             self.assertEqual(out.state["completed_gates"], [])
 
+            event = sup.attention_outbox.pending()[0]
+            self.assertEqual(event.get("delivery_class"), "IMMEDIATE_DECISION")
+
+    def test_08a_provider_and_resource_incidents_are_deferred(self):
+        with tempfile.TemporaryDirectory() as d:
+            provider_sup = self.supervisor(d, gates=["G1"])
+            self.assertEqual(provider_sup.run(provider_wait).status, "WAITING_PROVIDER")
+            self.assertEqual(provider_sup.attention_outbox.pending()[0].get("delivery_class"), "DEFERRED_INCIDENT")
+        with tempfile.TemporaryDirectory() as d:
+            low = lambda _: {"disk_free_bytes": 1, "inode_free": 1}
+            resource_sup = self.supervisor(d, gates=["G1"], min_disk_free_bytes=10, min_inode_free=10, resource_probe=low)
+            self.assertEqual(resource_sup.run(completed).status, "WAITING_RESOURCE")
+            self.assertEqual(resource_sup.attention_outbox.pending()[0].get("delivery_class"), "DEFERRED_INCIDENT")
+
+    def test_08b_dead_letter_is_deferred_but_stall_is_confirmed(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup = self.supervisor(d, gates=["G1"], retry_budget=0)
+            self.assertEqual(sup.run(always_fail).status, "BLOCKED")
+            self.assertEqual(sup.attention_outbox.pending()[0].get("delivery_class"), "DEFERRED_INCIDENT")
+        with tempfile.TemporaryDirectory() as d:
+            sup = self.supervisor(
+                d, gates=["G1"], retry_budget=0, gate_timeout_seconds=0.12,
+                heartbeat_seconds=0.01, lease_seconds=0.03, stall_alert_seconds=0.04,
+            )
+            sup.run(always_hang)
+            stalled = [event for event in sup.attention_outbox.pending() if event["kind"] == "STALLED_SUSPECTED"]
+            self.assertEqual(stalled[0].get("delivery_class"), "STALL_CONFIRMED")
+
     def test_09_resource_pressure_applies_backpressure(self):
         with tempfile.TemporaryDirectory() as d:
             probe = lambda _: {"disk_free_bytes": 1, "inode_free": 1}
