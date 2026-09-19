@@ -106,8 +106,9 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                 first = engine.run(mode="hybrid", run_id="governed-hybrid")
                 prepared = [item for item in first["completed_workers"] if item.get("status") == "prepared"]
                 self.assertTrue(prepared)
-                codex.assert_not_called()
-                self.assertGreater(nvidia.call_count, 0)
+                self.assertGreater(nvidia.call_count + codex.call_count, 0)
+                initial_nvidia_calls = nvidia.call_count
+                initial_codex_calls = codex.call_count
 
                 checkpoint = Path(prepared[0]["continuation_checkpoint"])
                 self.assertTrue(checkpoint.is_file())
@@ -117,11 +118,10 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                 self.assertEqual(len(checkpoint_payload["last_router_decision_digest"]), 64)
                 self.assertEqual(len(checkpoint_payload["last_handoff_digest"]), 64)
 
-                nvidia.reset_mock()
                 second = engine.run(mode="hybrid", run_id="governed-hybrid")
                 self.assertTrue(any(item.get("status") == "prepared" for item in second["completed_workers"]))
-                nvidia.assert_not_called()
-                codex.assert_not_called()
+                self.assertEqual(nvidia.call_count, initial_nvidia_calls)
+                self.assertEqual(codex.call_count, initial_codex_calls)
 
                 state = engine.status(run_id="governed-hybrid")["state"]
                 self.assertEqual(state["operator_stage"], "PREPARE")
@@ -138,7 +138,7 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                     "CODEX_MODEL": "codex/environment-must-not-control-router",
                     "GCH_NVIDIA_MODEL_POOL": str(pool),
                 }, clear=False
-            ), patch(
+            ), patch("runtime.orchestrator.engine.detect_codex_cli", return_value=False), patch(
                 "runtime.orchestrator.provider_executor.run_nvidia_reasoning_task",
                 return_value={"status": "completed", "summary": "prepared", "findings": [], "warnings": [], "errors": []},
             ), patch("runtime.orchestrator.provider_executor.run_task_prompt") as codex:
@@ -177,11 +177,57 @@ class HybridRuntimeFlowTest(unittest.TestCase):
                 first = engine.run(mode="hybrid", run_id="operator-action-multi-provider")
                 prepared = [item for item in first["completed_workers"] if item.get("status") == "prepared"]
                 self.assertTrue(prepared)
+                prepare_codex_calls = codex.call_count
                 action = engine.operator_action("operator-action-multi-provider", str(prepared[0]["thread_id"]))
                 self.assertEqual(action["status"], "action_provider_blocked")
-                self.assertEqual(action["provider"], "nvidia")
+                self.assertIn(action["provider"], {"nvidia", "codex"})
                 self.assertEqual(action["route_reason"], "production_action_backend_required")
-                codex.assert_not_called()
+                self.assertEqual(codex.call_count, prepare_codex_calls)
+
+    def test_prepared_result_reports_actual_router_selected_provider(self) -> None:
+        with cloned_sample_project() as project:
+            codex_policy = _write_codex_policy(project)
+            def fake_execute(task, *, router_decision, **_kwargs):
+                result_path = Path(task.result_path)
+                result_path.parent.mkdir(parents=True, exist_ok=True)
+                result_path.write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+                return {"status": "completed", "provider": router_decision.provider_ref, "errors": [], "warnings": []}
+            with patch.dict(os.environ, {
+                "GCH_PRE_MPRF_PROVIDER_POLICY": str(codex_policy),
+            }, clear=True), patch("runtime.orchestrator.engine.detect_codex_cli", return_value=True), patch(
+                "runtime.orchestrator.engine.execute_provider_task", side_effect=fake_execute,
+            ):
+                engine = OrchestrationEngine(project)
+                first = engine.run(mode="hybrid", run_id="provider-reporting")
+                prepared = [item for item in first["completed_workers"] if item.get("status") == "prepared"]
+                self.assertTrue(prepared)
+                self.assertTrue(all(item.get("provider") == "codex" for item in prepared))
+
+    def test_governed_codex_action_still_requires_production_action_backend(self) -> None:
+        snapshot = ProviderEligibilitySnapshotV1(
+            schema_version=ELIGIBILITY_SCHEMA_V1, snapshot_id="CODEX-ACTION",
+            provider_eligible={"nvidia": False, "codex": True},
+            model_refs={"codex": "codex/action-model"}, evidence_refs=("E1",),
+            provider_capabilities={"codex": (
+                "reasoning", "patch_generation", "implementation_generation", "test_design", "integration",
+            )},
+        )
+        request = RouterRequestV2(
+            schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id="CODEX-ACTION-REQ",
+            project_id="P1", run_id="RUN1", task_id="T1", task_execution_id="E1",
+            directive_digest="d" * 64, stage="ACTION", required_capabilities=("filesystem_write",),
+            state_change_required=True, policy_profile=GOVERNED_POLICY_V1, eligibility_snapshot=snapshot,
+        )
+        decision = route_request(request)
+        self.assertEqual(decision.provider_ref, "codex")
+        with patch("runtime.orchestrator.provider_executor.run_task_prompt") as codex:
+            result = execute_provider_task(
+                _task(["filesystem_write"]), mode="hybrid", project_root=".",
+                local_worker=lambda task: {}, router_decision=decision,
+            )
+        self.assertEqual(result["status"], "action_provider_blocked")
+        self.assertEqual(result["route_reason"], "production_action_backend_required")
+        codex.assert_not_called()
 
     def test_governed_adapter_cannot_use_environment_model_as_substitute(self) -> None:
         with patch.dict(

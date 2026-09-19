@@ -70,7 +70,7 @@ def _execute_governed(
             "next_step": "GPT_OPERATOR_REVIEW_REQUIRED",
         }
 
-    if decision.stage == "ACTION" and decision.provider_ref != CODEX_PROVIDER:
+    if decision.stage == "ACTION":
         # The legacy provider executor has no Broker/tool-authorization context.
         # Never mistake proposal generation for an applied state change. Durable
         # Full Plan uses production_worker_executor.PROVIDER_ACTION instead.

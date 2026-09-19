@@ -445,7 +445,7 @@ class OrchestrationEngine:
                 last_handoff_digest=handoff.handoff_digest,
             ))
             return {
-                "status": "prepared", "mode": HYBRID, "provider": "nvidia",
+                "status": "prepared", "mode": HYBRID, "provider": decision.provider_ref,
                 "model": decision.model_ref, "route_reason": decision.reason_code, "runtime_stage": "PREPARE",
                 "action_state": "ACTION_PENDING", "router_decision_digest": decision.decision_digest,
                 "handoff_digest": handoff.handoff_digest, "continuation_checkpoint": str(checkpoint_path),
