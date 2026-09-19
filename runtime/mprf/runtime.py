@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from .contracts import APPROVED_PROVIDER_IDS, EligibilityFactV1, MPRFContractError
+from .contracts import EligibilityFactV1, MPRFContractError
 from .lifecycle import (
     LIFECYCLE_OK,
     UNKNOWN_HEALTH,
@@ -74,7 +74,7 @@ class MPRFRuntimeV1:
 
         eligible: dict[str, bool] = {}
         model_refs: dict[str, str] = {}
-        for provider_id in sorted(APPROVED_PROVIDER_IDS):
+        for provider_id in sorted(item.provider_id for item in self.registry.providers):
             admission = self.registry.eligibility_fact(provider_id)
             if not admission.eligible:
                 eligible[provider_id] = False

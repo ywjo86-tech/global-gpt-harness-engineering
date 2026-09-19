@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable, Mapping
 
@@ -12,6 +13,12 @@ CODEX_PROVIDER = "codex"
 LOCAL_PROVIDER = "local"
 MANUAL_PROVIDER = "manual"
 NVIDIA_PROVIDER = "nvidia"
+BUILTIN_PROVIDER_IDS = frozenset({CODEX_PROVIDER, NVIDIA_PROVIDER})
+_PROVIDER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+
+
+def _valid_provider_id(value: object) -> bool:
+    return isinstance(value, str) and _PROVIDER_ID.fullmatch(value) is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,20 +124,20 @@ class ProviderEligibilitySnapshotV1:
     def __post_init__(self) -> None:
         if self.schema_version != ELIGIBILITY_SCHEMA_V1 or not self.snapshot_id:
             raise ProviderRouterContractError("invalid eligibility snapshot")
-        if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in self.provider_eligible):
-            raise ProviderRouterContractError("unapproved provider in eligibility snapshot")
-        if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in self.model_refs):
-            raise ProviderRouterContractError("unapproved provider model binding")
+        if any(not _valid_provider_id(provider) for provider in self.provider_eligible):
+            raise ProviderRouterContractError("invalid provider in eligibility snapshot")
+        if any(not _valid_provider_id(provider) for provider in self.model_refs):
+            raise ProviderRouterContractError("invalid provider model binding")
         fallbacks = self.model_fallback_refs or {}
         provider_caps = self.provider_capabilities or {}
-        if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in provider_caps):
-            raise ProviderRouterContractError("unapproved provider capability binding")
+        if any(not _valid_provider_id(provider) for provider in provider_caps):
+            raise ProviderRouterContractError("invalid provider capability binding")
         for provider, refs in provider_caps.items():
             normalized_caps = tuple(sorted({str(ref).strip() for ref in refs if str(ref).strip()}))
             if not normalized_caps or len(normalized_caps) != len(tuple(refs)):
                 raise ProviderRouterContractError("invalid provider capability binding")
-        if any(provider not in {NVIDIA_PROVIDER, CODEX_PROVIDER} for provider in fallbacks):
-            raise ProviderRouterContractError("unapproved provider fallback binding")
+        if any(not _valid_provider_id(provider) for provider in fallbacks):
+            raise ProviderRouterContractError("invalid provider fallback binding")
         for provider, refs in fallbacks.items():
             normalized = tuple(str(ref).strip() for ref in refs)
             if any(not ref for ref in normalized) or len(normalized) != len(set(normalized)):
@@ -278,12 +285,10 @@ class RouterDecisionV2:
         if self.schema_version != ROUTER_DECISION_SCHEMA_V2:
             raise ProviderRouterContractError("unsupported RouterDecision schema")
         if self.eligible:
-            if self.provider_ref not in {NVIDIA_PROVIDER, CODEX_PROVIDER} or not self.model_ref:
+            if not _valid_provider_id(self.provider_ref) or not self.model_ref:
                 raise ProviderRouterContractError("eligible RouterDecision requires provider/model binding")
         elif self.provider_ref or self.model_ref:
             raise ProviderRouterContractError("blocked RouterDecision cannot bind a provider/model")
-        if self.model_fallback_refs and self.provider_ref != NVIDIA_PROVIDER:
-            raise ProviderRouterContractError("model failover is only approved inside NVIDIA provider")
         if len(self.model_fallback_refs) != len(set(self.model_fallback_refs)):
             raise ProviderRouterContractError("duplicate RouterDecision fallback model")
         if self.model_ref and self.model_ref in self.model_fallback_refs:
@@ -399,9 +404,10 @@ def provider_generation_requirements(request: RouterRequestV2) -> tuple[str, ...
 
 
 def _legacy_provider_capabilities(provider: str) -> frozenset[str]:
-    # Historical snapshots did not authorize provider-neutral ACTION proposals.
-    # Preserve their old meaning: NVIDIA is non-mutating, while Codex may satisfy
-    # the legacy action path until a new explicit capability projection exists.
+    # Only the sealed built-in legacy snapshots receive implicit capabilities.
+    # Any newly admitted provider must carry an explicit capability projection.
+    if provider not in BUILTIN_PROVIDER_IDS:
+        return frozenset()
     base = set(READ_ONLY_CAPABILITIES) | {"integration", "implementation_generation", "test_design"}
     if provider == NVIDIA_PROVIDER:
         base.discard(ACTION_PROPOSAL_CAPABILITY)

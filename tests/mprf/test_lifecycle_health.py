@@ -100,7 +100,7 @@ class MPRFLifecycleHealthTests(unittest.TestCase):
             LifecycleFactV1("bad", NVIDIA_PROVIDER, "nvidia/model-a", 1, 1,
                             HEALTHY, QUOTA_AVAILABLE, RATE_AVAILABLE, frozenset())
         with self.assertRaises(MPRFContractError):
-            fact("other", "other/model")
+            fact("bad provider id", "other/model")
         with self.assertRaises(MPRFContractError):
             fact(NVIDIA_PROVIDER, "nvidia/model-a", lifecycle_version=True)
         with self.assertRaises(MPRFContractError):

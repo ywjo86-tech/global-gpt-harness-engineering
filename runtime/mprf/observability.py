@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from .contracts import APPROVED_PROVIDER_IDS, MPRFContractError
+from .contracts import MPRFContractError, validate_provider_id
 
 EVENT_SCHEMA_V1 = "mprf.provider-runtime-event.v1"
 CORRELATION_SCHEMA_V1 = "mprf.correlation-projection.v1"
@@ -110,8 +110,10 @@ class ProviderRuntimeEventV1:
             _safe_text(value, label)
         if not isinstance(self.model_ref, str) or not _MODEL_REF.fullmatch(self.model_ref):
             raise MPRFObservabilityError("model_ref is invalid")
-        if self.provider_id not in APPROVED_PROVIDER_IDS:
-            raise MPRFObservabilityError("provider_id is outside the approved provider domain")
+        try:
+            validate_provider_id(self.provider_id)
+        except MPRFContractError as exc:
+            raise MPRFObservabilityError("provider_id is invalid") from exc
         if self.event_type not in EVENT_TYPES_V1:
             raise MPRFObservabilityError("event_type is outside the closed provider-runtime taxonomy")
         if isinstance(self.sequence, bool) or not isinstance(self.sequence, int) or self.sequence < 1:

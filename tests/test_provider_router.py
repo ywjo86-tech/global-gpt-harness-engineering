@@ -81,6 +81,26 @@ class ProviderRouterV2Test(unittest.TestCase):
             policy_profile=GOVERNED_POLICY_V1, eligibility_snapshot=snapshot,
         )
 
+
+    def test_third_provider_snapshot_and_decision_are_provider_neutral(self):
+        snapshot = ProviderEligibilitySnapshotV1(
+            schema_version=ELIGIBILITY_SCHEMA_V1, snapshot_id="S-THIRD",
+            provider_eligible={"provider-x": True},
+            model_refs={"provider-x": "provider-x/model-1"},
+            evidence_refs=("provider-x-admission",),
+            provider_capabilities={"provider-x": ("read_only", "reasoning")},
+        )
+        request = RouterRequestV2(
+            schema_version=ROUTER_REQUEST_SCHEMA_V2, request_id="REQ-THIRD", project_id="P1", run_id="R1",
+            task_id="T1", task_execution_id="E1", directive_digest="c" * 64, stage="PREPARE",
+            required_capabilities=("read_only", "reasoning"), state_change_required=False,
+            policy_profile=GOVERNED_POLICY_V1, eligibility_snapshot=snapshot,
+        )
+        decision = route_request(request)
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, "provider-x")
+        self.assertEqual(decision.model_ref, "provider-x/model-1")
+
     def test_prepare_selects_nvidia_with_router_bound_model(self):
         decision = route_request(self._request())
         self.assertTrue(decision.eligible)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from .contracts import APPROVED_PROVIDER_IDS, MPRFContractError
+from .contracts import MPRFContractError, validate_provider_id
 
 LIFECYCLE_FACT_SCHEMA_V1 = "mprf.lifecycle-fact.v1"
 LIFECYCLE_STATE_SCHEMA_V1 = "mprf.lifecycle-state.v1"
@@ -68,8 +68,7 @@ class LifecycleFactV1:
     def __post_init__(self) -> None:
         if self.schema_version != LIFECYCLE_FACT_SCHEMA_V1:
             raise MPRFContractError("unsupported lifecycle fact schema")
-        if self.provider_id not in APPROVED_PROVIDER_IDS:
-            raise MPRFContractError("unapproved provider")
+        validate_provider_id(self.provider_id)
         _require_text(self.model_ref, "model_ref")
         _require_positive_int(self.registry_version, "registry_version")
         _require_positive_int(self.lifecycle_version, "lifecycle_version")

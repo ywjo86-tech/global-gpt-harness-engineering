@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 PROVIDER_RECORD_SCHEMA_V1 = "mprf.provider-record.v1"
@@ -11,7 +12,11 @@ ELIGIBILITY_FACT_SCHEMA_V1 = "mprf.eligibility-fact.v1"
 
 NVIDIA_PROVIDER = "nvidia"
 CODEX_PROVIDER = "codex"
-APPROVED_PROVIDER_IDS = frozenset({NVIDIA_PROVIDER, CODEX_PROVIDER})
+BUILTIN_PROVIDER_IDS = frozenset({NVIDIA_PROVIDER, CODEX_PROVIDER})
+# Backward-compatible export: this is the currently activated built-in production set,
+# not the provider identity domain accepted by versioned MPRF contracts.
+APPROVED_PROVIDER_IDS = BUILTIN_PROVIDER_IDS
+_PROVIDER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 
 ADMISSION_ADMITTED = "ADMITTED"
 ADMISSION_DISABLED = "DISABLED"
@@ -31,6 +36,12 @@ def _require_text(value: str, field: str) -> None:
         raise MPRFContractError(f"{field} must be a non-empty string")
 
 
+def validate_provider_id(value: str) -> str:
+    if not isinstance(value, str) or not _PROVIDER_ID.fullmatch(value):
+        raise MPRFContractError("provider_id is invalid")
+    return value
+
+
 def _require_version(value: int, field: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise MPRFContractError(f"{field} must be a positive integer")
@@ -45,8 +56,7 @@ class ProviderRecordV1:
     def __post_init__(self) -> None:
         if self.schema_version != PROVIDER_RECORD_SCHEMA_V1:
             raise MPRFContractError("unsupported provider record schema")
-        if self.provider_id not in APPROVED_PROVIDER_IDS:
-            raise MPRFContractError("unapproved provider")
+        validate_provider_id(self.provider_id)
         _require_version(self.record_version, "record_version")
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,8 +74,7 @@ class ModelRecordV1:
     def __post_init__(self) -> None:
         if self.schema_version != MODEL_RECORD_SCHEMA_V1:
             raise MPRFContractError("unsupported model record schema")
-        if self.provider_id not in APPROVED_PROVIDER_IDS:
-            raise MPRFContractError("unapproved provider")
+        validate_provider_id(self.provider_id)
         _require_text(self.model_ref, "model_ref")
         _require_version(self.record_version, "record_version")
 
@@ -91,8 +100,7 @@ class AdmissionRecordV1:
         if self.schema_version != ADMISSION_RECORD_SCHEMA_V1:
             raise MPRFContractError("unsupported admission record schema")
         _require_text(self.admission_id, "admission_id")
-        if self.provider_id not in APPROVED_PROVIDER_IDS:
-            raise MPRFContractError("unapproved provider")
+        validate_provider_id(self.provider_id)
         _require_text(self.model_ref, "model_ref")
         _require_version(self.registry_version, "registry_version")
         if self.state not in ADMISSION_STATES_V1:

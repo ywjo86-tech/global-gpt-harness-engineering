@@ -58,24 +58,41 @@ def make_registry(*, version: int = 1,
 
 
 class MPRFRegistryAdmissionTests(unittest.TestCase):
-    def test_exact_provider_domain_and_schema_versions_fail_closed(self) -> None:
+    def test_provider_identity_and_schema_versions_fail_closed(self) -> None:
         with self.assertRaises(MPRFContractError):
             ProviderRecordV1("bad", NVIDIA_PROVIDER, 1)
         with self.assertRaises(MPRFContractError):
-            ProviderRecordV1(PROVIDER_RECORD_SCHEMA_V1, "local", 1)
+            ProviderRecordV1(PROVIDER_RECORD_SCHEMA_V1, "bad provider id", 1)
         with self.assertRaises(MPRFContractError):
             ModelRecordV1("bad", NVIDIA_PROVIDER, "nvidia/model-a", 1)
         with self.assertRaises(MPRFContractError):
             AdmissionRecordV1("bad", "a", NVIDIA_PROVIDER, "nvidia/model-a", 1)
-        with self.assertRaises(MPRFContractError):
-            ProviderModelRegistryV1(
-                REGISTRY_SCHEMA_V1, "partial", 1,
-                (provider_records()[0],), model_records()[:1], (),
-            )
+        partial = ProviderModelRegistryV1(
+            REGISTRY_SCHEMA_V1, "partial", 1,
+            (provider_records()[0],), model_records()[:1], (),
+        )
+        self.assertEqual(partial.providers[0].provider_id, NVIDIA_PROVIDER)
         with self.assertRaises(MPRFContractError):
             ProviderModelRegistryV1(
                 "bad", "registry", 1, provider_records(), model_records(), (),
             )
+
+
+    def test_third_provider_is_registry_admissible_without_core_domain_change(self) -> None:
+        provider_id = "provider-x"
+        model_ref = "provider-x/model-1"
+        registry = ProviderModelRegistryV1(
+            REGISTRY_SCHEMA_V1, "registry-x", 1,
+            (ProviderRecordV1(PROVIDER_RECORD_SCHEMA_V1, provider_id, 1),),
+            (ModelRecordV1(MODEL_RECORD_SCHEMA_V1, provider_id, model_ref, 1),),
+            (AdmissionRecordV1(ADMISSION_RECORD_SCHEMA_V1, "x1", provider_id, model_ref, 1, ADMISSION_ADMITTED),),
+        )
+        fact = registry.eligibility_fact(provider_id)
+        self.assertTrue(fact.eligible)
+        self.assertEqual(fact.model_ref, model_ref)
+        snapshot = registry.export_router_snapshot("snapshot-x", ("provider-x-approval",))
+        self.assertEqual(snapshot.provider_eligible, {provider_id: True})
+        self.assertEqual(snapshot.model_refs, {provider_id: model_ref})
 
     def test_records_are_versioned_and_immutable(self) -> None:
         provider = provider_records()[0]

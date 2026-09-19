@@ -7,7 +7,6 @@ from typing import Iterable
 from .contracts import (
     ADMISSION_ADMITTED,
     ADMISSION_DISABLED,
-    APPROVED_PROVIDER_IDS,
     ELIGIBILITY_FACT_SCHEMA_V1,
     AdmissionRecordV1,
     EligibilityFactV1,
@@ -40,13 +39,14 @@ class ProviderModelRegistryV1:
         object.__setattr__(self, "admissions", tuple(self.admissions))
 
         provider_ids = [item.provider_id for item in self.providers]
-        if set(provider_ids) != APPROVED_PROVIDER_IDS or len(provider_ids) != len(APPROVED_PROVIDER_IDS):
-            raise MPRFContractError("registry provider domain must be exactly nvidia and codex")
+        if not provider_ids or len(provider_ids) != len(set(provider_ids)):
+            raise MPRFContractError("registry provider identities must be non-empty and unique")
+        provider_domain = set(provider_ids)
 
         model_keys = [(item.provider_id, item.model_ref) for item in self.models]
         if len(model_keys) != len(set(model_keys)):
             raise MPRFContractError("duplicate model identity")
-        if any(provider not in APPROVED_PROVIDER_IDS for provider, _ in model_keys):
+        if any(provider not in provider_domain for provider, _ in model_keys):
             raise MPRFContractError("model references unknown provider")
 
         admission_ids = [item.admission_id for item in self.admissions]
@@ -75,7 +75,8 @@ class ProviderModelRegistryV1:
                 if item.provider_id == provider_id and (not model_ref or item.model_ref == model_ref)]
 
     def eligibility_fact(self, provider_id: str, model_ref: str = "") -> EligibilityFactV1:
-        if provider_id not in APPROVED_PROVIDER_IDS:
+        provider_domain = {item.provider_id for item in self.providers}
+        if provider_id not in provider_domain:
             return self._ineligible(provider_id, model_ref, "UNKNOWN_PROVIDER")
         if model_ref and (provider_id, model_ref) not in {(m.provider_id, m.model_ref) for m in self.models}:
             return self._ineligible(provider_id, model_ref, "UNKNOWN_MODEL")
@@ -120,7 +121,7 @@ class ProviderModelRegistryV1:
         )
 
         facts = {provider: self.eligibility_fact(provider)
-                 for provider in sorted(APPROVED_PROVIDER_IDS)}
+                 for provider in sorted(item.provider_id for item in self.providers)}
         eligible = {provider: fact.eligible for provider, fact in facts.items()}
         model_refs = {provider: fact.model_ref for provider, fact in facts.items()
                       if fact.eligible}
