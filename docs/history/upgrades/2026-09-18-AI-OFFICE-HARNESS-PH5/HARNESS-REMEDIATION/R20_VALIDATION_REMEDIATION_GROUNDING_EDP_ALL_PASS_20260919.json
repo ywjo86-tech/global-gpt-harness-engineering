@@ -8,13 +8,15 @@
   "root_causes": [
     "validation feedback flattened/truncated globally and could omit late exception groups",
     "segmented remediation received non-target-specific feedback",
-    "remediation context did not guarantee authoritative runtime trace/import dependencies"
+    "remediation context did not guarantee authoritative runtime trace/import dependencies",
+    "trace-derived traversal-like paths were fail-closed later by sanitizer but could cause avoidable remediation rejection"
   ],
   "corrections": [
     "preserve bounded exception groups up to 4096 chars",
     "isolate validation feedback per exact owned target",
     "exclude generated owned files from ordinary remediation context slots",
-    "prioritize runtime trace sources and resolvable local Python dependencies"
+    "prioritize runtime trace sources and resolvable local Python dependencies",
+    "reject traversal-like trace-derived paths before context selection"
   ],
   "authority_invariants": {
     "validation_remediation_max": 2,
@@ -26,9 +28,9 @@
     "router_or_mprf_authority_changed": false
   },
   "evidence": {
-    "targeted": "142 tests PASS, 1 skip",
-    "focused": "335 tests PASS, 6 skip",
-    "full": "1608 tests PASS, 12 skip, RC=0",
+    "targeted": "143 tests PASS, 1 skip",
+    "focused": "347 tests PASS, 6 skip",
+    "full": "1609 tests PASS, 12 skip, RC=0",
     "py_compile": "PASS",
     "diff_check": "PASS"
   },
@@ -43,11 +45,13 @@
     "sanitizer_limit_expansion": 0,
     "retry_budget_expansion": 0,
     "manual_action_bypass": 0,
-    "provider_hardcoding_added": 0
+    "provider_hardcoding_added": 0,
+    "trace_path_traversal_candidates": 0
   },
   "adversarial_new_blocker_major": 0,
   "pass_challenge": 0,
   "blocker": 0,
   "unresolved_major": 0,
-  "note": "An intermediate focused command referenced three nonexistent test module names; corrected focused command passed 335 tests. This was a diagnostic invocation error, not a product regression."
+  "note": "An intermediate focused command referenced three nonexistent test module names; corrected focused command passed 335 tests. This was a diagnostic invocation error, not a product regression.",
+  "diagnostic_skill_note": "No separate installed generic diagnosis SKILL.md was found; canonical EDP-1.0 common diagnosis standard applied directly."
 }
