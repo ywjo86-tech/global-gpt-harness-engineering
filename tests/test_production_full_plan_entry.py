@@ -109,6 +109,8 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
                 out = run_job(path)
             self.assertEqual(out["status"], "COMPLETED")
             self.assertEqual(out["state"]["completed_gates"], ["G1", "G2", "G3"])
+            self.assertEqual(out["operator_exit"]["disposition"], "CONTINUE_EXECUTION")
+            self.assertFalse(out["operator_exit"]["allow_final_response"])
 
     def test_preflight_preserves_virtualenv_symlink_executable(self):
         with tempfile.TemporaryDirectory() as d:

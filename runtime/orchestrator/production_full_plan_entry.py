@@ -8,10 +8,12 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
+from .operator_exit_guard import assess_operator_turn_exit
 from .durable_io import atomic_write_json
 from .contract_adapter import MAPPING_ROOT_ENV
 from .production_run_authority import (
@@ -265,7 +267,14 @@ def run_job(path: str | Path) -> dict[str, Any]:
     if mapping_root is not None:
         os.environ[MAPPING_ROOT_ENV] = str(mapping_root)
     try:
-        return supervisor.run(build_gate_executor(job), preflight=lambda _: preflight_job(job)).to_dict()
+        result = supervisor.run(build_gate_executor(job), preflight=lambda _: preflight_job(job)).to_dict()
+        result["operator_exit"] = assess_operator_turn_exit(
+            result.get("state", {}),
+            attention_events=supervisor.attention_outbox.pending(),
+            now=datetime.now(timezone.utc),
+            completion_obligations=None,
+        ).to_dict()
+        return result
     finally:
         if previous_mapping_root is None:
             os.environ.pop(MAPPING_ROOT_ENV, None)

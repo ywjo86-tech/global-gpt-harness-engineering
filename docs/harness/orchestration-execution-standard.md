@@ -272,3 +272,7 @@ Use one line per validation or gate event:
 - Do not bypass the stage gate by continuing directly to the next phase.
 - Do not replace the development plan with chat history.
 - Do not treat stage-gate approval as a substitute for user safety approval.
+
+## Operator Turn Exit Guard
+
+Before a user-facing final completion response, the Operator MUST run the read-only Operator Turn Exit Guard against the current Full Plan state and all request-level completion obligations. `CONTINUE_EXECUTION` means the response must not be treated as final and execution continues under existing Full Plan authority; `REQUEST_USER_DECISION` and `NOTIFY_STALLED` permit only the corresponding decision/status message; `REPORT_TERMINAL_STOP` permits a non-success terminal report; only `ALLOW_COMPLETION_RESPONSE` permits a successful completion report. The Guard has `control_authority=NONE` and cannot dispatch, resume, reroute, approve, select a provider/model, patch, or execute effects.
