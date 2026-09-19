@@ -2794,3 +2794,33 @@ Contract final readiness requires:
 - provider-agnostic Full Plan execution instruction/hash binding
 - Project Identity/root/version binding PASS
 - Multi-Provider responsibility integrity PASS
+
+
+---
+## 2026-09-19 CONTRACT AMENDMENT — AI OFFICE HARNESS EDP EXTENSIBILITY REMEDIATION
+
+AUTHORITY: Current explicit user directive dated 2026-09-19, issued after review of the exhaustive Hybrid/Multi-Provider diagnosis.
+STATUS: AUTHORIZED_SCOPE_AMENDMENT / IMPLEMENTATION_REQUIRED / AI_OFFICE_HARNESS_UPGRADE_REMAINS_OPEN
+DIAGNOSIS_STANDARD: EDP-1.0
+BASELINE_HEAD: 5eb5b30be5889f3ddd4f0754404b237697eac231
+
+The prior PHASE 5 exclusion of PHASE 7 remains valid for new Provider activation, benchmarking/cost optimization, deployment, and external credential onboarding. The following foundation corrections are pulled forward because EDP demonstrated they are required to satisfy the already-approved provider-neutral Full Plan HYBRID operating principle:
+
+- remove compiled-in Codex/NVIDIA provider-domain constraints from MPRF/Router contracts while preserving explicit admission;
+- introduce provider adapter registry dispatch so a newly approved provider need not alter Router/Executor core branches;
+- remove effective Codex-first/NVIDIA-first/capability-cardinality/lexical selection bias;
+- correct production readiness propagation and bind MPRF lifecycle/capability facts to eligibility;
+- activate evidence-safe MPRF reroute with failed-provider exclusion;
+- permit INVALID_RESPONSE reroute only when effect reconciliation proves no effect;
+- durably preserve sanitized invalid Provider output before validation failure;
+- reconcile current governance state after remediation.
+
+PROHIBITED UNDER THIS AMENDMENT:
+- activating, credentialing, billing, deploying, or admitting any new external Provider in production;
+- moving Provider/model selection out of Multi-Provider Router;
+- moving runtime lifecycle authority out of MPRF;
+- moving effect authority out of Execution Backend/Full MCP;
+- weakening Manual Action, approval, checkpoint, Attention, Exit Guard, or immutable evidence safeguards;
+- merge/push/deployment without their existing separate authority.
+
+GO requires EDP ALL PASS with blocker=0, unresolved major=0, MUST/traceability/domain evidence coverage=100%, material cross-document conflicts=0, broken binding refs=0, adversarial new blocker/major=0, PASS-challenge open=0, focused and full regressions PASS.
