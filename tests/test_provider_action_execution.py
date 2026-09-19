@@ -7,7 +7,8 @@ from pathlib import Path
 
 from runtime.orchestrator.provider_action_execution import (
     PROPOSAL_SCHEMA_V1, ProviderActionExecutionError, _extract_json_object,
-    _bounded_remediation_owned_context, build_action_proposal_prompt,
+    _bounded_remediation_owned_context, _validation_feedback_for_target,
+    _feedback_trace_paths, _remediation_priority_paths, build_action_proposal_prompt,
     execute_provider_action_proposal, select_action_context_files,
 )
 from runtime.orchestrator.context_sanitizer import sanitize_context
@@ -462,6 +463,55 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertLessEqual(len(excerpt.encode("utf-8")), 32 * 1024)
             self.assertIn("02500:", excerpt)
             self.assertNotIn("00001: line_0", excerpt)
+
+    def test_feedback_trace_paths_rejects_traversal_candidates(self):
+        feedback = (
+            "TRACE runtime/ai_office/workflow.py line 10 | "
+            "TRACE runtime/../../outside.py line 20 | "
+            "TRACE tests/../outside.py line 30"
+        )
+        self.assertEqual(_feedback_trace_paths(feedback), ("runtime/ai_office/workflow.py",))
+
+
+    def test_validation_feedback_isolated_per_owned_target(self):
+        feedback = (
+            "ERROR: one | TRACE tests/test_one.py line 12 | TRACE runtime/ai_office/workflow.py line 120 | "
+            "WorkflowContractError: undeclared workflow transition | "
+            "ERROR: two | TRACE tests/test_two.py line 79 | TRACE runtime/orchestrator/office_execution_backend_adapter.py line 72 | "
+            "OfficeExecutionBackendAdapterError: runtime result identity binding mismatch"
+        )
+        first = _validation_feedback_for_target(feedback, "tests/test_one.py")
+        second = _validation_feedback_for_target(feedback, "tests/test_two.py")
+        self.assertIn("workflow transition", first)
+        self.assertNotIn("identity binding mismatch", first)
+        self.assertIn("identity binding mismatch", second)
+        self.assertNotIn("workflow transition", second)
+
+    def test_remediation_priority_includes_authoritative_import_dependencies(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "tests").mkdir(); (root / "runtime/orchestrator").mkdir(parents=True)
+            target = root / "tests/test_one.py"
+            target.write_text(
+                "from runtime.orchestrator.office_execution_contract import OfficeExecutionRequestV1\n"
+                "from runtime.orchestrator.office_execution_backend_adapter import OfficeExecutionBackendAdapter\n"
+            )
+            (root / "runtime/orchestrator/office_execution_contract.py").write_text("class OfficeExecutionRequestV1: pass\n")
+            (root / "runtime/orchestrator/office_execution_backend_adapter.py").write_text("class OfficeExecutionBackendAdapter: pass\n")
+            priority = _remediation_priority_paths(
+                root, "tests/test_one.py",
+                "TRACE tests/test_one.py line 2 | TRACE runtime/orchestrator/office_execution_backend_adapter.py line 10 | TypeError: bad signature",
+            )
+            self.assertEqual(priority[0], "runtime/orchestrator/office_execution_backend_adapter.py")
+            self.assertIn("runtime/orchestrator/office_execution_contract.py", priority)
+            request = worker(root, ["tests/test_one.py", "tests/test_two.py"]); (root / "tests/test_two.py").write_text("pass\n")
+            selected = select_action_context_files(
+                root, request, ["tests/test_one.py"], exclude_paths={"tests/test_one.py", "tests/test_two.py"},
+                priority_paths=priority,
+            )
+            self.assertIn("runtime/orchestrator/office_execution_contract.py", selected)
+            self.assertNotIn("tests/test_one.py", selected)
+            self.assertNotIn("tests/test_two.py", selected)
+
 
     def test_identity_mismatch_fails_before_write(self):
         with tempfile.TemporaryDirectory() as td:

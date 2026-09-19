@@ -1,0 +1,53 @@
+{
+  "schema_version": "edp.remediation-closure.v1",
+  "status": "ALL_PASS",
+  "protocol": "EDP-1.0",
+  "source_run": "ai-office-ph5-gate005-20260919-r20",
+  "task_id": "TASK-015",
+  "head_before_fix": "f15996251f33271d8e385b9ce75dd42b78099498",
+  "root_causes": [
+    "validation feedback flattened/truncated globally and could omit late exception groups",
+    "segmented remediation received non-target-specific feedback",
+    "remediation context did not guarantee authoritative runtime trace/import dependencies"
+  ],
+  "corrections": [
+    "preserve bounded exception groups up to 4096 chars",
+    "isolate validation feedback per exact owned target",
+    "exclude generated owned files from ordinary remediation context slots",
+    "prioritize runtime trace sources and resolvable local Python dependencies"
+  ],
+  "authority_invariants": {
+    "validation_remediation_max": 2,
+    "context_max_files": "unchanged DEFAULT_MAX_FILES",
+    "context_max_file_bytes": "unchanged DEFAULT_MAX_FILE_BYTES",
+    "context_max_total_bytes": "unchanged DEFAULT_MAX_TOTAL_BYTES",
+    "owned_write_scope_expanded": false,
+    "broker_bypassed": false,
+    "router_or_mprf_authority_changed": false
+  },
+  "evidence": {
+    "targeted": "142 tests PASS, 1 skip",
+    "focused": "335 tests PASS, 6 skip",
+    "full": "1608 tests PASS, 12 skip, RC=0",
+    "py_compile": "PASS",
+    "diff_check": "PASS"
+  },
+  "code_review_harness": {
+    "architecture": "PASS - remediation grounding only; mutation path unchanged",
+    "security": "PASS - sanitizer bounds and Broker path unchanged",
+    "performance": "PASS - retry/remediation counts unchanged; bounded feedback only",
+    "maintainability": "PASS - target-specific helpers and regression tests added"
+  },
+  "negative_space": {
+    "authority_expansion": 0,
+    "sanitizer_limit_expansion": 0,
+    "retry_budget_expansion": 0,
+    "manual_action_bypass": 0,
+    "provider_hardcoding_added": 0
+  },
+  "adversarial_new_blocker_major": 0,
+  "pass_challenge": 0,
+  "blocker": 0,
+  "unresolved_major": 0,
+  "note": "An intermediate focused command referenced three nonexistent test module names; corrected focused command passed 335 tests. This was a diagnostic invocation error, not a product regression."
+}

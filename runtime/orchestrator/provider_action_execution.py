@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .codex_dynamic_transport import ToolRequestEnvelope
@@ -24,7 +24,7 @@ MAX_PROPOSAL_GENERATION_ATTEMPTS = 3
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
 MAX_CONTEXT_FILE_BYTES = DEFAULT_MAX_FILE_BYTES
-MAX_VALIDATION_FEEDBACK_CHARS = 2000
+MAX_VALIDATION_FEEDBACK_CHARS = 4096
 MAX_REMEDIATION_OWNED_CONTEXT_BYTES = 32 * 1024
 _CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",), "loop": ("workflow",)}
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
@@ -220,17 +220,71 @@ def _local_python_dependencies(root: Path, relative: str) -> tuple[str, ...]:
     ))
 
 
+def _feedback_error_groups(validation_feedback: str) -> list[tuple[str, ...]]:
+    parts = [item.strip() for item in str(validation_feedback or "").split(" | ") if item.strip()]
+    groups: list[tuple[str, ...]] = []
+    current: list[str] = []
+    for item in parts:
+        if item.startswith(("ERROR: ", "FAIL: ")):
+            if current:
+                groups.append(tuple(current))
+            current = [item]
+        elif current:
+            current.append(item)
+        else:
+            groups.append((item,))
+    if current:
+        groups.append(tuple(current))
+    return groups
+
+
+def _validation_feedback_for_target(validation_feedback: str, target_path: str) -> str:
+    marker = f"TRACE {target_path} line "
+    matched = [
+        group for group in _feedback_error_groups(validation_feedback)
+        if any(item.startswith(marker) for item in group)
+    ]
+    if not matched:
+        return str(validation_feedback or "").strip()[:MAX_VALIDATION_FEEDBACK_CHARS]
+    return " | ".join(item for group in matched for item in group)[:MAX_VALIDATION_FEEDBACK_CHARS]
+
+
+def _feedback_trace_paths(validation_feedback: str) -> tuple[str, ...]:
+    found: list[str] = []
+    for value in re.findall(r"TRACE\s+((?:runtime|tests)/[^|]+?)\s+line\s+\d+", str(validation_feedback or "")):
+        relative = value.strip()
+        candidate = PurePosixPath(relative)
+        if (not relative or candidate.is_absolute() or ".." in candidate.parts or "\\" in relative):
+            continue
+        if relative not in found:
+            found.append(relative)
+    return tuple(found)
+
+
+def _remediation_priority_paths(project_root: Path, target_path: str, validation_feedback: str) -> list[str]:
+    prioritized: list[str] = []
+    for relative in _feedback_trace_paths(validation_feedback):
+        if relative.startswith("runtime/") and relative not in prioritized:
+            prioritized.append(relative)
+    for relative in _local_python_dependencies(project_root, target_path):
+        if relative not in prioritized:
+            prioritized.append(relative)
+    return prioritized
+
+
 def select_action_context_files(
-    project_root: Path, request: WorkerRequest, owned: list[str], *, exclude_paths: set[str] | None = None,
+    project_root: Path, request: WorkerRequest, owned: list[str], *,
+    exclude_paths: set[str] | None = None, priority_paths: list[str] | tuple[str, ...] | None = None,
 ) -> list[str]:
     """Select a bounded deterministic read context; it never expands write scope."""
     root = project_root.resolve()
     excluded = set(exclude_paths or ())
     tokens = _context_tokens(request, owned)
-    priority = [str(item) for item in request.task.input_files if str(item).strip()]
-    priority.extend(path for path in owned if not path.endswith("/") and (root / path).is_file())
+    explicit_priority = [str(item) for item in (priority_paths or ()) if str(item).strip()]
+    normal_priority = [str(item) for item in request.task.input_files if str(item).strip()]
+    normal_priority.extend(path for path in owned if not path.endswith("/") and (root / path).is_file())
     candidates: dict[str, int] = {}
-    for relative in priority:
+    for rank, relative in enumerate((*explicit_priority, *normal_priority)):
         if relative in excluded:
             continue
         path = root / relative
@@ -240,7 +294,8 @@ def select_action_context_files(
             except OSError:
                 continue
             if 0 < priority_size <= MAX_CONTEXT_FILE_BYTES:
-                candidates[relative] = 100000
+                base = 200000 if relative in explicit_priority else 100000
+                candidates[relative] = max(candidates.get(relative, 0), base - rank)
     for path in root.rglob("*"):
         if not path.is_file() or path.is_symlink() or path.suffix.lower() not in _CONTEXT_EXTENSIONS:
             continue
@@ -580,17 +635,31 @@ def execute_provider_action_proposal(
     generation_models: list[str] = []
     context_files_seen: list[str] = []
     context_metadata: dict[str, Any] = {}
+    segment_context_files: dict[str, list[str]] = {}
     if segmented:
         segments: list[dict[str, Any]] = []
         for file_id, path in exact_bindings:
-            segment_context = select_action_context_files(Path(request.project_root), request, [path])
+            segment_feedback = (
+                _validation_feedback_for_target(validation_feedback, path)
+                if str(validation_feedback or "").strip() else ""
+            )
+            remediation_priority = (
+                _remediation_priority_paths(Path(request.project_root), path, segment_feedback)
+                if segment_feedback else []
+            )
+            segment_context = select_action_context_files(
+                Path(request.project_root), request, [path],
+                exclude_paths=set(owned) if segment_feedback else None,
+                priority_paths=remediation_priority,
+            )
+            segment_context_files[file_id] = list(segment_context)
             for item in segment_context:
                 if item not in context_files_seen:
                     context_files_seen.append(item)
             segment, segment_result, attempts, provider_attempts, models = _generate_validated_proposal(
                 request, decision=decision, baseline=baseline, owned=owned,
                 context_files=segment_context, provider_runner=provider_runner, timeout=timeout,
-                validation_feedback=validation_feedback, target_owned_file_id=file_id,
+                validation_feedback=segment_feedback, target_owned_file_id=file_id,
                 required_exact_paths={path},
             )
             segments.append(segment)
@@ -675,6 +744,7 @@ def execute_provider_action_proposal(
         "proposal_path": str(proposal_path),
         "proposal_summary": proposal["summary"],
         "context_files": context_files_seen,
+        "segment_context_files": segment_context_files,
         "context_metadata": context_metadata,
         "write_results": results,
         "governed_effect_evidence": [item.canonical_projection() for item in transport.governed_effect_evidence()],

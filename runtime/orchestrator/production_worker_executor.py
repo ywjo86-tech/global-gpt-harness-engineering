@@ -78,6 +78,7 @@ ADAPTER_CONTRACT_VERSION = "SEM-025.v2"
 SUPPORTED_CODEX_VERSION = "0.150.1"
 STRUCTURED_EVENT_CONTRACT_VERSION = "codex-exec-jsonl.0.150.1.v1"
 MAX_PROVIDER_ACTION_VALIDATION_REMEDIATIONS = 2
+MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS = 4096
 CHECKPOINT_GIT_USER_NAME = "Global GPT Harness"
 CHECKPOINT_GIT_USER_EMAIL = "harness@localhost.invalid"
 _SECRET = re.compile(r"(?i)(api[_-]?key|authorization|bearer|password|token)\s*[:=]\s*(\S+)")
@@ -2219,39 +2220,51 @@ def _test_runner_metadata(stdout: bytes, stderr: bytes, exit_code: int) -> dict[
 
 def _bounded_validation_feedback(stdout: bytes, stderr: bytes) -> str:
     text = _redact((bytes(stdout or b"") + b"\n" + bytes(stderr or b"")).decode("utf-8", "replace"))
-    selected: list[str] = []
-    seen: set[str] = set()
-    pattern = re.compile(
-        r"^(?:AssertionError|AttributeError|ImportError|ModuleNotFoundError|NameError|TypeError|ValueError|KeyError|RuntimeError|SyntaxError|OSError|FileNotFoundError|PermissionError|NotImplementedError)(?::.*)?$"
+    exception_pattern = re.compile(
+        r"^(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception)|AssertionError|AttributeError|ImportError|ModuleNotFoundError|NameError|TypeError|ValueError|KeyError|RuntimeError|SyntaxError|OSError|FileNotFoundError|PermissionError|NotImplementedError)(?::.*)?$"
     )
     trace_pattern = re.compile(r'^File "([^"]+)", line (\d+)')
+    groups: list[list[str]] = []
+    current: list[str] = []
+    standalone: list[str] = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
+        if line.startswith(("ERROR: ", "FAIL: ")):
+            if current:
+                groups.append(current)
+            current = [line[:400]]
+            continue
         trace = trace_pattern.match(line)
         if trace:
-            trace_path = Path(trace.group(1))
-            parts = trace_path.parts
+            trace_path = Path(trace.group(1)); parts = trace_path.parts; bounded = ""
             if "tests" in parts:
-                index = parts.index("tests")
-                bounded = f"TRACE {'/'.join(parts[index:])} line {trace.group(2)}"[:400]
+                index = parts.index("tests"); bounded = f"TRACE {'/'.join(parts[index:])} line {trace.group(2)}"[:400]
             elif "runtime" in parts:
-                index = parts.index("runtime")
-                bounded = f"TRACE {'/'.join(parts[index:])} line {trace.group(2)}"[:400]
-            else:
-                bounded = ""
-            if bounded and bounded not in seen:
-                seen.add(bounded); selected.append(bounded)
-        elif pattern.match(line) or line.startswith("FAIL: ") or line.startswith("ERROR: "):
-            bounded = line[:400]
-            if bounded not in seen:
-                seen.add(bounded); selected.append(bounded)
-        if len(selected) >= 12:
+                index = parts.index("runtime"); bounded = f"TRACE {'/'.join(parts[index:])} line {trace.group(2)}"[:400]
+            if bounded:
+                (current if current else standalone).append(bounded)
+            continue
+        if exception_pattern.match(line):
+            (current if current else standalone).append(line[:400])
+            if current:
+                groups.append(current); current = []
+    if current:
+        groups.append(current)
+    ordered = [*([standalone] if standalone else []), *groups]
+    selected: list[str] = []
+    seen: set[str] = set()
+    for group in ordered:
+        for item in group:
+            if item not in seen:
+                seen.add(item); selected.append(item)
+        candidate = " | ".join(selected)
+        if len(candidate) >= MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS:
             break
     if not selected:
         return "validation command failed without classified exception text"
-    return " | ".join(selected)[:2000]
+    return " | ".join(selected)[:MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS]
 
 
 def _command(root: Path, argv: list[str], timeout: int = 900, *,
@@ -3054,6 +3067,7 @@ def execute_production_worker(request: WorkerRequest, *,
                 "proposal_digest": action_result["proposal_digest"],
                 "proposal_path": action_result["proposal_path"],
                 "context_files": list(action_result["context_files"]),
+                "segment_context_files": dict(action_result.get("segment_context_files") or {}),
                 "context_metadata": dict(action_result["context_metadata"]),
                 "hard_stop": True,
             }
@@ -3337,7 +3351,7 @@ def execute_production_worker(request: WorkerRequest, *,
         )
         if not remediation_allowed:
             break
-        bounded_feedback = " | ".join(dict.fromkeys(item for item in validation_feedback if item))[:2000]
+        bounded_feedback = " | ".join(dict.fromkeys(item for item in validation_feedback if item))[:MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS]
         if not bounded_feedback:
             bounded_feedback = "independent validation failed with a nonzero result; inspect current owned files and correct the implementation"
         validation_remediation_attempts += 1

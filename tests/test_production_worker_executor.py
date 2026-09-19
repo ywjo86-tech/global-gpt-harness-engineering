@@ -54,7 +54,7 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         feedback = _bounded_validation_feedback(raw, b"")
         self.assertIn("AttributeError", feedback)
         self.assertNotIn("secret-material-value", feedback)
-        self.assertLessEqual(len(feedback), 2000)
+        self.assertLessEqual(len(feedback), 4096)
 
     def test_validation_feedback_keeps_bounded_project_trace_location(self):
         raw = (
@@ -65,6 +65,29 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         self.assertIn("TRACE tests/test_large.py line 123", feedback)
         self.assertIn("AssertionError", feedback)
         self.assertNotIn("/tmp/project", feedback)
+
+    def test_validation_feedback_preserves_late_exception_group(self):
+        raw = b"""
+ERROR: first (tests.test_one.Case.test_one)
+  File "/tmp/project/tests/test_one.py", line 10, in test_one
+  File "/tmp/project/runtime/ai_office/workflow.py", line 120, in transition
+WorkflowContractError: undeclared workflow transition
+ERROR: second (tests.test_one.Case.test_two)
+  File "/tmp/project/tests/test_one.py", line 20, in test_two
+TypeError: missing required positional argument
+ERROR: third (tests.test_two.Case.test_three)
+  File "/tmp/project/tests/test_two.py", line 79, in test_three
+  File "/tmp/project/runtime/orchestrator/office_execution_backend_adapter.py", line 72, in _project_result
+runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdapterError: runtime result identity binding mismatch
+"""
+        feedback = _bounded_validation_feedback(raw, b"")
+        self.assertIn("WorkflowContractError", feedback)
+        self.assertIn("TypeError", feedback)
+        self.assertIn("OfficeExecutionBackendAdapterError", feedback)
+        self.assertIn("runtime result identity binding mismatch", feedback)
+        self.assertIn("TRACE tests/test_two.py line 79", feedback)
+        self.assertLessEqual(len(feedback), 4096)
+
 
     def test_test_runner_metadata_is_bounded(self):
         failed = _test_runner_metadata(b"===== 1 failed, 2 passed in 0.1s =====", b"", 1)
