@@ -2221,15 +2221,30 @@ def _bounded_validation_feedback(stdout: bytes, stderr: bytes) -> str:
     pattern = re.compile(
         r"^(?:AssertionError|AttributeError|ImportError|ModuleNotFoundError|NameError|TypeError|ValueError|KeyError|RuntimeError|SyntaxError|OSError|FileNotFoundError|PermissionError|NotImplementedError)(?::.*)?$"
     )
+    trace_pattern = re.compile(r'^File "([^"]+)", line (\d+)')
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
-        if pattern.match(line) or line.startswith("FAIL: ") or line.startswith("ERROR: "):
+        trace = trace_pattern.match(line)
+        if trace:
+            trace_path = Path(trace.group(1))
+            parts = trace_path.parts
+            if "tests" in parts:
+                index = parts.index("tests")
+                bounded = f"TRACE {'/'.join(parts[index:])} line {trace.group(2)}"[:400]
+            elif "runtime" in parts:
+                index = parts.index("runtime")
+                bounded = f"TRACE {'/'.join(parts[index:])} line {trace.group(2)}"[:400]
+            else:
+                bounded = ""
+            if bounded and bounded not in seen:
+                seen.add(bounded); selected.append(bounded)
+        elif pattern.match(line) or line.startswith("FAIL: ") or line.startswith("ERROR: "):
             bounded = line[:400]
             if bounded not in seen:
                 seen.add(bounded); selected.append(bounded)
-        if len(selected) >= 8:
+        if len(selected) >= 12:
             break
     if not selected:
         return "validation command failed without classified exception text"

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .codex_dynamic_transport import ToolRequestEnvelope
-from .context_sanitizer import DEFAULT_MAX_FILES, DEFAULT_MAX_TOTAL_BYTES
+from .context_sanitizer import DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_FILES, DEFAULT_MAX_TOTAL_BYTES
 from .production_tool_transport import ProductionToolTransport
 from .provider_router import RouterDecisionV2
 from .schemas import WorkerRequest
@@ -23,7 +23,9 @@ MAX_PROPOSAL_BYTES = 1024 * 1024
 MAX_PROPOSAL_GENERATION_ATTEMPTS = 3
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
+MAX_CONTEXT_FILE_BYTES = DEFAULT_MAX_FILE_BYTES
 MAX_VALIDATION_FEEDBACK_CHARS = 2000
+MAX_REMEDIATION_OWNED_CONTEXT_BYTES = 32 * 1024
 _CONTEXT_SEMANTIC_ALIASES = {"factory": ("foundry",), "loop": ("workflow",)}
 _CONTEXT_EXTENSIONS = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".yml", ".txt"})
 _CONTEXT_EXCLUDED = frozenset({".git", ".venv", "node_modules", "_workspace", "dist", "build"})
@@ -218,21 +220,33 @@ def _local_python_dependencies(root: Path, relative: str) -> tuple[str, ...]:
     ))
 
 
-def select_action_context_files(project_root: Path, request: WorkerRequest, owned: list[str]) -> list[str]:
+def select_action_context_files(
+    project_root: Path, request: WorkerRequest, owned: list[str], *, exclude_paths: set[str] | None = None,
+) -> list[str]:
     """Select a bounded deterministic read context; it never expands write scope."""
     root = project_root.resolve()
+    excluded = set(exclude_paths or ())
     tokens = _context_tokens(request, owned)
     priority = [str(item) for item in request.task.input_files if str(item).strip()]
     priority.extend(path for path in owned if not path.endswith("/") and (root / path).is_file())
     candidates: dict[str, int] = {}
     for relative in priority:
+        if relative in excluded:
+            continue
         path = root / relative
         if path.is_file() and not path.is_symlink() and path.suffix.lower() in _CONTEXT_EXTENSIONS:
-            candidates[relative] = 100000
+            try:
+                priority_size = path.stat().st_size
+            except OSError:
+                continue
+            if 0 < priority_size <= MAX_CONTEXT_FILE_BYTES:
+                candidates[relative] = 100000
     for path in root.rglob("*"):
         if not path.is_file() or path.is_symlink() or path.suffix.lower() not in _CONTEXT_EXTENSIONS:
             continue
         relative = path.relative_to(root).as_posix()
+        if relative in excluded:
+            continue
         parts = relative.split("/")
         if (any(part in _CONTEXT_EXCLUDED or part.startswith(".env") for part in parts)
                 or any(relative.startswith(prefix) for prefix in _CONTEXT_EXCLUDED_PREFIXES)):
@@ -241,7 +255,7 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
             size = path.stat().st_size
         except OSError:
             continue
-        if size <= 0 or size > 16 * 1024:
+        if size <= 0 or size > MAX_CONTEXT_FILE_BYTES:
             continue
         lower_path = relative.lower()
         score = sum(30 for token in tokens if token in lower_path)
@@ -277,7 +291,7 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
                 dep_size = dep_path.stat().st_size
             except OSError:
                 continue
-            if dep_size <= 0 or dep_size > 16 * 1024:
+            if dep_size <= 0 or dep_size > MAX_CONTEXT_FILE_BYTES:
                 continue
             candidates[dependency] = max(candidates.get(dependency, 0), parent_score + 25)
             dependency_count += 1
@@ -287,6 +301,8 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
     for relative, _score in sorted(candidates.items(), key=lambda item: (-item[1], item[0])):
         path = root / relative
         size = path.stat().st_size
+        if size <= 0 or size > MAX_CONTEXT_FILE_BYTES:
+            continue
         if len(selected) >= MAX_CONTEXT_FILES or total + size > MAX_CONTEXT_BYTES:
             continue
         selected.append(relative)
@@ -294,6 +310,45 @@ def select_action_context_files(project_root: Path, request: WorkerRequest, owne
         if len(selected) == MAX_CONTEXT_FILES:
             break
     return selected
+
+
+def _bounded_remediation_owned_context(
+    project_root: Path, target_path: str, validation_feedback: str,
+) -> str:
+    path = (project_root / target_path).resolve()
+    root = project_root.resolve()
+    if root not in path.parents or not path.is_file() or path.is_symlink():
+        return ""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return ""
+    if len(raw) <= MAX_REMEDIATION_OWNED_CONTEXT_BYTES:
+        return raw.decode("utf-8", errors="replace")
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    target_name = Path(target_path).name
+    line_numbers = [
+        int(value) for value in re.findall(
+            rf"TRACE\s+[^|]*{re.escape(target_name)}\s+line\s+(\d+)",
+            str(validation_feedback or ""), flags=re.IGNORECASE,
+        )
+    ]
+    selected: set[int] = set()
+    for number in line_numbers[:4]:
+        center = max(0, number - 1)
+        selected.update(range(max(0, center - 30), min(len(lines), center + 31)))
+    if not selected:
+        selected.update(range(min(120, len(lines))))
+        selected.update(range(max(0, len(lines) - 120), len(lines)))
+    excerpt = "\n".join(
+        f"{index + 1:05d}: {lines[index]}" for index in sorted(selected)
+    )
+    data = excerpt.encode("utf-8")
+    if len(data) > MAX_REMEDIATION_OWNED_CONTEXT_BYTES:
+        data = data[:MAX_REMEDIATION_OWNED_CONTEXT_BYTES]
+        excerpt = data.decode("utf-8", errors="ignore")
+    return excerpt
 
 
 def build_action_proposal_prompt(
@@ -319,11 +374,22 @@ def build_action_proposal_prompt(
         "The content must be the complete target file content.\n"
         if target_owned_file_id else ""
     )
+    current_target_context = ""
+    if feedback and target_owned_file_id is not None:
+        target_path = owned_mapping[target_owned_file_id]
+        if not target_path.endswith("/"):
+            excerpt = _bounded_remediation_owned_context(Path(request.project_root), target_path, feedback)
+            if excerpt:
+                current_target_context = (
+                    "\nCURRENT TARGET FILE CONTEXT (bounded, read-only; preserve unaffected behavior):\n"
+                    f"path={target_path}\n{excerpt}\nEND CURRENT TARGET FILE CONTEXT\n"
+                )
     remediation = (
         "\nVALIDATION REMEDIATION: The currently materialized owned files failed independent validation. "
-        "Correct only the approved owned files using the supplied current-file context. "
+        "Correct only the approved owned file for this segment using the bounded current-file context and supplied project APIs. "
         "Do not broaden scope, change identity, or claim validation passed. "
         f"Bounded validation feedback: {json.dumps(feedback, ensure_ascii=False)}\n"
+        + current_target_context
         if feedback else ""
     )
     return (

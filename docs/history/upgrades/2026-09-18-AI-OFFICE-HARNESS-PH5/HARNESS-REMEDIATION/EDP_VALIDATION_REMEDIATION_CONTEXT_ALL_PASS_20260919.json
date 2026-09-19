@@ -1,0 +1,35 @@
+{
+  "schema_version": "edp.remediation.v1",
+  "id": "EDP-PH5-VALIDATION-REMEDIATION-CONTEXT-20260919",
+  "status": "ALL_PASS",
+  "defect": "Validation remediation re-selected generated owned files as provider input context; one generated file exceeded the existing 16KiB per-file sanitizer contract, causing context_security_rejected before remediation could run.",
+  "remediation": [
+    "selector now enforces the canonical per-file sanitizer limit before selecting priority/context files",
+    "validation remediation excludes exact owned targets from ordinary input_files",
+    "the current remediation target is supplied only as bounded read-only prompt context, capped at 32KiB",
+    "oversized targets use traceback-relative line-centered excerpts with bounded fallback head/tail context",
+    "validation feedback normalizes project traceback locations to relative path plus line number"
+  ],
+  "negative_space": [
+    "context sanitizer max_files/max_file_bytes/max_total_bytes unchanged",
+    "owned write authority and Broker contracts unchanged",
+    "Router/MPRF/provider eligibility unchanged",
+    "no system/network/secret authority added",
+    "non-remediation ACTION context behavior preserved except sanitizer-contract prefiltering"
+  ],
+  "evidence": {
+    "targeted": "138 PASS / 1 opt-in skip",
+    "wide": "278 PASS / 6 skip",
+    "full_regression": "1604 PASS / 12 skip / RC=0",
+    "git_diff_check": "PASS"
+  },
+  "closure": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "must_traceability_percent": 100,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "exhaustion_statement": "No material unresolved defect remains in the validation-remediation context boundary: oversized owned files cannot violate the canonical input-file sanitizer contract, while bounded current-target context remains available for remediation.",
+  "record_sha256": "2fff1f5f849cecc75b997f7ad4971da309f137e2d1d4f606ad560c825b997bae"
+}

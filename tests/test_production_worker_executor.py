@@ -56,6 +56,16 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         self.assertNotIn("secret-material-value", feedback)
         self.assertLessEqual(len(feedback), 2000)
 
+    def test_validation_feedback_keeps_bounded_project_trace_location(self):
+        raw = (
+            b'Traceback\n  File "/tmp/project/tests/test_large.py", line 123, in test_case\n'
+            b'AssertionError: expected value\n'
+        )
+        feedback = _bounded_validation_feedback(raw, b"")
+        self.assertIn("TRACE tests/test_large.py line 123", feedback)
+        self.assertIn("AssertionError", feedback)
+        self.assertNotIn("/tmp/project", feedback)
+
     def test_test_runner_metadata_is_bounded(self):
         failed = _test_runner_metadata(b"===== 1 failed, 2 passed in 0.1s =====", b"", 1)
         self.assertEqual(failed["test_runner_result_category"], "TEST_FAILURE")

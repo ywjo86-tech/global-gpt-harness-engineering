@@ -7,8 +7,10 @@ from pathlib import Path
 
 from runtime.orchestrator.provider_action_execution import (
     PROPOSAL_SCHEMA_V1, ProviderActionExecutionError, _extract_json_object,
+    _bounded_remediation_owned_context, build_action_proposal_prompt,
     execute_provider_action_proposal, select_action_context_files,
 )
+from runtime.orchestrator.context_sanitizer import sanitize_context
 from runtime.orchestrator.provider_router import (
     ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2,
     ProviderEligibilitySnapshotV1, RouterRequestV2, route_request,
@@ -427,6 +429,39 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertLessEqual(len(selected), 8)
             self.assertIn("runtime/ai_office/foundry.py", selected)
             self.assertIn("runtime/ai_office/workflow.py", selected)
+
+    def test_remediation_context_excludes_oversized_owned_file_but_prompt_keeps_bounded_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "tests").mkdir(); (root / "runtime/ai_office").mkdir(parents=True)
+            owned = ["tests/test_large.py", "tests/test_small.py"]
+            (root / owned[0]).write_text("def test_large():\n    assert True\n" + "# filler\n" * 2500)
+            (root / owned[1]).write_text("def test_small():\n    assert True\n")
+            (root / "runtime/ai_office/foundry.py").write_text("def create_operating_contract(): return {}\n")
+            request = worker(root, owned)
+            selected = select_action_context_files(root, request, owned, exclude_paths=set(owned))
+            self.assertNotIn(owned[0], selected); self.assertNotIn(owned[1], selected)
+            prompt = build_action_proposal_prompt(
+                request, baseline="a" * 40, owned=owned,
+                validation_feedback=f"TRACE {owned[0]} line 2 | AssertionError",
+                target_owned_file_id="OWNED_0001",
+            )
+            self.assertIn("CURRENT TARGET FILE CONTEXT", prompt)
+            self.assertIn("def test_large", prompt)
+            sanitized = sanitize_context(prompt, selected, root)
+            self.assertLessEqual(sanitized.metadata["file_count"], 8)
+
+    def test_oversized_remediation_context_is_bounded_around_trace_line(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "tests").mkdir()
+            path = root / "tests/test_huge.py"
+            lines = [f"line_{index} = {index}" for index in range(5000)]
+            path.write_text("\n".join(lines) + "\n")
+            excerpt = _bounded_remediation_owned_context(
+                root, "tests/test_huge.py", "TRACE tests/test_huge.py line 2500 | AssertionError",
+            )
+            self.assertLessEqual(len(excerpt.encode("utf-8")), 32 * 1024)
+            self.assertIn("02500:", excerpt)
+            self.assertNotIn("00001: line_0", excerpt)
 
     def test_identity_mismatch_fails_before_write(self):
         with tempfile.TemporaryDirectory() as td:
