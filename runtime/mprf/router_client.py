@@ -37,6 +37,8 @@ class RerouteRequestV1:
     task_id: str
     task_execution_id: str
     original_router_decision_digest: str
+    original_provider_ref: str
+    original_model_ref: str
     original_stage: str
     failure_class: FailureClassV1
     requested_capabilities: tuple[str, ...]
@@ -53,7 +55,9 @@ class RerouteRequestV1:
         for value, name in ((self.request_id, "request_id"), (self.project_id, "project_id"),
                             (self.run_id, "run_id"), (self.task_id, "task_id"),
                             (self.task_execution_id, "task_execution_id"),
-                            (self.original_router_decision_digest, "original_router_decision_digest")):
+                            (self.original_router_decision_digest, "original_router_decision_digest"),
+                            (self.original_provider_ref, "original_provider_ref"),
+                            (self.original_model_ref, "original_model_ref")):
             _text(value, name)
         if self.original_stage not in {"PREPARE", "ACTION", "VERIFY", "REVIEW"}:
             raise MPRFContractError("reroute request stage is invalid")
@@ -72,6 +76,7 @@ class RerouteRequestV1:
                 "project_id": self.project_id, "run_id": self.run_id, "task_id": self.task_id,
                 "task_execution_id": self.task_execution_id,
                 "original_router_decision_digest": self.original_router_decision_digest,
+                "original_provider_ref": self.original_provider_ref, "original_model_ref": self.original_model_ref,
                 "original_stage": self.original_stage, "failure_class": self.failure_class.value,
                 "requested_capabilities": list(self.requested_capabilities),
                 "checkpoint_integrity_ref": self.checkpoint_integrity_ref,
@@ -103,7 +108,8 @@ def build_reroute_request(*, request_id: str, project_id: str, run_id: str, task
     return RerouteRequestV1(
         REROUTE_REQUEST_SCHEMA_V1, _text(request_id, "request_id"), _text(project_id, "project_id"),
         _text(run_id, "run_id"), _text(task_id, "task_id"), _text(task_execution_id, "task_execution_id"),
-        original_router_decision.decision_digest, original_router_decision.stage, failure_class(failure),
+        original_router_decision.decision_digest, _text(original_router_decision.provider_ref, "original_provider_ref"),
+        _text(original_router_decision.model_ref, "original_model_ref"), original_router_decision.stage, failure_class(failure),
         tuple(sorted(set(original_router_decision.required_capabilities))),
         prerequisites.checkpoint_integrity_ref, prerequisites.artifact_integrity_ref,
         prerequisites.effect_reconciliation_ref, prerequisites.authorization_validation_ref,
@@ -129,4 +135,5 @@ def to_router_request_v2(reroute: RerouteRequestV1, *, directive_digest: str, el
         state_change_required=reroute.original_stage == "ACTION", policy_profile=GOVERNED_POLICY_V1,
         eligibility_snapshot=eligibility_snapshot, request_source=MPRF_REROUTE_SOURCE_V1,
         failure_class=reroute.failure_class.value, failover_request_ref=reroute.router_reference,
+        failed_provider_ref=reroute.original_provider_ref, failed_model_ref=reroute.original_model_ref,
     )

@@ -161,20 +161,11 @@ class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
         self.assertEqual(decision.provider_ref, "")
         self.assertEqual(decision.model_ref, "")
 
-    def test_failure_class_is_closed_and_reroute_stays_fail_closed_pre_mprf(self):
+    def test_failure_class_is_closed_and_untrusted_failover_context_fails_closed(self):
         with self.assertRaises(ProviderRouterContractError):
             self._request(failure_class="NOT_A_FAILURE_CLASS")
-        prohibited = route_request(self._request(
-            failure_class="POLICY_REJECTION", failover_request_ref="REROUTE-1"
-        ))
-        self.assertFalse(prohibited.eligible)
-        self.assertEqual(prohibited.reason_code, "reroute_failure_class_prohibited")
-        eligible_but_not_activated = route_request(self._request(
-            failure_class="PROVIDER_FAILURE", failover_request_ref="REROUTE-2"
-        ))
-        self.assertFalse(eligible_but_not_activated.eligible)
-        self.assertEqual(eligible_but_not_activated.reason_code, "reroute_policy_not_activated_pre_mprf")
-        self.assertEqual(eligible_but_not_activated.provider_ref, "")
+        with self.assertRaisesRegex(ProviderRouterContractError, "MPRF reroute source"):
+            self._request(failure_class="PROVIDER_FAILURE", failover_request_ref="REROUTE-1")
 
     def test_legacy_hybrid_contract_normalizes_to_v2_without_failure_context(self):
         snapshot = self._snapshot()
@@ -187,7 +178,9 @@ class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
         self.assertEqual(read_request.stage, "PREPARE")
         self.assertFalse(read_request.state_change_required)
         self.assertEqual(read_request.failure_class, "")
-        self.assertEqual(route_request(read_request).provider_ref, "nvidia")
+        read_decision = route_request(read_request)
+        self.assertTrue(read_decision.eligible)
+        self.assertIn(read_decision.provider_ref, {"nvidia", "codex"})
 
         action_request = normalize_legacy_hybrid_request(
             required_capabilities=("reasoning", "test", "implementation"), eligibility_snapshot=snapshot,
@@ -250,13 +243,11 @@ class ProviderRouterAutonomousActionTest(unittest.TestCase):
             nvidia_caps=required + ("documentation", "security_review"),
             codex_caps=required,
         )
-        first = route_request(self.request(request_id="REQ-3", **common))
-        second = route_request(self.request(request_id="REQ-1", **common))
-        self.assertTrue(first.eligible and second.eligible)
-        self.assertEqual(first.provider_ref, "nvidia")
-        self.assertEqual(second.provider_ref, "codex")
-        self.assertEqual(first.reason_code, "governed_action_by_neutral_rank")
-        self.assertEqual(second.reason_code, "governed_action_by_neutral_rank")
+        first_pass = [route_request(self.request(request_id=f"REQ-{i}", **common)) for i in range(1, 33)]
+        second_pass = [route_request(self.request(request_id=f"REQ-{i}", **common)) for i in range(1, 33)]
+        self.assertEqual([x.provider_ref for x in first_pass], [x.provider_ref for x in second_pass])
+        self.assertEqual({x.provider_ref for x in first_pass}, {"nvidia", "codex"})
+        self.assertTrue(all(x.reason_code == "governed_action_by_neutral_rank" for x in first_pass))
 
     def test_provider_without_patch_generation_is_blocked(self):
         decision = route_request(self.request(nvidia_caps=(

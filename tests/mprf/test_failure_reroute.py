@@ -12,18 +12,19 @@ from runtime.orchestrator.provider_router import (
 )
 
 
-def prereqs(*, network_safe=False, complete=True):
+def prereqs(*, network_safe=False, complete=True, effect_state="UNKNOWN"):
     value = "ref" if complete else ""
     return FailoverPrerequisitesV1(
         FAILOVER_PREREQUISITES_SCHEMA_V1, value, value, value, value, value,
-        "network-safe-policy" if network_safe else "",
+        "network-safe-policy" if network_safe else "", effect_state,
     )
 
 
 def original(stage="PREPARE", provider="nvidia"):
+    eligible = {"nvidia": provider == "nvidia", "codex": provider == "codex"}
+    models = {provider: "n/model" if provider == "nvidia" else "c/model"}
     snapshot = ProviderEligibilitySnapshotV1(
-        ELIGIBILITY_SCHEMA_V1, "s0", {"nvidia": True, "codex": True},
-        {"nvidia": "n/model", "codex": "c/model"}, ("eligibility",), {},
+        ELIGIBILITY_SCHEMA_V1, "s0", eligible, models, ("eligibility",), {},
     )
     request = RouterRequestV2(
         ROUTER_REQUEST_SCHEMA_V2, "r0", "P", "RUN", "T", "E", "d"*64, stage,
@@ -74,7 +75,7 @@ class FailureTaxonomyTests(unittest.TestCase):
                                   original_router_decision=original(), failure=FailureClassV1.NETWORK_FAILURE, prerequisites=prereqs())
 
     def test_023_prohibited_failure_classes_never_form_reroute(self):
-        prohibited = [FailureClassV1.TASK_FAILURE, FailureClassV1.INVALID_RESPONSE, FailureClassV1.AUTH_FAILURE,
+        prohibited = [FailureClassV1.TASK_FAILURE, FailureClassV1.AUTH_FAILURE,
                       FailureClassV1.POLICY_REJECTION, FailureClassV1.CHECKPOINT_FAILURE,
                       FailureClassV1.EXECUTION_BACKEND_FAILURE, FailureClassV1.ACTION_SIDE_EFFECT_AMBIGUOUS,
                       FailureClassV1.RECOVERY_REQUIRED, FailureClassV1.UNKNOWN_FAILURE]
@@ -98,10 +99,42 @@ class FailureTaxonomyTests(unittest.TestCase):
         self.assertEqual(router_request.stage, "PREPARE")
         self.assertFalse(router_request.state_change_required)
         decision = route_request(router_request)
-        self.assertFalse(decision.eligible)
-        self.assertEqual(decision.provider_ref, "")
-        self.assertEqual(decision.model_ref, "")
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, "codex")
+        self.assertEqual(decision.model_ref, "c/model")
+        self.assertEqual(decision.stage, "PREPARE")
         self.assertNotEqual(decision.stage, "ACTION")
+        self.assertEqual(reroute.original_provider_ref, "nvidia")
+        self.assertEqual(reroute.original_model_ref, "n/model")
+
+    def test_025_invalid_response_reroutes_only_after_confirmed_no_effect(self):
+        with self.assertRaisesRegex(MPRFContractError, "INVALID_RESPONSE_NO_EFFECT_REQUIRED"):
+            build_reroute_request(
+                request_id="INV-BLOCK", project_id="P", run_id="RUN", task_id="T", task_execution_id="E",
+                original_router_decision=original(), failure=FailureClassV1.INVALID_RESPONSE,
+                prerequisites=prereqs(effect_state="UNKNOWN"),
+            )
+        reroute = build_reroute_request(
+            request_id="INV-OK", project_id="P", run_id="RUN", task_id="T", task_execution_id="E",
+            original_router_decision=original(), failure=FailureClassV1.INVALID_RESPONSE,
+            prerequisites=prereqs(effect_state="CONFIRMED_NO_EFFECT"),
+        )
+        self.assertEqual(reroute.failure_class, FailureClassV1.INVALID_RESPONSE)
+
+    def test_026_reroute_requires_failed_provider_to_be_excluded(self):
+        reroute = build_reroute_request(
+            request_id="SAME", project_id="P", run_id="RUN", task_id="T", task_execution_id="E",
+            original_router_decision=original(), failure=FailureClassV1.PROVIDER_FAILURE,
+            prerequisites=prereqs(),
+        )
+        unsafe_snapshot = ProviderEligibilitySnapshotV1(
+            ELIGIBILITY_SCHEMA_V1, "s-unsafe", {"nvidia": True, "codex": True},
+            {"nvidia": "n/model", "codex": "c/model"}, ("after-failure",), {},
+        )
+        request = to_router_request_v2(reroute, directive_digest="f"*64, eligibility_snapshot=unsafe_snapshot)
+        decision = route_request(request)
+        self.assertFalse(decision.eligible)
+        self.assertEqual(decision.reason_code, "reroute_failed_provider_not_excluded")
 
 
 if __name__ == "__main__":

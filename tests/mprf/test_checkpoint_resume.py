@@ -11,7 +11,7 @@ from runtime.mprf.execution_client import (
     EFFECT_AMBIGUOUS, EFFECT_CONFIRMED, RECOVERY_REQUIRED, RESUMED, RECOVERY_STAGES_V1,
     execute_recovery_sequence,
 )
-from runtime.mprf.failure import FailureClassV1
+from runtime.mprf.failure import EFFECT_STATE_NO_EFFECT, FailureClassV1
 from runtime.orchestrator.provider_router import ROUTER_DECISION_SCHEMA_V2, RouterDecisionV2
 
 
@@ -109,6 +109,18 @@ class MPRFCheckpointResumeTests(unittest.TestCase):
         result = execute_recovery_sequence(**args)
         self.assertEqual(result.blocked_stage, "FAILOVER_POLICY")
         self.assertEqual(calls, [])
+
+
+    def test_026_invalid_response_can_recover_only_with_no_effect_evidence(self):
+        calls = []
+        args = self.kwargs()
+        args["failure"] = FailureClassV1.INVALID_RESPONSE
+        args["effect_state"] = EFFECT_STATE_NO_EFFECT
+        args["router_exchange"] = lambda reroute: calls.append("ROUTER") or self.router_ok(reroute)
+        args["resume_exchange"] = lambda ref: calls.append("RESUME") or True
+        result = execute_recovery_sequence(**args)
+        self.assertEqual(result.status, RESUMED)
+        self.assertEqual(calls, ["ROUTER", "RESUME"])
 
     def test_no_selection_authority_or_full_mcp_truth_duplication(self):
         source = inspect.getsource(execution_module) + inspect.getsource(checkpoint_module)

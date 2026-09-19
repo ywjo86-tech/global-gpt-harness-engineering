@@ -11,6 +11,10 @@ FAILURE_CLASS_SCHEMA_V1 = "mprf.failure-class.v1"
 FAILOVER_PREREQUISITES_SCHEMA_V1 = "mprf.failover-prerequisites.v1"
 FAILURE_DISPOSITION_SCHEMA_V1 = "mprf.failure-disposition.v1"
 FAILOVER_POLICY_VERSION_V1 = "MPRF_FAILOVER_V1"
+EFFECT_STATE_UNKNOWN = "UNKNOWN"
+EFFECT_STATE_NO_EFFECT = "CONFIRMED_NO_EFFECT"
+EFFECT_STATE_EFFECT_CONFIRMED = "CONFIRMED_EFFECT"
+EFFECT_STATES_V1 = frozenset({EFFECT_STATE_UNKNOWN, EFFECT_STATE_NO_EFFECT, EFFECT_STATE_EFFECT_CONFIRMED})
 
 
 class FailureClassV1(str, Enum):
@@ -74,6 +78,7 @@ class FailoverPrerequisitesV1:
     authorization_validation_ref: str
     policy_validation_ref: str
     network_safe_policy_evidence_ref: str = ""
+    effect_state: str = EFFECT_STATE_UNKNOWN
 
     def __post_init__(self) -> None:
         if self.schema_version != FAILOVER_PREREQUISITES_SCHEMA_V1:
@@ -85,6 +90,8 @@ class FailoverPrerequisitesV1:
                 raise MPRFContractError(f"{name} must be a string")
         if not isinstance(self.network_safe_policy_evidence_ref, str):
             raise MPRFContractError("network_safe_policy_evidence_ref must be a string")
+        if self.effect_state not in EFFECT_STATES_V1:
+            raise MPRFContractError("unknown effect reconciliation state")
 
     @property
     def recovery_checks_complete(self) -> bool:
@@ -126,6 +133,15 @@ def evaluate_failover(value: FailureClassV1 | str, prerequisites: FailoverPrereq
     if not isinstance(prerequisites, FailoverPrerequisitesV1):
         raise MPRFContractError("failover prerequisites contract is required")
     complete = prerequisites.recovery_checks_complete
+    if fc is FailureClassV1.INVALID_RESPONSE:
+        if not complete:
+            return FailureDispositionV1(FAILURE_DISPOSITION_SCHEMA_V1, fc, False,
+                                        "RECOVERY_PREREQUISITES_INCOMPLETE", False)
+        if prerequisites.effect_state != EFFECT_STATE_NO_EFFECT:
+            return FailureDispositionV1(FAILURE_DISPOSITION_SCHEMA_V1, fc, False,
+                                        "INVALID_RESPONSE_NO_EFFECT_REQUIRED", True)
+        return FailureDispositionV1(FAILURE_DISPOSITION_SCHEMA_V1, fc, True,
+                                    "REROUTE_REQUEST_ELIGIBLE", True)
     if fc not in ELIGIBLE_BASE_CLASSES_V1:
         reason = FAILURE_DISPOSITIONS_V1[fc]
         if fc is FailureClassV1.AUTH_FAILURE and permission_related_auth:

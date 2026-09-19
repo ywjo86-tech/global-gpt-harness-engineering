@@ -38,7 +38,7 @@ from dataclasses import dataclass
 
 from .checkpoint import CHECKPOINT_VALID, MPRFCheckpointV1, validate_checkpoint
 from .contracts import MPRFContractError
-from .failure import FailureClassV1, FailoverPrerequisitesV1, evaluate_failover
+from .failure import EFFECT_STATE_UNKNOWN, FailureClassV1, FailoverPrerequisitesV1, evaluate_failover
 from .router_client import RerouteRequestV1, build_reroute_request as build_public_reroute
 
 RECOVERY_SEQUENCE_SCHEMA_V1 = "mprf.recovery-sequence-result.v1"
@@ -108,7 +108,7 @@ def execute_recovery_sequence(*, checkpoint: MPRFCheckpointV1, project_id: str, 
                               policy_validation_ref: str, policy_valid: bool,
                               failure: FailureClassV1 | str, original_router_decision: Any,
                               reroute_request_id: str, network_safe_policy_evidence_ref: str = "",
-                              permission_related_auth: bool = False,
+                              permission_related_auth: bool = False, effect_state: str = EFFECT_STATE_UNKNOWN,
                               router_exchange: Callable[[RerouteRequestV1], Any],
                               resume_exchange: Callable[[str], bool]) -> RecoverySequenceResultV1:
     """Enforce approved recovery order; Router/resume authorities stay external."""
@@ -141,7 +141,7 @@ def execute_recovery_sequence(*, checkpoint: MPRFCheckpointV1, project_id: str, 
     prerequisites = FailoverPrerequisitesV1(
         "mprf.failover-prerequisites.v1", check.checkpoint_ref, artifact_integrity_ref,
         effect_reconciliation_ref, authorization_validation_ref, policy_validation_ref,
-        network_safe_policy_evidence_ref,
+        network_safe_policy_evidence_ref, effect_state,
     )
     disposition = evaluate_failover(failure, prerequisites, permission_related_auth=permission_related_auth)
     if not disposition.reroute_eligible:

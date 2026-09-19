@@ -84,6 +84,7 @@ FAILURE_CLASSES_V1 = frozenset({
 })
 REROUTE_ELIGIBLE_FAILURE_CLASSES_V1 = frozenset({
     "MODEL_FAILURE", "PROVIDER_FAILURE", "RATE_LIMIT", "QUOTA_EXHAUSTION", "NETWORK_FAILURE",
+    "INVALID_RESPONSE",
 })
 LEGACY_CAPABILITY_ALIASES_V2 = {
     "test": "test_execution",
@@ -189,6 +190,8 @@ class RouterRequestV2:
     request_source: str = ROUTER_REQUEST_SOURCE_V2
     failure_class: str = ""
     failover_request_ref: str = ""
+    failed_provider_ref: str = ""
+    failed_model_ref: str = ""
 
     def __post_init__(self) -> None:
         if self.schema_version != ROUTER_REQUEST_SCHEMA_V2:
@@ -209,6 +212,13 @@ class RouterRequestV2:
             raise ProviderRouterContractError("unknown FailureClass.v1 value")
         if self.failover_request_ref and not self.failure_class:
             raise ProviderRouterContractError("failover request requires failure_class")
+        if self.failover_request_ref and self.request_source != MPRF_REROUTE_SOURCE_V1:
+            raise ProviderRouterContractError("failover request requires MPRF reroute source")
+        if self.request_source == MPRF_REROUTE_SOURCE_V1:
+            if not self.failover_request_ref or not _valid_provider_id(self.failed_provider_ref) or not self.failed_model_ref:
+                raise ProviderRouterContractError("MPRF reroute requires failed provider/model binding")
+        elif self.failed_provider_ref or self.failed_model_ref:
+            raise ProviderRouterContractError("failed provider/model binding requires MPRF reroute source")
         if not self.eligibility_snapshot_ref:
             object.__setattr__(self, "eligibility_snapshot_ref", self.eligibility_snapshot.snapshot_id)
         if not self.eligibility_snapshot_digest:
@@ -233,6 +243,7 @@ class RouterRequestV2:
             "eligibility_snapshot": self.eligibility_snapshot.to_dict(),
             "request_source": self.request_source, "failure_class": self.failure_class,
             "failover_request_ref": self.failover_request_ref,
+            "failed_provider_ref": self.failed_provider_ref, "failed_model_ref": self.failed_model_ref,
         }
 
     @property
@@ -362,6 +373,8 @@ def router_request_from_mapping(value: Mapping[str, Any]) -> RouterRequestV2:
         request_source=str(value.get("request_source", ROUTER_REQUEST_SOURCE_V2)),
         failure_class=str(value.get("failure_class", "")),
         failover_request_ref=str(value.get("failover_request_ref", "")),
+        failed_provider_ref=str(value.get("failed_provider_ref", "")),
+        failed_model_ref=str(value.get("failed_model_ref", "")),
     )
 
 
@@ -464,15 +477,15 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
         state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
         return _blocked_decision(request, "eligibility_snapshot_binding_mismatch", state)
 
-    if request.failover_request_ref:
-        if request.failure_class not in REROUTE_ELIGIBLE_FAILURE_CLASSES_V1:
-            state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
-            return _blocked_decision(request, "reroute_failure_class_prohibited", state)
-        # TASK-002 accepts and validates future MPRF reroute context, but does not
-        # implement provider lifecycle/failover policy. TASK-012 activates reroute
-        # only after checkpoint/artifact/effect/auth/policy prerequisites exist.
+    reroute = bool(request.failover_request_ref)
+    if reroute:
         state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
-        return _blocked_decision(request, "reroute_policy_not_activated_pre_mprf", state)
+        if request.failure_class not in REROUTE_ELIGIBLE_FAILURE_CLASSES_V1:
+            return _blocked_decision(request, "reroute_failure_class_prohibited", state)
+        failed_still_eligible = bool(request.eligibility_snapshot.provider_eligible.get(request.failed_provider_ref, False))
+        failed_model = str(request.eligibility_snapshot.model_refs.get(request.failed_provider_ref, "")).strip()
+        if failed_still_eligible and failed_model == request.failed_model_ref:
+            return _blocked_decision(request, "reroute_failed_provider_not_excluded", state)
 
     blocked_state = "ACTION_PROVIDER_BLOCKED" if request.stage == "ACTION" else "ROUTE_BLOCKED"
     if request.stage != "ACTION" and STATE_CHANGING_CAPABILITIES.intersection(request.required_capabilities):
@@ -489,8 +502,13 @@ def route_request(request: RouterRequestV2) -> RouterDecisionV2:
             reason = "provider_capability_mismatch"
         return _blocked_decision(request, reason, blocked_state)
     provider, model_ref = selected
+    if reroute and provider == request.failed_provider_ref and model_ref == request.failed_model_ref:
+        return _blocked_decision(request, "reroute_failed_candidate_reselected", blocked_state)
     fallback_refs = tuple((request.eligibility_snapshot.model_fallback_refs or {}).get(provider, ()))
-    reason = "governed_action_by_neutral_rank" if request.stage == "ACTION" else "governed_read_by_neutral_rank"
+    reason = (
+        "governed_reroute_by_neutral_rank" if reroute else
+        "governed_action_by_neutral_rank" if request.stage == "ACTION" else "governed_read_by_neutral_rank"
+    )
     action_state = "ACTION_PENDING" if request.stage == "ACTION" else f"{request.stage}_PENDING"
     return RouterDecisionV2(
         schema_version=ROUTER_DECISION_SCHEMA_V2,
