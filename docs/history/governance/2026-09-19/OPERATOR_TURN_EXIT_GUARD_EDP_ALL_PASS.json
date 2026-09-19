@@ -1,0 +1,61 @@
+{
+  "schema_version": "gch.operator-turn-exit-guard.edp-all-pass.v1",
+  "date": "2026-09-19",
+  "protocol": "EDP-1.0",
+  "baseline_before": "c11ca2794b15d670d80f82439fd0af7e6bb372c4",
+  "implementation_commit": "958c6f1aa13d96f1d5f6d01706f66cf67bb54b4d",
+  "decision": "ALL_PASS",
+  "provider": {
+    "codex_auth_ready": true,
+    "codex_admitted": false,
+    "selected_provider": "nvidia",
+    "routed_model": "nvidia/nemotron-3-super-120b-a12b",
+    "final_review_model": "nvidia/ising-calibration-1.5-31b",
+    "model_failover_used": true,
+    "final_review": "PASS"
+  },
+  "validation": {
+    "initial_green": 27,
+    "corrected_green": 30,
+    "focused_pass": 184,
+    "full_tests_pass": 1671,
+    "full_skipped": 16,
+    "failures": 0,
+    "errors": 0,
+    "compileall": "PASS",
+    "diff_check": "PASS",
+    "authority_negative_space": "PASS",
+    "runtime_pass_challenge": "PASS"
+  },
+  "metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_TRACEABILITY_COVERAGE": 100,
+    "DOMAIN_EVIDENCE_COVERAGE": 100,
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0
+  },
+  "must_ids": [
+    "OEG-MUST-001",
+    "OEG-MUST-002",
+    "OEG-MUST-003",
+    "OEG-MUST-004",
+    "OEG-MUST-005",
+    "OEG-MUST-006",
+    "OEG-MUST-007",
+    "OEG-MUST-008",
+    "OEG-MUST-009",
+    "OEG-MUST-010",
+    "OEG-MUST-011",
+    "OEG-MUST-012",
+    "OEG-MUST-013",
+    "OEG-MUST-014",
+    "OEG-MUST-015",
+    "OEG-MUST-016",
+    "OEG-MUST-017"
+  ]
+}
