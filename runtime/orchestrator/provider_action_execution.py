@@ -21,6 +21,23 @@ MAX_PROPOSAL_WRITES = 64
 MAX_WRITE_BYTES = 256 * 1024
 MAX_PROPOSAL_BYTES = 1024 * 1024
 MAX_PROPOSAL_GENERATION_ATTEMPTS = 3
+MAX_PROVIDER_ACTION_MODEL_TIMEOUT_SECONDS = 60.0
+_PROVIDER_ERROR_CLASS_ALIASES = {
+    "nvidia_timeout": "PROVIDER_TIMEOUT",
+    "nvidia_rate_limit": "RATE_LIMIT",
+    "nvidia_server_error": "PROVIDER_SERVER_ERROR",
+    "nvidia_network_error": "NETWORK_FAILURE",
+    "nvidia_auth_error": "AUTH_FAILURE",
+    "provider_failure": "PROVIDER_FAILURE",
+}
+_PROVIDER_NEUTRAL_FAILURE_CLASSES = frozenset({
+    "PROVIDER_TIMEOUT", "RATE_LIMIT", "PROVIDER_SERVER_ERROR", "NETWORK_FAILURE",
+    "AUTH_FAILURE", "QUOTA_EXHAUSTION", "INVALID_RESPONSE", "PROVIDER_FAILURE",
+    "MODEL_FAILURE", "POLICY_REJECTION",
+})
+_RETRYABLE_PROVIDER_ERRORS = frozenset({
+    "PROVIDER_TIMEOUT", "RATE_LIMIT", "PROVIDER_SERVER_ERROR", "NETWORK_FAILURE",
+})
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
 MAX_CONTEXT_FILE_BYTES = DEFAULT_MAX_FILE_BYTES
@@ -35,6 +52,12 @@ _TOKEN = re.compile(r"[a-z0-9_]{4,}")
 
 class ProviderActionExecutionError(ValueError):
     pass
+
+
+def _normalize_provider_error_class(value: object) -> str:
+    raw = str(value or "provider_failure").strip() or "provider_failure"
+    aliased = _PROVIDER_ERROR_CLASS_ALIASES.get(raw, raw)
+    return aliased if aliased in _PROVIDER_NEUTRAL_FAILURE_CLASSES else "PROVIDER_FAILURE"
 
 
 def _canonical(value: object) -> bytes:
@@ -569,25 +592,29 @@ def _generate_validated_proposal(
             (model for model in approved_models if model not in contract_rejected_models),
             decision.model_ref,
         )
-        remaining_models = tuple(
-            model for model in approved_models
-            if model != requested_model and model not in contract_rejected_models
-        )
+        attempt_prompt = prompt if not prior_contract_error else _correction_prompt(prompt, prior_contract_error)
         result = provider_runner(
-            prompt=prompt if generation_attempt == 1 else _correction_prompt(prompt, prior_contract_error),
+            prompt=attempt_prompt,
             project_root=request.project_root, input_files=context_files,
             model=requested_model, require_explicit_model=True,
-            fallback_models=remaining_models, json_mode=True,
-            timeout_seconds=float(min(timeout, 180)), max_tokens=8192,
+            # Provider ACTION owns model rotation at this layer.  The adapter
+            # receives exactly one Router-approved model and no nested retry
+            # budget, preventing multiplicative fallback latency.
+            fallback_models=(), max_retries=0, json_mode=True,
+            timeout_seconds=float(min(timeout, MAX_PROVIDER_ACTION_MODEL_TIMEOUT_SECONDS)), max_tokens=8192,
         )
         total_provider_attempts += int(result.get("provider_attempts", 0) or 0)
+        generation_models.append(requested_model)
         if result.get("status") != "completed":
-            error = str(result.get("provider_error_class", "provider_failure"))
+            error = _normalize_provider_error_class(result.get("provider_error_class", "provider_failure"))
+            if error in _RETRYABLE_PROVIDER_ERRORS and generation_attempt < MAX_PROPOSAL_GENERATION_ATTEMPTS:
+                contract_rejected_models.add(requested_model)
+                prior_contract_error = ""
+                continue
             raise ProviderActionExecutionError(f"provider ACTION generation failed:{error}")
         actual_model = str(result.get("model", requested_model)).strip() or requested_model
-        if actual_model not in approved_models:
-            raise ProviderActionExecutionError("provider ACTION returned model outside Router-approved chain")
-        generation_models.append(actual_model)
+        if actual_model != requested_model:
+            raise ProviderActionExecutionError("provider ACTION returned unexpected model for single-model attempt")
         try:
             proposal = validate_action_proposal(
                 _normalize_provider_proposal_shape(_extract_json_object(str(result.get("summary", "")))), request=request,

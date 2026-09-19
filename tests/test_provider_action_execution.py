@@ -208,7 +208,7 @@ class ProviderActionExecutionTest(unittest.TestCase):
             routed = decision(("nvidia/fallback-a", "nvidia/fallback-b"))
             invalid = self.proposal(); invalid["unexpected"] = "metadata"
             def provider_runner(**kwargs):
-                calls.append((kwargs["model"], tuple(kwargs["fallback_models"]), kwargs["prompt"]))
+                calls.append((kwargs["model"], tuple(kwargs["fallback_models"]), kwargs["prompt"], kwargs.get("max_retries"), kwargs.get("timeout_seconds")))
                 payload = invalid if len(calls) == 1 else self.proposal(content="value = 1\n")
                 return {
                     "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
@@ -221,12 +221,119 @@ class ProviderActionExecutionTest(unittest.TestCase):
                 security_scan=lambda _raw: True, timeout=30,
             )
             self.assertEqual([item[0] for item in calls], ["nvidia/action-model", "nvidia/fallback-a"])
-            self.assertNotIn("nvidia/action-model", calls[1][1])
+            self.assertEqual(calls[0][1], ())
+            self.assertEqual(calls[1][1], ())
+            self.assertEqual([item[3] for item in calls], [0, 0])
+            self.assertTrue(all(item[4] <= 60 for item in calls))
             self.assertIn("schema mismatch", calls[1][2])
             self.assertEqual(result["proposal_generation_models"], ["nvidia/action-model", "nvidia/fallback-a"])
             self.assertEqual(result["provider_attempts"], 2)
             self.assertTrue(result["model_failover_used"])
             self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+
+    def test_transient_provider_failure_rotates_once_per_outer_attempt_without_nested_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a", "nvidia/fallback-b"))
+            def provider_runner(**kwargs):
+                calls.append(dict(kwargs))
+                if len(calls) == 1:
+                    return {
+                        "status": "provider_failed", "model": kwargs["model"], "provider_attempts": 1,
+                        "provider_error_class": "nvidia_server_error", "model_attempts": {kwargs["model"]: 1},
+                    }
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(self.proposal(content="value = 1\n")), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=routed, baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=300,
+            )
+            self.assertEqual([item["model"] for item in calls], ["nvidia/action-model", "nvidia/fallback-a"])
+            self.assertTrue(all(tuple(item["fallback_models"]) == () for item in calls))
+            self.assertTrue(all(item["max_retries"] == 0 for item in calls))
+            self.assertTrue(all(item["timeout_seconds"] == 60.0 for item in calls))
+            self.assertNotIn("CORRECTION RETRY", calls[1]["prompt"])
+            self.assertEqual(result["proposal_generation_models"], ["nvidia/action-model", "nvidia/fallback-a"])
+            self.assertEqual(result["provider_attempts"], 2)
+            self.assertTrue(result["model_failover_used"])
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
+
+    def test_provider_neutral_network_failure_rotates_without_adapter_specific_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a",))
+            def provider_runner(**kwargs):
+                calls.append(dict(kwargs))
+                if len(calls) == 1:
+                    return {
+                        "status": "provider_failed", "model": kwargs["model"], "provider_attempts": 1,
+                        "provider_error_class": "NETWORK_FAILURE", "model_attempts": {kwargs["model"]: 1},
+                    }
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(self.proposal(content="value = 1\n")), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=routed, baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=300,
+            )
+            self.assertEqual([item["model"] for item in calls], ["nvidia/action-model", "nvidia/fallback-a"])
+            self.assertEqual(result["provider_attempts"], 2)
+            self.assertTrue(result["model_failover_used"])
+
+    def test_three_transient_provider_failures_exhaust_outer_budget_without_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a", "nvidia/fallback-b", "nvidia/fallback-c"))
+            def provider_runner(**kwargs):
+                calls.append(dict(kwargs))
+                return {
+                    "status": "provider_failed", "model": kwargs["model"], "provider_attempts": 1,
+                    "provider_error_class": "nvidia_timeout", "model_attempts": {kwargs["model"]: 1},
+                }
+            with self.assertRaisesRegex(ProviderActionExecutionError, "generation failed:PROVIDER_TIMEOUT"):
+                execute_provider_action_proposal(
+                    request, decision=routed, baseline="a" * 40, owned=owned,
+                    output_dir=root / "run", provider_runner=provider_runner,
+                    security_scan=lambda _raw: True, timeout=300,
+                )
+            self.assertEqual([item["model"] for item in calls], ["nvidia/action-model", "nvidia/fallback-a", "nvidia/fallback-b"])
+            self.assertTrue(all(tuple(item["fallback_models"]) == () and item["max_retries"] == 0 for item in calls))
+            self.assertFalse((root / owned[0]).exists())
+            self.assertFalse((root / "run/provider-action-proposal.json").exists())
+            self.assertFalse(list((root / "run/provider-action-effects").glob("*.receipt.json")))
+
+    def test_nonretryable_provider_auth_failure_fails_first_attempt_without_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a",))
+            def provider_runner(**kwargs):
+                calls.append(dict(kwargs))
+                return {
+                    "status": "provider_failed", "model": kwargs["model"], "provider_attempts": 1,
+                    "provider_error_class": "nvidia_auth_error", "model_attempts": {kwargs["model"]: 1},
+                }
+            with self.assertRaisesRegex(ProviderActionExecutionError, "generation failed:AUTH_FAILURE"):
+                execute_provider_action_proposal(
+                    request, decision=routed, baseline="a" * 40, owned=owned,
+                    output_dir=root / "run", provider_runner=provider_runner,
+                    security_scan=lambda _raw: True, timeout=300,
+                )
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]["fallback_models"], ())
+            self.assertEqual(calls[0]["max_retries"], 0)
+            self.assertFalse((root / owned[0]).exists())
 
     def test_multiple_new_exact_owned_files_generate_atomic_segments(self):
         with tempfile.TemporaryDirectory() as td:
