@@ -1,0 +1,25 @@
+{
+  "schema_version": "edp.result.v1",
+  "scope": "R22_STALE_SUPERVISOR_RECOVERY",
+  "status": "ALL_PASS_SCOPED",
+  "protocol": "EDP-1.0",
+  "task015_complete": false,
+  "gate005_complete": false,
+  "findings": {
+    "blocker": 0,
+    "unresolved_major": 0,
+    "adversarial_new_blocker_major": 0,
+    "pass_challenge": 0
+  },
+  "evidence": {
+    "r22_last_heartbeat": "2026-09-19T01:55:37Z",
+    "r22_terminal_state": "BLOCKED",
+    "r22_recovery_count": 1,
+    "r22_terminal_error": "production worker adoption scope violation",
+    "candidate_fix_commit": "d13027dd38c2cdb5fa1bfb8d2bd670036e25c569",
+    "focused_regression": "236 PASS / 1 skip",
+    "full_regression": "1610 PASS / 12 skip / RC=0",
+    "durable_restart_probe": "ATTEMPTS=2; final service result success",
+    "next_action": "fresh R23 bound to current clean HEAD via transient systemd durable launcher"
+  }
+}
