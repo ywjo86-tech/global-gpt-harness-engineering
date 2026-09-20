@@ -1,0 +1,69 @@
+{
+  "schema_version": "gch.ph7.skip-accounting.v1",
+  "full_test_count": 1742,
+  "skip_count": 15,
+  "duplicate_discovery_count": 0,
+  "wallet_preview_skip_count": 0,
+  "skips": [
+    {
+      "test_id": "test_actual_readiness_is_consumed_by_canonical_launch_authority (tests.test_canonical_launch_bridge.CanonicalLaunchBridgeTests.test_actual_readiness_is_consumed_by_canonical_launch_authority)",
+      "reason": "actual readiness import/recheck is opt-in"
+    },
+    {
+      "test_id": "test_installed_codex_01501_actual_dynamic_transport (tests.test_codex_dynamic_transport.CodexDynamicTransportTests.test_installed_codex_01501_actual_dynamic_transport)",
+      "reason": "actual installed Codex protocol test is opt-in"
+    },
+    {
+      "test_id": "test_proof97_actual_product_frozen_nodes_from_opt_in_root (tests.test_completion_authority.CompletionAuthorityTests.test_proof97_actual_product_frozen_nodes_from_opt_in_root)",
+      "reason": "proof97 product checkout root is opt-in"
+    },
+    {
+      "test_id": "test_powershell_installer_runtime_smoke_when_pwsh_available (tests.test_installers.InstallerContractTests.test_powershell_installer_runtime_smoke_when_pwsh_available)",
+      "reason": "PowerShell runtime smoke requires pwsh; static contract coverage still runs"
+    },
+    {
+      "test_id": "test_actual_wallet_cli_preview_is_no_write (tests.test_lv_preview.LVPreviewTest.test_actual_wallet_cli_preview_is_no_write)",
+      "reason": "read-only Wallet preview skipped: project checkout is not available"
+    },
+    {
+      "test_id": "test_mapped_contract_phase_uses_canonical_gate_ledger (tests.test_preph5mprf_edp_binding.PrePh5MprfEdpBindingTests.test_mapped_contract_phase_uses_canonical_gate_ledger)",
+      "reason": "project identity binding requires MULTI_PROVIDER_FOUNDATION basename"
+    },
+    {
+      "test_id": "test_installed_codex_duplicate_write_after_restart_is_broker_blocked (tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_duplicate_write_after_restart_is_broker_blocked)",
+      "reason": "actual installed Codex duplicate-write proof is opt-in"
+    },
+    {
+      "test_id": "test_installed_codex_first_write_crash_then_same_run_resume_blocks_duplicate (tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_first_write_crash_then_same_run_resume_blocks_duplicate)",
+      "reason": "actual installed Codex proof97 crash/resume is opt-in"
+    },
+    {
+      "test_id": "test_installed_codex_secret_like_write_is_blocked_without_raw_persistence (tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_secret_like_write_is_blocked_without_raw_persistence)",
+      "reason": "actual installed Codex security boundary proof is opt-in"
+    },
+    {
+      "test_id": "test_installed_codex_separate_process_crash_then_resume_blocks_duplicate (tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_separate_process_crash_then_resume_blocks_duplicate)",
+      "reason": "actual installed Codex separate-process resume is opt-in"
+    },
+    {
+      "test_id": "test_installed_codex_uses_dec007_active_broker_path (tests.test_production_tool_transport.ProductionToolTransportTests.test_installed_codex_uses_dec007_active_broker_path)",
+      "reason": "actual installed Codex broker integration is opt-in"
+    },
+    {
+      "test_id": "test_actual_codex_child_implements_tests_and_commits (tests.test_production_worker_executor.ProductionWorkerExecutorTests.test_actual_codex_child_implements_tests_and_commits)",
+      "reason": "actual Codex fixture is opt-in"
+    },
+    {
+      "test_id": "test_status_prefers_canonical_v2_gate_phase_for_mapped_project (tests.test_project_orchestrator_agent.ProjectOrchestratorBoundaryTest.test_status_prefers_canonical_v2_gate_phase_for_mapped_project)",
+      "reason": "project identity binding requires MULTI_PROVIDER_FOUNDATION basename"
+    },
+    {
+      "test_id": "test_wallet_mapping_inspect_is_no_write_and_separates_approval_namespaces (tests.test_read_only_inspect.ReadOnlyInspectTest.test_wallet_mapping_inspect_is_no_write_and_separates_approval_namespaces)",
+      "reason": "read-only Wallet smoke skipped: project checkout is not available"
+    },
+    {
+      "test_id": "test_wallet_stored_event_matches_canonical_record_hash (tests.test_read_only_inspect.ReadOnlyInspectTest.test_wallet_stored_event_matches_canonical_record_hash)",
+      "reason": "Wallet canonical-record smoke skipped: external project fixture is not available"
+    }
+  ]
+}

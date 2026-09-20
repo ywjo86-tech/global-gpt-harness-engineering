@@ -1,0 +1,28 @@
+{
+  "schema_version": "gch.ph7.operational-evidence.v1",
+  "focused_tests": 142,
+  "focused_status": "PASS",
+  "full_tests": 1742,
+  "full_skips": 15,
+  "full_status": "PASS",
+  "compile": "PASS",
+  "diff_check": "PASS",
+  "duplicate_discovery_count": 0,
+  "lv_preview_executions": 13,
+  "wallet_skip_count": 1,
+  "listener": "127.0.0.1:20128",
+  "unauth_v1_models_http": 401,
+  "auth_v1_models_http": 200,
+  "configured_omniroute_provider_connections": 0,
+  "third_provider_active": false,
+  "keyless_candidates_evaluated": 7,
+  "keyless_read_qualified": 0,
+  "negative_space": {
+    "provider_name_priority": "ABSENT",
+    "safe_runtime_flags": "BOUND",
+    "model_auto_rejection": "PASS",
+    "hidden_fallback_rejection": "PASS",
+    "discovery_to_active_shortcut": "ABSENT",
+    "secret_diff_scan": "PASS"
+  }
+}

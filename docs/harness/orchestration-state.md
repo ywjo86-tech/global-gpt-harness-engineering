@@ -5,10 +5,10 @@
 
 ## Current Execution Binding
 
-Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — PLAN_EDP_ALL_PASS / IMPLEMENTATION_NOT_STARTED
+Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — G0_G1_PASS / G3_G5_OPEN_NO_LIVE_CANDIDATE / FINAL_CLOSURE_OPEN
 
 - Active project: AI_OFFICE_HARNESS_UPGRADE
-- Active lifecycle: PHASE7 / OMNIROUTE_PROVIDER_EXPANSION_PLAN
+- Active lifecycle: PHASE7 / OMNIROUTE_PROVIDER_EXPANSION_RUNTIME_QUALIFICATION
 - Active PH7 design authority: docs/superpowers/specs/2026-09-20-omniroute-provider-gateway-design.md
 - Active PH7 design SHA-256: f75560f3c0cb859051621b7787771b6e10b97fe31e5c86210efc4f1347943ce9
 - Predecessor PH5 contract: docs/DEVELOPMENT_PLAN.txt
@@ -20,7 +20,7 @@ Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — PLAN_EDP_ALL_PASS 
 - Diagnosis standard: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
 - Diagnosis standard SHA-256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
 - Active provider-expansion branch: upgrade/ai-office-omniroute-ph7-20260920
-- Current implementation checkpoint: 892b799a0bde8d78b5f4aacc55f2c259ea975427
+- Current implementation checkpoint: 772799f (Task 7 live-qualification guard/evidence)
 - Predecessor Multi-Provider Foundation: APPROVED_SEALED / DECLARED
 - AI Office PHASE 5 execution: AUTHORIZED
 - AI Office TASK-015 / TASK-016 / TASK-017: IMPLEMENTED / QUALIFIED in R33 lineage
@@ -36,7 +36,11 @@ Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — PLAN_EDP_ALL_PASS 
 - Current production provider activation: Codex + NVIDIA only
 - PH7 OmniRoute Provider Expansion lifecycle: AUTHORIZED by user directive 2026-09-20
 - OmniRoute G0/G1 controlled local install/discovery: AUTHORIZED AFTER DESIGN/PLAN GATES
-- Third-provider ACTIVE state: NONE; candidate-specific credentials/cost/risk approval remains required before APPROVAL -> ACTIVE
+- OmniRoute G0/G1 runtime: PASS — 127.0.0.1:20128, API-key enforcement 401/200, doctor 0 failures
+- Duplicate unittest discovery: PASS — 1742 full-suite tests / 15 skips, LVPreview 13 unique, DUPLICATE_DISCOVERY_COUNT=0
+- Bounded Operator Turn execution policy: ACTIVE — commit 69f68de / EDP ALL_PASS
+- Third-provider keyless qualification: 7 candidates evaluated, 0 READ-qualified; G3-G5 remain OPEN
+- Third-provider ACTIVE state: NONE; credential-based Provider or separately approved dependency expansion is required before APPROVAL -> ACTIVE
 - Deployment: NOT_AUTHORIZED
 - Runtime binding note: this block supersedes earlier current-state blocks below; prior records remain immutable historical evidence.
 
