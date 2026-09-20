@@ -738,6 +738,63 @@ class DurableFullPlanSupervisor:
         return self._persist(state, {"event": "WAIT_RESUMED", "from_state": expected_state,
                                      "gate_id": item["gate_id"]})
 
+    def quiesce_for_runtime_migration(self, migration_id: str, successor_run_id: str) -> dict[str, Any]:
+        migration = _safe_id(migration_id, "migration ID"); successor = _safe_id(successor_run_id, "successor run ID")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            item = self._active_item(state)
+            if state.get("state") in TERMINAL_STATES or state.get("lease") is not None:
+                raise ProductionFullPlanError("runtime migration requires an idle nonterminal predecessor")
+            if item is not None and item.get("status") in {"DISPATCHED", "RUNNING"}:
+                raise ProductionFullPlanError("runtime migration cannot quiesce an active worker")
+            state["state"] = "WAITING_RESOURCE"
+            state["last_error"] = "RUNTIME_MIGRATION_QUIESCED"
+            state["lease"] = None
+            state["migration_id"] = migration
+            state["migration_successor_run_id"] = successor
+            state["migration_handoff"] = {"migration_id": migration, "successor_run_id": successor}
+            return self._persist(state, {"event": "RUNTIME_MIGRATION_QUIESCED", "migration_id": migration})
+        finally:
+            self._release_run_lock(handle)
+
+    def record_verified_migration_successor(self, migration_id: str, successor_run_id: str, successor_state_sha256: str) -> dict[str, Any]:
+        migration = _safe_id(migration_id, "migration ID"); successor = _safe_id(successor_run_id, "successor run ID")
+        sha = str(successor_state_sha256 or "")
+        if len(sha) != 64 or any(ch not in "0123456789abcdef" for ch in sha):
+            raise ProductionFullPlanError("successor state SHA is invalid")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if (state.get("state") != "WAITING_RESOURCE" or state.get("migration_id") != migration
+                    or state.get("migration_successor_run_id") != successor):
+                raise ProductionFullPlanError("migration successor verification binding mismatch")
+            state["migration_successor_state_sha256"] = sha
+            state["migration_successor_verified"] = True
+            handoff = dict(state.get("migration_handoff") or {})
+            handoff["successor_state_sha256"] = sha; handoff["successor_verified"] = True
+            state["migration_handoff"] = handoff
+            return self._persist(state, {"event": "RUNTIME_MIGRATION_SUCCESSOR_VERIFIED", "migration_id": migration})
+        finally:
+            self._release_run_lock(handle)
+
+    def close_migrated_predecessor(self, migration_id: str, successor_state_sha256: str) -> dict[str, Any]:
+        migration = _safe_id(migration_id, "migration ID"); sha = str(successor_state_sha256 or "")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if (state.get("state") != "WAITING_RESOURCE" or state.get("migration_id") != migration
+                    or state.get("migration_successor_verified") is not True
+                    or state.get("migration_successor_state_sha256") != sha):
+                raise ProductionFullPlanError("verified migration successor binding mismatch")
+            item = self._active_item(state)
+            if item is not None and item.get("status") != "COMPLETED": item["status"] = "CANCELLED"
+            state["state"] = "CANCELLED"; state["terminal_reason"] = "MIGRATED_TO_SUCCESSOR"
+            state["last_error"] = None; state["lease"] = None
+            return self._persist(state, {"event": "MIGRATED_TO_SUCCESSOR", "migration_id": migration, "successor_state_sha256": sha})
+        finally:
+            self._release_run_lock(handle)
+
     def cancel(self, reason: str) -> dict[str, Any]:
         handle = self._acquire_run_lock()
         try:

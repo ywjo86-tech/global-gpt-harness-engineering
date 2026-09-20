@@ -329,5 +329,35 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             self.assertIn("STALLED_SUSPECTED", kinds)
 
 
+    def test_28_runtime_migration_quiesce_is_durable_and_nonterminal(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=self.supervisor(d,gates=['G1']); q=sup.quiesce_for_runtime_migration('MIG-1','run-next')
+            self.assertEqual(q['state'],'WAITING_RESOURCE'); self.assertIsNone(q['lease'])
+            self.assertEqual(q['migration_id'],'MIG-1'); self.assertEqual(q['migration_successor_run_id'],'run-next')
+            reloaded,_=sup.load(); self.assertEqual(reloaded['state_sha256'],q['state_sha256'])
+
+    def test_29_runtime_migration_quiesce_rejects_active_worker(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=self.supervisor(d,gates=['G1']); state,_=sup.load(); state['state']='RUNNING'; state['queue'][0]['status']='RUNNING'; state['lease']={'epoch':1}
+            sup._persist(state,{'event':'TEST_RUNNING'})
+            with self.assertRaises(ProductionFullPlanError): sup.quiesce_for_runtime_migration('MIG-1','run-next')
+
+    def test_30_migrated_predecessor_closes_only_after_successor_verification(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=self.supervisor(d,gates=['G1']); sup.quiesce_for_runtime_migration('MIG-1','run-next')
+            with self.assertRaises(ProductionFullPlanError): sup.close_migrated_predecessor('MIG-1','a'*64)
+            sup.record_verified_migration_successor('MIG-1','run-next','a'*64)
+            closed=sup.close_migrated_predecessor('MIG-1','a'*64)
+            self.assertEqual(closed['state'],'CANCELLED'); self.assertEqual(closed['terminal_reason'],'MIGRATED_TO_SUCCESSOR')
+            self.assertEqual(closed['queue'][0]['status'],'CANCELLED'); self.assertEqual(closed['migration_successor_state_sha256'],'a'*64)
+            self.assertNotEqual(closed['state'],'COMPLETED')
+
+    def test_31_migration_close_rejects_wrong_transaction_or_successor_sha(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup=self.supervisor(d,gates=['G1']); sup.quiesce_for_runtime_migration('MIG-1','run-next'); sup.record_verified_migration_successor('MIG-1','run-next','a'*64)
+            with self.assertRaises(ProductionFullPlanError): sup.close_migrated_predecessor('MIG-X','a'*64)
+            with self.assertRaises(ProductionFullPlanError): sup.close_migrated_predecessor('MIG-1','b'*64)
+
+
 if __name__ == "__main__":
     unittest.main()

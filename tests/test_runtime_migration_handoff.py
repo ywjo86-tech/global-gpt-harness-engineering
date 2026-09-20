@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,tempfile,unittest
+import hashlib,json,subprocess,tempfile,unittest
 from pathlib import Path
 
 from runtime.orchestrator.runtime_migration_handoff import MigrationHandoffError,MigrationPhase,MigrationStore
@@ -83,6 +83,31 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
                 tx=s.advance(tx.migration_id,phase,updates={'quiesced_state_sha256':'3'*64} if phase==MigrationPhase.PREDECESSOR_QUIESCED else None)
             with self.assertRaises(MigrationHandoffError): s.rollback(tx.migration_id,'too late')
 
+    def test_successor_job_spec_is_sealed_and_verified_against_durable_state(self):
+        from runtime.orchestrator.operator_plan_execution import build_operator_plan_job,seal_successor_operator_job_spec,verify_registered_successor
+        from runtime.orchestrator.production_full_plan_entry import load_job,load_registered_job,register_job
+        from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); subprocess.run(['git','init','-q',str(root)],check=True); subprocess.run(['git','-C',str(root),'config','user.email','t@example.com'],check=True); subprocess.run(['git','-C',str(root),'config','user.name','T'],check=True)
+            spec=root/'spec.md'; plan=root/'plan.md'; spec.write_text('spec'); plan.write_text('plan'); subprocess.run(['git','-C',str(root),'add','.'],check=True); subprocess.run(['git','-C',str(root),'commit','-qm','base'],check=True)
+            job=build_operator_plan_job(project_root=root,harness_root=root,runtime_code_root=root,project_id='P',run_id='R3',task_ids=('TASK-014','TASK-015'),approved_plan_path=plan,approved_spec_path=spec,approval_ref='approved')
+            sealed=seal_successor_operator_job_spec(job,resume_gate='TASK-014'); self.assertRegex(sealed['successor_job_spec_sha256'],r'^[0-9a-f]{64}$')
+            requested=root/'job.json'; requested.write_text(json.dumps(job)); canonical=register_job(load_job(requested)); registered=load_registered_job(canonical)
+            sup=DurableFullPlanSupervisor(root,project_id='P',run_id='R3',gates=['TASK-014','TASK-015'],authority_core_sha256=registered['authority_core_sha256'],**registered['policy']); state,_=sup.load(); durable=sup._persist(state,{'event':'SUCCESSOR_REGISTERED_TEST'})
+            evidence=verify_registered_successor(canonical,sealed); self.assertEqual(evidence['successor_state_sha256'],durable['state_sha256']); self.assertEqual(evidence['resume_gate'],'TASK-014')
+
+    def test_successor_verification_rejects_digest_drift(self):
+        from runtime.orchestrator.operator_plan_execution import build_operator_plan_job,seal_successor_operator_job_spec,verify_registered_successor,OperatorPlanExecutionError
+        from runtime.orchestrator.production_full_plan_entry import load_job,load_registered_job,register_job
+        from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); subprocess.run(['git','init','-q',str(root)],check=True); subprocess.run(['git','-C',str(root),'config','user.email','t@example.com'],check=True); subprocess.run(['git','-C',str(root),'config','user.name','T'],check=True)
+            spec=root/'spec.md'; plan=root/'plan.md'; spec.write_text('spec'); plan.write_text('plan'); subprocess.run(['git','-C',str(root),'add','.'],check=True); subprocess.run(['git','-C',str(root),'commit','-qm','base'],check=True)
+            job=build_operator_plan_job(project_root=root,harness_root=root,runtime_code_root=root,project_id='P',run_id='R3',task_ids=('TASK-014',),approved_plan_path=plan,approved_spec_path=spec,approval_ref='approved'); sealed=seal_successor_operator_job_spec(job,resume_gate='TASK-014')
+            requested=root/'job.json'; requested.write_text(json.dumps(job)); canonical=register_job(load_job(requested)); registered=load_registered_job(canonical); sup=DurableFullPlanSupervisor(root,project_id='P',run_id='R3',gates=['TASK-014'],authority_core_sha256=registered['authority_core_sha256'],**registered['policy']); state,_=sup.load(); sup._persist(state,{'event':'SUCCESSOR_REGISTERED_TEST'})
+            poisoned=dict(sealed); poisoned['approved_plan_sha256']='0'*64
+            with self.assertRaises(OperatorPlanExecutionError): verify_registered_successor(canonical,poisoned)
+
     def test_rollback_before_close_preserves_authority_bindings(self):
         with tempfile.TemporaryDirectory() as td:
             s=self.store(td); tx=s.create(valid_spec()); tx=s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})
@@ -112,6 +137,7 @@ class RuntimeMigrationSupervisorIntegrationTests(unittest.TestCase):
             sup.quiesce_for_runtime_migration('M1','R3')
             with self.assertRaises(ProductionFullPlanError):
                 sup.close_migrated_predecessor('WRONG','3'*64)
+            sup.record_verified_migration_successor('M1','R3','3'*64)
             state=sup.close_migrated_predecessor('M1','3'*64)
             self.assertEqual(state['state'],'CANCELLED')
             self.assertEqual(state['terminal_reason'],'MIGRATED_TO_SUCCESSOR')

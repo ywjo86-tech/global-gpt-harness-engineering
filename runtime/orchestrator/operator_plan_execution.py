@@ -270,6 +270,51 @@ def build_operator_plan_executor(
     return execute
 
 
+def _successor_spec_binding(job: Mapping[str, Any], resume_gate: str) -> dict[str, Any]:
+    from .production_run_authority import seal_authority_core
+    sealed = seal_authority_core(job)
+    validate_operator_plan_job(sealed)
+    tasks = [str(item["gate_id"]) for item in sealed["gates"]]
+    gate = _safe_id(resume_gate, "resume Gate")
+    if gate not in tasks:
+        raise OperatorPlanExecutionError("successor resume Gate is outside approved operator plan")
+    return {
+        "schema_version": "orchestration.runtime-migration-successor-spec.v1",
+        "project_id": str(sealed["project_id"]), "run_id": str(sealed["run_id"]),
+        "approved_plan_sha256": str(sealed["approved_plan_sha256"]),
+        "approved_spec_sha256": str(sealed["approved_spec_sha256"]),
+        "authority_core_sha256": str(sealed["authority_core_sha256"]),
+        "resume_gate": gate, "task_ids": tasks,
+    }
+
+def seal_successor_operator_job_spec(job: Mapping[str, Any], *, resume_gate: str) -> dict[str, Any]:
+    binding = _successor_spec_binding(job, resume_gate)
+    return {**binding, "successor_job_spec_sha256": _digest(binding)}
+
+def verify_registered_successor(job_path: str | Path, sealed_spec: Mapping[str, Any]) -> dict[str, Any]:
+    from .production_full_plan_entry import load_registered_job
+    from .production_full_plan_runner import DurableFullPlanSupervisor, TERMINAL_STATES
+    if not isinstance(sealed_spec, Mapping):
+        raise OperatorPlanExecutionError("successor specification is malformed")
+    required = {"schema_version","project_id","run_id","approved_plan_sha256","approved_spec_sha256","authority_core_sha256","resume_gate","task_ids","successor_job_spec_sha256"}
+    if set(sealed_spec) != required:
+        raise OperatorPlanExecutionError("successor specification fields mismatch")
+    unsigned = {k: sealed_spec[k] for k in required if k != "successor_job_spec_sha256"}
+    if sealed_spec.get("successor_job_spec_sha256") != _digest(unsigned):
+        raise OperatorPlanExecutionError("successor specification digest mismatch")
+    job = load_registered_job(job_path); expected = seal_successor_operator_job_spec(job, resume_gate=str(sealed_spec["resume_gate"]))
+    if expected != dict(sealed_spec):
+        raise OperatorPlanExecutionError("registered successor binding mismatch")
+    gates = [str(item["gate_id"]) for item in job["gates"]]
+    supervisor = DurableFullPlanSupervisor(str(job["harness_root"]), project_id=str(job["project_id"]), run_id=str(job["run_id"]), gates=gates, authority_core_sha256=str(job["authority_core_sha256"]), **dict(job.get("policy") or {}))
+    if not supervisor.state_path.is_file() or supervisor.state_path.is_symlink():
+        raise OperatorPlanExecutionError("successor durable state is not registered")
+    state, _ = supervisor.load()
+    if state.get("current_gate") != sealed_spec["resume_gate"] or state.get("state") in TERMINAL_STATES:
+        raise OperatorPlanExecutionError("successor durable state is not eligible")
+    return {"project_id": str(job["project_id"]), "successor_run_id": str(job["run_id"]), "resume_gate": str(sealed_spec["resume_gate"]), "successor_state_sha256": str(state["state_sha256"]), "successor_job_spec_sha256": str(sealed_spec["successor_job_spec_sha256"]), "authority_core_sha256": str(job["authority_core_sha256"])}
+
+
 def resume_operator_plan_after_receipt(job_path: str | Path, gate_id: str) -> dict[str, Any]:
     """Explicitly reopen WAITING_RESOURCE after a bound PASS receipt exists."""
     from .production_full_plan_entry import canonical_job_path, load_job, load_registered_job
