@@ -90,3 +90,29 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
             self.assertEqual(rb.phase,MigrationPhase.ROLLED_BACK); self.assertEqual(rb.approved_plan_sha256,'a'*64)
 
 if __name__=='__main__': unittest.main()
+
+class RuntimeMigrationSupervisorIntegrationTests(unittest.TestCase):
+    def test_quiesce_keeps_predecessor_nonterminal_and_binds_successor(self):
+        from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+        with tempfile.TemporaryDirectory() as td:
+            sup=DurableFullPlanSupervisor(td,project_id='P',run_id='R2',gates=['G1'])
+            before,_=sup.load()
+            state=sup.quiesce_for_runtime_migration('M1','R3')
+            self.assertEqual(state['state'],'WAITING_RESOURCE')
+            self.assertEqual(state['last_error'],'RUNTIME_MIGRATION_QUIESCED')
+            self.assertEqual(state['migration_handoff'],{'migration_id':'M1','successor_run_id':'R3'})
+            self.assertIsNone(state['lease'])
+            self.assertNotEqual(state['state'],'CANCELLED')
+            self.assertNotEqual(before['state_sha256'],state['state_sha256'])
+
+    def test_close_migrated_predecessor_requires_verified_successor_binding(self):
+        from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor,ProductionFullPlanError
+        with tempfile.TemporaryDirectory() as td:
+            sup=DurableFullPlanSupervisor(td,project_id='P',run_id='R2',gates=['G1'])
+            sup.quiesce_for_runtime_migration('M1','R3')
+            with self.assertRaises(ProductionFullPlanError):
+                sup.close_migrated_predecessor('WRONG','3'*64)
+            state=sup.close_migrated_predecessor('M1','3'*64)
+            self.assertEqual(state['state'],'CANCELLED')
+            self.assertEqual(state['terminal_reason'],'MIGRATED_TO_SUCCESSOR')
+            self.assertEqual(state['migration_handoff']['successor_state_sha256'],'3'*64)
