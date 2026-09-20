@@ -1,0 +1,31 @@
+{
+  "R2_TASK_014_RECEIPT_SYNTHESIZED": false,
+  "approved_plan_sha256": "b409ed8b1a0abbaf7e372781adf5fd40761588c23b545ab1d21539b2c16ec568",
+  "approved_spec_sha256": "fc5f1f808365fffc134c78e51006501365cef0b92b5e36bb9a73eb10386b20cf",
+  "authority_core_sha256": "748adcd50f9f2eac9f7f8f5e4dfbe90bc3146d1d80d20504219ef03247fc90ec",
+  "continuity_spec_sha256": "fc5f1f808365fffc134c78e51006501365cef0b92b5e36bb9a73eb10386b20cf",
+  "predecessor_completed_gates": [
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008",
+    "TASK-009",
+    "TASK-010",
+    "TASK-011",
+    "TASK-012",
+    "TASK-013"
+  ],
+  "predecessor_run_id": "FINAL-OP-20260920-R2",
+  "predecessor_state_sha256": "2c319449af60e0cba7863ff63a4bff975bb2e9094db7d435fd050b81a4de29a2",
+  "predecessor_terminal_reason": "RUNTIME_ACTIVATION_MIGRATION",
+  "resume_point": [
+    "ORIGINAL_TASK_014_CLOSURE",
+    "ORIGINAL_TASK_015_FINAL_EDP"
+  ],
+  "schema_version": "gch.r2-successor-recovery.v1",
+  "scope_amendment_sha256": "0b6eb32752cc673d402e21010ca65bf1679502d86a68c2af34b2b414b439d16e",
+  "successor_job_sha256": "5d578b854641db5f447a5d26713729178ca155706d8b9e55b81a99c18a7219bc",
+  "successor_run_id": "FINAL-OP-20260920-R3"
+}
