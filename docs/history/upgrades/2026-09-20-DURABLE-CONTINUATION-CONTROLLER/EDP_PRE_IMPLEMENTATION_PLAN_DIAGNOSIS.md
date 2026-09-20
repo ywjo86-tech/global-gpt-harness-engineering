@@ -4,7 +4,8 @@
 **Protocol:** `standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md` / EDP-1.0
 **Stable BASE:** `a40626c31353f90c0d4c9e677d3886ea5ccce393`
 **Target Spec:** `docs/superpowers/specs/2026-09-20-durable-continuation-controller-design.md`
-**Spec SHA256:** `ca8d8f2c4b8a82fe54320b9306b2146f84e201cf28c6e8ef49ff34925145ffcf`
+**Spec SHA256:** `022e251f7b1c1b9904cc065f38396913f1f66dc14d110d071a6faaf91bbd8ee5`
+**Approval Evidence:** 2026-09-21 user confirmation `Goal 승인`
 **Pre-Design Goal Diagnosis:** `docs/history/upgrades/2026-09-20-DURABLE-CONTINUATION-CONTROLLER/EDP_PRE_DESIGN_GOAL_DIAGNOSIS.md`
 **Pre-Design Diagnosis SHA256:** `dbec7654cc6e8a7a9afa7bbbd874a15b292d11ae1b039f9de256afc7aceff317`
 
@@ -12,7 +13,7 @@
 
 `EDP_DECISION=ALL_PASS`
 
-The corrected Full Plan Durable Continuation Controller design is structurally eligible for user review and, after explicit Spec approval, implementation-plan authoring. The design does not create a second orchestrator or approval authority. It constrains automatic continuation to an internal Full Plan mechanism operating only inside a sealed `AUTO_WITHIN_APPROVED_CONTRACT` Gate contract.
+The corrected Full Plan Durable Continuation Controller design is structurally ALL PASS and has received explicit Spec approval (`Goal 승인`), so implementation-plan authoring is authorized. The design does not create a second orchestrator or approval authority. It constrains automatic continuation to an internal Full Plan mechanism operating only inside a sealed `AUTO_WITHIN_APPROVED_CONTRACT` Gate contract.
 
 ## Authority Freeze
 
@@ -174,4 +175,4 @@ All mandatory EDP paths applicable before implementation-plan authoring were exe
 
 ## Disposition
 
-The Spec is eligible to be committed as the reviewed design candidate and presented to the user for explicit written-Spec approval. Implementation-plan authoring remains gated on that approval; no production implementation is authorized by this diagnosis.
+The Spec has received explicit user approval (`Goal 승인`) and implementation-plan authoring is authorized. This diagnosis does not authorize production implementation: execution remains gated on separate approval of the reviewed implementation Plan and its effect boundaries.

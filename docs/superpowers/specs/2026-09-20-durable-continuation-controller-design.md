@@ -1,7 +1,7 @@
 # Full Plan Durable Continuation Controller — Design Spec
 
 **Date:** 2026-09-20
-**Status:** USER-DIRECTION-APPROVED / SPEC-REVIEW-PENDING
+**Status:** USER-APPROVED / IMPLEMENTATION-PLAN-PREPARED
 **Stable BASE:** `a40626c31353f90c0d4c9e677d3886ea5ccce393`
 **Diagnosis:** `docs/history/upgrades/2026-09-20-DURABLE-CONTINUATION-CONTROLLER/EDP_PRE_DESIGN_GOAL_DIAGNOSIS.md`
 **Protocol:** `standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md` / EDP-1.0
