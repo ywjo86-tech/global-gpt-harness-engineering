@@ -1,0 +1,28 @@
+{
+  "schema_version": "gch.edp.plan-qualification.v1",
+  "date": "2026-09-20",
+  "lifecycle": "AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7",
+  "decision": "PLAN_EDP_ALL_PASS",
+  "plan": {
+    "path": "docs/superpowers/plans/2026-09-20-omniroute-provider-expansion-ph7.md",
+    "sha256": "de19369a796584a141ec6038096d778899c5ef456a69eef0c8e3c671379c7701",
+    "requirements_mapped": 14,
+    "requirements_total": 14,
+    "task_count": 8,
+    "checkbox_step_count": 52
+  },
+  "findings": [
+    {"id": "OMR-PLAN-F001", "severity": "MAJOR", "status": "RESOLVED"},
+    {"id": "OMR-PLAN-F002", "severity": "MAJOR", "status": "RESOLVED"},
+    {"id": "OMR-PLAN-F003", "severity": "MAJOR", "status": "RESOLVED"},
+    {"id": "OMR-PLAN-F004", "severity": "MAJOR", "status": "RESOLVED"}
+  ],
+  "baseline_regression": {
+    "tests_run": 1706,
+    "skipped": 16,
+    "failures": 0,
+    "errors": 0,
+    "status": "PASS"
+  },
+  "runtime_closure": "OPEN"
+}
