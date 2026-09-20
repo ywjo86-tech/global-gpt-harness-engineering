@@ -1,7 +1,7 @@
 """Durable, authority-bounded runtime migration transaction state."""
 from __future__ import annotations
 
-import json,re
+import fcntl,json,os,re,stat
 from dataclasses import asdict,dataclass,replace
 from datetime import datetime,timezone
 from enum import Enum
@@ -92,10 +92,24 @@ class MigrationStore:
         now=_now()
         tx=RuntimeMigrationTransaction(**{k:str(spec[k]) for k in _BINDING_FIELDS},phase=MigrationPhase.PREPARED,created_at=now,updated_at=now)
         tx=_sign(tx); _validate(tx)
-        path=self.path(tx.migration_id)
-        if path.exists(): raise MigrationHandoffError('migration transaction already exists')
-        atomic_write_json(path,_payload(tx))
-        return tx
+        lock_path=self.root/'.create.lock'; flags=os.O_CREAT|os.O_RDWR|getattr(os,'O_NOFOLLOW',0)
+        fd=os.open(str(lock_path),flags,0o600)
+        try:
+            st=os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode): raise MigrationHandoffError('migration create lock is unsafe')
+            fcntl.flock(fd,fcntl.LOCK_EX)
+            for existing_path in sorted(self.root.glob('*.json')):
+                existing=self.load(existing_path.stem)
+                if (existing.project_id==tx.project_id and existing.predecessor_run_id==tx.predecessor_run_id
+                        and existing.phase != MigrationPhase.ROLLED_BACK):
+                    raise MigrationHandoffError('predecessor migration already exists')
+            path=self.path(tx.migration_id)
+            if path.exists(): raise MigrationHandoffError('migration transaction already exists')
+            atomic_write_json(path,_payload(tx))
+            return tx
+        finally:
+            try: fcntl.flock(fd,fcntl.LOCK_UN)
+            finally: os.close(fd)
 
     def load(self,migration_id:str)->RuntimeMigrationTransaction:
         path=self.path(migration_id)

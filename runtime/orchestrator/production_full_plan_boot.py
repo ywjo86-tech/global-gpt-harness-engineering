@@ -10,7 +10,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .production_full_plan_entry import load_job, load_registered_job, transient_systemd_command
+from .production_full_plan_entry import (
+    load_job, load_registered_job, recover_registered_job_state_after_external_binding_drift, transient_systemd_command,
+)
 from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, discover_predecessor_transactions
 from .production_full_plan_runner import ACTIVE_STATES, TERMINAL_STATES, WAIT_STATES, DurableFullPlanSupervisor, ProductionFullPlanError
 from .production_attention import AttentionOutbox
@@ -102,7 +104,33 @@ def _incomplete_migrations(job: Mapping[str, Any]):
     return tuple(tx for tx in rows if tx.phase not in terminal)
 
 def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any]:
-    job = load_job(job_path)
+    external_binding_drift = ""
+    preloaded_state: dict[str, Any] | None = None
+    try:
+        job = load_job(job_path)
+    except Exception as load_exc:
+        try:
+            job, preloaded_state = recover_registered_job_state_after_external_binding_drift(job_path)
+        except Exception:
+            return {"job": str(job_path), "action": "BLOCKED", "state": "UNKNOWN",
+                    "reason": f"external binding drift could not be safely reconciled: {load_exc}",
+                    "external_binding_drift": True, "launched": False}
+        status = str(preloaded_state.get("state") or "")
+        if status not in TERMINAL_STATES:
+            gates = [str(item["gate_id"]) for item in job["gates"]]
+            supervisor = DurableFullPlanSupervisor(
+                job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+                authority_core_sha256=str(job.get("authority_core_sha256") or ""), **dict(job.get("policy") or {}),
+            )
+            reason = f"external binding drift on nonterminal job: {load_exc}"
+            AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+                kind="STATE_RECONCILIATION_BLOCKED", state=status, reason=reason,
+                gate_id=str(preloaded_state.get("current_gate") or "") or None,
+                state_sha256=str(preloaded_state.get("state_sha256") or "") or None,
+                details={"source": "boot_reconciler", "external_binding_drift": True},
+            )
+            return {"job": str(job_path), "action": "BLOCKED", "state": status, "reason": reason, "external_binding_drift": True, "launched": False}
+        external_binding_drift = str(load_exc)
     gates = [str(item["gate_id"]) for item in job["gates"]]
     supervisor = DurableFullPlanSupervisor(
         job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
@@ -110,7 +138,10 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         **dict(job.get("policy") or {}),
     )
     try:
-        state, recovered = supervisor.load()
+        if preloaded_state is None:
+            state, recovered = supervisor.load()
+        else:
+            state, recovered = preloaded_state, False
     except ProductionFullPlanError as exc:
         AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
             kind="STATE_RECONCILIATION_BLOCKED", state="UNKNOWN", reason=str(exc),
@@ -168,7 +199,7 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
                 details={"source": "periodic_reconciler"},
             )
         return {"job": str(job_path), "action": "SKIP_TERMINAL", "state": status,
-                "recovered_previous_generation": recovered, "launched": False}
+                "recovered_previous_generation": recovered, "external_binding_drift": bool(external_binding_drift), "launched": False}
     if status not in ACTIVE_STATES:
         return {"job": str(job_path), "action": "BLOCKED", "state": status,
                 "reason": "UNRECOGNIZED_ACTIVE_STATE", "launched": False}

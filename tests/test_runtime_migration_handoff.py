@@ -23,6 +23,19 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
             'PREPARED','PREDECESSOR_QUIESCED','RUNTIME_ACTIVATED','SUCCESSOR_REGISTERED',
             'SUCCESSOR_VERIFIED','PREDECESSOR_CLOSED','ROLLED_BACK','BLOCKED'])
 
+    def test_duplicate_live_transaction_for_same_predecessor_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            s=self.store(td); s.create(valid_spec())
+            second=valid_spec(); second['migration_id']='MIG-002'; second['successor_run_id']='R4'
+            with self.assertRaisesRegex(MigrationHandoffError,'predecessor migration already exists'):
+                s.create(second)
+
+    def test_new_transaction_after_rollback_is_allowed(self):
+        with tempfile.TemporaryDirectory() as td:
+            s=self.store(td); first=s.create(valid_spec()); s.rollback(first.migration_id,'retry safely')
+            second=valid_spec(); second['migration_id']='MIG-002'; second['successor_run_id']='R4'
+            self.assertEqual(s.create(second).migration_id,'MIG-002')
+
     def test_create_load_round_trip_and_digest_binding(self):
         with tempfile.TemporaryDirectory() as td:
             s=self.store(td); tx=s.create(valid_spec()); loaded=s.load(tx.migration_id)

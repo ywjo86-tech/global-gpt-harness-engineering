@@ -197,59 +197,9 @@ class ActiveRegisteredJob:
     load_error: bool = False
 
 
-def _recover_registered_job_after_external_binding_drift(job_path: Path) -> ActiveRegisteredJob | None:
-    """Classify a sealed historical job without trusting drifted external plan/spec files.
-
-    A terminal state may be ignored only when the registered job is still canonically placed,
-    its immutable authority core validates, and its existing durable state validates against that core.
-    Any ambiguity remains a load-error blocker.
-    """
-    from .production_full_plan_entry import canonical_job_path
-    from .production_full_plan_runner import DurableFullPlanSupervisor, TERMINAL_STATES
-    from .production_run_authority import validate_authority_core
-
-    fallback = ActiveRegisteredJob(str(job_path), "", "", "UNKNOWN", "", load_error=True)
-    try:
-        if job_path.is_symlink() or not job_path.is_file():
-            return fallback
-        raw = json.loads(job_path.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            return fallback
-        validate_authority_core(raw)
-        if canonical_job_path(raw).resolve() != job_path.resolve():
-            return fallback
-        gates_raw = raw.get("gates")
-        if not isinstance(gates_raw, list) or not gates_raw or any(
-            not isinstance(item, dict) or not isinstance(item.get("gate_id"), str) or not item["gate_id"]
-            for item in gates_raw
-        ):
-            return fallback
-        project_id = str(raw.get("project_id") or "")
-        run_id = str(raw.get("run_id") or "")
-        harness_root = str(raw.get("harness_root") or "")
-        gates = [str(item["gate_id"]) for item in gates_raw]
-        supervisor = DurableFullPlanSupervisor(
-            harness_root, project_id=project_id, run_id=run_id, gates=gates,
-            authority_core_sha256=str(raw.get("authority_core_sha256") or ""),
-            **dict(raw.get("policy") or {}),
-        )
-        if supervisor.state_path.is_symlink() or not supervisor.state_path.is_file():
-            return fallback
-        state, _ = supervisor.load()
-    except Exception:
-        return fallback
-    if str(state.get("state")) in TERMINAL_STATES:
-        return None
-    return ActiveRegisteredJob(
-        str(job_path), project_id, run_id, str(state.get("state") or ""),
-        str(state.get("state_sha256") or ""), str(state.get("migration_id") or ""),
-        str(state.get("migration_successor_run_id") or ""), load_error=True,
-    )
-
-
 def _active_registered_jobs(search_root: str | Path) -> list[ActiveRegisteredJob]:
     from .production_full_plan_boot import discover_registered_jobs
-    from .production_full_plan_entry import load_job
+    from .production_full_plan_entry import load_job, recover_registered_job_state_after_external_binding_drift
     from .production_full_plan_runner import DurableFullPlanSupervisor, TERMINAL_STATES
 
     active: list[ActiveRegisteredJob] = []
@@ -263,9 +213,18 @@ def _active_registered_jobs(search_root: str | Path) -> list[ActiveRegisteredJob
                 **dict(job.get("policy") or {}),
             ).load()
         except Exception:
-            recovered = _recover_registered_job_after_external_binding_drift(Path(job_path))
-            if recovered is not None:
-                active.append(recovered)
+            try:
+                recovered_job, state = recover_registered_job_state_after_external_binding_drift(job_path)
+            except Exception:
+                active.append(ActiveRegisteredJob(str(job_path), "", "", "UNKNOWN", "", load_error=True))
+                continue
+            if str(state.get("state")) in TERMINAL_STATES:
+                continue
+            active.append(ActiveRegisteredJob(
+                str(job_path), str(recovered_job.get("project_id") or ""), str(recovered_job.get("run_id") or ""),
+                str(state.get("state") or ""), str(state.get("state_sha256") or ""),
+                str(state.get("migration_id") or ""), str(state.get("migration_successor_run_id") or ""), load_error=True,
+            ))
             continue
         if str(state.get("state")) not in TERMINAL_STATES:
             active.append(ActiveRegisteredJob(

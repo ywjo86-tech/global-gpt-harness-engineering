@@ -16,6 +16,7 @@ from runtime.orchestrator.production_full_plan_boot import (
     install_user_unit,
 )
 from runtime.orchestrator.production_full_plan_entry import load_job, register_job
+from runtime.orchestrator.operator_plan_execution import build_operator_plan_job
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
 
 
@@ -98,6 +99,34 @@ class ProductionFullPlanBootTests(unittest.TestCase):
             with patch("runtime.orchestrator.production_full_plan_boot._unit_active", return_value=False):
                 result = reconcile_job(registered, launch=False)
             self.assertEqual(result["action"], "PRESERVE_WAIT")
+
+    def _operator_registered(self, root: Path, *, terminal: bool) -> Path:
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
+        runtime_entry=root/"runtime/orchestrator/production_full_plan_boot.py"; runtime_entry.parent.mkdir(parents=True); runtime_entry.write_text("# runtime\n")
+        plan=root/"plan.md"; spec=root/"spec.md"; plan.write_text("plan\n"); spec.write_text("spec\n")
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True); subprocess.run(["git", "-C", str(root), "commit", "-qm", "approved"], check=True)
+        job=build_operator_plan_job(project_root=root,harness_root=root,runtime_code_root=root,project_id="P",run_id="R",task_ids=["G1"],approved_plan_path=plan,approved_spec_path=spec,approval_ref="USER_APPROVED")
+        registered=register_job(job); loaded=load_job(registered)
+        sup=DurableFullPlanSupervisor(root,project_id="P",run_id="R",gates=["G1"],authority_core_sha256=loaded["authority_core_sha256"],**loaded["policy"]); sup.load()
+        if terminal: sup.cancel("HISTORICAL_TERMINAL")
+        spec.write_text("approved metadata corrected later\n"); subprocess.run(["git", "-C", str(root), "add", "spec.md"], check=True); subprocess.run(["git", "-C", str(root), "commit", "-qm", "correct metadata"], check=True)
+        return registered
+
+    def test_terminal_operator_job_with_external_binding_drift_is_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            registered=self._operator_registered(Path(d),terminal=True)
+            result=reconcile_job(registered,launch=False)
+            self.assertEqual(result["action"],"SKIP_TERMINAL"); self.assertEqual(result["state"],"CANCELLED")
+            self.assertTrue(result["external_binding_drift"])
+
+    def test_nonterminal_operator_job_with_external_binding_drift_stays_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            registered=self._operator_registered(Path(d),terminal=False)
+            result=reconcile_job(registered,launch=False)
+            self.assertEqual(result["action"],"BLOCKED"); self.assertEqual(result["state"],"UNKNOWN")
+            self.assertIn("external binding drift",result["reason"].lower())
 
     def test_completed_run_is_not_relaunched(self):
         with tempfile.TemporaryDirectory() as d:

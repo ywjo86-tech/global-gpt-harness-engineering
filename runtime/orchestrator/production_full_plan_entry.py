@@ -106,6 +106,42 @@ def canonical_job_path(job: Mapping[str, Any]) -> Path:
     return harness / "_workspace" / "production-full-plan-jobs" / str(job["project_id"]) / f"{job['run_id']}.job.json"
 
 
+def recover_registered_job_state_after_external_binding_drift(path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Recover only sealed durable identity/state; never authorize execution from drifted externals."""
+    source = Path(path).resolve()
+    raw = _load_json(source)
+    if raw.get("schema_version") != JOB_SCHEMA:
+        raise FullPlanJobError("unsupported Full Plan job schema")
+    required = {"project_root", "harness_root", "project_id", "run_id", "gates", "authority_core_sha256"}
+    if not required.issubset(raw):
+        raise FullPlanJobError("Full Plan job is incomplete")
+    try:
+        validate_authority_core(raw)
+    except RunAuthorityError as exc:
+        raise FullPlanJobError(str(exc)) from exc
+    if canonical_job_path(raw).resolve() != source:
+        raise FullPlanJobError("registered Full Plan job canonical path mismatch")
+    gates_raw = raw.get("gates")
+    if not isinstance(gates_raw, list) or not gates_raw:
+        raise FullPlanJobError("Full Plan job Gate list is empty")
+    gate_ids: list[str] = []
+    for item in gates_raw:
+        if not isinstance(item, dict) or not isinstance(item.get("gate_id"), str) or not re.fullmatch(r"[A-Za-z0-9._-]+", item["gate_id"]):
+            raise FullPlanJobError("unsafe Gate ID in registered Full Plan job")
+        gate_ids.append(item["gate_id"])
+    supervisor = DurableFullPlanSupervisor(
+        raw["harness_root"], project_id=raw["project_id"], run_id=raw["run_id"], gates=gate_ids,
+        authority_core_sha256=str(raw["authority_core_sha256"]), **dict(raw.get("policy") or {}),
+    )
+    if supervisor.state_path.is_symlink() or not supervisor.state_path.is_file():
+        raise FullPlanJobError("durable Full Plan state is unavailable for drift recovery")
+    try:
+        state, _ = supervisor.load()
+    except ProductionFullPlanError as exc:
+        raise FullPlanJobError(str(exc)) from exc
+    return raw, state
+
+
 def register_job(job: Mapping[str, Any]) -> Path:
     """Persist an immutable authority core and controlled runtime bindings."""
     incoming_bindings = extract_runtime_bindings(job)
