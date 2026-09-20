@@ -1,0 +1,71 @@
+{
+  "schema_version": "gch.ph7.edp-operational-closure.v1",
+  "decision": "PROVIDER_EXPANSION_RUNTIME_ALL_PASS",
+  "final_edp": "ALL_PASS",
+  "date": "2026-09-20",
+  "validated_code_head": "9165777db2c5f37e53996d353b88f5ee3f3293af",
+  "active_provider": {
+    "provider_id": "groq",
+    "model_ref": "openai/gpt-oss-120b",
+    "state": "ACTIVE",
+    "cost_envelope": "FREE_TIER_ONLY",
+    "paid_usage_authorized": false
+  },
+  "runtime": {
+    "listener": "127.0.0.1:20128",
+    "unauth_http": 401,
+    "groq_connection_http": 200,
+    "doctor_failures": 0,
+    "hidden_fallback": false,
+    "model_auto": false
+  },
+  "regression": {
+    "tests": 1745,
+    "seconds": 61.284,
+    "skipped": 15,
+    "failures": 0,
+    "errors": 0,
+    "compile": "PASS",
+    "diff_check": "PASS",
+    "duplicate_discovery_count": 0,
+    "lv_preview_executions": 13,
+    "wallet_preview_skip_count": 1
+  },
+  "qualification": {
+    "read": "PASS",
+    "action_no_effect": "PASS",
+    "reroute": "PASS",
+    "three_provider_neutral_routing": "PASS",
+    "production_inventory_loader": "PASS",
+    "production_runner_registry": "PASS",
+    "secret_scan": "PASS"
+  },
+  "evidence_sha256": {
+    "design": "f75560f3c0cb859051621b7787771b6e10b97fe31e5c86210efc4f1347943ce9",
+    "plan": "de19369a796584a141ec6038096d778899c5ef456a69eef0c8e3c671379c7701",
+    "protocol": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+    "inventory": "b983a372c641707c8644d872d44620932ee4b4799c84d290f21985215f0d1705",
+    "live": "59b21d4c90186de5956fb3fcee1a0f7d3bcf12c6cc20743623dec0f520383f3c",
+    "routing": "b08d015cb124a37cc906c19f0e22e1feed232af92e792337b333792358fc79d9",
+    "dup": "6e9384ab9f32f35e82b1a0cfc19506074e8a7ebaf8c9ca5bc7db5b8c3f63b74d"
+  },
+  "metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "DUPLICATE_DISCOVERY_COUNT": 0,
+    "MATERIAL_DEFECT_SEARCH": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE"
+  }
+}

@@ -1,9 +1,9 @@
 {
   "schema_version": "gch.ph7.skip-accounting.v1",
-  "full_test_count": 1742,
+  "full_test_count": 1745,
   "skip_count": 15,
   "duplicate_discovery_count": 0,
-  "wallet_preview_skip_count": 0,
+  "wallet_preview_skip_count": 1,
   "skips": [
     {
       "test_id": "test_actual_readiness_is_consumed_by_canonical_launch_authority (tests.test_canonical_launch_bridge.CanonicalLaunchBridgeTests.test_actual_readiness_is_consumed_by_canonical_launch_authority)",

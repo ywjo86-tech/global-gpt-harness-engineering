@@ -1,62 +1,44 @@
 # Orchestration State
 
 > Updated: 2026-09-20
-> Scope: AI Office Stable Baseline + authorized PH7 OmniRoute Provider Expansion design lifecycle
+> Scope: AI Office Stable Baseline + PH7 OmniRoute Provider Expansion operational closure
 
 ## Current Execution Binding
 
-Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — G0_G1_PASS / G3_G5_OPEN_NO_LIVE_CANDIDATE / FINAL_CLOSURE_OPEN
+Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — PROVIDER_EXPANSION_RUNTIME_ALL_PASS / FINAL_EDP_ALL_PASS
 
 - Active project: AI_OFFICE_HARNESS_UPGRADE
-- Active lifecycle: PHASE7 / OMNIROUTE_PROVIDER_EXPANSION_RUNTIME_QUALIFICATION
+- Active lifecycle: PHASE7 / OMNIROUTE_PROVIDER_EXPANSION_OPERATIONAL_CLOSED
 - Active PH7 design authority: docs/superpowers/specs/2026-09-20-omniroute-provider-gateway-design.md
-- Active PH7 design SHA-256: f75560f3c0cb859051621b7787771b6e10b97fe31e5c86210efc4f1347943ce9
-- Predecessor PH5 contract: docs/DEVELOPMENT_PLAN.txt
-- Predecessor PH5 contract SHA-256: 0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2
 - Active PH7 implementation plan: docs/superpowers/plans/2026-09-20-omniroute-provider-expansion-ph7.md
-- Active PH7 implementation plan SHA-256: de19369a796584a141ec6038096d778899c5ef456a69eef0c8e3c671379c7701
-- PH7 implementation plan EDP: PLAN_EDP_ALL_PASS
-- PH7 plan EDP evidence: docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/EDP_POST_IMPLEMENTATION_PLAN_ALL_PASS.md + .json
 - Diagnosis standard: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
-- Diagnosis standard SHA-256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
 - Active provider-expansion branch: upgrade/ai-office-omniroute-ph7-20260920
-- Current implementation checkpoint: 772799f (Task 7 live-qualification guard/evidence)
-- Predecessor Multi-Provider Foundation: APPROVED_SEALED / DECLARED
-- AI Office PHASE 5 execution: AUTHORIZED
-- AI Office TASK-015 / TASK-016 / TASK-017: IMPLEMENTED / QUALIFIED in R33 lineage
-- AI Office GATE-005 R33: COMPLETED / ALL_GATES_COMPLETED
-- EDP extensibility remediation: ALL_PASS
-- Final EDP evidence: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/EDP_POST_REMEDIATION_ALL_PASS.md + .json
-- AI Office Stable Baseline: DECLARED / AI_OFFICE_STABLE_BASELINE
-- Stable Baseline validated content head: eb2ef6880153814facd2f4aa2a16999e2a1d52ca
-- Stable Baseline closure candidate digest: d003d4144c96bdee798defd56e439869cc91520a18fb613406ec6b1ea97365aa
-- Stable Baseline canonical/alias evidence equality: IDENTICAL
-- Stable Baseline declaration: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_DECLARATION.md + .json
-- Provider-neutral core remediation: AUTHORIZED within the current AI Office Harness Upgrade amendment
-- Current production provider activation: Codex + NVIDIA only
-- Third-provider selected candidate: Groq / openai/gpt-oss-20b / FREE_TIER_ONLY / credential pending
-- Third-provider ACTIVE state: NONE; Groq live READ/ACTION/reroute qualification remains blocked until a valid API key is available; paid-tier upgrade is NOT_AUTHORIZED
-- PH7 OmniRoute Provider Expansion lifecycle: AUTHORIZED by user directive 2026-09-20
-- OmniRoute G0/G1 controlled local install/discovery: AUTHORIZED AFTER DESIGN/PLAN GATES
-- OmniRoute G0/G1 runtime: PASS — 127.0.0.1:20128, API-key enforcement 401/200, doctor 0 failures
-- Duplicate unittest discovery: PASS — 1742 full-suite tests / 15 skips, LVPreview 13 unique, DUPLICATE_DISCOVERY_COUNT=0
+- Validated code checkpoint: 9165777db2c5f37e53996d353b88f5ee3f3293af
+- Current production provider activation: Codex + NVIDIA + Groq
+- Groq ACTIVE binding: `groq` / `openai/gpt-oss-120b` / explicit connection ID in canonical inventory
+- Groq credential: required, stored outside Git; tracked-secret scan PASS
+- Cost boundary: FREE_TIER_ONLY; paid usage/tier upgrade NOT_AUTHORIZED
+- OmniRoute G0/G1 runtime: PASS — loopback 127.0.0.1:20128, unauth 401, doctor 0 failures
+- OmniRoute G3-G5: PASS — READ / ACTION no-effect / reroute / three-provider neutral-routing
+- Canonical provider inventory: docs/harness/provider-candidate-inventory.json
+- Final operational EDP: docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/EDP_POST_OPERATIONAL_ALL_PASS.md + .json
+- Final repository regression: 1745 PASS / 15 skipped / 0 failure / 0 error
+- Duplicate unittest discovery: PASS — DUPLICATE_DISCOVERY_COUNT=0, LVPreview 13/13 unique
 - Bounded Operator Turn execution policy: ACTIVE — commit 69f68de / EDP ALL_PASS
-- Third-provider keyless qualification: 7 candidates evaluated, 0 READ-qualified; G3-G5 remain OPEN
-- Third-provider ACTIVE state: NONE; credential-based Provider or separately approved dependency expansion is required before APPROVAL -> ACTIVE
-- Deployment: NOT_AUTHORIZED
+- Deployment / merge / push / paid-tier upgrade: NOT_AUTHORIZED
 - Runtime binding note: this block supersedes earlier current-state blocks below; prior records remain immutable historical evidence.
 
 ## Current Safety / Integration Boundary
 
-- Full Plan retains Task/Gate/fan-in/next-state authority; no Provider adapter or MPRF component receives that authority.
-- Multi-Provider Router remains the sole provider/model selection authority and now uses provider-neutral eligibility and deterministic neutral ranking.
-- MPRF owns runtime eligibility, lifecycle/health/quota facts, checkpoint/recovery prerequisites, and safe reroute facts; it does not select providers.
-- Provider execution profiles and runner registries dispatch the Router-selected provider without provider-name backend branching.
-- Full MCP / governed execution backend remains the sole state-changing effect authority.
-- AI Office continues to consume external routing/runtime/effect truth without owning those authorities.
-- Safe reroute requires complete recovery prerequisites; INVALID_RESPONSE additionally requires CONFIRMED_NO_EFFECT and exclusion of the failed provider/model.
-- Invalid Provider output is durably retained only as private sanitized/hash-bound failure evidence before validation.
-- PH5 provider-neutral core extensibility remains predecessor evidence; PH7 separately authorizes controlled OmniRoute expansion work, but no candidate Provider is ACTIVE and no deployment/merge/push authority is granted.
+- Full Plan retains Task/Gate/fan-in/next-state authority.
+- Multi-Provider Router remains the sole provider/model selection and reselection authority.
+- MPRF owns eligibility, health/quota/failure/recovery facts and excludes failed candidates; it does not select providers.
+- OmniRoute is a non-authoritative transport gateway and receives an explicit Router-selected provider/model target.
+- Provider generation has no filesystem/shell/git/effect authority; Full MCP / governed Execution Backend remains the sole state-changing effect authority.
+- `model:auto`, emergency fallback, automatic provider fallback, and public listener remain prohibited for this PH7 binding.
+- Discovery alone cannot produce ACTIVE; only the canonical admission lifecycle with live evidence is projected into production.
+- Safe reroute requires MPRF exclusion of the failed provider/model before Router reselection.
+- AI Office consumes routing/runtime/effect truth without taking those authorities.
 
 ## Historical State Preserved Below
 > Updated: `2026-09-15`
