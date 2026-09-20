@@ -14,6 +14,7 @@ from runtime.orchestrator.operator_exit_guard import (
     CONTINUE_EXECUTION,
     NOTIFY_STALLED,
     REPORT_TERMINAL_STOP,
+    REPORT_BOUNDED_CHECKPOINT,
     REQUEST_USER_DECISION,
     assess_operator_turn_exit,
     assess_run_base,
@@ -119,6 +120,23 @@ class OperatorExitGuardTests(unittest.TestCase):
         state["terminal_reason"] = "USER_CANCELLED"
         result = assess_operator_turn_exit(state, now=NOW, completion_obligations={})
         self.assertEqual(result.disposition, REPORT_TERMINAL_STOP)
+        self.assertTrue(result.allow_final_response)
+        self.assertFalse(result.successful_completion)
+
+    def test_budget_yield_requires_durable_checkpoint(self) -> None:
+        result = assess_operator_turn_exit(
+            full_plan_state(), now=NOW, completion_obligations={},
+            bounded_turn_yield=True, durable_turn_checkpoint=False,
+        )
+        self.assertEqual(result.disposition, CONTINUE_EXECUTION)
+        self.assertFalse(result.allow_final_response)
+
+    def test_budget_yield_with_durable_checkpoint_reports_nonterminal_pause(self) -> None:
+        result = assess_operator_turn_exit(
+            full_plan_state(), now=NOW, completion_obligations={},
+            bounded_turn_yield=True, durable_turn_checkpoint=True,
+        )
+        self.assertEqual(result.disposition, REPORT_BOUNDED_CHECKPOINT)
         self.assertTrue(result.allow_final_response)
         self.assertFalse(result.successful_completion)
 

@@ -26,6 +26,7 @@ CONTINUE_EXECUTION = "CONTINUE_EXECUTION"
 REQUEST_USER_DECISION = "REQUEST_USER_DECISION"
 NOTIFY_STALLED = "NOTIFY_STALLED"
 REPORT_TERMINAL_STOP = "REPORT_TERMINAL_STOP"
+REPORT_BOUNDED_CHECKPOINT = "REPORT_BOUNDED_CHECKPOINT"
 ALLOW_COMPLETION_RESPONSE = "ALLOW_COMPLETION_RESPONSE"
 
 _VALID_STATES = frozenset({
@@ -114,6 +115,8 @@ def assess_operator_turn_exit(
     continuation_states: Sequence[Mapping[str, Any] | object] = (),
     user_decision: UserDecisionAssessment | None = None,
     recoverable_continuation: bool = False,
+    bounded_turn_yield: bool = False,
+    durable_turn_checkpoint: bool = False,
     attention_threshold_seconds: int = 300,
 ) -> OperatorExitAssessment:
     """Classify whether the Operator may end the user-facing turn.
@@ -160,6 +163,14 @@ def assess_operator_turn_exit(
             NOTIFY_STALLED, True, False, attention.reason, (), "NONE"
         )
 
+    if bounded_turn_yield:
+        if not durable_turn_checkpoint:
+            return _continue("bounded turn yield requires a durable continuation checkpoint")
+        return OperatorExitAssessment(
+            REPORT_BOUNDED_CHECKPOINT, True, False,
+            "bounded turn soft budget reached at a durable continuation checkpoint", (), "NONE"
+        )
+
     if recoverable_continuation:
         return _continue("verified autonomous continuation remains available")
 
@@ -194,6 +205,8 @@ def assess_run_base(
     continuation_states: Sequence[Mapping[str, Any] | object] = (),
     user_decision: UserDecisionAssessment | None = None,
     recoverable_continuation: bool = False,
+    bounded_turn_yield: bool = False,
+    durable_turn_checkpoint: bool = False,
     attention_threshold_seconds: int = 300,
 ) -> OperatorExitAssessment:
     """Read persisted Full Plan state/attention and assess turn exit without mutation."""
@@ -224,6 +237,7 @@ def assess_run_base(
         attention_events=events, completion_obligations=completion_obligations,
         continuation_states=continuation_states, user_decision=user_decision,
         recoverable_continuation=recoverable_continuation,
+        bounded_turn_yield=bounded_turn_yield, durable_turn_checkpoint=durable_turn_checkpoint,
         attention_threshold_seconds=attention_threshold_seconds,
     )
 
