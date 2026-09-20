@@ -1,0 +1,50 @@
+{
+  "closure_sha256": "7fe2b0c4d40fe1a881b3cb8f4ec73c95d84394b98eaaa627444b0fd26d6d7be3",
+  "diagnostics": {
+    "codegraph": "0.20.1",
+    "codegraph_production_read_only": "PASS",
+    "diagnostic_advisory": "PASS",
+    "graphify": "0.9.58",
+    "graphify_production_read_only": "PASS",
+    "holmes_inspired_rca": "PASS"
+  },
+  "evidence_sha256": {
+    "cli_anything": "5dab09de1a662f244299984dee6b9168c31c4dd2393adbbad90054ce55b18f4a",
+    "continuity_migration": "f4b15e979e9abf6983ebd084cc1d7963c30b19a25fb042f013295240c796a352",
+    "continuity_post_edp": "782d7477311b1347070432725642e94f3e3b0c568e6aba9e27b3947353234721",
+    "diagnostic_advisory": "98046dcc67001f796bc186becead2024dcb16d6b017326c6cd86216e52f6fb3e",
+    "graphify_shadow": "32f4f8011cbd69681db526524b78c13d0e347d925592317e15b5ff704773c96d",
+    "runtime_activation": "33ce415807d0706b08e7ff3d033e82c2cff2c190e2d67ee28f3488c3dec64d5e"
+  },
+  "historical_r2_receipt_preserved_missing": true,
+  "original_incident_run_id": "FINAL-OP-20260920-R2",
+  "preclosure_regression": {
+    "compileall_rc": 0,
+    "diff_check_rc": 0,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 15,
+    "tests_run": 1875,
+    "tracked_worktree_clean": true
+  },
+  "runtime": {
+    "attention_source_runtime_sha_equal": true,
+    "diagnostic_config_mode": "0600",
+    "diagnostic_mode": "ADVISORY",
+    "manifest_sha256": "36022058cde8c0aff8398aca58541653f96451ccb1cad379c1b9c530b2d786d0",
+    "source_head": "15c32c5c325c2d23ef5b94614cbf749c1b2074e9",
+    "systemd_timer_active": true,
+    "systemd_timer_enabled": true,
+    "target": "/home/ywjo/.local/share/global-gpt-harness/releases/15c32c5c325c2d23ef5b94614cbf749c1b2074e9"
+  },
+  "schema_version": "gch.original-task014-successor-closure.v1",
+  "scope_integrity": {
+    "cli_anything_invariants_01_07": "PASS",
+    "cli_anything_ti_01_08": "PASS",
+    "continuity_remediation": "PASS",
+    "omniroute_loopback_auth": "PASS"
+  },
+  "status": "PASS",
+  "successor_run_id": "FINAL-OP-20260920-R4",
+  "successor_state_sha256_before_receipt": "c1037659187e242fbdddf0c9aaf3168af407aff2e3971c293844969679a7cada"
+}

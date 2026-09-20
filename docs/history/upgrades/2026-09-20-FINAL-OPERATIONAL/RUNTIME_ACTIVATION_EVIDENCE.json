@@ -2,18 +2,33 @@
   "attention": {
     "automation_runtime_current_bound": true,
     "runtime_smoke": "PASS",
-    "schedule": "HOURLY_PLATFORM_LIMIT"
+    "schedule": "HOURLY_PLATFORM_LIMIT",
+    "sha256": "c544f0020d28f3f18484989ade1bc7926627d8e1bfb0a17cabc0e5ee1b1abd86",
+    "source_runtime_sha_equal": true
   },
+  "codegraph": "0.20.1",
   "codegraph_sha256": "32b26422fa5ffe0a130955b7f7df771f722b2d427d67f53f104d9907bdfb24a6",
   "diagnostic_mode": "ADVISORY",
   "digests": {
-    "attention": "618cf0a195a3372670543fa5a7e934e95f03e937025531901382c3cd25fdccd4",
-    "boot": "524015c721b9550a0d4982853c101274462b2a6b9ba115ca885bcd32cd69e74d",
+    "attention": "c544f0020d28f3f18484989ade1bc7926627d8e1bfb0a17cabc0e5ee1b1abd86",
+    "boot": "d1c584cd933b242a6ac922750fdb280a1201029c87ca9e8d5e53d4c73ef68e97",
+    "cli_anything_qualification": "5dab09de1a662f244299984dee6b9168c31c4dd2393adbbad90054ce55b18f4a",
     "config": "76f2a12f6afe66b77ed5652cd364a986c272c7692fb6bf3da6fb94c07c347d5b",
+    "continuity_migration": "f4b15e979e9abf6983ebd084cc1d7963c30b19a25fb042f013295240c796a352",
+    "diagnostic_advisory": "98046dcc67001f796bc186becead2024dcb16d6b017326c6cd86216e52f6fb3e",
+    "diagnostic_shadow": "32f4f8011cbd69681db526524b78c13d0e347d925592317e15b5ff704773c96d",
     "service": "eb0e46e36e241bc919124f49ca084b0cd4ab9ecec45d1608a9cb5f2fabfee5d7",
     "timer": "6f64e9112250d3df8ca85d466506653ce7b01bb7470393eb6a1211e08c4be751"
   },
   "graphify": "0.9.58",
+  "graphify_sha256": "392a6f769aa408946de36ef22da862eec5fef48f459e0db65757d9ee7bae69e3",
+  "omniroute": {
+    "auth_http": 200,
+    "listener": "127.0.0.1:20128",
+    "status": "PASS",
+    "unauth_http": 401,
+    "version": "3.8.50"
+  },
   "reconcile": {
     "dry_run_blocked": 0,
     "restart_rc": 0,
@@ -21,8 +36,10 @@
     "timer_active": true,
     "timer_enabled": true
   },
-  "release_manifest_sha256": "209ed76bf7a740631f16319825184e9f91ced7d5997d58bf5de3c58a0243503a",
-  "runtime_link_target": "/home/ywjo/.local/share/global-gpt-harness/releases/424c1c255cced0ca53e7012a780b54281500fc3d",
+  "release_manifest_sha256": "36022058cde8c0aff8398aca58541653f96451ccb1cad379c1b9c530b2d786d0",
+  "release_source_head": "15c32c5c325c2d23ef5b94614cbf749c1b2074e9",
+  "release_source_tree": "ad9b6fc017a2318a1535a67754977ce78c79d8b9",
+  "runtime_link_target": "/home/ywjo/.local/share/global-gpt-harness/releases/15c32c5c325c2d23ef5b94614cbf749c1b2074e9",
   "schema_version": "gch.runtime-activation-evidence.v1",
   "status": "PASS"
 }
