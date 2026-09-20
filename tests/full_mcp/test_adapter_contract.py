@@ -197,7 +197,10 @@ class AdapterContractTests(unittest.TestCase):
                 except BaseException as exc: errors.append(exc)
             thread = threading.Thread(target=serve, daemon=True); thread.start()
             for _ in range(200):
-                if sock.exists() or errors: break
+                if errors:
+                    break
+                if sock.is_socket() and not (sock.stat().st_mode & 0o077):
+                    break
                 time.sleep(0.01)
             if errors: raise errors[0]
             result = UnixSocketGatewayTransport(sock, workspace_root=root)(
