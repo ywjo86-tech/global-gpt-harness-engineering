@@ -98,6 +98,15 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         return {"job": str(job_path), "action": "PRESERVE_WAIT", "state": status,
                 "recovered_previous_generation": recovered, "launched": False}
     if status in TERMINAL_STATES:
+        terminal_reason = str(state.get("terminal_reason") or "")
+        if status == "CANCELLED" and terminal_reason == "RUNTIME_ACTIVATION_MIGRATION":
+            AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+                kind="RUNTIME_MIGRATION_ORPHANED", state=status,
+                reason="runtime migration predecessor is terminal without a verified successor",
+                gate_id=str(state.get("current_gate") or "") or None,
+                state_sha256=str(state.get("state_sha256") or "") or None,
+                details={"source": "periodic_reconciler"},
+            )
         if status in {"BLOCKED", "FAILED"}:
             AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
                 kind=status, state=status, reason=str(state.get("last_error") or state.get("terminal_reason") or status),

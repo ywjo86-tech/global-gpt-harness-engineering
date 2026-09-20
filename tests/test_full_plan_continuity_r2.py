@@ -246,6 +246,19 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
             self.assertEqual(reopened["queue"][0]["attempt"], 2)
 
 
+    def test_periodic_reconciler_surfaces_runtime_migration_cancel_orphan_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); subprocess.run(['git','init','-q',str(root)],check=True)
+            payload={'schema_version':'orchestration.production-full-plan-job.v1','project_root':str(root),'harness_root':str(root),'project_id':'proj','run_id':'migration-orphan','required_executables':['git'],'gates':[{'gate_id':'G1','approval_evidence':str(root/'approval.json'),'requirements_sha256':'a'*64,'branch':'main','head':'b'*40,'full_plan_opt_in':True,'project_final_validation':True}],'policy':{'retry_budget':0,'gate_timeout_seconds':1,'heartbeat_seconds':.03,'lease_seconds':.08,'min_disk_free_bytes':0,'min_inode_free':0,'min_memory_available_bytes':0}}
+            source=root/'job.json'; source.write_text(json.dumps(payload)); registered=register_job(load_job(source)); job=load_job(registered)
+            sup=DurableFullPlanSupervisor(root,project_id='proj',run_id='migration-orphan',gates=['G1'],authority_core_sha256=job['authority_core_sha256'],retry_budget=0,gate_timeout_seconds=1,heartbeat_seconds=.03,lease_seconds=.08,min_disk_free_bytes=0,min_inode_free=0,min_memory_available_bytes=0)
+            sup.cancel('RUNTIME_ACTIVATION_MIGRATION')
+            self.assertEqual(sup.attention_outbox.pending(),[])
+            first=reconcile_job(registered,launch=False); second=reconcile_job(registered,launch=False)
+            self.assertEqual(first['action'],'SKIP_TERMINAL'); self.assertEqual(second['action'],'SKIP_TERMINAL')
+            pending=sup.attention_outbox.pending()
+            self.assertEqual(len(pending),1); self.assertEqual(pending[0]['kind'],'RUNTIME_MIGRATION_ORPHANED')
+
 
 if __name__ == "__main__":
     unittest.main()
