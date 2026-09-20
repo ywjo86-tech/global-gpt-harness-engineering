@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
+
+from runtime.tool_implementation.cli_anything_adapter import run_preflight
+from runtime.tool_implementation.manifest import ToolImplementationError, ToolImplementationManifest, validate_manifest
 
 from .codex_dynamic_transport import (
     CrashAfterDurableWrite, CodexAppServerAdapter, ToolRequestEnvelope, ToolResultEnvelope,
@@ -302,3 +306,84 @@ class ProductionToolTransport:
             for item in self.governed_effect_evidence()
         ]
         return outcome
+
+
+def _qualified_cli_ids(manifest: ToolImplementationManifest) -> tuple[str, str]:
+    digest = str(manifest.manifest_sha256)[:24]
+    return f"REG_CLI_{digest}", f"CLI_IMPL_{digest}"
+
+
+def _plain_cli_schema(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_cli_schema(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_plain_cli_schema(item) for item in value]
+    return value
+
+
+def qualified_cli_registered_operation(manifest: ToolImplementationManifest) -> RegisteredOperation:
+    """Project a qualified implementation into the closed registry without granting authority."""
+    try:
+        validate_manifest(manifest)
+    except ToolImplementationError as exc:
+        raise ToolAuthorizationError("tool implementation manifest is invalid") from exc
+    if manifest.state != "QUALIFIED":
+        raise ToolAuthorizationError("unqualified tool implementation blocked")
+    registration_id, operation_id = _qualified_cli_ids(manifest)
+    intent = "READ" if manifest.effect_class == "READ_ONLY" else "WRITE"
+    return RegisteredOperation(
+        registration_id, operation_id, "OTHER", intent, manifest.effect_class,
+        _plain_cli_schema(manifest.input_schema), _plain_cli_schema(manifest.output_schema),
+    )
+
+
+def _validate_cli_private_result(schema: Mapping[str, Any], value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ToolAuthorizationError("qualified CLI output is not an object")
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+    if (not isinstance(properties, Mapping) or not isinstance(required, (list, tuple))
+            or any(key not in value for key in required) or any(key not in properties for key in value)):
+        raise ToolAuthorizationError("qualified CLI output violates the closed schema")
+    for key, item in value.items():
+        expected = properties[key].get("type") if isinstance(properties[key], Mapping) else None
+        if expected == "string" and not isinstance(item, str):
+            raise ToolAuthorizationError("qualified CLI output type mismatch")
+        if expected == "integer" and (not isinstance(item, int) or isinstance(item, bool)):
+            raise ToolAuthorizationError("qualified CLI output type mismatch")
+        if expected == "boolean" and not isinstance(item, bool):
+            raise ToolAuthorizationError("qualified CLI output type mismatch")
+    return dict(value)
+
+
+def qualified_cli_launcher(manifest: ToolImplementationManifest, *, cwd: Path,
+                           verifier_sha256: str, artifact_verifier):
+    """Return a launcher; caller must still place it behind SingleToolBroker."""
+    operation = qualified_cli_registered_operation(manifest)
+    del operation
+    if str(verifier_sha256) != manifest.verifier_sha256:
+        raise ToolAuthorizationError("qualified CLI verifier binding mismatch")
+    root = Path(cwd).resolve()
+    if not root.is_dir() or root.is_symlink() or not callable(artifact_verifier):
+        raise ToolAuthorizationError("qualified CLI launcher configuration is unsafe")
+
+    def launch(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        try:
+            result = run_preflight(manifest, arguments, cwd=root)
+        except ToolImplementationError as exc:
+            raise ToolAuthorizationError("qualified CLI arguments are unsafe") from exc
+        if result.status != "PASS":
+            raise ToolAuthorizationError(f"qualified CLI execution blocked: {result.status}")
+        try:
+            payload = json.loads(result.stdout)
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ToolAuthorizationError("qualified CLI output is malformed") from exc
+        private = _validate_cli_private_result(manifest.output_schema, payload)
+        try:
+            verified = bool(artifact_verifier(private, root))
+        except Exception as exc:
+            raise ToolAuthorizationError("qualified CLI artifact verifier failed") from exc
+        if not verified:
+            raise ToolAuthorizationError("qualified CLI artifact verification failed")
+        return private
+    return launch
