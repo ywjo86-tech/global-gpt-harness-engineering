@@ -5,8 +5,8 @@ import re
 import unittest
 from pathlib import Path
 
-from tests.test_ai_office_daily_loop_e2e import AIOfficeDailyLoopE2ETest
-from tests.test_ai_office_project_factory_e2e import AIOfficeProjectFactoryE2ETest
+from tests import test_ai_office_daily_loop_e2e as daily_loop_e2e
+from tests import test_ai_office_project_factory_e2e as project_factory_e2e
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs" / "DEVELOPMENT_PLAN.txt"
@@ -45,8 +45,8 @@ class AIOfficeIntegratedQualificationTest(unittest.TestCase):
     def test_029_representative_task015_flows_pass_as_a_single_qualification_suite(self) -> None:
         suite = unittest.TestSuite()
         loader = unittest.defaultTestLoader
-        suite.addTests(loader.loadTestsFromTestCase(AIOfficeProjectFactoryE2ETest))
-        suite.addTests(loader.loadTestsFromTestCase(AIOfficeDailyLoopE2ETest))
+        suite.addTests(loader.loadTestsFromTestCase(project_factory_e2e.AIOfficeProjectFactoryE2ETest))
+        suite.addTests(loader.loadTestsFromTestCase(daily_loop_e2e.AIOfficeDailyLoopE2ETest))
         result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
         self.assertTrue(result.wasSuccessful())
         self.assertGreaterEqual(result.testsRun, 4)

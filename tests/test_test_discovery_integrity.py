@@ -20,6 +20,17 @@ class TestDiscoveryIntegrityTest(unittest.TestCase):
         duplicates = [test_id for test_id in ids if ".LVPreviewTest." in test_id]
         self.assertEqual(duplicates, [])
 
+    def test_ai_office_integrated_qualification_does_not_reexport_e2e_testcases(self) -> None:
+        module = importlib.import_module("tests.test_ai_office_integrated_qualification")
+        suite = unittest.TestLoader().loadTestsFromModule(module)
+        ids = [case.id() for case in _flatten(suite)]
+        duplicates = [
+            test_id for test_id in ids
+            if ".AIOfficeProjectFactoryE2ETest." in test_id
+            or ".AIOfficeDailyLoopE2ETest." in test_id
+        ]
+        self.assertEqual(duplicates, [])
+
     def test_lv_preview_retains_exact_original_test_methods_once(self) -> None:
         module = importlib.import_module("tests.test_lv_preview")
         names = unittest.TestLoader().getTestCaseNames(module.LVPreviewTest)
