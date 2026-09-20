@@ -1,0 +1,13 @@
+{
+  "schema_version": "gch.edp-continuity-pre.v1",
+  "decision": "FAIL / REMEDIATION_REQUIRED",
+  "incident": "FINAL-OP-20260920-R2 / TASK-014",
+  "terminal_reason": "RUNTIME_ACTIVATION_MIGRATION",
+  "r2_state_sha256": "2c319449af60e0cba7863ff63a4bff975bb2e9094db7d435fd050b81a4de29a2",
+  "task014_receipt_present": false,
+  "root_findings": [
+    "design skill continuity review missing",
+    "runtime migration handoff missing",
+    "terminal orphan attention missing"
+  ]
+}

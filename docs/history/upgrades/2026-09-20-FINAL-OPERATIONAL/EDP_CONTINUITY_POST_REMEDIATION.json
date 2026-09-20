@@ -1,0 +1,20 @@
+{
+  "schema_version": "gch.edp-continuity-post.v1",
+  "decision": "PASS",
+  "requirements": {
+    "EDP-CONT-001": "PASS",
+    "EDP-CONT-002": "PASS",
+    "EDP-CONT-003": "PASS",
+    "EDP-CONT-004": "PASS",
+    "EDP-CONT-005": "PASS"
+  },
+  "BLOCKER_COUNT": 0,
+  "UNRESOLVED_MAJOR_COUNT": 0,
+  "evidence": [
+    "tests/test_harness_design_continuity_skill.py",
+    "tests/test_runtime_migration_handoff.py",
+    "tests/test_runtime_release.py",
+    "tests/test_full_plan_continuity_r2.py",
+    "tests/test_runtime_migration_authority_negative_space.py"
+  ]
+}
