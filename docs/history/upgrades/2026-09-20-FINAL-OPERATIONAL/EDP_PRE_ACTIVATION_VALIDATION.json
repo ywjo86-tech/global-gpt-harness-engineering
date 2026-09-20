@@ -1,0 +1,25 @@
+{
+  "blocker_count": 0,
+  "compileall": "PASS",
+  "cross_document_conflict_count": 0,
+  "decision": "ALL_PASS_PRE_ACTIVATION",
+  "diagnostic_config_sha256": "76f2a12f6afe66b77ed5652cd364a986c272c7692fb6bf3da6fb94c07c347d5b",
+  "diff_check": "PASS",
+  "domain_evidence_coverage": "100%",
+  "full_suite": {
+    "errors": 0,
+    "failures": 0,
+    "log_sha256": "ea6804501b393a1299f829510f009b3dd3b84d1040bc231b11c841f280b116a6",
+    "skipped": 15,
+    "tests": 1807
+  },
+  "must_requirement_coverage": "100%",
+  "must_traceability_coverage": "100%",
+  "negative_space_open_material_count": 0,
+  "pass_challenge_open_count": 0,
+  "schema_version": "gch.edp-pre-activation.v1",
+  "source_head": "424c1c255cced0ca53e7012a780b54281500fc3d",
+  "source_tree": "d39ccfe94feda0169fc927f6a106bbe9a81f7aa3",
+  "unresolved_major_count": 0,
+  "worktree": "CLEAN"
+}
