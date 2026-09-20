@@ -1,0 +1,18 @@
+{
+  "count": 352,
+  "categories": [
+    "api-key",
+    "audio-only",
+    "cloud-agent",
+    "local",
+    "noauth",
+    "oauth",
+    "search",
+    "system",
+    "upstream-proxy",
+    "web-cookie"
+  ],
+  "configured_provider_count": 0,
+  "validation_result_count": 0,
+  "model_count": 490
+}

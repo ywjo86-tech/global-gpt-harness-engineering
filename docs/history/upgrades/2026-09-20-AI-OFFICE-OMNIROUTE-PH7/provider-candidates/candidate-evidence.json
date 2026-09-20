@@ -1,0 +1,202 @@
+{
+  "schema_version": "gch.ph7.provider-candidate-evidence.v1",
+  "catalog_count": 352,
+  "configured_provider_count": 0,
+  "validation_result_count": 0,
+  "model_count": 490,
+  "evaluated_noauth_free_text_count": 7,
+  "live_ready_count": 0,
+  "candidate_provider_ids": [],
+  "decision": "NO_CANDIDATE_LIVE_READY",
+  "evaluations": [
+    {
+      "provider_id": "opencode",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "oc/big-pickle",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_auth_error",
+      "latency_ms": 4430,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    },
+    {
+      "provider_id": "duckduckgo-web",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "ddgw/gpt-5.4-mini",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_http_error",
+      "latency_ms": 2698,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    },
+    {
+      "provider_id": "cloudflare-playground",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "cfp/zai-org/glm-5.2",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_http_error",
+      "latency_ms": 3113,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    },
+    {
+      "provider_id": "felo-web",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "felo/felo-chat",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_http_error",
+      "latency_ms": 721,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        2,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    },
+    {
+      "provider_id": "theoldllm",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "tllm/GPT_5_4",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_auth_error",
+      "latency_ms": 3134,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    },
+    {
+      "provider_id": "chipotle",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "pepper/pepper-1",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_http_error",
+      "latency_ms": 4282,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    },
+    {
+      "provider_id": "uncloseai",
+      "protocol_class": "omniroute-openai-v1",
+      "cost_class": "free",
+      "credential_required": false,
+      "model_catalog_visible": true,
+      "probe_model": "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic",
+      "live_status": "provider_failed",
+      "error_class": "omniroute_http_error",
+      "latency_ms": 1803,
+      "score_vector": [
+        1,
+        0,
+        2,
+        1,
+        2,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "recommended_state": "CANDIDATE",
+      "reasons": [
+        "live_access_not_yet_proven"
+      ]
+    }
+  ]
+}
