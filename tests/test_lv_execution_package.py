@@ -16,13 +16,13 @@ from runtime.orchestrator.lv_execution_package import (
     validate_worker_result,
 )
 from runtime.orchestrator.lv_preview import preview_lv_read_only
-from tests.test_lv_preview import LVPreviewTest
+from tests.support.lv_preview_fixture import build_lv_preview_fixture
 
 
 class LVExecutionPackageTest(unittest.TestCase):
     def _fixture(self, base: Path) -> tuple[Path, Path]:
         base.mkdir(parents=True, exist_ok=True)
-        root, mapping_dir = LVPreviewTest._fixture(base)
+        root, mapping_dir = build_lv_preview_fixture(base)
         return root, mapping_dir
 
     def _create(self, base: Path, run_id: str = "run-lv3-1") -> tuple[Path, Path, dict[str, object]]:
