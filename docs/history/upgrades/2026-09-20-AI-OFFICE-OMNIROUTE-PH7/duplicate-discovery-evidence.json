@@ -1,0 +1,18 @@
+{
+  "schema_version": "gch.ph7.duplicate-discovery-evidence.v1",
+  "pre_task6_discovered_test_count": 1748,
+  "removed_duplicate_collections": 13,
+  "new_legitimate_tests": 2,
+  "expected_post_task6_test_count": 1737,
+  "actual_post_task6_test_count": 1737,
+  "pre_task6_skip_count": 16,
+  "removed_duplicate_wallet_skip": 1,
+  "new_legitimate_conditional_skips": 0,
+  "actual_post_task6_skip_count": 15,
+  "lv_preview_method_count": 13,
+  "lv_preview_unique_method_count": 13,
+  "duplicate_discovery_count": 0,
+  "wallet_discovery_count": 1,
+  "wallet_execution_skip_count": 1,
+  "full_acceptance": "PASS"
+}
