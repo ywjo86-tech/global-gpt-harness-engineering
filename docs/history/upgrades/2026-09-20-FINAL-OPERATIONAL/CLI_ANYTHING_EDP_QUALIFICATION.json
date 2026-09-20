@@ -1,0 +1,153 @@
+{
+  "DOMAIN_EVIDENCE_COVERAGE": "100%",
+  "control_authority": "NONE",
+  "decision": "PASS",
+  "domains": {
+    "TI-01": {
+      "evidence": [
+        "CLI_ANYTHING_SOURCE_QUALIFICATION.json",
+        "test_candidate_round_trip_is_digest_bound_and_frozen",
+        "test_source_and_artifact_hashes_are_mandatory"
+      ],
+      "status": "PASS"
+    },
+    "TI-02": {
+      "evidence": [
+        "test_generic_shell_or_command_surfaces_are_rejected",
+        "test_command_identity_rejects_traversal_and_relative_path",
+        "test_argv_is_explicit_and_allowlisted",
+        "test_cli_execution_never_uses_shell_true"
+      ],
+      "status": "PASS"
+    },
+    "TI-03": {
+      "evidence": [
+        "test_read_only_cli_runs_only_through_broker_and_journal",
+        "test_state_change_fixture_is_authorized_then_artifact_verified",
+        "test_authorization_failure_never_launches_cli"
+      ],
+      "status": "PASS"
+    },
+    "TI-04": {
+      "evidence": [
+        "test_dry_run_never_launches_artifact",
+        "test_preflight_detects_unavailable_and_artifact_mismatch",
+        "test_preflight_strips_secret_environment_and_isolates_home"
+      ],
+      "status": "PASS"
+    },
+    "TI-05": {
+      "evidence": [
+        "test_artifact_verification_failure_records_failed_receipt",
+        "test_bad_verifier_path_and_unqualified_manifest_fail_closed",
+        "test_output_is_bounded"
+      ],
+      "status": "PASS"
+    },
+    "TI-06": {
+      "evidence": [
+        "test_generated_skill_cannot_self_qualify",
+        "test_generated_skill_requires_independent_evidence"
+      ],
+      "status": "PASS"
+    },
+    "TI-07": {
+      "evidence": [
+        "test_relative_path_is_normalized_and_traversal_blocked",
+        "test_preflight_strips_secret_environment_and_isolates_home",
+        "test_cli_execution_never_uses_shell_true"
+      ],
+      "status": "PASS"
+    },
+    "TI-08": {
+      "evidence": [
+        "test_cli_unavailable_does_not_mutate_full_plan_control_state",
+        "test_tool_implementation_plane_has_no_control_authority_imports",
+        "test_production_code_does_not_directly_invoke_qualified_launcher"
+      ],
+      "status": "PASS"
+    }
+  },
+  "file_sha256": {
+    "runtime/orchestrator/production_tool_transport.py": "7087b2b26f3dbb60778235d29ca76f7657fd126c86b90e289fb451962f73c31c",
+    "runtime/tool_implementation/cli_anything_adapter.py": "d7cc5f1ed3b4637711062ac80ce4770578337b59faf037284803efb8fb8e64cd",
+    "runtime/tool_implementation/manifest.py": "d1247ae0a1b7657f0beebe2b615337bded67df663980624305525c9a8adc87bf",
+    "runtime/tool_implementation/qualification.py": "da79729321b09d24d963b51b3bdb7121e142ef98962f55a1ca12dda99a3f4170",
+    "tests/test_cli_anything_authority_negative_space.py": "a1dc1034fc2ab1a071a07aa1f895f37846da3e65ab60df3e23ee9fed3a308b89",
+    "tests/test_cli_anything_broker_integration.py": "32b9e69b7c2239fa0c01ce135869afc82c88762a585f275479e7a104d22d84e9",
+    "tests/test_cli_anything_tool_implementation.py": "3b646b89c5ccc4c2f8c9a456eae1de374202578432d00801b4ae3cb613034ab3",
+    "tests/test_cli_anything_tool_manifest.py": "6c0734259a69b2b14ca4e5c662aec787051f9e80b99368cd8f77b10eb7964d97"
+  },
+  "invariants": {
+    "TI-INV-01": {
+      "evidence": [
+        "test_read_only_cli_runs_only_through_broker_and_journal",
+        "test_state_change_fixture_is_authorized_then_artifact_verified"
+      ],
+      "status": "PASS"
+    },
+    "TI-INV-02": {
+      "evidence": [
+        "test_generated_skill_cannot_self_qualify",
+        "test_generated_skill_requires_independent_evidence"
+      ],
+      "status": "PASS"
+    },
+    "TI-INV-03": {
+      "evidence": [
+        "CLI_ANYTHING_SOURCE_QUALIFICATION.json:control_authority=NONE"
+      ],
+      "status": "PASS"
+    },
+    "TI-INV-04": {
+      "evidence": [
+        "test_generic_shell_or_command_surfaces_are_rejected",
+        "test_cli_execution_never_uses_shell_true"
+      ],
+      "status": "PASS"
+    },
+    "TI-INV-05": {
+      "evidence": [
+        "test_candidate_round_trip_is_digest_bound_and_frozen",
+        "test_bad_digest_fails_closed"
+      ],
+      "status": "PASS"
+    },
+    "TI-INV-06": {
+      "evidence": [
+        "test_authorization_failure_never_launches_cli",
+        "test_bad_verifier_path_and_unqualified_manifest_fail_closed"
+      ],
+      "status": "PASS"
+    },
+    "TI-INV-07": {
+      "evidence": [
+        "test_cli_unavailable_does_not_mutate_full_plan_control_state"
+      ],
+      "status": "PASS"
+    }
+  },
+  "negative_space": {
+    "broker_effect_journal_bypass": 0,
+    "direct_attention_authority": 0,
+    "direct_completion_authority": 0,
+    "direct_provider_selection": 0,
+    "generic_arbitrary_shell": 0,
+    "governance_mutation": 0,
+    "self_authorization_or_registration": 0,
+    "status": "PASS"
+  },
+  "qualification_sha256": "bf93a1f7a38539df5a3c6f33e83f43e82a0b93c2bd358f65603ab18db680a84b",
+  "schema_version": "gch.cli-anything-edp-qualification.v1",
+  "source_qualification_sha256": "07af346b61ef065be7ff3bd2affc6756ca5655354a2216a70010e4df8b6bbd5b",
+  "test_matrix": {
+    "command": "python -m unittest tests.test_cli_anything_tool_manifest tests.test_cli_anything_tool_implementation tests.test_cli_anything_broker_integration tests.test_cli_anything_authority_negative_space -v",
+    "errors": 0,
+    "failures": 0,
+    "log_sha256": "19a7baa80f2f5161ef26701591e8fb11674c082fe277325f7bbd874f060c2a5c",
+    "tests_run": 28
+  },
+  "upstream_head_verified": "810c18b0d1ab9b234bc996c9fd999318523a3ef0",
+  "upstream_url": "https://github.com/HKUDS/CLI-Anything.git",
+  "whole_project_all_pass_declared": false
+}
