@@ -1,0 +1,28 @@
+{
+  "attention": {
+    "automation_runtime_current_bound": true,
+    "runtime_smoke": "PASS",
+    "schedule": "HOURLY_PLATFORM_LIMIT"
+  },
+  "codegraph_sha256": "32b26422fa5ffe0a130955b7f7df771f722b2d427d67f53f104d9907bdfb24a6",
+  "diagnostic_mode": "ADVISORY",
+  "digests": {
+    "attention": "618cf0a195a3372670543fa5a7e934e95f03e937025531901382c3cd25fdccd4",
+    "boot": "524015c721b9550a0d4982853c101274462b2a6b9ba115ca885bcd32cd69e74d",
+    "config": "76f2a12f6afe66b77ed5652cd364a986c272c7692fb6bf3da6fb94c07c347d5b",
+    "service": "eb0e46e36e241bc919124f49ca084b0cd4ab9ecec45d1608a9cb5f2fabfee5d7",
+    "timer": "6f64e9112250d3df8ca85d466506653ce7b01bb7470393eb6a1211e08c4be751"
+  },
+  "graphify": "0.9.58",
+  "reconcile": {
+    "dry_run_blocked": 0,
+    "restart_rc": 0,
+    "service_enabled": true,
+    "timer_active": true,
+    "timer_enabled": true
+  },
+  "release_manifest_sha256": "209ed76bf7a740631f16319825184e9f91ced7d5997d58bf5de3c58a0243503a",
+  "runtime_link_target": "/home/ywjo/.local/share/global-gpt-harness/releases/424c1c255cced0ca53e7012a780b54281500fc3d",
+  "schema_version": "gch.runtime-activation-evidence.v1",
+  "status": "PASS"
+}
