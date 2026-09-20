@@ -1,0 +1,13 @@
+{
+  "schema_version": "gch.codegraph.version-lock.v1",
+  "version": "0.20.1",
+  "release_tag": "v0.20.1",
+  "release_commit": "489ccf1",
+  "asset": "codegraph-server-linux-x64",
+  "sha256": "32b26422fa5ffe0a130955b7f7df771f722b2d427d67f53f104d9907bdfb24a6",
+  "license": "Apache-2.0",
+  "mode": "graph-only",
+  "profile": "graph",
+  "telemetry": "off",
+  "source_repository": "codegraph-ai/CodeGraph"
+}
