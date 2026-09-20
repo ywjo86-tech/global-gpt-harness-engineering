@@ -1,0 +1,115 @@
+{
+  "authority_statement": "Migration replayed only the sealed approved transition; it gained no approval, provider-selection, tool-effect, completion, or Attention control authority.",
+  "crash_recovery_validation": {
+    "covered": [
+      "restart reload same transaction at every crash phase",
+      "incomplete migration recovery attention",
+      "migrated terminal orphan detection",
+      "rollback before close / forbidden after close"
+    ],
+    "focused_tests": 45,
+    "status": "PASS"
+  },
+  "decision": "PASS",
+  "migration": {
+    "migration_id": "FINAL-OP-20260920-R3-R4-M1",
+    "phase_chain": [
+      {
+        "evidence_class": "PRIMARY_COMMAND_OUTPUT",
+        "phase": "PREPARED",
+        "transaction_sha256": "70b786ae91f825458d202e727f992a2b68969644f89618c4126ba2de7240460d"
+      },
+      {
+        "evidence_class": "DERIVED_FROM_DURABLE_R3_EVENT_TIMESTAMP_2026-09-20T11:17:03+00:00_AND_SEALED_BINDINGS",
+        "phase": "PREDECESSOR_QUIESCED",
+        "transaction_sha256": "3f6ba96c0e3be229c6227d5b5385b42929f0b771564bca2d6e64714657afc741"
+      },
+      {
+        "evidence_class": "PRIMARY_COMMAND_OUTPUT",
+        "phase": "RUNTIME_ACTIVATED",
+        "transaction_sha256": "83ae62b4898c0c6162cfcd7fadc69861c50e54ccd832f1db6b76d4127b8cdb29"
+      },
+      {
+        "evidence_class": "PRIMARY_COMMAND_OUTPUT",
+        "phase": "SUCCESSOR_REGISTERED",
+        "transaction_sha256": "bed729671f77c18e318b7e2e01d5ec8876fe69d86fd34ad80e3a52ae84cb5a06"
+      },
+      {
+        "evidence_class": "PRIMARY_COMMAND_OUTPUT",
+        "phase": "SUCCESSOR_VERIFIED",
+        "transaction_sha256": "925840349da01679b990899807260042a469ced705449fd3f99f179a069a8aec"
+      },
+      {
+        "evidence_class": "DURABLE_TRANSACTION",
+        "phase": "PREDECESSOR_CLOSED",
+        "transaction_sha256": "968e065fd10bb8c5728c04cac521d447a50a471a498444dec68f04298f7173e3"
+      }
+    ],
+    "predecessor_run_id": "FINAL-OP-20260920-R3",
+    "quiesced_state_sha256": "a7a1d1d3eb831006a1fc41b53077288832fe020407a503c2d624b9c7b7d80615",
+    "resume_gate": "TASK-009",
+    "successor_job_spec_sha256": "f6e361406de8912dbf51d44fef6cecd36ce644a1318f13acd1ae1b35e94a8c67",
+    "successor_run_id": "FINAL-OP-20260920-R4"
+  },
+  "pre_migration_validation": {
+    "clean_tree": true,
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "log_sha256": "91fe75ce83ee08c14a75b85996ac8aa652067a49e3bbd1af7ff2738dd31b66b8",
+    "skipped": 15,
+    "tests_run": 1847,
+    "tests_status": "PASS"
+  },
+  "predecessor_final": {
+    "state": "CANCELLED",
+    "state_sha256": "9983b70cdc0ff6987abf373142a636365f105aa69abb1b7e9e2abef7ed4bde38",
+    "terminal_reason": "MIGRATED_TO_SUCCESSOR"
+  },
+  "reconciler": {
+    "diagnostic_config_mode": "0600",
+    "diagnostic_environment": {
+      "GCH_DIAGNOSTIC_CONFIG": "/home/ywjo/.config/gch/diagnostic-intelligence.json",
+      "GCH_DIAGNOSTIC_INTELLIGENCE_ENABLED": "true"
+    },
+    "dry_run_blocked": 0,
+    "dry_run_jobs_found": 50,
+    "dry_run_rc": 0,
+    "r2_action": "SKIP_TERMINAL",
+    "r3_action": "SKIP_TERMINAL",
+    "r4_action": "PRESERVE_WAIT",
+    "search_root": "/home/ywjo/AI-Workspace/project-workspace",
+    "service_exec_main_status": 0,
+    "service_result": "success",
+    "timer_active": true,
+    "timer_enabled": true,
+    "working_directory": "/home/ywjo/.local/share/global-gpt-harness/runtime-current"
+  },
+  "runtime_identity": {
+    "attention_watch_runtime_sha256": "c544f0020d28f3f18484989ade1bc7926627d8e1bfb0a17cabc0e5ee1b1abd86",
+    "attention_watch_source_sha256": "c544f0020d28f3f18484989ade1bc7926627d8e1bfb0a17cabc0e5ee1b1abd86",
+    "boot_runtime_sha256": "d1c584cd933b242a6ac922750fdb280a1201029c87ca9e8d5e53d4c73ef68e97",
+    "boot_source_sha256": "d1c584cd933b242a6ac922750fdb280a1201029c87ca9e8d5e53d4c73ef68e97",
+    "migration_runtime_sha256": "1bf14016361a2c9f5899496e61dc29863527f2a5184db0e24915baffb3892b87",
+    "migration_source_sha256": "1bf14016361a2c9f5899496e61dc29863527f2a5184db0e24915baffb3892b87"
+  },
+  "runtime_release": {
+    "manifest_sha256": "c9909dc562124df378f082cf941c7758c41a377bce47d094715c078ceaeb8cf0",
+    "release_path": "/home/ywjo/.local/share/global-gpt-harness/releases/15c32c5c325c2d23ef5b94614cbf749c1b2074e9",
+    "runtime_entry": "runtime/orchestrator/production_full_plan_boot.py",
+    "runtime_entry_sha256": "d1c584cd933b242a6ac922750fdb280a1201029c87ca9e8d5e53d4c73ef68e97",
+    "schema_version": "gch.runtime-release.v1",
+    "source_head": "15c32c5c325c2d23ef5b94614cbf749c1b2074e9",
+    "source_tree": "ad9b6fc017a2318a1535a67754977ce78c79d8b9"
+  },
+  "schema_version": "gch.continuity-runtime-migration-evidence.v1",
+  "source_head": "15c32c5c325c2d23ef5b94614cbf749c1b2074e9",
+  "source_tree": "ad9b6fc017a2318a1535a67754977ce78c79d8b9",
+  "successor": {
+    "authority_core_sha256": "68fae7b8f1366a71525e4fed3b229a19f79fdfbc34dea7c502ec49799e8cad25",
+    "current_gate": "TASK-009",
+    "job_sha256": "6534ead39d0f93777e8cbe91619a99ec0a67a6441743b93360ddf0e152c290e5",
+    "run_id": "FINAL-OP-20260920-R4",
+    "state": "WAITING_RESOURCE",
+    "state_sha256": "7a00119ec5b34323a2783599e45c500c499800950999eee61cf5562dfe21c2ee"
+  }
+}
