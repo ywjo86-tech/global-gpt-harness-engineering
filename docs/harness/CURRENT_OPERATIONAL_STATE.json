@@ -1,0 +1,28 @@
+{
+  "ai_office_stable_baseline": "DECLARED",
+  "authority": "PROJECTION_ONLY",
+  "diagnostic_intelligence": "ADVISORY_QUALIFIED",
+  "evidence": [
+    {
+      "path": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_DECLARATION.json",
+      "sha256": "24a67d9a77c68d667a694cc7f792ab491e228dafd5e38143ad2b4433f61899b8"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/EDP_POST_OPERATIONAL_ALL_PASS.md",
+      "sha256": "52da8512c8ffa0ed158b9c4eae83969be1c94820b5447bb139198c9cb8795c1b"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-20-DIAGNOSTIC-INTELLIGENCE/SHADOW_QUALIFICATION.json",
+      "sha256": "32f4f8011cbd69681db526524b78c13d0e347d925592317e15b5ff704773c96d"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-20-DIAGNOSTIC-INTELLIGENCE/ADVISORY_QUALIFICATION.json",
+      "sha256": "98046dcc67001f796bc186becead2024dcb16d6b017326c6cd86216e52f6fb3e"
+    }
+  ],
+  "groq": "ACTIVE / FREE_TIER_ONLY",
+  "ph7_provider_expansion": "PROVIDER_EXPANSION_RUNTIME_ALL_PASS",
+  "runtime_release": "PENDING_FINAL_ACTIVATION",
+  "schema_version": "gch.current-operational-state.v1",
+  "status": "FINAL_OPERATIONALIZATION_IN_PROGRESS"
+}
