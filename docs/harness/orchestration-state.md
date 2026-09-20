@@ -1,19 +1,22 @@
 # Orchestration State
 
 > Updated: 2026-09-20
-> Scope: AI Office Harness Upgrade — provider-neutral extensibility EDP remediation and final qualification
+> Scope: AI Office Stable Baseline + authorized PH7 OmniRoute Provider Expansion design lifecycle
 
 ## Current Execution Binding
 
-Current phase: AI_OFFICE_STABLE_BASELINE — DECLARED
+Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — DESIGN_AUTHORIZED / IMPLEMENTATION_NOT_STARTED
 
 - Active project: AI_OFFICE_HARNESS_UPGRADE
-- Active lifecycle: PHASE5 / FINAL_CLOSURE
-- Active contract: docs/DEVELOPMENT_PLAN.txt
-- Contract SHA-256: 0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2
+- Active lifecycle: PHASE7 / OMNIROUTE_PROVIDER_EXPANSION_DESIGN
+- Active PH7 design authority: docs/superpowers/specs/2026-09-20-omniroute-provider-gateway-design.md
+- Active PH7 design SHA-256: f75560f3c0cb859051621b7787771b6e10b97fe31e5c86210efc4f1347943ce9
+- Predecessor PH5 contract: docs/DEVELOPMENT_PLAN.txt
+- Predecessor PH5 contract SHA-256: 0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2
+- PH7 implementation plan: NOT_YET_AUTHORED
 - Diagnosis standard: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
 - Diagnosis standard SHA-256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
-- Active remediation branch: upgrade/ai-office-harness-edp-extensible-20260919
+- Active provider-expansion branch: upgrade/ai-office-omniroute-ph7-20260920
 - Current implementation checkpoint: 892b799a0bde8d78b5f4aacc55f2c259ea975427
 - Predecessor Multi-Provider Foundation: APPROVED_SEALED / DECLARED
 - AI Office PHASE 5 execution: AUTHORIZED
@@ -28,8 +31,9 @@ Current phase: AI_OFFICE_STABLE_BASELINE — DECLARED
 - Stable Baseline declaration: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_DECLARATION.md + .json
 - Provider-neutral core remediation: AUTHORIZED within the current AI Office Harness Upgrade amendment
 - Current production provider activation: Codex + NVIDIA only
-- External third-provider live activation / credentials / new network integration: NOT_AUTHORIZED
-- Separate provider-expansion activation: REQUIRES explicit future approval
+- PH7 OmniRoute Provider Expansion lifecycle: AUTHORIZED by user directive 2026-09-20
+- OmniRoute G0/G1 controlled local install/discovery: AUTHORIZED AFTER DESIGN/PLAN GATES
+- Third-provider ACTIVE state: NONE; candidate-specific credentials/cost/risk approval remains required before APPROVAL -> ACTIVE
 - Deployment: NOT_AUTHORIZED
 - Runtime binding note: this block supersedes earlier current-state blocks below; prior records remain immutable historical evidence.
 
@@ -43,7 +47,7 @@ Current phase: AI_OFFICE_STABLE_BASELINE — DECLARED
 - AI Office continues to consume external routing/runtime/effect truth without owning those authorities.
 - Safe reroute requires complete recovery prerequisites; INVALID_RESPONSE additionally requires CONFIRMED_NO_EFFECT and exclusion of the failed provider/model.
 - Invalid Provider output is durably retained only as private sanitized/hash-bound failure evidence before validation.
-- Provider-neutral core extensibility does not itself authorize any new external Provider, credential, network endpoint, deployment, merge, or push.
+- PH5 provider-neutral core extensibility remains predecessor evidence; PH7 separately authorizes controlled OmniRoute expansion work, but no candidate Provider is ACTIVE and no deployment/merge/push authority is granted.
 
 ## Historical State Preserved Below
 > Updated: `2026-09-15`

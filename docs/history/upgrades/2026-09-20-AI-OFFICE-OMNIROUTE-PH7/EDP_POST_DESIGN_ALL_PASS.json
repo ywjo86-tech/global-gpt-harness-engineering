@@ -1,0 +1,69 @@
+{
+  "schema_version": "gch.edp.design-closure.v1",
+  "date": "2026-09-20",
+  "target": "docs/superpowers/specs/2026-09-20-omniroute-provider-gateway-design.md",
+  "target_sha256": "f75560f3c0cb859051621b7787771b6e10b97fe31e5c86210efc4f1347943ce9",
+  "decision": "DESIGN_EDP_ALL_PASS",
+  "runtime_decision": "OPEN_NOT_YET_IMPLEMENTED",
+  "pre_findings": [
+    {
+      "id": "OMR-F-001",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "OMR-F-002",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "OMR-F-003",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "OMR-F-004",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    }
+  ],
+  "audit": {
+    "check_count": 34,
+    "failed_count": 0,
+    "primary_audit": "PASS",
+    "negative_space": "PASS",
+    "cross_document": "PASS",
+    "adversarial_second_pass": "PASS",
+    "pass_challenge": "PASS",
+    "requirements_total": 14,
+    "requirements_covered": 14,
+    "rtm_total": 14,
+    "rtm_covered": 14
+  },
+  "metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "SOURCE_AUTHORITY_STATUS": "AVAILABLE_AND_VALID",
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "MATERIAL_DEFECT_SEARCH": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE"
+  },
+  "mandatory_future_runtime_gates": [
+    "OmniRoute G0/G1 evidence PASS",
+    "third-provider live qualification PASS before runtime closure",
+    "DUPLICATE_DISCOVERY_COUNT=0",
+    "Codex/NVIDIA regression PASS",
+    "full repository regression PASS",
+    "all remaining skipped tests enumerated and justified"
+  ]
+}
