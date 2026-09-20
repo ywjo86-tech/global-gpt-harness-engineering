@@ -35,3 +35,13 @@ class ProviderAdapterRegistry:
     @property
     def provider_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._adapters))
+
+
+def build_active_provider_adapter_registry(inventory: Any, adapter_factory: Callable[[Any], ProviderAdapter], *, base: Mapping[str, ProviderAdapter] | None = None) -> ProviderAdapterRegistry:
+    adapters = dict(base or {})
+    for record in inventory.records:
+        if record.state == "ACTIVE":
+            if record.provider_id in adapters:
+                raise ProviderAdapterRegistryError("active provider adapter collision")
+            adapters[record.provider_id] = adapter_factory(record)
+    return ProviderAdapterRegistry(adapters)

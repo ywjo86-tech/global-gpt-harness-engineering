@@ -59,3 +59,14 @@ def execution_backend_for_route(request: RouterRequestV2, decision: RouterDecisi
     if decision.execution_profile != EXECUTION_PROFILE_PROVIDER_GENERATION:
         raise ProviderExecutionRegistryError("Router execution profile is missing or invalid")
     return PROVIDER_ACTION_BACKEND if decision.stage == "ACTION" else PROVIDER_READ_ONLY_BACKEND
+
+
+def build_active_provider_runner_registry(inventory: Any, runner_factory: Callable[[Any], ProviderRunner], *, base_read: Mapping[str, ProviderRunner] | None = None, base_action: Mapping[str, ProviderRunner] | None = None) -> ProviderRunnerRegistry:
+    read = dict(base_read or {}); action = dict(base_action or {})
+    for record in inventory.records:
+        if record.state == "ACTIVE":
+            if record.provider_id in read or record.provider_id in action:
+                raise ProviderExecutionRegistryError("active provider runner collision")
+            runner = runner_factory(record)
+            read[record.provider_id] = runner; action[record.provider_id] = runner
+    return ProviderRunnerRegistry(read_runners=read, action_runners=action)
