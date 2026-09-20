@@ -14,17 +14,14 @@
       "capability_refs": [
         "reasoning",
         "read_only",
-        "patch_generation",
-        "implementation_generation",
-        "test_design",
-        "integration"
+        "patch_generation"
       ],
       "readiness_evidence_refs": [
-        "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/groq-live-qualification.json#sha256:d0a52b1862033eee738f81767347b644280953892e13c2954de09aa8e2efb5c8#read"
+        "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/qualification-evidence.json#read:22b097d96387ef01e5e46b847b9a8c99080e2f9340c1fa690c71a507c1daad5c"
       ],
-      "action_evidence_ref": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/groq-live-qualification.json#sha256:d0a52b1862033eee738f81767347b644280953892e13c2954de09aa8e2efb5c8#action",
-      "reroute_evidence_ref": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/groq-live-qualification.json#sha256:d0a52b1862033eee738f81767347b644280953892e13c2954de09aa8e2efb5c8#reroute",
-      "activation_approval_ref": "USER-DIRECTIVE-2026-09-20-GROQ-FREE-API-KEY-PROCEED",
+      "action_evidence_ref": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/qualification-evidence.json#action:16a6e9335c03c2e9da772bd4ca095d00575b07a7170e7f7361e19cf346c5ef57",
+      "reroute_evidence_ref": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/qualification-evidence.json#reroute:ce518ff0d8b9e7569c8c2fb6c376e75fec7ccad9c2bd864e87a836791e9aa20e",
+      "activation_approval_ref": "USER_DIRECTIVE:PH7_GROQ_FREE_API_KEY_ACTIVATION:2026-09-20",
       "cost_risk_approval_ref": "",
       "connection_id": "18092b07-6bca-4841-93f1-76c11e2d0f41"
     }

@@ -1,0 +1,29 @@
+{
+  "schema_version": "gch.ph7.three-provider-routing-evidence.v1",
+  "eligible_providers": [
+    "codex",
+    "groq",
+    "nvidia"
+  ],
+  "neutral_rank_distribution_120": {
+    "nvidia": 39,
+    "codex": 42,
+    "groq": 39
+  },
+  "same_request_stable": true,
+  "stable_provider": "groq",
+  "stable_model": "openai/gpt-oss-120b",
+  "patch_generation_distribution_60": {
+    "nvidia": 0,
+    "codex": 37,
+    "groq": 23
+  },
+  "capability_filter_pass": true,
+  "groq_excluded_distribution_60": {
+    "nvidia": 35,
+    "codex": 25,
+    "groq": 0
+  },
+  "health_quota_exclusion_pass": true,
+  "provider_name_priority_observed": false
+}

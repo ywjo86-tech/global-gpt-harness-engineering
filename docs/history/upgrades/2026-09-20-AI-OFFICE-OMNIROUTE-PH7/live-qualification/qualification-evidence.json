@@ -1,180 +1,45 @@
 {
-  "schema_version": "gch.ph7.live-qualification.v1",
-  "decision": "OPEN_NO_FREE_KEYLESS_LIVE_CANDIDATE",
-  "third_provider_active": false,
-  "active_provider_count_added": 0,
-  "configured_connections_after_cleanup": 0,
-  "keyless_catalog_candidates_evaluated": 7,
-  "opencode_connection_addition": "TEMPORARY_QUALIFICATION_ONLY_REMOVED",
-  "opencode_connection_test": "INVALID_NO_API_KEY",
-  "opencode_models": [
-    {
-      "model": "oc/big-pickle",
-      "http_status": 403,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "[403]: Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"
-    },
-    {
-      "model": "oc/muse-spark-1.2",
-      "http_status": 402,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "[402]: This model requires an opencode API key — add one in Settings → Providers."
-    },
-    {
-      "model": "oc/muse-spark-1.2-contributor-free",
-      "http_status": 403,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "[403]: Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"
-    },
-    {
-      "model": "oc/deepseek-v4-flash-free",
-      "http_status": 400,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "[400]: Error from provider (Console): Upstream request failed: Model is unavailable."
-    },
-    {
-      "model": "oc/mimo-v2.5-free",
-      "http_status": 403,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "[403]: Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"
-    },
-    {
-      "model": "oc/hy3-free",
-      "http_status": 400,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "Model 'hy3-free' is not available in the active live catalog for provider 'opencode'."
-    },
-    {
-      "model": "oc/nemotron-3-ultra-free",
-      "http_status": 403,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "[403]: Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"
-    },
-    {
-      "model": "oc/north-mini-code-free",
-      "http_status": 400,
-      "provider_header": "",
-      "model_header": "",
-      "fallback_attempts_header": "",
-      "failure": "Model 'north-mini-code-free' is not available in the active live catalog for provider 'opencode'."
-    }
-  ],
-  "other_keyless_probes": [
-    {
-      "provider_id": "duckduckgo-web",
-      "model": "ddgw/gpt-5.4-mini",
-      "http_status": 418,
-      "selected_connection": "noauth",
-      "failure": "[418]: DuckDuckGo AI Chat anti-abuse challenge failed: ERR_BN_LIMIT (7b08). Retry later or from a less rate-limited IP; DuckDuckGo is rejecting this anonymous session."
-    },
-    {
-      "provider_id": "cloudflare-playground",
-      "model": "cfp/openai/gpt-oss-20b",
-      "http_status": 502,
-      "selected_connection": "noauth",
-      "failure": "[502]: Cloudflare Playground browser session failed: browserType.launch: Executable doesn't exist at /home/ywjo/.local/share/gch/omniroute/home/.cache/ms-playwright/chromium_headle"
-    },
-    {
-      "provider_id": "felo-web",
-      "model": "felo/felo-chat",
-      "http_status": 400,
-      "selected_connection": "noauth",
-      "failure": "[400]: Felo thread creation failed with HTTP 400"
-    },
-    {
-      "provider_id": "theoldllm",
-      "model": "tllm/GPT_5_4",
-      "http_status": 403,
-      "selected_connection": "noauth",
-      "failure": "[403]: The Old LLM is blocked by Vercel for this server egress IP. Configure a residential provider or global proxy for 'theoldllm' and retry."
-    },
-    {
-      "provider_id": "chipotle",
-      "model": "pepper/pepper-1",
-      "http_status": 502,
-      "selected_connection": "noauth",
-      "failure": "[502]: Amelia init failed: 404"
-    },
-    {
-      "provider_id": "uncloseai",
-      "model": "unc/gemma4:31b",
-      "http_status": 404,
-      "selected_connection": "noauth",
-      "failure": "[404]: The model `gemma4:31b` does not exist."
-    }
-  ],
-  "alternate_model_probes": [
-    {
-      "provider_id": "felo-web",
-      "model": "felo/felo-chat",
-      "http_status": 400,
-      "failure": "[400]: Felo thread creation failed with HTTP 400"
-    },
-    {
-      "provider_id": "felo-web",
-      "model": "felo/felo-search",
-      "http_status": 429,
-      "failure": "[429]: Felo thread creation failed with HTTP 429"
-    },
-    {
-      "provider_id": "felo-web",
-      "model": "felo/felo-scholar",
-      "http_status": 429,
-      "failure": "[429]: Felo thread creation failed with HTTP 429"
-    },
-    {
-      "provider_id": "felo-web",
-      "model": "felo/felo-social",
-      "http_status": 429,
-      "failure": "[429]: Felo thread creation failed with HTTP 429"
-    },
-    {
-      "provider_id": "felo-web",
-      "model": "felo/felo-document",
-      "http_status": 429,
-      "failure": "[429]: Felo thread creation failed with HTTP 429"
-    },
-    {
-      "provider_id": "uncloseai",
-      "model": "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic",
-      "http_status": 404,
-      "failure": "[404]: The model `adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic` does not exist."
-    },
-    {
-      "provider_id": "uncloseai",
-      "model": "unc/qwen3.6:27b",
-      "http_status": 404,
-      "failure": "[404]: The model `qwen3.6:27b` does not exist."
-    },
-    {
-      "provider_id": "uncloseai",
-      "model": "unc/gemma4:31b",
-      "http_status": 404,
-      "failure": "[404]: The model `gemma4:31b` does not exist."
-    }
-  ],
-  "qualification_gates": {
-    "explicit_read_smoke": "FAIL_NO_LIVE_CANDIDATE",
-    "proposal_action_smoke": "NOT_RUN_NO_READ_QUALIFIED_CANDIDATE",
-    "reroute_smoke": "NOT_RUN_NO_READ_QUALIFIED_CANDIDATE",
-    "approval_to_active": "BLOCKED_BY_LIVE_ACCESS"
+  "schema_version": "gch.ph7.groq-live-qualification.v1",
+  "provider_id": "groq",
+  "model_ref": "openai/gpt-oss-120b",
+  "connection_id": "18092b07-6bca-4841-93f1-76c11e2d0f41",
+  "cost_envelope": "FREE_TIER_ONLY",
+  "paid_usage_authorized": false,
+  "credential_required": true,
+  "credential_value_persisted_in_evidence": false,
+  "connection_test_status": "VALID_HTTP_200",
+  "read": {
+    "status": "PASS",
+    "latency_ms": 451,
+    "response_sha256": "22b097d96387ef01e5e46b847b9a8c99080e2f9340c1fa690c71a507c1daad5c",
+    "response_length": 16,
+    "explicit_provider": "groq",
+    "explicit_model": "openai/gpt-oss-120b",
+    "fallback_attempts": 0
   },
-  "material_next_choices": [
-    "authorize a credential-based provider candidate and supply its credential outside Git",
-    "separately authorize Cloudflare Playground browser-runtime dependency installation and requalification"
-  ]
+  "action_no_effect": {
+    "status": "PASS",
+    "latency_ms": 34,
+    "response_sha256": "c30d33b784ca3e343629ac3997d30f44577bd70fed3b4c17752bdfa952c56ad1",
+    "proposal_sha256": "16a6e9335c03c2e9da772bd4ca095d00575b07a7170e7f7361e19cf346c5ef57",
+    "write_count": 1,
+    "confirmed_no_effect": true,
+    "fallback_attempts": 0
+  },
+  "reroute": {
+    "status": "PASS",
+    "failure_class": "PROVIDER_FAILURE",
+    "negative_control_reason": "reroute_failed_provider_not_excluded",
+    "selected_provider_after_exclusion": "nvidia",
+    "selected_model_after_exclusion": "nvidia/qualified",
+    "reason_code": "governed_reroute_by_neutral_rank",
+    "decision_digest": "ce518ff0d8b9e7569c8c2fb6c376e75fec7ccad9c2bd864e87a836791e9aa20e",
+    "router_owned_reselection": true
+  },
+  "fallback_contract": {
+    "omniroute_version": "3.8.50",
+    "openapi_path": "~/.local/share/gch/omniroute/runtime/node_modules/omniroute/dist/docs/openapi.yaml",
+    "rule": "X-OmniRoute-Fallback-Attempts is present only when > 0; absence on successful response means 0 for this pinned version"
+  },
+  "decision": "QUALIFIED_FOR_ACTIVE"
 }
