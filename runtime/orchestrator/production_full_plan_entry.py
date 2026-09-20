@@ -296,9 +296,16 @@ def transient_systemd_command(job_path: str | Path, *, unit_name: str | None = N
     uid = os.getuid()
     runtime_dir = f"/run/user/{uid}"
     bus = f"unix:path={runtime_dir}/bus"
+    diagnostic_args=[]
+    for key in ("GCH_DIAGNOSTIC_INTELLIGENCE_ENABLED","GCH_DIAGNOSTIC_CONFIG"):
+        value=os.environ.get(key)
+        if value is None: continue
+        if "\n" in value or "\0" in value: raise FullPlanJobError("unsafe diagnostic environment")
+        if key=="GCH_DIAGNOSTIC_CONFIG" and not Path(value).is_absolute(): raise FullPlanJobError("diagnostic config path must be absolute")
+        diagnostic_args.append(f"--setenv={key}={value}")
     return [
         "env", f"XDG_RUNTIME_DIR={runtime_dir}", f"DBUS_SESSION_BUS_ADDRESS={bus}",
-        "systemd-run", "--user", f"--unit={unit}", "--collect",
+        "systemd-run", "--user", f"--unit={unit}", "--collect", *diagnostic_args,
         f"--working-directory={Path(str(job.get('runtime_code_root') or job['harness_root'])).resolve()}",
         "--property=Restart=on-failure", "--property=RestartSec=5s",
         "--property=RestartPreventExitStatus=2 3",

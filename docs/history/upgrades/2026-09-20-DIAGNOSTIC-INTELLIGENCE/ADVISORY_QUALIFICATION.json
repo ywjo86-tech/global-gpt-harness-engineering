@@ -1,0 +1,14 @@
+{
+  "api_key_propagation": "PROHIBITED",
+  "codegraph_sha256": "32b26422fa5ffe0a130955b7f7df771f722b2d427d67f53f104d9907bdfb24a6",
+  "config_sha256": "76f2a12f6afe66b77ed5652cd364a986c272c7692fb6bf3da6fb94c07c347d5b",
+  "control_authority": "NONE",
+  "explicit_enable_required": true,
+  "focused_tests": "72 PASS",
+  "graphify_path": "/home/ywjo/.local/share/gch/diagnostics/graphify/0.9.58/bin/graphify",
+  "mode": "ADVISORY",
+  "schema_version": "gch.diagnostic-advisory-qualification.v1",
+  "source_head": "a2851c9953510fcf906b25b2de48bc6064eaeb79",
+  "status": "PASS",
+  "write_scope_expansion_count": 0
+}

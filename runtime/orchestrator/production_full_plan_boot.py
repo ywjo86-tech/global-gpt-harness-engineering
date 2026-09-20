@@ -155,6 +155,7 @@ def systemd_user_unit(
     *, runtime_root: str | Path | None = None, search_root: str | Path | None = None,
     harness_root: str | Path | None = None, python_executable: str = "/usr/bin/python3",
     preserve_runtime_path: bool = False, preserve_root_path: bool | None = None,
+    diagnostic_environment: Mapping[str, str] | None = None,
 ) -> str:
     source = runtime_root if runtime_root is not None else harness_root
     if source is None:
@@ -163,13 +164,20 @@ def systemd_user_unit(
     raw_runtime = Path(source).expanduser()
     runtime = raw_runtime.absolute() if preserve else raw_runtime.resolve()
     jobs = Path(search_root if search_root is not None else (harness_root or source)).expanduser().resolve()
+    diag_lines = ""
+    if diagnostic_environment:
+        allowed={"GCH_DIAGNOSTIC_INTELLIGENCE_ENABLED","GCH_DIAGNOSTIC_CONFIG"}
+        for key,value in diagnostic_environment.items():
+            if key not in allowed or "\n" in value or "\0" in value: raise FullPlanBootError("unsafe diagnostic environment")
+            if key=="GCH_DIAGNOSTIC_CONFIG" and not Path(value).is_absolute(): raise FullPlanBootError("diagnostic config path must be absolute")
+            diag_lines += f"Environment={key}={value}\n"
     return f'''[Unit]
 Description=Global GPT Harness Full Plan boot reconciliation
 After=default.target
 
 [Service]
 Type=oneshot
-WorkingDirectory={runtime}
+{diag_lines}WorkingDirectory={runtime}
 ExecStart={python_executable} -m runtime.orchestrator.production_full_plan_boot --search-root {jobs}
 
 [Install]
@@ -241,7 +249,7 @@ def systemd_user_timer(*, service_unit_name: str = "global-gpt-harness-full-plan
 def install_user_unit(
     *, harness_root: str | Path, unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
     python_executable: str | None = None, runtime_link: str | Path | None = None,
-    search_root: str | Path | None = None,
+    search_root: str | Path | None = None, diagnostic_environment: Mapping[str, str] | None = None,
 ) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_.@-]+\.service", unit_name):
         raise FullPlanBootError("unsafe boot reconcile unit name")
@@ -258,7 +266,7 @@ def install_user_unit(
         preserve_runtime_path = True
     atomic_write_text(target, systemd_user_unit(
         runtime_root=runtime_root, search_root=search_root or harness_root,
-        python_executable=interpreter, preserve_runtime_path=preserve_runtime_path))
+        python_executable=interpreter, preserve_runtime_path=preserve_runtime_path, diagnostic_environment=diagnostic_environment))
     env = _systemd_env()
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=20, env=env)
     subprocess.run(["systemctl", "--user", "enable", unit_name], check=True, timeout=20, env=env)
