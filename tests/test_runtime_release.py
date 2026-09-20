@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from runtime.orchestrator.production_full_plan_entry import load_job, register_job
+from runtime.orchestrator.operator_plan_execution import build_operator_plan_job
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
 from runtime.orchestrator.runtime_migration_handoff import MigrationPhase, MigrationStore
 from runtime.orchestrator.runtime_release import (
@@ -89,6 +90,40 @@ class RuntimeReleaseTests(unittest.TestCase):
             runtime_link = base / "runtime-current"
             runtime_link.symlink_to(base / "removed-worktree")
             activate_runtime_release(manifest, runtime_link, job_search_root=workspace)
+            self.assertEqual(runtime_link.resolve(), Path(manifest.release_path).resolve())
+
+    def test_terminal_operator_job_with_later_spec_drift_does_not_block_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d); repo = base / "repo"; repo.mkdir(); self.make_repo(repo)
+            manifest = build_runtime_release(repo, base / "releases")
+            harness = base / "harness"; harness.mkdir()
+            subprocess.run(["git", "init", "-q", str(harness)], check=True)
+            subprocess.run(["git", "-C", str(harness), "config", "user.email", "test@example.com"], check=True)
+            subprocess.run(["git", "-C", str(harness), "config", "user.name", "Test"], check=True)
+            runtime_entry = harness / "runtime/orchestrator/production_full_plan_boot.py"
+            runtime_entry.parent.mkdir(parents=True); runtime_entry.write_text("# runtime\n")
+            plan = harness / "plan.md"; spec = harness / "spec.md"
+            plan.write_text("approved plan\n"); spec.write_text("approved spec\n")
+            subprocess.run(["git", "-C", str(harness), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(harness), "commit", "-qm", "approved"], check=True)
+            job = build_operator_plan_job(
+                project_root=harness, harness_root=harness, runtime_code_root=harness,
+                project_id="P", run_id="R", task_ids=["G1"],
+                approved_plan_path=plan, approved_spec_path=spec, approval_ref="USER_APPROVED",
+            )
+            registered = register_job(job); loaded = load_job(registered)
+            sup = DurableFullPlanSupervisor(
+                harness, project_id="P", run_id="R", gates=["G1"],
+                authority_core_sha256=loaded["authority_core_sha256"], **loaded["policy"],
+            )
+            sup.load(); sup.cancel("HISTORICAL_TERMINAL")
+            spec.write_text("approved spec metadata corrected later\n")
+            subprocess.run(["git", "-C", str(harness), "add", "spec.md"], check=True)
+            subprocess.run(["git", "-C", str(harness), "commit", "-qm", "correct spec metadata"], check=True)
+            with self.assertRaisesRegex(Exception, "approved spec digest mismatch"):
+                load_job(registered)
+            runtime_link = base / "runtime-current"
+            activate_runtime_release(manifest, runtime_link, job_search_root=base)
             self.assertEqual(runtime_link.resolve(), Path(manifest.release_path).resolve())
 
     def test_activation_refuses_retarget_when_registered_job_is_nonterminal(self) -> None:
