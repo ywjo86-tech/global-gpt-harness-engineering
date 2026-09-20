@@ -1,0 +1,20 @@
+{
+  "schema_version": "gch.ph7.third-provider-selection.v1",
+  "provider_id": "groq",
+  "model_id": "openai/gpt-oss-20b",
+  "selection_status": "SELECTED_PENDING_CREDENTIAL",
+  "activation_status": "NOT_ACTIVE",
+  "credential_required": true,
+  "credential_present_on_server": false,
+  "cost_envelope": "FREE_TIER_ONLY",
+  "paid_upgrade_authorized": false,
+  "selection_authority": "USER_DIRECTIVE_2026-09-20",
+  "selection_reasons": [
+    "OmniRoute catalog marks groq as api-key and hasFree=true",
+    "current Groq documentation lists openai/gpt-oss-20b as a production model",
+    "current Groq free-tier rate-limit documentation includes openai/gpt-oss-20b",
+    "deprecated llama-3.3-70b-versatile is not used for PH7 qualification"
+  ],
+  "live_qualification_status": "BLOCKED_UNTIL_CREDENTIAL_AVAILABLE",
+  "next_step": "create Groq API key outside chat and make GROQ_API_KEY available to the isolated qualification environment"
+}

@@ -34,6 +34,8 @@ Current phase: AI_OFFICE_OMNIROUTE_PROVIDER_EXPANSION_PH7 — G0_G1_PASS / G3_G5
 - Stable Baseline declaration: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_DECLARATION.md + .json
 - Provider-neutral core remediation: AUTHORIZED within the current AI Office Harness Upgrade amendment
 - Current production provider activation: Codex + NVIDIA only
+- Third-provider selected candidate: Groq / openai/gpt-oss-20b / FREE_TIER_ONLY / credential pending
+- Third-provider ACTIVE state: NONE; Groq live READ/ACTION/reroute qualification remains blocked until a valid API key is available; paid-tier upgrade is NOT_AUTHORIZED
 - PH7 OmniRoute Provider Expansion lifecycle: AUTHORIZED by user directive 2026-09-20
 - OmniRoute G0/G1 controlled local install/discovery: AUTHORIZED AFTER DESIGN/PLAN GATES
 - OmniRoute G0/G1 runtime: PASS — 127.0.0.1:20128, API-key enforcement 401/200, doctor 0 failures
