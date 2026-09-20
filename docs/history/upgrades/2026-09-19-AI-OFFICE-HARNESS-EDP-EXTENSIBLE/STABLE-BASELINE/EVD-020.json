@@ -1,0 +1,19 @@
+{
+  "canonical_plan_sha256": "0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2",
+  "command": "/tmp/gch-edp-allpass-venv/bin/python -m unittest -v tests.test_ai_office_daily_loop_e2e tests.test_ai_office_integrated_qualification.AIOfficeIntegratedQualificationTest.test_029_representative_task015_flows_pass_as_a_single_qualification_suite",
+  "evidence_id": "EVD-020",
+  "exit_code": 0,
+  "schema_version": "ai-office.stable-baseline-evidence.v1",
+  "source_log": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/logs/EVD-020.log",
+  "source_log_sha256": "6f510b8b262d9cd2be2c2434ffcd4b32be9afeac5022cbba1e69c0f56f0eec08",
+  "status": "PASS",
+  "summary": {
+    "errors": 0,
+    "failures": 0,
+    "result": "PASS",
+    "skipped": 0,
+    "tests_run": 3
+  },
+  "title": "Representative Daily Loop run",
+  "validated_content_head": "eb2ef6880153814facd2f4aa2a16999e2a1d52ca"
+}

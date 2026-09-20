@@ -1,0 +1,46 @@
+{
+  "canonical_plan_sha256": "0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2",
+  "commands": [
+    "/tmp/gch-edp-allpass-venv/bin/python -m unittest -v tests.test_ai_office_integrated_qualification",
+    "assert final EDP metrics from EDP_POST_REMEDIATION_ALL_PASS.json"
+  ],
+  "edp_report_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/EDP_POST_REMEDIATION_ALL_PASS.json",
+  "edp_report_sha256": "2b19ddce090edf114b7447c6de580e26a17b3e953311c9e3a15bff20ad6eeff2",
+  "evidence_id": "EVD-022",
+  "exit_codes": [
+    0,
+    0
+  ],
+  "exit_metrics": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "BLOCKER_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0
+  },
+  "qualification_summary": {
+    "errors": 0,
+    "failures": 0,
+    "result": "PASS",
+    "skipped": 0,
+    "tests_run": 8
+  },
+  "schema_version": "ai-office.stable-baseline-evidence.v1",
+  "source_logs": [
+    {
+      "ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/logs/EVD-022-tests.log",
+      "sha256": "3ca8b154a930a0059380b0dc2378197d7be7f23ee7628f9b4a9b800e6a923c40"
+    },
+    {
+      "ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/logs/EVD-022-edp.log",
+      "sha256": "88d2413c3531da431fc99e6f0c52a5ac5373bd6463414cf76fc279ebdc00232c"
+    }
+  ],
+  "status": "PASS",
+  "title": "Final EDP / traceability report",
+  "validated_content_head": "eb2ef6880153814facd2f4aa2a16999e2a1d52ca"
+}

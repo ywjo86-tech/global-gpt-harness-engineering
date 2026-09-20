@@ -1,0 +1,33 @@
+{
+  "canonical_plan_sha256": "0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2",
+  "closure_contract": {
+    "required_alias_equality": "IDENTICAL",
+    "required_disposition": "GO_CANDIDATE",
+    "required_evidence_ids": [
+      "EVD-018",
+      "EVD-019",
+      "EVD-020",
+      "EVD-021",
+      "EVD-022",
+      "EVD-023"
+    ],
+    "validation_id": "TEST-032",
+    "validator_module": "runtime/ai_office/baseline_closure.py"
+  },
+  "command": "/tmp/gch-edp-allpass-venv/bin/python -m unittest -v tests.test_ai_office_baseline_closure",
+  "evidence_id": "EVD-023",
+  "exit_code": 0,
+  "schema_version": "ai-office.stable-baseline-evidence.v1",
+  "source_log": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/logs/EVD-023.log",
+  "source_log_sha256": "96f0332ca1648cd4ff95f15618ce49ca25b81eb936d82ff7a271d8566e38d296",
+  "status": "PASS",
+  "summary": {
+    "errors": 0,
+    "failures": 0,
+    "result": "PASS",
+    "skipped": 0,
+    "tests_run": 6
+  },
+  "title": "Baseline closure validator qualification",
+  "validated_content_head": "eb2ef6880153814facd2f4aa2a16999e2a1d52ca"
+}

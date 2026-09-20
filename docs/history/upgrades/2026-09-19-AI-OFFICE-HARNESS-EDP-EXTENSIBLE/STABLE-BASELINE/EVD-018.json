@@ -1,0 +1,19 @@
+{
+  "canonical_plan_sha256": "0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2",
+  "command": "/tmp/gch-edp-allpass-venv/bin/python -m unittest -v tests.test_ai_office_project_factory_e2e",
+  "evidence_id": "EVD-018",
+  "exit_code": 0,
+  "schema_version": "ai-office.stable-baseline-evidence.v1",
+  "source_log": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/logs/EVD-018.log",
+  "source_log_sha256": "db694355c1d076d7a6801d1e11ed3abb054f9520b48b6dbe219a59c676cfbcc7",
+  "status": "PASS",
+  "summary": {
+    "errors": 0,
+    "failures": 0,
+    "result": "PASS",
+    "skipped": 0,
+    "tests_run": 2
+  },
+  "title": "Office Project Factory E2E",
+  "validated_content_head": "eb2ef6880153814facd2f4aa2a16999e2a1d52ca"
+}

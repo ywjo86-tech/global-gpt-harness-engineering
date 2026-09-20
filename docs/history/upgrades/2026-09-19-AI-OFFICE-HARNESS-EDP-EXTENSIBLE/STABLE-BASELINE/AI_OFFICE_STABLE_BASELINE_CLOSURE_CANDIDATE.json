@@ -1,0 +1,108 @@
+{
+  "alias_equality_disposition": "IDENTICAL",
+  "alias_evidence": [
+    {
+      "evidence_digest": "448acdef12dbbdc73ae4891b17840dee1d9eb313db82de8695da6e5631d8792b",
+      "evidence_id": "EVD-018",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-018.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "284baf8752e06d87905b3c3d0af6c99d8b43bece7e86793477f97a74930a7ec4",
+      "evidence_id": "EVD-019",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-019.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "b3bcdf44bdc055b19346bf7c008c67a4876d36803313b0180bc2fcb22281ff65",
+      "evidence_id": "EVD-020",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-020.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "54b19caa26da438577d159b1b8eb0124ee0efb3978c803666641245f0d45968b",
+      "evidence_id": "EVD-021",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-021.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "a3de270ae129643b6509e87229590a69b118f6b29d284df7395218f08f67da29",
+      "evidence_id": "EVD-022",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-022.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "1cf33cbb5667b169f2eb5eef38d726a6afb801b6107f82bad8ac141141747cf6",
+      "evidence_id": "EVD-023",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-023.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    }
+  ],
+  "alias_name": "AI_OFFICE_STABLE_BASELINE",
+  "blocker_count": 0,
+  "candidate_digest": "d003d4144c96bdee798defd56e439869cc91520a18fb613406ec6b1ea97365aa",
+  "canonical_evidence": [
+    {
+      "evidence_digest": "448acdef12dbbdc73ae4891b17840dee1d9eb313db82de8695da6e5631d8792b",
+      "evidence_id": "EVD-018",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-018.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "284baf8752e06d87905b3c3d0af6c99d8b43bece7e86793477f97a74930a7ec4",
+      "evidence_id": "EVD-019",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-019.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "b3bcdf44bdc055b19346bf7c008c67a4876d36803313b0180bc2fcb22281ff65",
+      "evidence_id": "EVD-020",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-020.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "54b19caa26da438577d159b1b8eb0124ee0efb3978c803666641245f0d45968b",
+      "evidence_id": "EVD-021",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-021.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "a3de270ae129643b6509e87229590a69b118f6b29d284df7395218f08f67da29",
+      "evidence_id": "EVD-022",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-022.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "1cf33cbb5667b169f2eb5eef38d726a6afb801b6107f82bad8ac141141747cf6",
+      "evidence_id": "EVD-023",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-023.json",
+      "schema_version": "ai-office.baseline-closure-evidence-ref.v1",
+      "status": "PASS"
+    }
+  ],
+  "canonical_identity_ref": "git:eb2ef6880153814facd2f4aa2a16999e2a1d52ca",
+  "disposition": "GO_CANDIDATE",
+  "must_traceability_coverage": 100,
+  "reason_codes": [],
+  "required_evidence_ids": [
+    "EVD-018",
+    "EVD-019",
+    "EVD-020",
+    "EVD-021",
+    "EVD-022",
+    "EVD-023"
+  ],
+  "schema_version": "ai-office.baseline-closure-candidate.v1",
+  "unresolved_major_count": 0
+}

@@ -1,0 +1,79 @@
+{
+  "alias_equality_disposition": "IDENTICAL",
+  "alias_manifest_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_ALIAS_MANIFEST.json",
+  "alias_manifest_sha256": "9fdba5d10a043b995bc9a993fce2de7a4b156b1b031f8265b67d8adb8fc452af",
+  "baseline_name": "AI_OFFICE_STABLE_BASELINE",
+  "blocker_count": 0,
+  "canonical_manifest_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/CANONICAL_EXIT_EVIDENCE_MANIFEST.json",
+  "canonical_manifest_sha256": "cd5831ce1311f7a4c3dbf18458d365d7bd6556d7793df7a4071c13df0e330db2",
+  "canonical_plan_sha256": "0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2",
+  "closure_candidate_digest": "d003d4144c96bdee798defd56e439869cc91520a18fb613406ec6b1ea97365aa",
+  "closure_candidate_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_CLOSURE_CANDIDATE.json",
+  "closure_candidate_sha256": "f9950f31f546ec7521da548fcbbddc8858e2853480081fffba4fbe9724d342d0",
+  "closure_disposition": "GO_CANDIDATE",
+  "declared_date": "2026-09-20",
+  "deployment": "NOT_AUTHORIZED",
+  "edp_decision": "ALL_PASS",
+  "edp_report_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/EDP_POST_REMEDIATION_ALL_PASS.json",
+  "edp_report_sha256": "2b19ddce090edf114b7447c6de580e26a17b3e953311c9e3a15bff20ad6eeff2",
+  "exit_evidence": [
+    {
+      "evidence_digest": "448acdef12dbbdc73ae4891b17840dee1d9eb313db82de8695da6e5631d8792b",
+      "evidence_id": "EVD-018",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-018.json",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "284baf8752e06d87905b3c3d0af6c99d8b43bece7e86793477f97a74930a7ec4",
+      "evidence_id": "EVD-019",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-019.json",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "b3bcdf44bdc055b19346bf7c008c67a4876d36803313b0180bc2fcb22281ff65",
+      "evidence_id": "EVD-020",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-020.json",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "54b19caa26da438577d159b1b8eb0124ee0efb3978c803666641245f0d45968b",
+      "evidence_id": "EVD-021",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-021.json",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "a3de270ae129643b6509e87229590a69b118f6b29d284df7395218f08f67da29",
+      "evidence_id": "EVD-022",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-022.json",
+      "status": "PASS"
+    },
+    {
+      "evidence_digest": "1cf33cbb5667b169f2eb5eef38d726a6afb801b6107f82bad8ac141141747cf6",
+      "evidence_id": "EVD-023",
+      "evidence_ref": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/EVD-023.json",
+      "status": "PASS"
+    }
+  ],
+  "historical_full_plan_gate": {
+    "completed_gates": [
+      "GATE-005"
+    ],
+    "run_id": "ai-office-ph5-gate005-20260919-r33",
+    "state": "COMPLETED",
+    "state_ref": "/home/ywjo/AI-Workspace/project-workspace/.worktrees/AI-OFFICE-PH5-EXECUTOR-R31/_workspace/production-full-plan/PHASE5_AI_OFFICE_HARNESS_UPGRADE/ai-office-ph5-gate005-20260919-r33/state.json",
+    "state_sha256": "045fc75eab1d253a64a819add67b05ea5efa33fecd8f52e82f41ba76415cf149",
+    "terminal_reason": "ALL_GATES_COMPLETED"
+  },
+  "merge_push": "NOT_AUTHORIZED_BY_THIS_DECLARATION",
+  "must_traceability_coverage": 100,
+  "production_provider_set": [
+    "codex",
+    "nvidia"
+  ],
+  "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+  "schema_version": "ai-office.stable-baseline-declaration.v1",
+  "status": "DECLARED",
+  "third_provider_activation": "NOT_AUTHORIZED",
+  "unresolved_major_count": 0,
+  "validated_content_head": "eb2ef6880153814facd2f4aa2a16999e2a1d52ca"
+}

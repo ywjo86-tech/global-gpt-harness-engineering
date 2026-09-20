@@ -5,10 +5,10 @@
 
 ## Current Execution Binding
 
-Current phase: AI_OFFICE_HARNESS_UPGRADE — EDP_EXTENSIBILITY_REMEDIATION_ALL_PASS
+Current phase: AI_OFFICE_STABLE_BASELINE — DECLARED
 
 - Active project: AI_OFFICE_HARNESS_UPGRADE
-- Active lifecycle: PHASE5 / GATE-005 post-completion remediation
+- Active lifecycle: PHASE5 / FINAL_CLOSURE
 - Active contract: docs/DEVELOPMENT_PLAN.txt
 - Contract SHA-256: 0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2
 - Diagnosis standard: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
@@ -21,7 +21,11 @@ Current phase: AI_OFFICE_HARNESS_UPGRADE — EDP_EXTENSIBILITY_REMEDIATION_ALL_P
 - AI Office GATE-005 R33: COMPLETED / ALL_GATES_COMPLETED
 - EDP extensibility remediation: ALL_PASS
 - Final EDP evidence: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/EDP_POST_REMEDIATION_ALL_PASS.md + .json
-- AI Office Stable Baseline: OPEN pending canonical TASK-017 closure/evidence-equality validation
+- AI Office Stable Baseline: DECLARED / AI_OFFICE_STABLE_BASELINE
+- Stable Baseline validated content head: eb2ef6880153814facd2f4aa2a16999e2a1d52ca
+- Stable Baseline closure candidate digest: d003d4144c96bdee798defd56e439869cc91520a18fb613406ec6b1ea97365aa
+- Stable Baseline canonical/alias evidence equality: IDENTICAL
+- Stable Baseline declaration: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_DECLARATION.md + .json
 - Provider-neutral core remediation: AUTHORIZED within the current AI Office Harness Upgrade amendment
 - Current production provider activation: Codex + NVIDIA only
 - External third-provider live activation / credentials / new network integration: NOT_AUTHORIZED
