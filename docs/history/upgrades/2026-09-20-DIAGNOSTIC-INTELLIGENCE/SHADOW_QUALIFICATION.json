@@ -1,0 +1,35 @@
+{
+  "codegraph": {
+    "live_one_shot": "PASS",
+    "mode": "graph-only/profile-graph/isolated-home",
+    "path": "/home/ywjo/.local/share/gch/diagnostics/codegraph/0.20.1/bin/codegraph-server",
+    "sha256": "32b26422fa5ffe0a130955b7f7df771f722b2d427d67f53f104d9907bdfb24a6",
+    "telemetry": "off",
+    "version": "0.20.1"
+  },
+  "completion_authority": "NONE",
+  "control_authority": "NONE",
+  "fallback": {
+    "both_missing": "DEGRADED",
+    "codegraph_missing": "DEGRADED",
+    "graphify_missing": "DEGRADED",
+    "synthetic_conflict": "CONFLICT_SUPPRESSES_ADVISORY"
+  },
+  "graphify": {
+    "hooks_installed": false,
+    "live_graph_bytes": 4100202,
+    "live_query": "PASS",
+    "mode": "code-only/no-cluster/on-demand",
+    "path": "/home/ywjo/.local/share/gch/diagnostics/graphify/0.9.58/bin/graphify",
+    "version": "0.9.58"
+  },
+  "installer_remediation": "Graphify venv console-script shebang rewritten before atomic promotion after live qualification exposed temporary-prefix shebang.",
+  "mutation_authority": "NONE",
+  "notification_authority": "NONE",
+  "recovery_authority": "NONE",
+  "schema_version": "gch.diagnostic-shadow-qualification.v1",
+  "shadow_prompt_change_count": 0,
+  "source_head": "e943dce5a8ec11d3fb39a9813304247c7ae5c3bd",
+  "status": "PASS",
+  "write_scope_expansion_count": 0
+}

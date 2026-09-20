@@ -16,9 +16,18 @@ python3.12 -m venv "$NEW"
 
 mkdir -p "$(dirname "$PREFIX")"
 if [[ -e "$PREFIX" ]]; then
-  "$PREFIX/bin/graphify" --version | grep -F "$VERSION"
-  exit 0
+  if "$PREFIX/bin/graphify" --version 2>/dev/null | grep -F "$VERSION" >/dev/null; then
+    exit 0
+  fi
+  rm -rf "$PREFIX"
 fi
+# venv console scripts embed the temporary prefix; rewrite them before atomic promotion.
+for script in "$NEW/bin/graphify" "$NEW/bin/graphify-mcp"; do
+  if [[ -f "$script" ]]; then
+    sed -i "1s|^#!.*|#!$PREFIX/bin/python|" "$script"
+  fi
+done
 mv "$NEW" "$PREFIX"
+"$PREFIX/bin/graphify" --version | grep -F "$VERSION"
 trap 'rm -rf "$TMP"' EXIT
 printf '%s\n' "$PREFIX/bin/graphify"
