@@ -33,6 +33,14 @@ No diagnostic component may approve, mutate, reroute, resume, retry, mark comple
 
 ## 3. Existing Operational Remediation
 
+### 3.0 Approved-plan continuation semantics
+
+Once an architectural implementation plan and its spec are explicitly approved, later user directives such as `진행`, `이어서 진행`, `계속 진행`, `continue`, or `resume` are continuation instructions for the already-approved scope. They do not require the user to repeat the phrase `Full Plan`. If the approved work is Harness-scale and a durable Full Plan job exists, the Operator must resume that job. If no durable job exists yet, the Operator must promote the approved plan into a durable GPT-operator Full Plan tracking job before further implementation.
+
+The GPT-operator tracking job is non-executing authority: it may bind plan/spec digests, task order, branch, and durable task receipts; it may wait for receipts and expose liveness/attention state. It cannot execute source changes, select providers, grant approvals, call Tool Broker, mark Completion Authority, or reinterpret plan scope. Actual mutations remain under the existing approved Operator/Execution Backend path.
+
+A material scope expansion, higher risk class, or ambiguous dangerous re-execution still uses `evaluate_user_decision()` and may require renewed user approval. Mere continuation wording is never treated as new approval and never broadens scope.
+
 ### 3.1 Runtime source convergence
 
 Repair the broken ~/.local/share/global-gpt-harness/runtime-current target and make it point only to a verified, durable, current Harness runtime source. Retargeting must be blocked while active jobs exist. The target must survive removal of disposable worktrees.

@@ -22,6 +22,33 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 @dataclass(frozen=True, slots=True)
+class ContinuationDirectiveAssessment:
+    action: str
+    reason: str
+
+
+_CONTINUATION_TOKENS = frozenset({
+    "진행", "이어서 진행", "계속 진행", "continue", "resume", "proceed",
+})
+
+
+def classify_continuation_directive(
+    text: str, *, approved_scope_active: bool, durable_job_registered: bool,
+    material_contract_change: bool,
+) -> ContinuationDirectiveAssessment:
+    normalized = " ".join(str(text or "").strip().lower().split())
+    if normalized not in _CONTINUATION_TOKENS:
+        return ContinuationDirectiveAssessment("NO_CONTINUATION", "instruction is not a continuation directive")
+    if material_contract_change:
+        return ContinuationDirectiveAssessment("REQUIRE_PLAN_REVISION", "material contract change requires renewed review")
+    if not approved_scope_active:
+        return ContinuationDirectiveAssessment("NO_CONTINUATION", "no approved scope is active")
+    if durable_job_registered:
+        return ContinuationDirectiveAssessment("RESUME_FULL_PLAN", "approved durable Full Plan already exists")
+    return ContinuationDirectiveAssessment("PROMOTE_TO_FULL_PLAN", "approved Harness work requires durable Full Plan tracking")
+
+
+@dataclass(frozen=True, slots=True)
 class ApprovalCoverageEvidence:
     approval_ref: str
     approved_semantic_digest: str

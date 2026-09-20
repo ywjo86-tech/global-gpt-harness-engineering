@@ -81,6 +81,9 @@ def load_job(path: str | Path) -> dict[str, Any]:
                 raise FullPlanJobError("Gate job requirement_evidence_paths_by_lv is invalid")
     if len(set(ids)) != len(ids):
         raise FullPlanJobError("Full Plan job contains duplicate Gates")
+    if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
+        from .operator_plan_execution import validate_operator_plan_job
+        validate_operator_plan_job(job)
     mapping_root = job.get("mapping_root")
     if mapping_root is not None and (not isinstance(mapping_root, str) or not mapping_root):
         raise FullPlanJobError("Full Plan job mapping_root is invalid")
@@ -200,6 +203,9 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def build_gate_executor(job: Mapping[str, Any]):
+    if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
+        from .operator_plan_execution import build_operator_plan_executor
+        return build_operator_plan_executor(job)
     project_root = str(Path(str(job["project_root"])).resolve())
     harness_root = str(Path(str(job["harness_root"])).resolve())
     specs = {str(item["gate_id"]): dict(item) for item in job["gates"]}
@@ -293,7 +299,7 @@ def transient_systemd_command(job_path: str | Path, *, unit_name: str | None = N
     return [
         "env", f"XDG_RUNTIME_DIR={runtime_dir}", f"DBUS_SESSION_BUS_ADDRESS={bus}",
         "systemd-run", "--user", f"--unit={unit}", "--collect",
-        f"--working-directory={Path(str(job['harness_root'])).resolve()}",
+        f"--working-directory={Path(str(job.get('runtime_code_root') or job['harness_root'])).resolve()}",
         "--property=Restart=on-failure", "--property=RestartSec=5s",
         "--property=RestartPreventExitStatus=2 3",
         "--property=KillMode=control-group", "--property=SendSIGKILL=yes",

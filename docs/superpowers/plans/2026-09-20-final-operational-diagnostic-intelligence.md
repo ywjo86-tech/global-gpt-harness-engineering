@@ -64,6 +64,74 @@ Existing files changed narrowly:
 
 New tests mirror every module and authority boundary; existing Graphify PoC files remain historical evidence and are not deleted.
 
+### Task 0: Promote Approved Harness Plans into Durable GPT-Operator Full Plan Jobs
+
+**Files:**
+- Create: `runtime/orchestrator/operator_plan_execution.py`
+- Modify: `runtime/orchestrator/production_full_plan_entry.py`
+- Modify: `runtime/orchestrator/user_interaction_policy.py`
+- Create: `tests/test_operator_plan_execution.py`
+- Modify: `tests/test_production_full_plan_entry.py`
+- Modify: `tests/test_user_interaction_policy.py`
+
+**Interfaces:**
+- New job field: `executor_kind=GPT_OPERATOR_PLAN`; legacy/default remains `CANONICAL_GATE`.
+- GPT operator job binds `approved_plan_path`, `approved_plan_sha256`, `approved_spec_path`, `approved_spec_sha256`, `runtime_code_root`, exact branch, project root, and ordered Task gate IDs.
+- `OperatorPlanReceiptStore` creates/validates create-once Task PASS receipts under `<harness>/_workspace/operator-plan-receipts/<project>/<run>/`.
+- `build_gate_executor()` selects `build_operator_plan_executor(job)` only for `GPT_OPERATOR_PLAN`; that executor waits read-only for the current Task receipt and never performs the Task effect itself.
+- `classify_continuation_directive(text, *, approved_scope_active, durable_job_registered, material_contract_change)` returns `RESUME_FULL_PLAN`, `PROMOTE_TO_FULL_PLAN`, `REQUIRE_PLAN_REVISION`, or `NO_CONTINUATION`.
+- Korean/English continuation tokens include exact normalized forms `진행`, `이어서 진행`, `계속 진행`, `continue`, `resume`, `proceed`.
+
+- [ ] **Step 1: Write RED continuation-policy tests**
+
+```python
+def test_progress_word_promotes_approved_unregistered_harness_work(self):
+    out = classify_continuation_directive(
+        "진행", approved_scope_active=True, durable_job_registered=False, material_contract_change=False)
+    self.assertEqual(out.action, "PROMOTE_TO_FULL_PLAN")
+
+def test_progress_word_resumes_registered_full_plan(self):
+    out = classify_continuation_directive(
+        "이어서 진행", approved_scope_active=True, durable_job_registered=True, material_contract_change=False)
+    self.assertEqual(out.action, "RESUME_FULL_PLAN")
+```
+
+Also assert material contract change -> `REQUIRE_PLAN_REVISION`, no approved scope -> `NO_CONTINUATION`, and arbitrary text is not treated as continuation.
+
+- [ ] **Step 2: Run RED**
+
+Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_user_interaction_policy -v`
+Expected: FAIL because continuation classification does not exist.
+
+- [ ] **Step 3: Write RED GPT-operator job/receipt tests**
+
+Create a temporary Git repo with committed spec/plan. Build a `GPT_OPERATOR_PLAN` job with Tasks `TASK-001`, `TASK-002`. Assert `load_job()` rejects digest mismatch, missing runtime code root, branch mismatch, duplicate Task IDs, and mutable/symlink plan/spec inputs. Assert the operator executor blocks only on receipt absence and returns `GATE_EXIT` after a valid create-once PASS receipt appears.
+
+- [ ] **Step 4: Run RED**
+
+Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_operator_plan_execution tests.test_production_full_plan_entry -v`
+Expected: FAIL because GPT operator plan execution does not exist.
+
+- [ ] **Step 5: Implement continuation classification and operator-plan contracts**
+
+`classify_continuation_directive()` performs only normalization/classification and has no orchestration side effect. `register_operator_plan_job()` verifies plan/spec SHA-256, current branch, `runtime_code_root` existence, and binds the current approval reference/digest. The operator executor polls only its receipt path and returns a canonical gate result after validated PASS evidence.
+
+- [ ] **Step 6: Preserve authority boundaries**
+
+Static tests must assert `operator_plan_execution.py` contains no imports/calls to Provider Router, Tool Broker, approval creation, Completion Authority, AttentionOutbox publish, Git mutation, shell mutation, or source writes outside its own receipt/registration workspace.
+
+- [ ] **Step 7: Run focused and existing Full Plan tests**
+
+Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_operator_plan_execution tests.test_user_interaction_policy tests.test_production_full_plan_entry tests.test_production_full_plan_runner tests.test_production_attention_watch -v`
+Expected: PASS.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add runtime/orchestrator/operator_plan_execution.py runtime/orchestrator/production_full_plan_entry.py runtime/orchestrator/user_interaction_policy.py tests/test_operator_plan_execution.py tests/test_production_full_plan_entry.py tests/test_user_interaction_policy.py docs/superpowers/specs/2026-09-20-diagnostic-intelligence-final-operationalization-design.md docs/superpowers/plans/2026-09-20-final-operational-diagnostic-intelligence.md
+git commit -m 'feat(full-plan): promote approved operator plans to durable jobs'
+```
+
 ### Task 1: Decouple Runtime Code Root from Full Plan Job Search Root
 
 **Files:**

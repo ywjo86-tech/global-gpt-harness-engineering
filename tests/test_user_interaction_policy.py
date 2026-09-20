@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from runtime.orchestrator.user_interaction_policy import (
     ApprovalCoverageEvidence,
+    classify_continuation_directive,
     evaluate_attention_delivery,
     evaluate_user_decision,
 )
@@ -25,6 +26,38 @@ def coverage(*, risks=("general",), operations=("PROJECT_WRITE",)) -> ApprovalCo
 
 
 class UserDecisionPolicyTests(unittest.TestCase):
+
+    def test_progress_word_promotes_approved_unregistered_harness_work(self) -> None:
+        out = classify_continuation_directive(
+            "진행", approved_scope_active=True, durable_job_registered=False,
+            material_contract_change=False,
+        )
+        self.assertEqual(out.action, "PROMOTE_TO_FULL_PLAN")
+
+    def test_progress_word_resumes_registered_full_plan(self) -> None:
+        out = classify_continuation_directive(
+            "이어서 진행", approved_scope_active=True, durable_job_registered=True,
+            material_contract_change=False,
+        )
+        self.assertEqual(out.action, "RESUME_FULL_PLAN")
+
+    def test_continuation_never_broadens_or_replaces_approval(self) -> None:
+        revision = classify_continuation_directive(
+            "continue", approved_scope_active=True, durable_job_registered=True,
+            material_contract_change=True,
+        )
+        no_scope = classify_continuation_directive(
+            "resume", approved_scope_active=False, durable_job_registered=False,
+            material_contract_change=False,
+        )
+        arbitrary = classify_continuation_directive(
+            "새 기능을 추가해", approved_scope_active=True, durable_job_registered=True,
+            material_contract_change=False,
+        )
+        self.assertEqual(revision.action, "REQUIRE_PLAN_REVISION")
+        self.assertEqual(no_scope.action, "NO_CONTINUATION")
+        self.assertEqual(arbitrary.action, "NO_CONTINUATION")
+
     def test_missing_approval_requires_initial_decision(self) -> None:
         out = evaluate_user_decision(
             approval_coverage=None, material_contract_change=False,

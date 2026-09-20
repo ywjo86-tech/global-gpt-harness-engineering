@@ -101,7 +101,7 @@ def authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
 def seal_authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
     value = copy.deepcopy(dict(job))
     if "executor_runtime_identity" not in value:
-        value["executor_runtime_identity"] = executor_runtime_identity(str(value["harness_root"]))
+        value["executor_runtime_identity"] = executor_runtime_identity(str(value.get("runtime_code_root") or value["harness_root"]))
     core = authority_core(value)
     core["authority_schema_version"] = AUTHORITY_SCHEMA
     digest_input = dict(core)
@@ -211,7 +211,7 @@ def validate_executor_runtime(job: Mapping[str, Any]) -> tuple[bool, str]:
     expected = job.get("executor_runtime_identity")
     if not isinstance(expected, Mapping):
         return False, "EXECUTOR_RUNTIME_IDENTITY_MISSING"
-    current = executor_runtime_identity(str(job["harness_root"]))
+    current = executor_runtime_identity(str(job.get("runtime_code_root") or job["harness_root"]))
     if str(expected.get("root", "")) != current["root"]:
         return False, "EXECUTOR_RUNTIME_ROOT_DRIFT"
     expected_head = str(expected.get("head", ""))
