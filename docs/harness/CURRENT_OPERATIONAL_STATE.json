@@ -8,11 +8,11 @@
   "evidence": [
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/EDP_FINAL_ALL_PASS.json",
-      "sha256": "888c598f892b2ffed9fb27f4950d5c1c8d99eca3bbbb78421a0786f6d8601e3c"
+      "sha256": "d28a470fa37e1995534438c2c2af51f4d778a8f3a691b998ffa88bbeffc60eb5"
     },
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE_DECLARATION.json",
-      "sha256": "46a3318e5d5f960ff3669b9662216b21e20bdb419d96a4f41cae4e2275a58eae"
+      "sha256": "b4a7d8e1672c5b793171020d5812ac7eb56e1ba44472a721f56dc73085ee112c"
     },
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/ORIGINAL_TASK014_SUCCESSOR_CLOSURE.json",

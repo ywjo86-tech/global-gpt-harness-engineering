@@ -4,7 +4,7 @@
   "codegraph": "PRODUCTION_READ_ONLY_ACTIVE",
   "decision": "ALL_PASS / GO",
   "diagnostic_intelligence": "ADVISORY",
-  "edp_final_sha256": "888c598f892b2ffed9fb27f4950d5c1c8d99eca3bbbb78421a0786f6d8601e3c",
+  "edp_final_sha256": "d28a470fa37e1995534438c2c2af51f4d778a8f3a691b998ffa88bbeffc60eb5",
   "graphify": "PRODUCTION_READ_ONLY_ACTIVE",
   "groq": "ACTIVE / FREE_TIER_ONLY",
   "holmes_inspired_rca": "ACTIVE_READ_ONLY",
@@ -12,5 +12,5 @@
   "runtime_release_status": "ACTIVE",
   "schema_version": "gch.final-operational-baseline-declaration.v1",
   "status": "DECLARED",
-  "validated_source_head": "246b6989903ee1f3717f33ae28287f8eb4c255f7"
+  "validated_source_head": "798403fb1169498f7184f754f09a333a88aee77d"
 }

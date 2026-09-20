@@ -2,11 +2,11 @@
 
 Baseline: `AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE`
 Decision: **ALL_PASS / GO**
-Validated source HEAD: `246b6989903ee1f3717f33ae28287f8eb4c255f7`
+Validated source HEAD: `798403fb1169498f7184f754f09a333a88aee77d`
 
 ## Verification
 
-- Full regression: **1875 PASS**, skipped 15
+- Full regression: **1876 PASS**, skipped 15
 - Focused authority/continuity/diagnostic/CLI: **136 PASS**, skipped 1
 - Runtime reconcile: blocked **0**
 - Graphify live: PASS (4186071 byte graph)
@@ -16,7 +16,7 @@ Validated source HEAD: `246b6989903ee1f3717f33ae28287f8eb4c255f7`
 
 ## Evidence Matrix
 
-- `ED-00` — **PASS** — Canonical authority/source set is available and valid — all three specs USER-APPROVED; source HEAD 246b6989903ee1f3717f33ae28287f8eb4c255f7
+- `ED-00` — **PASS** — Canonical authority/source set is available and valid — all three specs USER-APPROVED; source HEAD 798403fb1169498f7184f754f09a333a88aee77d
 - `ED-01` — **PASS** — Design skill requires Stateful Continuity Review — test_harness_design_continuity_skill + SKILL_CONTINUITY_PRESSURE_TEST.md
 - `ED-02` — **PASS** — Self-reference/zero-owner paradox is detected — runtime migration focused tests + exact predecessor exemption
 - `ED-03` — **PASS** — Migration transaction is digest-bound and immutable — test_runtime_migration_handoff + CONTINUITY_RUNTIME_MIGRATION_EVIDENCE.json
@@ -24,7 +24,7 @@ Validated source HEAD: `246b6989903ee1f3717f33ae28287f8eb4c255f7`
 - `ED-05` — **PASS** — Durable successor is verified before predecessor close — R3 MIGRATED_TO_SUCCESSOR; R4 verified; migration evidence PASS
 - `ED-06` — **PASS** — Crash/restart recovery is deterministic — failure injection/crash replay tests PASS
 - `ED-07` — **PASS** — Terminal orphan produces outbound Attention — RUNTIME_MIGRATION_ORPHANED regression + R4 current pending attention count 0
-- `ED-08` — **PASS** — Full Plan continuity regression remains green — 1875 tests PASS, 15 skipped
+- `ED-08` — **PASS** — Full Plan continuity regression remains green — 1876 tests PASS, 15 skipped after TASK-016 activation-blocker and timestamp-flake remediation
 - `ED-09` — **PASS** — Provider authority remains Provider Router only — provider focused regression in 136-test authority suite
 - `ED-10` — **PASS** — Tool/effect authority remains authorization→registry→broker→journal — tool/effect + CLI broker tests PASS
 - `ED-11` — **PASS** — Completion authority did not move — completion focused regression PASS; migration/CLI control_authority NONE
@@ -38,6 +38,7 @@ Validated source HEAD: `246b6989903ee1f3717f33ae28287f8eb4c255f7`
 - `ED-19` — **PASS** — Interrupted original TASK-014 is closed without rewriting R2 — successor closure PASS; historical R2 TASK-014 receipt absent
 - `ED-20` — **PASS** — OmniRoute provider gateway remains loopback/authenticated and free-tier Groq remains qualified — OmniRoute 3.8.50; unauth=401; auth=200; Groq FREE_TIER_ONLY evidence retained
 - `ED-21` — **PASS** — TASK-015 final EDP can close from measured evidence — all mandatory metrics computed below; no unresolved material finding
+- `ED-22` — **PASS** — Historical terminal external-binding drift is fail-closed without false activation blocking — sealed authority core + canonical job path + existing durable terminal state required; runtime_release suite 13 PASS; live R4-only classification PASS
 
 ## Closure Metrics
 
@@ -62,6 +63,8 @@ Validated source HEAD: `246b6989903ee1f3717f33ae28287f8eb4c255f7`
 
 - `EDP-FINAL-001` — MAJOR / RESOLVED — stale parent Spec review status corrected and revalidated.
 - `EDP-FINAL-002` — MINOR / RESOLVED — stale current-projection regression expectation aligned with approved final state.
+- `EDP-FINAL-003` — MAJOR / RESOLVED — historical terminal operator jobs with later approved Spec metadata drift falsely blocked runtime activation; corrected with sealed-core/canonical-path/durable-terminal proof and revalidated with 1876-test full regression.
+- `EDP-FINAL-004` — MINOR / RESOLVED — RCA integration regression compared volatile `created_at` across independent runs; narrowed to control-semantic fields and revalidated with 1876-test full regression.
 
 ## Exhaustion
 

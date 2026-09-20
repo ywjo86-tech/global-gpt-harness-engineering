@@ -4,7 +4,9 @@
     "notes": [
       "stale parent spec status found and resolved",
       "Graphify smoke command path assumption corrected; tool output itself was valid",
-      "CodeGraph smoke argument name corrected from directory to path; one-shot then returned rc=0"
+      "CodeGraph smoke argument name corrected from directory to path; one-shot then returned rc=0",
+      "TASK-016 publication challenge found historical terminal external-binding drift false blocker; resolved with sealed-core/canonical-path/durable-terminal proof.",
+      "Final re-diagnosis crossed a one-second boundary and exposed timestamp-sensitive RCA integration assertion; corrected to compare control semantics only."
     ],
     "status": "PASS"
   },
@@ -15,7 +17,7 @@
       "authority": "user-approved final operationalization + continuity + CLI amendment specs",
       "claim": "Canonical authority/source set is available and valid",
       "domain_id": "ED-00",
-      "evidence": "all three specs USER-APPROVED; source HEAD 246b6989903ee1f3717f33ae28287f8eb4c255f7",
+      "evidence": "all three specs USER-APPROVED; source HEAD 798403fb1169498f7184f754f09a333a88aee77d",
       "result": "PASS",
       "target": "approved specs/current source"
     },
@@ -79,7 +81,7 @@
       "authority": "approved implementation plan",
       "claim": "Full Plan continuity regression remains green",
       "domain_id": "ED-08",
-      "evidence": "1875 tests PASS, 15 skipped",
+      "evidence": "1876 tests PASS, 15 skipped after TASK-016 activation-blocker and timestamp-flake remediation",
       "result": "PASS",
       "target": "full repository"
     },
@@ -186,6 +188,17 @@
       "evidence": "all mandatory metrics computed below; no unresolved material finding",
       "result": "PASS",
       "target": "this final diagnosis"
+    },
+    {
+      "authority": "runtime release fail-closed activation + continuity invariants",
+      "claim": "Historical terminal jobs with later approved external-binding drift cannot become false active blockers",
+      "domain_id": "ED-22",
+      "evidence": "RED reproduced spec-drift false blocker; GREEN runtime_release suite 13 PASS; live classification returns only current R4; ambiguous/nonterminal remains load_error blocker",
+      "finding_ids": [
+        "EDP-FINAL-003"
+      ],
+      "result": "PASS",
+      "target": "runtime/orchestrator/runtime_release.py historical job classification"
     }
   ],
   "findings": [
@@ -210,6 +223,30 @@
       "owner": "governance regression test",
       "problem": "Projection regression test still expected intermediate ADVISORY_QUALIFIED after approved final projection changed to ADVISORY.",
       "regression_scope": "projection test + final full regression 1875 PASS",
+      "severity": "MINOR",
+      "status": "RESOLVED"
+    },
+    {
+      "artifact": "runtime/orchestrator/runtime_release.py",
+      "correction": "Added fail-closed historical terminal classification while preserving UNKNOWN/nonterminal/load-error blocking semantics.",
+      "evidence": "Live R2 and legacy FINAL-OP job returned approved spec digest mismatch; RED regression reproduced activation failure. Fix permits exclusion only after canonical job path, sealed authority core, existing durable state, and terminal state all validate.",
+      "finding_id": "EDP-FINAL-003",
+      "impact": "Final runtime activation was blocked; future legitimate approval-metadata corrections could otherwise permanently block runtime retargeting.",
+      "owner": "runtime release activation guard",
+      "problem": "Approved plan/spec metadata correction made historical terminal operator jobs fail load_job(), so activation classified them as UNKNOWN active blockers and could not reach the final immutable runtime.",
+      "regression_scope": "new RED/GREEN test + runtime_release suite 13 PASS + full repository 1876 PASS + live active-job classification PASS",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "artifact": "tests/test_diagnostic_full_plan_integration.py",
+      "correction": "Compare only control-relevant queue fields and exclude created_at from cross-run equality.",
+      "evidence": "Final re-diagnosis reproduced one FAIL where only created_at differed by one second; production control state and queue semantics were identical.",
+      "finding_id": "EDP-FINAL-004",
+      "impact": "Nondeterministic release-gate failure only; no runtime authority or RCA behavior defect.",
+      "owner": "diagnostic Full Plan regression test",
+      "problem": "RCA authority regression compared volatile created_at timestamps across independent runs, producing a second-boundary false failure.",
+      "regression_scope": "diagnostic Full Plan integration 2 PASS + full repository 1876 PASS, 15 skipped",
       "severity": "MINOR",
       "status": "RESOLVED"
     }
@@ -239,6 +276,7 @@
     "generated_skill_self_activation": 0,
     "generic_active_job_bypass": 0,
     "historical_r2_receipt_fabrication": 0,
+    "historical_terminal_external_binding_drift_false_blocker": 0,
     "orphan_noncompleted_terminal_without_successor_or_attention": 0,
     "provider_authority_movement": 0,
     "runtime_current_points_to_disposable_worktree": 0,
@@ -353,8 +391,8 @@
     }
   ],
   "schema_version": "gch.edp-final-all-pass.v1",
-  "validated_source_head": "246b6989903ee1f3717f33ae28287f8eb4c255f7",
-  "validated_source_tree": "f5371ced684b77b101b0ef36871e567fe7d51c7a",
+  "validated_source_head": "798403fb1169498f7184f754f09a333a88aee77d",
+  "validated_source_tree": "f8b59e3b381059087ea74acf7bc7b359613e2209",
   "verification": {
     "attention": {
       "current_r4_pending_count": 0,
@@ -384,10 +422,10 @@
       "tests_run": 136
     },
     "full_regression": {
-      "log_sha256": "26aca6d3f38dbe69a6ddba95a3f0649013fd72eb661854a5d7254d33d302e771",
+      "log_sha256": "9c73d07e00fa967a43145ee8159fae8b06395a410592a80b5cb87f0cd2078d09",
       "skipped": 15,
       "status": "PASS",
-      "tests_run": 1875
+      "tests_run": 1876
     },
     "graphify": {
       "graph_bytes": 4186071,
@@ -407,6 +445,20 @@
       "jobs_found": 50,
       "resume_requested": 0,
       "status": "PASS"
+    },
+    "runtime_release_binding_drift": {
+      "ambiguous_jobs_fail_closed": true,
+      "focused_tests": 13,
+      "live_active_jobs": [
+        "FINAL-OP-20260920-R4"
+      ],
+      "status": "PASS",
+      "terminal_exclusion_requires": [
+        "canonical_job_path",
+        "valid_authority_core",
+        "existing_durable_state",
+        "terminal_state"
+      ]
     }
   }
 }
