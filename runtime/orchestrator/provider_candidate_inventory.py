@@ -64,11 +64,12 @@ class ProviderCandidateRecordV1:
         object.__setattr__(self, "model_refs", models)
         object.__setattr__(self, "capability_refs", capabilities)
         object.__setattr__(self, "readiness_evidence_refs", readiness)
-        if self.state == "ACTIVE":
+        if self.state in {"QUALIFIED", "APPROVAL", "ACTIVE"}:
             if len(models) != 1:
-                raise CandidateInventoryError("ACTIVE requires exactly one explicit model")
+                raise CandidateInventoryError(f"{self.state} requires exactly one explicit model")
             if not readiness or not self.action_evidence_ref.strip() or not self.reroute_evidence_ref.strip():
-                raise CandidateInventoryError("ACTIVE requires complete live qualification evidence")
+                raise CandidateInventoryError(f"{self.state} requires complete live qualification evidence")
+        if self.state == "ACTIVE":
             if not self.activation_approval_ref.strip():
                 raise CandidateInventoryError("ACTIVE requires activation approval")
             if self.cost_class.strip().lower() == "paid" and not self.cost_risk_approval_ref.strip():
