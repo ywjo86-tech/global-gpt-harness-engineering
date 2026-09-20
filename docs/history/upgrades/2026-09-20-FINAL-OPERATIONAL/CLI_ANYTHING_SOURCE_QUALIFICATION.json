@@ -1,0 +1,33 @@
+{
+  "commit": "810c18b0d1ab9b234bc996c9fd999318523a3ef0",
+  "control_authority": "NONE",
+  "explicitly_not_used": [
+    "cli-hub install",
+    "cli-hub update",
+    "cli-hub uninstall",
+    "cli-hub launch",
+    "autonomous generated-skill registration"
+  ],
+  "license_name": "Apache-2.0",
+  "license_sha256": "0cff1a8ac2a381870a2c57cbe9b25f95bea0925b39b7fbf6a04ec23df7c77760",
+  "mechanisms": [
+    "REGISTRY_METADATA",
+    "SKILL_GENERATOR_REFERENCE",
+    "GENERATED_CLI_CONTRACT_PATTERN"
+  ],
+  "observed_remote_head": "810c18b0d1ab9b234bc996c9fd999318523a3ef0",
+  "planned_baseline_head": "810c18b0d1ab9b234bc996c9fd999318523a3ef0",
+  "qualification_sha256": "8e33646730c3f81bc0ecd27e5d359f1c8ca3c9c73ed107ada3d8ed49dbbc61d0",
+  "readme_sha256": "4300862ff140142c58a18f11138e88498b1b185a3e0297e16cd5fb4d85fa9d55",
+  "registry_sha256": "cbb9c2edad8354234ef9c52c05c9f28ae0f2e5ddb90e151462450625d9ba6ae2",
+  "schema_version": "gch.cli-anything-source-qualification.v1",
+  "sealed_tested_commit": "810c18b0d1ab9b234bc996c9fd999318523a3ef0",
+  "skill_generator_sha256": "986eee9ebcaa0294aa284279c22670ee4f8aef44d485c78c04e1ec3afe8f3a25",
+  "tree_sha": "8bfbff991f80346a11efaa6666e58207b3c152cf",
+  "upstream_url": "https://github.com/HKUDS/CLI-Anything.git",
+  "used_subset": {
+    "generated_cli_contract": "bounded CLI interface pattern only",
+    "registry_metadata": "informational discovery only",
+    "skill_generator": "metadata/skill-shape reference only; generated skills remain unqualified"
+  }
+}
