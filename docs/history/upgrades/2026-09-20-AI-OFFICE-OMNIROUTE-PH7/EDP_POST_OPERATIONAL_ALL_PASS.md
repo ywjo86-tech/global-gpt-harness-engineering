@@ -53,6 +53,10 @@ Actual runtime verification: loopback listener `127.0.0.1:20128`, unauthenticate
 
 PASS-critical counterexamples were searched for: public listener, unauthenticated client access, `model:auto`, emergency/automatic fallback, discovery-to-ACTIVE shortcut, provider-name priority, MPRF selection authority, Provider effect authority, secret persistence, hidden provider/model replacement, imported-TestCase duplicate discovery, and paid-tier authorization. No open BLOCKER/MAJOR remained. A second duplicate-discovery source in AI Office integrated qualification was found during this pass, corrected at the import source, and regression re-run to zero duplicates.
 
+## Post-closure evidence reconciliation
+
+Finding `PH7-OP-F-002` (MAJOR, RESOLVED): `task8-operational-evidence.json` still projected the earlier pre-Groq state (`1742` tests / no ACTIVE third Provider) even though the live qualification, final regression, orchestration state, and this closure already reflected the post-activation state. The operational evidence was reconciled to schema v2 with focused `146 PASS`, full `1745 PASS / 15 skipped`, Groq `ACTIVE` on `openai/gpt-oss-120b`, and duplicate discovery `0`. This correction changes no runtime code or authority boundary. Its regression scope is the PH7 focused suite, full repository suite, compile/diff checks, live Groq connection, secret/authority negative-space scan, and discovery accounting.
+
 ## Closure metrics
 
 - `BLOCKER_COUNT=0`

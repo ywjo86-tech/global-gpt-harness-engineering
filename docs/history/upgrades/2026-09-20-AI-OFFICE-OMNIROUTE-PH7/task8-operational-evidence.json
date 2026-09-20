@@ -1,20 +1,30 @@
 {
-  "schema_version": "gch.ph7.operational-evidence.v1",
-  "focused_tests": 142,
+  "schema_version": "gch.ph7.operational-evidence.v2",
+  "focused_tests": 146,
   "focused_status": "PASS",
-  "full_tests": 1742,
+  "full_tests": 1745,
   "full_skips": 15,
   "full_status": "PASS",
   "compile": "PASS",
   "diff_check": "PASS",
   "duplicate_discovery_count": 0,
+  "unique_discovered_test_ids": 1745,
   "lv_preview_executions": 13,
   "wallet_skip_count": 1,
   "listener": "127.0.0.1:20128",
   "unauth_v1_models_http": 401,
   "auth_v1_models_http": 200,
-  "configured_omniroute_provider_connections": 0,
-  "third_provider_active": false,
+  "configured_omniroute_provider_connections": 1,
+  "third_provider_active": true,
+  "third_provider_id": "groq",
+  "third_provider_model": "openai/gpt-oss-120b",
+  "third_provider_cost_class": "free",
+  "paid_usage_authorized": false,
+  "groq_connection_test": "VALID_HTTP_200",
+  "groq_read": "PASS",
+  "groq_action_no_effect": "PASS",
+  "groq_reroute": "PASS",
+  "three_provider_neutral_routing": "PASS",
   "keyless_candidates_evaluated": 7,
   "keyless_read_qualified": 0,
   "negative_space": {
@@ -23,6 +33,15 @@
     "model_auto_rejection": "PASS",
     "hidden_fallback_rejection": "PASS",
     "discovery_to_active_shortcut": "ABSENT",
-    "secret_diff_scan": "PASS"
-  }
+    "secret_tracked_leak_count": 0,
+    "router_groq_literal_count": 0,
+    "worker_groq_literal_count": 0
+  },
+  "evidence_refs": [
+    "live-qualification/groq-live-qualification.json",
+    "live-qualification/qualification-evidence.json",
+    "live-qualification/three-provider-routing-evidence.json",
+    "duplicate-discovery-evidence.json",
+    "skip-accounting.json"
+  ]
 }

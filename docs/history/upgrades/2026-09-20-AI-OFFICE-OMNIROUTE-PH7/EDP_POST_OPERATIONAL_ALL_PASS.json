@@ -47,7 +47,8 @@
     "inventory": "b983a372c641707c8644d872d44620932ee4b4799c84d290f21985215f0d1705",
     "live": "59b21d4c90186de5956fb3fcee1a0f7d3bcf12c6cc20743623dec0f520383f3c",
     "routing": "b08d015cb124a37cc906c19f0e22e1feed232af92e792337b333792358fc79d9",
-    "dup": "6e9384ab9f32f35e82b1a0cfc19506074e8a7ebaf8c9ca5bc7db5b8c3f63b74d"
+    "dup": "6e9384ab9f32f35e82b1a0cfc19506074e8a7ebaf8c9ca5bc7db5b8c3f63b74d",
+    "task8_operational": "911e28273f553e54f96790742b549b2a59f1f14be88fb915ab7e5130f2dd3e4d"
   },
   "metrics": {
     "BLOCKER_COUNT": 0,
@@ -67,5 +68,17 @@
     "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
     "DUPLICATE_DISCOVERY_COUNT": 0,
     "MATERIAL_DEFECT_SEARCH": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE"
-  }
+  },
+  "resolved_findings": [
+    {
+      "finding_id": "PH7-OP-F-002",
+      "severity": "MAJOR",
+      "status": "RESOLVED",
+      "artifact": "task8-operational-evidence.json",
+      "problem": "operational evidence projection remained at pre-Groq 1742/no-ACTIVE state after final activation",
+      "correction": "reconciled to v2: focused 146, full 1745/15 skips, Groq ACTIVE, duplicate discovery 0, secret/authority negative-space current",
+      "regression_scope": "focused PH7 authority/runtime suite + full repository + compile + diff + live Groq connection + discovery accounting"
+    }
+  ],
+  "post_closure_reconciliation": "PASS"
 }
