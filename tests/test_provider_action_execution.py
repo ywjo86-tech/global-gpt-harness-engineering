@@ -750,3 +750,15 @@ class ProviderActionExecutionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class DiagnosticPromptBoundaryTests(unittest.TestCase):
+    def test_empty_diagnostic_context_is_byte_identical_and_advisory_is_labeled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); owned=['a.py']; request=worker(root,owned)
+            baseline=build_action_proposal_prompt(request,baseline='a'*40,owned=owned)
+            empty=build_action_proposal_prompt(request,baseline='a'*40,owned=owned,diagnostic_context='')
+            self.assertEqual(empty,baseline)
+            advisory=build_action_proposal_prompt(request,baseline='a'*40,owned=owned,diagnostic_context='candidate a.py')
+            self.assertIn('READ-ONLY DIAGNOSTIC CONTEXT — NO AUTHORITY',advisory)
+            self.assertIn('cannot enlarge the approved write set',advisory)
+            self.assertEqual(owned,['a.py'])
