@@ -1,0 +1,64 @@
+{
+  "authority_negative_space": {
+    "approval": false,
+    "attention": false,
+    "broker_bypass": false,
+    "completion": false,
+    "provider_selection": false,
+    "self_registration": false
+  },
+  "cli_hub": {
+    "allowed_commands": [
+      "list",
+      "search",
+      "info",
+      "can",
+      "matrix list",
+      "matrix search",
+      "matrix preflight"
+    ],
+    "analytics_disabled": true,
+    "artifact_sha256": "08f373c89d1d2446830c7c26ea63452cdc19ce8e7ccdc37f6ef32871bdb50d8b",
+    "executable": "/home/ywjo/.local/share/gch/cli-anything/810c18b0d1ab9b234bc996c9fd999318523a3ef0/venv/bin/cli-hub",
+    "forbidden_commands": [
+      "install",
+      "update",
+      "uninstall",
+      "launch",
+      "matrix install",
+      "previews open"
+    ],
+    "isolated_home_xdg": true,
+    "live_smoke": {
+      "list --json": "PASS",
+      "matrix search video --json": "PASS",
+      "search gimp --json": "PASS"
+    },
+    "shell": false,
+    "version": "0.4.1"
+  },
+  "control_authority": "NONE",
+  "decision": "PASS",
+  "qualification_sha256": "9dce5b5b8a5b723943c81a94d9041e10661f8338046ebeccac97e38a2084a060",
+  "schema_version": "gch.cli-hub-discovery-generator-qualification.v1",
+  "sealed_source_commit": "810c18b0d1ab9b234bc996c9fd999318523a3ef0",
+  "sealed_source_tree": "8bfbff991f80346a11efaa6666e58207b3c152cf",
+  "skill_generator": {
+    "artifact_sha256": "986eee9ebcaa0294aa284279c22670ee4f8aef44d485c78c04e1ec3afe8f3a25",
+    "generated_skill_qualified": false,
+    "isolated_output_root": "workspace/generated",
+    "live_smoke": {
+      "artifact_sha256": "2157f12a56376b9f0fe1bb0749b28479cd92b6052198c360fd4e1a06b11bc2f0",
+      "bytes": 5659,
+      "representative_harness": "gimp/agent-harness",
+      "status": "CANDIDATE"
+    },
+    "output_state": "CANDIDATE",
+    "script": "/home/ywjo/.local/share/gch/cli-anything/810c18b0d1ab9b234bc996c9fd999318523a3ef0/source/cli-anything-plugin/skill_generator.py"
+  },
+  "unavailable_degradation": {
+    "cli_hub": "UNAVAILABLE without control-state mutation authority",
+    "generator": "UNAVAILABLE without output or control-state mutation authority"
+  },
+  "upstream_url": "https://github.com/HKUDS/CLI-Anything.git"
+}
