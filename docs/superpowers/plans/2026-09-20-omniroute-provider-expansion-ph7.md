@@ -4,6 +4,8 @@
 
 **Goal:** Install and qualify OmniRoute as a non-authoritative local Provider gateway, discover and evaluate a real third-Provider candidate without fake activation, remove duplicate unittest discovery at its source, and close the Provider Expansion lifecycle only after EDP operational ALL PASS.
 
+**Execution Status:** `COMPLETE` — Tasks 1–8 executed; Groq ACTIVE under `FREE_TIER_ONLY`; final operational decision `PROVIDER_EXPANSION_RUNTIME_ALL_PASS`; final EDP `ALL_PASS`. Historical OPEN evidence remains immutable and superseded by the final operational closure record.
+
 **Architecture:** OmniRoute is a loopback-only transport/discovery service. Harness Multi-Provider Router remains the only Provider/Model selector, MPRF remains eligibility/lifecycle/recovery authority, and Full MCP remains effect authority. OmniRoute-discovered providers live in a separate admission inventory until an explicitly qualified candidate is promoted to ACTIVE.
 
 **Tech Stack:** Python 3.12/unittest, Node.js 22.23.2, npm 10.9.8, OmniRoute 3.8.50, user-level systemd/CLI process control, existing MPRF/Router/Provider Runner registries.
@@ -76,7 +78,7 @@ Required: branch clean except explicitly approved local tool metadata; full suit
 - Consumes: spec constants for version, integrity, bind address, forbidden features.
 - Produces: `OmniRouteRuntimeConfig`, `validate_omniroute_preflight()`, `build_omniroute_env()`, and a user-level install script that exits non-zero on provenance/security mismatch.
 
-- [ ] **Step 1: Write the failing runtime-contract tests**
+- [x] **Step 1: Write the failing runtime-contract tests**
 
 ```python
 class OmniRouteRuntimeTests(unittest.TestCase):
@@ -91,11 +93,11 @@ class OmniRouteRuntimeTests(unittest.TestCase):
         self.assertEqual(env['OMNIROUTE_DISABLE_BACKGROUND_SERVICES'], 'true')
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_omniroute_runtime -v`
 Expected: FAIL because `runtime.orchestrator.omniroute_runtime` does not exist.
-- [ ] **Step 3: Implement the bounded runtime contract**
+- [x] **Step 3: Implement the bounded runtime contract**
 
 ```python
 OMNIROUTE_VERSION = '3.8.50'
@@ -118,7 +120,7 @@ def build_omniroute_env(data_dir: Path, api_key: str) -> dict[str, str]:
 
 The preflight validator must also reject: unsupported Node version, occupied port 20128, secret file not mode 0600, symlinked runtime/config path, package version mismatch, and npm integrity mismatch.
 
-- [ ] **Step 4: Implement the user-owned install script**
+- [x] **Step 4: Implement the user-owned install script**
 
 Use the verified tarball itself as the install source; never re-resolve `latest` after verification. The implementation script must perform this exact sequence:
 
@@ -138,13 +140,13 @@ npm install --prefix "$PREFIX.new" --omit=dev --no-audit --no-fund "$TARBALL"
 
 Only after validation, atomically replace the previous user-owned prefix. Preserve the previous prefix as rollback input until G1 passes. Do not use `sudo` or system-global npm mutation.
 
-- [ ] **Step 5: Run focused tests and static shell checks**
+- [x] **Step 5: Run focused tests and static shell checks**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_omniroute_runtime -v`
 Run: `bash -n scripts/install_omniroute_gateway.sh`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add runtime/orchestrator/omniroute_runtime.py tests/test_omniroute_runtime.py scripts/install_omniroute_gateway.sh
@@ -161,7 +163,7 @@ git commit -m 'feat(provider): add omniroute runtime preflight'
 - Consumes: Task 1 runtime config and user-owned installation prefix.
 - Produces: `probe_omniroute_runtime() -> OmniRouteReadiness`, a launcher that sources only the 0600 secret file, and rollback/stop evidence with no secret values.
 
-- [ ] **Step 1: Write RED tests for fail-closed readiness**
+- [x] **Step 1: Write RED tests for fail-closed readiness**
 
 ```python
 def test_readiness_rejects_non_loopback_listener(self):
@@ -174,24 +176,24 @@ def test_readiness_rejects_unauthenticated_v1(self):
     self.assertFalse(probe.ready)
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_omniroute_runtime_lifecycle -v`
 Expected: FAIL because readiness/lifecycle functions do not exist.
 
-- [ ] **Step 3: Implement readiness and redacted evidence**
+- [x] **Step 3: Implement readiness and redacted evidence**
 
 `OmniRouteReadiness` must record package version, executable path, listener host/port, authenticated `/v1/models` behavior, `doctor` result class, data-dir identity, and config SHA-256. Evidence may record secret-file path/mode and key presence boolean only; never secret values.
 
-- [ ] **Step 4: Implement start/stop/rollback script**
+- [x] **Step 4: Implement start/stop/rollback script**
 
 The launcher must export the explicit safe flags, start `omniroute serve --port 20128 --no-open --no-tray --no-recovery`, write a PID/evidence record, and stop cleanly on rollback. A failed G1 smoke must stop the service while preserving logs and must not delete evidence.
 
-- [ ] **Step 5: Perform G0/G1 operational smoke in user paths**
+- [x] **Step 5: Perform G0/G1 operational smoke in user paths**
 
 Run the version-pinned installer, launch locally, verify `ss -ltnp` shows only `127.0.0.1:20128`, verify unauthenticated `/v1/*` is rejected, run `omniroute doctor`, then stop and restart once to prove controlled lifecycle.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add runtime/orchestrator/omniroute_runtime.py tests/test_omniroute_runtime_lifecycle.py scripts/run_omniroute_gateway.sh
@@ -208,7 +210,7 @@ git commit -m 'feat(provider): govern omniroute local lifecycle'
 - Consumes: machine-readable `omniroute providers available --json`, `providers list --json`, `providers validate --json`, and Task 2 readiness evidence.
 - Produces: immutable `ProviderCandidateRecordV1` records and `ProviderCandidateInventoryV1`; only `ACTIVE` records may be projected into MPRF production eligibility.
 
-- [ ] **Step 1: Write RED lifecycle/authority tests**
+- [x] **Step 1: Write RED lifecycle/authority tests**
 
 ```python
 def _record(state: str) -> ProviderCandidateRecordV1:
@@ -241,12 +243,12 @@ def test_only_active_record_can_project_to_mprf(self):
     self.assertTrue(snapshot.provider_eligible['provider-x'])
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_provider_candidate_inventory -v`
 Expected: FAIL because inventory contracts do not exist.
 
-- [ ] **Step 3: Implement exact admission states and transition validation**
+- [x] **Step 3: Implement exact admission states and transition validation**
 
 ```python
 ADMISSION_STATES = ('DISCOVERED', 'CANDIDATE', 'VALIDATING', 'QUALIFIED', 'APPROVAL', 'ACTIVE')
@@ -259,15 +261,15 @@ ALLOWED_TRANSITIONS = {
 
 Every record binds provider id, protocol class, explicit model refs, credential requirement, cost/risk disposition, live-test refs, readiness refs, and activation approval ref. Missing live evidence or approval must make `ACTIVE` invalid.
 
-- [ ] **Step 4: Add discovery importer without activation side effects**
+- [x] **Step 4: Add discovery importer without activation side effects**
 
 The importer parses OmniRoute JSON into `DISCOVERED` records only. It must reject duplicate provider ids, malformed catalog objects, hidden `auto` pseudo-providers, and any input attempting to set state above `DISCOVERED`.
 
-- [ ] **Step 5: Connect ACTIVE-only projection to production binding**
+- [x] **Step 5: Connect ACTIVE-only projection to production binding**
 
 Extend `collect_production_provider_eligibility()` with an optional validated inventory parameter. Existing Codex/NVIDIA behavior remains unchanged when no inventory is supplied. Projection must not create provider runners or credentials; it only exposes already-qualified ACTIVE facts.
 
-- [ ] **Step 6: Run focused regression and commit**
+- [x] **Step 6: Run focused regression and commit**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_provider_candidate_inventory tests.test_production_mprf_binding tests.test_provider_router -v`
 Expected: PASS.
@@ -288,7 +290,7 @@ git commit -m 'feat(provider): add candidate admission inventory'
 - Consumes: Router-bound `provider_ref`, `model_ref`, execution profile, operation request id, and local OmniRoute API key reference.
 - Produces: normalized Provider result for the already-selected target; it has no selection or fallback authority.
 
-- [ ] **Step 1: Write RED tests for explicit binding and hidden-fallback rejection**
+- [x] **Step 1: Write RED tests for explicit binding and hidden-fallback rejection**
 
 ```python
 def test_adapter_sends_explicit_selected_model(self):
@@ -300,12 +302,12 @@ def test_adapter_rejects_response_that_proves_different_provider(self):
         normalize_omniroute_result(expected_provider='provider-x', expected_model='provider-x/model-1', raw=self.other_provider)
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_omniroute_adapter -v`
 Expected: FAIL because the adapter does not exist.
 
-- [ ] **Step 3: Implement transport with explicit model only**
+- [x] **Step 3: Implement transport with explicit model only**
 
 The adapter calls local `http://127.0.0.1:20128/v1/chat/completions` with `Authorization: Bearer <OmniRoute API key>` and an explicit Router-selected model. It must never emit `auto`, combo ids, or an empty model. For configured connections it also sends `X-OmniRoute-Connection` with the inventory-bound connection id. On success it must verify `X-OmniRoute-Provider` and `X-OmniRoute-Model` against the expected target; a different provider/model or positive `X-OmniRoute-Fallback-Attempts` is a target-binding failure.
 
@@ -318,15 +320,15 @@ def validate_target_binding(headers, *, expected_provider: str, expected_model: 
         raise OmniRouteAdapterError('target binding mismatch')
 ```
 
-- [ ] **Step 4: Preserve existing Harness validation/effect boundaries**
+- [x] **Step 4: Preserve existing Harness validation/effect boundaries**
 
 Read-only results normalize to the existing Provider result shape. ACTION calls only generate proposal content consumed by the existing `PROVIDER_ACTION` validator/Broker path; the adapter receives no filesystem/shell/git tool authority.
 
-- [ ] **Step 5: Register only ACTIVE OmniRoute-backed providers**
+- [x] **Step 5: Register only ACTIVE OmniRoute-backed providers**
 
 Add a factory that returns `ProviderAdapterRegistry` / `ProviderRunnerRegistry` entries from validated ACTIVE inventory records. Do not add a hardcoded `groq`, `gemini`, or other provider branch to core execution code.
 
-- [ ] **Step 6: Run focused authority regression and commit**
+- [x] **Step 6: Run focused authority regression and commit**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_omniroute_adapter tests.test_provider_adapter_registry tests.test_provider_execution_registry tests.test_provider_action_execution -v`
 Expected: PASS.
@@ -346,7 +348,7 @@ git commit -m 'feat(provider): add explicit omniroute transport adapter'
 - Consumes: Task 3 DISCOVERED inventory plus OmniRoute static catalog fields and approved non-mutating live probe results.
 - Produces: a deterministic candidate evidence table; it may nominate a CANDIDATE but may not produce ACTIVE state.
 
-- [ ] **Step 1: Write RED tests for neutral evaluation**
+- [x] **Step 1: Write RED tests for neutral evaluation**
 
 ```python
 def _candidate(provider_id: str, *, ready: bool) -> CandidateEvidenceV1:
@@ -368,24 +370,24 @@ def test_missing_live_access_cannot_be_qualified(self):
     self.assertNotEqual(result.recommended_state, 'QUALIFIED')
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_provider_candidate_evaluator -v`
 Expected: FAIL because the evaluator does not exist.
 
-- [ ] **Step 3: Implement evidence vector, not a hidden Provider priority**
+- [x] **Step 3: Implement evidence vector, not a hidden Provider priority**
 
 The evaluator records protocol compatibility, credential requirement, cost class, observed readiness, latency evidence, quota/rate visibility, structured-output support, context/model visibility, and operational observability. Provider name is identity only and must not add score.
 
-- [ ] **Step 4: Collect real OmniRoute catalog evidence**
+- [x] **Step 4: Collect real OmniRoute catalog evidence**
 
 Run the installed CLI with `providers available --json`, `providers list --json`, and `providers validate --json`. Persist only sanitized catalog/candidate metadata under the PH7 history folder; never persist provider API keys, OAuth cookies, or OmniRoute access tokens.
 
-- [ ] **Step 5: Nominate exactly one CANDIDATE only when evidence supports it**
+- [x] **Step 5: Nominate exactly one CANDIDATE only when evidence supports it**
 
 Prefer no candidate over a fabricated candidate. If multiple candidates tie, retain all tied records as CANDIDATE and require the next live validation gate to break the tie; do not break ties by brand or lexical provider id.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add runtime/orchestrator/provider_candidate_evaluator.py tests/test_provider_candidate_evaluator.py docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/provider-candidates
@@ -404,7 +406,7 @@ git commit -m 'feat(provider): evaluate omniroute provider candidates'
 - Consumes: existing LV preview fixture behavior.
 - Produces: `build_lv_preview_fixture(base: Path) -> tuple[Path, Path]` and discovery-integrity tests proving no imported TestCase duplication.
 
-- [ ] **Step 1: Write a RED discovery-integrity test**
+- [x] **Step 1: Write a RED discovery-integrity test**
 
 ```python
 def _flatten(suite):
@@ -423,21 +425,21 @@ def test_lv_execution_package_does_not_reexport_lv_preview_testcase(self):
 
 Add a second assertion that `tests.test_lv_preview` still exposes every original `LVPreviewTest` method exactly once.
 
-- [ ] **Step 2: Run RED and capture the duplicate IDs**
+- [x] **Step 2: Run RED and capture the duplicate IDs**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_test_discovery_integrity -v`
 Expected: FAIL because `tests.test_lv_execution_package` currently re-exports `LVPreviewTest`.
 
-- [ ] **Step 3: Extract only the reusable fixture**
+- [x] **Step 3: Extract only the reusable fixture**
 
 Move `_fixture()` behavior into `tests/support/lv_preview_fixture.py` as a normal function. `tests/test_lv_preview.py` and `tests/test_lv_execution_package.py` both import that function. Neither test module imports another `unittest.TestCase` class.
 
-- [ ] **Step 4: Run GREEN focused tests**
+- [x] **Step 4: Run GREEN focused tests**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_lv_preview tests.test_lv_execution_package tests.test_test_discovery_integrity -v`
 Expected: all functional tests PASS; Wallet environment smoke may skip once only.
 
-- [ ] **Step 5: Prove discovery-count normalization without suppression**
+- [x] **Step 5: Prove discovery-count normalization without suppression**
 
 Run full discovery with verbose output and programmatically count test ids. Required evidence:
 - every `LVPreviewTest` method id appears exactly once;
@@ -446,7 +448,7 @@ Run full discovery with verbose output and programmatically count test ids. Requ
 - no new `skip`, `skipIf`, `skipUnless`, or `skipTest` was introduced by this task;
 - the previously duplicated Wallet skip appears once, not twice.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/support tests/test_lv_preview.py tests/test_lv_execution_package.py tests/test_test_discovery_integrity.py
@@ -465,7 +467,7 @@ git commit -m 'test(harness): remove duplicate unittest discovery'
 - Consumes: one or more Task 5 CANDIDATE records and actual access/credential state.
 - Produces: QUALIFIED/APPROVAL/ACTIVE transition evidence for exactly the provider/model actually tested; otherwise leaves activation OPEN.
 
-- [ ] **Step 1: Write RED activation guards**
+- [x] **Step 1: Write RED activation guards**
 
 ```python
 def _qualified_candidate(*, live_read=True, action=True, reroute=True, cost_class='free'):
@@ -491,32 +493,32 @@ def test_paid_provider_requires_cost_risk_approval(self):
         transition_candidate(candidate, 'ACTIVE', approval_ref='')
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest tests.test_omniroute_live_qualification_contract -v`
 Expected: FAIL until activation evidence requirements are enforced.
 
-- [ ] **Step 3: Run real candidate probes without hidden fallback**
+- [x] **Step 3: Run real candidate probes without hidden fallback**
 
 For each candidate under VALIDATING, run an explicit provider/model READ smoke through OmniRoute and record request/response hashes, selected target, latency, and sanitized failure class. If the Provider cannot be explicitly targeted, move it back to CANDIDATE and mark it production-ineligible.
 
-- [ ] **Step 4: Run proposal ACTION smoke without applying effects**
+- [x] **Step 4: Run proposal ACTION smoke without applying effects**
 
 Use an ACTION-generation request that produces a canonical Provider proposal but stop before Full MCP effect application. Prove `CONFIRMED_NO_EFFECT`, schema validation, raw/sanitized invalid-response evidence behavior, and no filesystem/shell/git capability leakage.
 
-- [ ] **Step 5: Run safe reroute smoke**
+- [x] **Step 5: Run safe reroute smoke**
 
 Induce or simulate a classified provider failure using the approved test seam. Prove MPRF classifies the failure, excludes the failed provider/model, and Harness Router—not OmniRoute—owns any reselection. No test may rely on OmniRoute emergency fallback or `model:auto`.
 
-- [ ] **Step 6: Decide activation from evidence**
+- [x] **Step 6: Decide activation from evidence**
 
 If a free/keyless candidate passes all required live gates, it may move QUALIFIED -> APPROVAL -> ACTIVE under the current user-authorized PH7 envelope if no new cost/credential risk is introduced. If provider-specific credentials, paid usage, OAuth, or new network risk are required, stop at APPROVAL and request that separate decision; never fabricate ACTIVE.
 
-- [ ] **Step 7: Run three-provider neutral-routing qualification if ACTIVE exists**
+- [x] **Step 7: Run three-provider neutral-routing qualification if ACTIVE exists**
 
 With Codex, NVIDIA, and the new ACTIVE provider eligible, run deterministic request vectors that prove no hardcoded provider priority, stable same-request selection, capability filtering, and health/quota exclusion.
 
-- [ ] **Step 8: Commit qualification records**
+- [x] **Step 8: Commit qualification records**
 
 Commit only sanitized/hash-bound evidence and code/tests. Never commit credentials, OAuth material, cookies, bearer values, or raw secret-bearing responses.
 ### Task 8: Final operational qualification and EDP closure
@@ -531,30 +533,30 @@ Commit only sanitized/hash-bound evidence and code/tests. Never commit credentia
 - Consumes: Task 1-7 code, runtime evidence, candidate inventory, full regression, and discovery-integrity evidence.
 - Produces: `PROVIDER_EXPANSION_RUNTIME_ALL_PASS` only when every mandatory runtime condition is proven.
 
-- [ ] **Step 1: Run focused qualification**
+- [x] **Step 1: Run focused qualification**
 
 Run all OmniRoute/runtime/inventory/adapter/reroute/discovery tests plus existing Router/MPRF/Provider ACTION/Attention/Exit Guard/AI Office qualification tests. Any failure reopens the owning task.
 
-- [ ] **Step 2: Run full repository regression**
+- [x] **Step 2: Run full repository regression**
 
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m unittest discover -s tests -v`
 Run: `/tmp/gch-edp-allpass-venv/bin/python -m compileall -q runtime tests`
 Run: `git diff --check`
 Required: 0 failures, 0 errors, compile PASS, diff-check PASS.
 
-- [ ] **Step 3: Reconcile test count and skips**
+- [x] **Step 3: Reconcile test count and skips**
 
 Parse the verbose full-suite log and record total tests, exact skipped test ids/reasons, and duplicate ids. Closure requires `DUPLICATE_DISCOVERY_COUNT=0`; the duplicate Wallet skip must no longer exist. Every remaining skip must be classified as intentional environment/opt-in behavior or treated as an open finding.
 
-- [ ] **Step 4: Run negative-space and adversarial checks**
+- [x] **Step 4: Run negative-space and adversarial checks**
 
 Prove: no OmniRoute `model:auto`; no emergency fallback; no public listener; no discovery-to-ACTIVE shortcut; no provider-name priority; no MPRF selection authority; no Provider effect authority; no secret persistence; no hidden fallback after target selection; no imported TestCase duplicate discovery.
 
-- [ ] **Step 5: Run PASS Challenge**
+- [x] **Step 5: Run PASS Challenge**
 
 Attempt to falsify these claims independently: explicit target binding, ACTIVE admission evidence, Router-only reselection, loopback/API-key security, rollback, candidate neutrality, Codex/NVIDIA compatibility, third-provider evidence if activated, and duplicate-discovery zero.
 
-- [ ] **Step 6: Write EDP closure metrics**
+- [x] **Step 6: Write EDP closure metrics**
 
 Required values:
 
@@ -575,10 +577,10 @@ DUPLICATE_DISCOVERY_COUNT=0
 MATERIAL_DEFECT_SEARCH=EXHAUSTED_FOR_AVAILABLE_EVIDENCE
 ```
 
-- [ ] **Step 7: Apply final decision correctly**
+- [x] **Step 7: Apply final decision correctly**
 
 If a third Provider is genuinely ACTIVE and all metrics pass, set `PROVIDER_EXPANSION_RUNTIME_ALL_PASS`. If OmniRoute G0/G1 passes but no Provider can be honestly activated because credential/access/cost approval is missing, record G0/G1 PASS and keep final Provider Expansion closure OPEN rather than mislabeling ALL PASS.
 
-- [ ] **Step 8: Final verification and commit**
+- [x] **Step 8: Final verification and commit**
 
 Run the full verification commands again against the exact staged tree, then commit the EDP evidence and current-state projection. Do not push, merge, or deploy.
