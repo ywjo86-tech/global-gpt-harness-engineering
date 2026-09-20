@@ -108,6 +108,22 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
             poisoned=dict(sealed); poisoned['approved_plan_sha256']='0'*64
             with self.assertRaises(OperatorPlanExecutionError): verify_registered_successor(canonical,poisoned)
 
+    def test_restart_reloads_same_transaction_at_every_crash_phase(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); store=MigrationStore(root/'migrations'); tx=store.create(valid_spec())
+            observed=[tx.phase]
+            tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64}); observed.append(tx.phase)
+            for phase in (MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED,MigrationPhase.PREDECESSOR_CLOSED):
+                tx=MigrationStore(root/'migrations').advance(tx.migration_id,phase); observed.append(tx.phase)
+                reloaded=MigrationStore(root/'migrations').load(tx.migration_id)
+                self.assertEqual(reloaded.transaction_sha256,tx.transaction_sha256); self.assertEqual(reloaded.phase,phase)
+            self.assertEqual(observed,[MigrationPhase.PREPARED,MigrationPhase.PREDECESSOR_QUIESCED,MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED,MigrationPhase.PREDECESSOR_CLOSED])
+
+    def test_arbitrary_successor_run_identity_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            spec=valid_spec(); spec['successor_run_id']='../escape'
+            with self.assertRaises(MigrationHandoffError): MigrationStore(Path(td)/'migrations').create(spec)
+
     def test_rollback_before_close_preserves_authority_bindings(self):
         with tempfile.TemporaryDirectory() as td:
             s=self.store(td); tx=s.create(valid_spec()); tx=s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})

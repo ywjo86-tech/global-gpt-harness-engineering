@@ -12,6 +12,7 @@ from runtime.orchestrator.production_attention import AttentionOutbox
 from runtime.orchestrator.production_full_plan_boot import FullPlanBootError, ensure_runtime_link, reconcile_job, systemd_user_timer
 from runtime.orchestrator.production_full_plan_entry import load_job, register_job
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+from runtime.orchestrator.runtime_migration_handoff import MigrationPhase, MigrationStore
 from runtime.orchestrator.cli import main as cli_main
 
 
@@ -258,6 +259,41 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
             self.assertEqual(first['action'],'SKIP_TERMINAL'); self.assertEqual(second['action'],'SKIP_TERMINAL')
             pending=sup.attention_outbox.pending()
             self.assertEqual(len(pending),1); self.assertEqual(pending[0]['kind'],'RUNTIME_MIGRATION_ORPHANED')
+
+
+    def _migration_job(self, root: Path, run_id: str):
+        payload={'schema_version':'orchestration.production-full-plan-job.v1','project_root':str(root),'harness_root':str(root),'project_id':'proj','run_id':run_id,'required_executables':['git'],'gates':[{'gate_id':'G1','approval_evidence':str(root/'approval.json'),'requirements_sha256':'a'*64,'branch':'main','head':'b'*40,'full_plan_opt_in':True,'project_final_validation':True}],'policy':{'retry_budget':0,'gate_timeout_seconds':1,'heartbeat_seconds':.03,'lease_seconds':.08,'min_disk_free_bytes':0,'min_inode_free':0,'min_memory_available_bytes':0}}
+        source=root/f'{run_id}.json'; source.write_text(json.dumps(payload)); registered=register_job(load_job(source)); return registered,load_job(registered)
+
+    def test_incomplete_migration_phases_stop_reconcile_and_emit_recovery_attention(self):
+        phases=(MigrationPhase.PREPARED,MigrationPhase.PREDECESSOR_QUIESCED,MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED)
+        for target in phases:
+            with self.subTest(target=target.value), tempfile.TemporaryDirectory() as d:
+                root=Path(d); subprocess.run(['git','init','-q',str(root)],check=True); registered,job=self._migration_job(root,'R2')
+                sup=DurableFullPlanSupervisor(root,project_id='proj',run_id='R2',gates=['G1'],authority_core_sha256=job['authority_core_sha256'],**job['policy']); initial,_=sup.load(); initial=sup._persist(initial,{'event':'INIT'})
+                store=MigrationStore(root/'_workspace/runtime-migrations/proj'); tx=store.create({'migration_id':'M1','project_id':'proj','predecessor_run_id':'R2','successor_run_id':'R3','current_gate':'G1','resume_gate':'G1','approved_plan_sha256':'a'*64,'approved_spec_sha256':'b'*64,'authority_core_sha256':job['authority_core_sha256'],'predecessor_state_sha256':initial['state_sha256'],'source_head':'c'*40,'target_release_head':'d'*40,'target_manifest_sha256':'e'*64,'successor_job_spec_sha256':'f'*64})
+                if target != MigrationPhase.PREPARED:
+                    q=sup.quiesce_for_runtime_migration('M1','R3'); tx=store.advance('M1',MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':q['state_sha256']})
+                    for phase in (MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED):
+                        if tx.phase==target: break
+                        tx=store.advance('M1',phase)
+                        if tx.phase==target: break
+                result=reconcile_job(registered,launch=False)
+                self.assertEqual(result['action'],'MIGRATION_RECOVERY_REQUIRED')
+                pending=sup.attention_outbox.pending(); self.assertEqual(len(pending),1); self.assertEqual(pending[0]['kind'],'RUNTIME_MIGRATION_RECOVERY_REQUIRED')
+
+    def test_migrated_terminal_without_registered_successor_is_orphaned(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); subprocess.run(['git','init','-q',str(root)],check=True); registered,job=self._migration_job(root,'R2')
+            sup=DurableFullPlanSupervisor(root,project_id='proj',run_id='R2',gates=['G1'],authority_core_sha256=job['authority_core_sha256'],**job['policy']); sup.quiesce_for_runtime_migration('M1','R3'); sup.record_verified_migration_successor('M1','R3','3'*64); sup.close_migrated_predecessor('M1','3'*64)
+            reconcile_job(registered,launch=False); pending=sup.attention_outbox.pending(); self.assertEqual(pending[-1]['kind'],'RUNTIME_MIGRATION_ORPHANED')
+
+    def test_migrated_terminal_with_exact_successor_state_is_silent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); subprocess.run(['git','init','-q',str(root)],check=True); pred_path,pred_job=self._migration_job(root,'R2'); succ_path,succ_job=self._migration_job(root,'R3')
+            succ=DurableFullPlanSupervisor(root,project_id='proj',run_id='R3',gates=['G1'],authority_core_sha256=succ_job['authority_core_sha256'],**succ_job['policy']); succ_state,_=succ.load(); succ_state=succ._persist(succ_state,{'event':'SUCCESSOR_DURABLE'})
+            pred=DurableFullPlanSupervisor(root,project_id='proj',run_id='R2',gates=['G1'],authority_core_sha256=pred_job['authority_core_sha256'],**pred_job['policy']); pred.quiesce_for_runtime_migration('M1','R3'); pred.record_verified_migration_successor('M1','R3',succ_state['state_sha256']); pred.close_migrated_predecessor('M1',succ_state['state_sha256'])
+            result=reconcile_job(pred_path,launch=False); self.assertEqual(result['action'],'SKIP_TERMINAL'); self.assertEqual(pred.attention_outbox.pending(),[])
 
 
 if __name__ == "__main__":

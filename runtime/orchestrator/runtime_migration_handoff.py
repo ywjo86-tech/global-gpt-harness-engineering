@@ -136,3 +136,26 @@ class MigrationStore:
         if tx.phase in {MigrationPhase.PREDECESSOR_CLOSED,MigrationPhase.ROLLED_BACK}: raise MigrationHandoffError('migration rollback is no longer legal')
         if not str(reason).strip(): raise MigrationHandoffError('rollback reason required')
         return self._save(replace(tx,phase=MigrationPhase.ROLLED_BACK,rollback_reason=str(reason).strip()))
+
+
+def migration_store_root(harness_root: str | Path, project_id: str) -> Path:
+    if not _SAFE_ID.fullmatch(str(project_id or '')):
+        raise MigrationHandoffError('unsafe migration project id')
+    return Path(harness_root).resolve() / '_workspace' / 'runtime-migrations' / str(project_id)
+
+
+def discover_predecessor_transactions(harness_root: str | Path, project_id: str, run_id: str) -> tuple[RuntimeMigrationTransaction, ...]:
+    root = migration_store_root(harness_root, project_id)
+    if not root.exists():
+        return ()
+    if root.is_symlink() or not root.is_dir():
+        raise MigrationHandoffError('unsafe migration store root')
+    store = MigrationStore(root)
+    found: list[RuntimeMigrationTransaction] = []
+    for path in sorted(root.glob('*.json')):
+        if path.is_symlink() or not path.is_file():
+            raise MigrationHandoffError('unsafe migration transaction file')
+        tx = store.load(path.stem)
+        if tx.project_id == project_id and tx.predecessor_run_id == run_id:
+            found.append(tx)
+    return tuple(found)

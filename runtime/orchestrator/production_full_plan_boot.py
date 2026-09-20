@@ -10,7 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .production_full_plan_entry import load_job, transient_systemd_command
+from .production_full_plan_entry import load_job, load_registered_job, transient_systemd_command
+from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, discover_predecessor_transactions
 from .production_full_plan_runner import ACTIVE_STATES, TERMINAL_STATES, WAIT_STATES, DurableFullPlanSupervisor, ProductionFullPlanError
 from .production_attention import AttentionOutbox
 
@@ -71,6 +72,35 @@ def discover_jobs(harness_root: str | Path) -> list[Path]:
     return discover_registered_jobs(harness_root)
 
 
+def _migration_successor_is_registered(job: Mapping[str, Any], state: Mapping[str, Any]) -> bool:
+    if state.get("migration_successor_verified") is not True:
+        return False
+    successor_run_id = str(state.get("migration_successor_run_id") or "")
+    successor_sha = str(state.get("migration_successor_state_sha256") or "")
+    if not successor_run_id or len(successor_sha) != 64:
+        return False
+    path = Path(str(job["harness_root"])).resolve() / "_workspace" / "production-full-plan-jobs" / str(job["project_id"]) / f"{successor_run_id}.job.json"
+    if path.is_symlink() or not path.is_file():
+        return False
+    try:
+        successor = load_registered_job(path)
+        if successor.get("project_id") != job.get("project_id") or successor.get("run_id") != successor_run_id:
+            return False
+        gates = [str(item["gate_id"]) for item in successor["gates"]]
+        sup = DurableFullPlanSupervisor(
+            successor["harness_root"], project_id=successor["project_id"], run_id=successor["run_id"], gates=gates,
+            authority_core_sha256=str(successor.get("authority_core_sha256") or ""), **dict(successor.get("policy") or {}),
+        )
+        return sup.state_path.is_file() and not sup.state_path.is_symlink()
+    except Exception:
+        return False
+
+
+def _incomplete_migrations(job: Mapping[str, Any]):
+    rows = discover_predecessor_transactions(str(job["harness_root"]), str(job["project_id"]), str(job["run_id"]))
+    terminal = {MigrationPhase.PREDECESSOR_CLOSED, MigrationPhase.ROLLED_BACK}
+    return tuple(tx for tx in rows if tx.phase not in terminal)
+
 def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any]:
     job = load_job(job_path)
     gates = [str(item["gate_id"]) for item in job["gates"]]
@@ -88,6 +118,26 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         )
         return {"job": str(job_path), "action": "BLOCKED", "reason": str(exc), "launched": False}
     status = str(state.get("state"))
+    try:
+        incomplete_migrations = _incomplete_migrations(job)
+    except MigrationHandoffError as exc:
+        incomplete_migrations = ()
+        AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+            kind="RUNTIME_MIGRATION_RECOVERY_REQUIRED", state=status, reason=f"migration evidence invalid: {exc}",
+            gate_id=str(state.get("current_gate") or "") or None, state_sha256=str(state.get("state_sha256") or "") or None,
+            details={"source": "periodic_reconciler"},
+        )
+        return {"job": str(job_path), "action": "MIGRATION_RECOVERY_REQUIRED", "state": status, "launched": False}
+    if incomplete_migrations:
+        tx = incomplete_migrations[-1]
+        AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+            kind="RUNTIME_MIGRATION_RECOVERY_REQUIRED", state=status,
+            reason=f"runtime migration {tx.migration_id} requires recovery at phase {tx.phase.value}",
+            gate_id=str(state.get("current_gate") or "") or None, state_sha256=str(state.get("state_sha256") or "") or None,
+            details={"source": "periodic_reconciler"},
+        )
+        return {"job": str(job_path), "action": "MIGRATION_RECOVERY_REQUIRED", "state": status,
+                "migration_id": tx.migration_id, "migration_phase": tx.phase.value, "launched": False}
     if status in WAIT_STATES:
         AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
             kind=status, state=status, reason=str(state.get("last_error") or status),
@@ -99,7 +149,10 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
                 "recovered_previous_generation": recovered, "launched": False}
     if status in TERMINAL_STATES:
         terminal_reason = str(state.get("terminal_reason") or "")
-        if status == "CANCELLED" and terminal_reason == "RUNTIME_ACTIVATION_MIGRATION":
+        if status == "CANCELLED" and (
+            terminal_reason == "RUNTIME_ACTIVATION_MIGRATION"
+            or (terminal_reason == "MIGRATED_TO_SUCCESSOR" and not _migration_successor_is_registered(job, state))
+        ):
             AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
                 kind="RUNTIME_MIGRATION_ORPHANED", state=status,
                 reason="runtime migration predecessor is terminal without a verified successor",
@@ -155,7 +208,7 @@ def reconcile_all(search_root: str | Path, *, launch: bool = True) -> dict[str, 
         "harness_root": resolved,
         "jobs_found": len(jobs),
         "resume_requested": sum(1 for item in results if item["action"] == "RESUME_REQUESTED"),
-        "blocked": sum(1 for item in results if item["action"] in {"BLOCKED", "LAUNCH_FAILED"}),
+        "blocked": sum(1 for item in results if item["action"] in {"BLOCKED", "LAUNCH_FAILED", "MIGRATION_RECOVERY_REQUIRED"}),
         "results": results,
     }
 
