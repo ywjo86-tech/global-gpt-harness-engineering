@@ -112,11 +112,33 @@ class OmniRouteRuntimeTests(unittest.TestCase):
         self.assertIn("VERSION=3.8.50", script)
         self.assertIn("npm pack \"omniroute@$VERSION\"", script)
         self.assertIn(OMNIROUTE_NPM_INTEGRITY, script)
-        self.assertIn('npm install --prefix "$PREFIX.new"', script)
+        self.assertIn('npm install --prefix "$STAGE"', script)
         self.assertIn('"$TARBALL"', script)
         self.assertIn("grep -Fx '3.8.50'", script)
+        self.assertIn("flock -n 9", script)
+        self.assertIn('mktemp -d "$PARENT/runtime.new.XXXXXX"', script)
+        self.assertNotIn('rm -rf "$PREFIX.new"', script)
         self.assertNotIn("sudo", script)
         self.assertNotIn("npm install -g", script)
+
+
+    def test_install_script_serializes_fixed_prefix_mutation(self) -> None:
+        script = (Path(__file__).resolve().parents[1] / "scripts/install_omniroute_gateway.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('flock -n 9', script)
+        self.assertIn('install.lock', script)
+
+
+    def test_install_script_uses_spec_runtime_and_wrapper_paths(self) -> None:
+        script = (Path(__file__).resolve().parents[1] / "scripts/install_omniroute_gateway.sh").read_text(encoding="utf-8")
+        self.assertIn('PREFIX="$HOME/.local/share/gch/omniroute/runtime"', script)
+        self.assertIn('WRAPPER="$HOME/.local/bin/gch-omniroute"', script)
+        self.assertIn('node_modules/.bin/omniroute', script)
+
+    def test_secure_env_disables_repo_env_loading(self) -> None:
+        env = build_omniroute_env(Path('/tmp/data'), 'secret-ref')
+        self.assertEqual(env['OMNIROUTE_CLI_SKIP_REPO_ENV'], '1')
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ def build_omniroute_env(data_dir: Path, api_key: str) -> dict[str, str]:
         "OMNIROUTE_CONTROL_PLANE_PROXY_DIRECT_FALLBACK": "false",
         "OMNIROUTE_ENABLE_LIVE_WS": "false",
         "OMNIROUTE_DISABLE_BACKGROUND_SERVICES": "true",
+        "OMNIROUTE_CLI_SKIP_REPO_ENV": "1",
     }
 
 
@@ -91,3 +92,84 @@ def validate_omniroute_preflight(
     if str(package_integrity).strip() != OMNIROUTE_NPM_INTEGRITY:
         raise OmniRouteRuntimeError("OmniRoute package integrity mismatch")
     return OmniRouteRuntimeConfig(runtime_prefix, data_dir, secret_file)
+
+
+@dataclass(frozen=True)
+class OmniRouteReadiness:
+    package_version: str
+    executable_path: str
+    listener_hosts: tuple[str, ...]
+    listener_port: int
+    auth_enforced: bool
+    doctor_status: str
+    data_dir: str
+    config_sha256: str
+    secret_file_path: str
+    secret_file_mode: int
+    api_key_present: bool
+    ready: bool
+    reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "package_version": self.package_version,
+            "executable_path": self.executable_path,
+            "listener_hosts": list(self.listener_hosts),
+            "listener_port": self.listener_port,
+            "auth_enforced": self.auth_enforced,
+            "doctor_status": self.doctor_status,
+            "data_dir": self.data_dir,
+            "config_sha256": self.config_sha256,            "secret_file_path": self.secret_file_path,
+            "secret_file_mode": f"{self.secret_file_mode:04o}",
+            "api_key_present": self.api_key_present,
+            "ready": self.ready,
+            "reasons": list(self.reasons),
+        }
+
+
+def probe_omniroute_runtime(
+    *,
+    package_version: str,
+    executable_path: str,
+    listener_hosts: tuple[str, ...],
+    listener_port: int,
+    auth_enforced: bool,
+    doctor_status: str,
+    data_dir: str,
+    config_sha256: str,
+    secret_file_path: str,
+    secret_file_mode: int,
+    api_key_present: bool,
+) -> OmniRouteReadiness:
+    reasons: list[str] = []
+    hosts = tuple(str(host).strip() for host in listener_hosts if str(host).strip())
+    if package_version != OMNIROUTE_VERSION:
+        reasons.append("package_version_mismatch")
+    if not executable_path:
+        reasons.append("executable_missing")
+    if not hosts or any(host != OMNIROUTE_HOST for host in hosts):
+        reasons.append("non_loopback_listener")
+    if int(listener_port) != OMNIROUTE_PORT:
+        reasons.append("unexpected_listener_port")
+    if not auth_enforced:
+        reasons.append("api_key_not_enforced")
+    if doctor_status not in {"PASS", "DEGRADED_NO_PROVIDER_CREDENTIALS"}:
+        reasons.append("doctor_not_acceptable")
+    if not data_dir:
+        reasons.append("data_dir_missing")
+    if len(str(config_sha256)) != 64:
+        reasons.append("config_digest_invalid")
+    if not secret_file_path:
+        reasons.append("secret_file_missing")
+    if int(secret_file_mode) != 0o600:
+        reasons.append("secret_file_mode_invalid")
+    if not api_key_present:
+        reasons.append("api_key_missing")
+    return OmniRouteReadiness(
+        package_version=str(package_version), executable_path=str(executable_path),
+        listener_hosts=hosts, listener_port=int(listener_port),
+        auth_enforced=bool(auth_enforced), doctor_status=str(doctor_status),
+        data_dir=str(data_dir), config_sha256=str(config_sha256),
+        secret_file_path=str(secret_file_path), secret_file_mode=int(secret_file_mode),
+        api_key_present=bool(api_key_present), ready=not reasons, reasons=tuple(reasons),
+    )

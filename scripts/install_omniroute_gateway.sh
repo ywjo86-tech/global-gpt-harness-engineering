@@ -4,9 +4,20 @@ umask 077
 
 VERSION=3.8.50
 EXPECTED_INTEGRITY='sha512-qK6REDWQYGh8lwGwDgFMsBqAMXnxIePudr8cSuSYeB9iIlywNhDJxHKt6Cwa31lPci8jXE5bbvl+az0lvyt0Mg=='
-PREFIX="$HOME/.local/share/gch/omniroute-runtime"
+GCH_ROOT="$HOME/.local/share/gch/omniroute"
+PREFIX="$HOME/.local/share/gch/omniroute/runtime"
+PARENT="$GCH_ROOT"
+WRAPPER="$HOME/.local/bin/gch-omniroute"
+LOCK_FILE="$GCH_ROOT/install.lock"
+mkdir -p "$PARENT"
+exec 9>"$LOCK_FILE"
+flock -n 9 || { printf "OmniRoute install already running\n" >&2; exit 75; }
 TMP="$(mktemp -d)"
-cleanup() { rm -rf "$TMP" "$PREFIX.new"; }
+STAGE="$(mktemp -d "$PARENT/runtime.new.XXXXXX")"
+cleanup() {
+  rm -rf "$TMP"
+  if [ -n "${STAGE:-}" ] && [ -d "$STAGE" ]; then rm -rf "$STAGE"; fi
+}
 trap cleanup EXIT
 
 NODE_VERSION="$(node --version)"
@@ -23,18 +34,18 @@ TARBALL="$TMP/$(python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["file
 INTEGRITY="$(python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["integrity"])' <<<"$PACK_JSON")"
 test "$INTEGRITY" = "$EXPECTED_INTEGRITY"
 
-mkdir -p "$(dirname "$PREFIX")"
-rm -rf "$PREFIX.new"
-mkdir -p "$PREFIX.new"
-npm install --prefix "$PREFIX.new" --omit=dev --no-audit --no-fund "$TARBALL"
-"$PREFIX.new/node_modules/.bin/omniroute" --version | grep -Fx '3.8.50'
+npm install --prefix "$STAGE" --omit=dev --no-audit --no-fund "$TARBALL"
+"$STAGE/node_modules/.bin/omniroute" --version | grep -Fx '3.8.50'
 
 ROLLBACK=""
 if [ -e "$PREFIX" ]; then
   ROLLBACK="$PREFIX.rollback-$(date -u +%Y%m%dT%H%M%SZ)"
   mv "$PREFIX" "$ROLLBACK"
 fi
-mv "$PREFIX.new" "$PREFIX"
+mv "$STAGE" "$PREFIX"
+STAGE=""
+mkdir -p "$(dirname "$WRAPPER")"
+ln -sfn "$PREFIX/node_modules/.bin/omniroute" "$WRAPPER"
 trap 'rm -rf "$TMP"' EXIT
 
 printf 'OMNIROUTE_RUNTIME=%s\n' "$PREFIX"
