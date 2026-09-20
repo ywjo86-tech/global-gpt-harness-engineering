@@ -17,6 +17,7 @@ from runtime.mprf.lifecycle import LifecycleStateV1
 
 from . import provider_runtime_policy as runtime_policy
 from .provider_router import ELIGIBILITY_SCHEMA_V1, ProviderEligibilitySnapshotV1
+from .provider_candidate_inventory import ProviderCandidateInventoryV1, project_active_candidates
 
 
 class ProviderRuntimeBindingError(ValueError):
@@ -165,13 +166,15 @@ def collect_production_provider_eligibility(
     project_root: str | Path, run_id: str, *, required_capabilities: Iterable[str] = (),
     codex_ready_override: bool | None = None, extra_evidence_refs: Iterable[str] = (),
     lifecycle_state: LifecycleStateV1 | None = None,
+    candidate_inventory: ProviderCandidateInventoryV1 | None = None,
 ) -> ProviderEligibilitySnapshotV1:
     try:
-        return _mprf_snapshot_from_policy(
+        snapshot = _mprf_snapshot_from_policy(
             project_root, run_id, required_capabilities=tuple(required_capabilities),
             codex_ready_override=codex_ready_override, extra_evidence_refs=extra_evidence_refs,
             lifecycle_state=lifecycle_state,
         )
+        return project_active_candidates(snapshot, candidate_inventory) if candidate_inventory is not None else snapshot
     except ProviderRuntimeBindingError:
         raise
     except Exception as exc:
