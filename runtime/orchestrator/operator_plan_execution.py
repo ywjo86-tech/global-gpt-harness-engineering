@@ -268,3 +268,37 @@ def build_operator_plan_executor(
             "next": {"action": "SYSTEM_TRANSITION", "automatic": True},
         }
     return execute
+
+
+def resume_operator_plan_after_receipt(job_path: str | Path, gate_id: str) -> dict[str, Any]:
+    """Explicitly reopen WAITING_RESOURCE after a bound PASS receipt exists."""
+    from .production_full_plan_entry import canonical_job_path, load_job, load_registered_job
+    from .production_full_plan_runner import DurableFullPlanSupervisor
+
+    requested = load_job(job_path)
+    canonical = canonical_job_path(requested)
+    if canonical.is_symlink() or not canonical.is_file():
+        raise OperatorPlanExecutionError("durable operator plan job is not registered")
+    job = load_registered_job(canonical)
+    validate_operator_plan_job(job)
+    if str(job.get("executor_kind")) != EXECUTOR_KIND:
+        raise OperatorPlanExecutionError("job is not a GPT operator plan")
+    known = [str(item["gate_id"]) for item in job["gates"]]
+    if gate_id not in known:
+        raise OperatorPlanExecutionError("Task is outside approved operator plan")
+    store = OperatorPlanReceiptStore(
+        str(job["harness_root"]), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+    )
+    receipt = store.load(gate_id)
+    if receipt is None:
+        raise OperatorPlanExecutionError("operator task PASS receipt is missing")
+    _validate_receipt_for_job(job, gate_id, receipt)
+    supervisor = DurableFullPlanSupervisor(
+        str(job["harness_root"]), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+        gates=known, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
+        **dict(job.get("policy") or {}),
+    )
+    state, _ = supervisor.load()
+    if state.get("state") != "WAITING_RESOURCE" or state.get("current_gate") != gate_id:
+        raise OperatorPlanExecutionError("operator plan is not waiting for this Task receipt")
+    return supervisor.resume_wait("WAITING_RESOURCE")

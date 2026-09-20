@@ -11,7 +11,7 @@ from runtime.orchestrator.operator_plan_execution import (
     OperatorPlanReceiptStore,
     build_operator_plan_executor,
     build_operator_plan_job,
-    validate_operator_plan_job,
+    validate_operator_plan_job, resume_operator_plan_after_receipt,
 )
 from runtime.orchestrator.production_full_plan_entry import (
     build_gate_executor, load_job, load_registered_job, preflight_job, register_job,
@@ -170,6 +170,29 @@ class OperatorPlanExecutionTests(unittest.TestCase):
                     approved_plan_path=plan, approved_spec_path=spec,
                     approval_ref="chat://2026-09-20/spec-approved",
                 )
+
+
+    def test_receipt_can_explicitly_resume_waiting_resource(self) -> None:
+        from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); spec, plan = self.make_repo(root)
+            job = self.build_job(root, spec, plan)
+            requested = root / "job.json"; requested.write_text(json.dumps(job), encoding="utf-8")
+            canonical = register_job(load_job(requested)); registered = load_registered_job(canonical)
+            gates = [g["gate_id"] for g in registered["gates"]]
+            sup = DurableFullPlanSupervisor(root, project_id="proj", run_id="run-final-op", gates=gates,
+                authority_core_sha256=registered["authority_core_sha256"],
+                retry_budget=0, gate_timeout_seconds=1, heartbeat_seconds=.03, lease_seconds=.08,
+                min_disk_free_bytes=0, min_inode_free=0, min_memory_available_bytes=0)
+            result = sup.run(build_operator_plan_executor(registered))
+            self.assertEqual(result.state["state"], "WAITING_RESOURCE")
+            store = OperatorPlanReceiptStore(root, project_id="proj", run_id="run-final-op")
+            store.create_pass_receipt(gate_id="TASK-001", plan_sha256=registered["approved_plan_sha256"],
+                spec_sha256=registered["approved_spec_sha256"], branch=registered["expected_branch"],
+                source_head=git(root, "rev-parse", "HEAD"), tests=("unit:PASS",))
+            resumed = resume_operator_plan_after_receipt(canonical, "TASK-001")
+            self.assertEqual(resumed["state"], "RECOVERING")
+            self.assertEqual(resumed["current_gate"], "TASK-001")
 
 
 if __name__ == "__main__":
