@@ -1,7 +1,7 @@
 # DCC Harness-Wide Operational Remediation — Design Amendment
 
 **Date:** 2026-09-21
-**Status:** CANDIDATE / USER-REVIEW-REQUIRED
+**Status:** USER-APPROVED / IMPLEMENTATION-PLANNING-AUTHORIZED
 **Amends:** `docs/superpowers/specs/2026-09-20-durable-continuation-controller-design.md`
 **Diagnosis:** `docs/history/upgrades/2026-09-21-DURABLE-CONTINUATION-CONTROLLER/EDP_HARNESS_WIDE_OPERATIONAL_REDIAGNOSIS.md`
 **Protocol:** `standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md` / EDP-1.0

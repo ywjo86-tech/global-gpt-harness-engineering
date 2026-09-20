@@ -10,7 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-20-durable-continuation-controller-design.md`
 **Spec Approval:** 2026-09-21 user confirmation `Goal 승인`
-**Plan Status:** REVIEWED-CANDIDATE / EXECUTION-APPROVAL-PENDING
+**Plan Status:** SUPERSEDED-FOR-EXECUTION / HISTORICAL-REFERENCE-ONLY
+
+**Superseded by:** `docs/superpowers/plans/2026-09-21-dcc-hwo-coordination.md` and its four bounded subplans after the user-approved Harness-wide operational Amendment.
 
 ## Global Constraints
 
