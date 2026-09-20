@@ -16,6 +16,7 @@ from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFu
 from .operator_exit_guard import assess_operator_turn_exit
 from .durable_io import atomic_write_json
 from .contract_adapter import MAPPING_ROOT_ENV
+from .harness_state_root import job_state_root
 from .production_run_authority import (
     RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
     merge_runtime_bindings, seal_authority_core, validate_authority_core,
@@ -84,6 +85,9 @@ def load_job(path: str | Path) -> dict[str, Any]:
     if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
         from .operator_plan_execution import validate_operator_plan_job
         validate_operator_plan_job(job)
+    state_root = job.get("harness_state_root")
+    if state_root is not None and (not isinstance(state_root, str) or not state_root):
+        raise FullPlanJobError("Full Plan job harness_state_root is invalid")
     mapping_root = job.get("mapping_root")
     if mapping_root is not None and (not isinstance(mapping_root, str) or not mapping_root):
         raise FullPlanJobError("Full Plan job mapping_root is invalid")
@@ -102,8 +106,8 @@ def _git_common_dir(project_root: Path) -> str:
 
 
 def canonical_job_path(job: Mapping[str, Any]) -> Path:
-    harness = Path(str(job["harness_root"])).resolve()
-    return harness / "_workspace" / "production-full-plan-jobs" / str(job["project_id"]) / f"{job['run_id']}.job.json"
+    state_root = job_state_root(job)
+    return state_root / "_workspace" / "production-full-plan-jobs" / str(job["project_id"]) / f"{job['run_id']}.job.json"
 
 
 def recover_registered_job_state_after_external_binding_drift(path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -130,7 +134,7 @@ def recover_registered_job_state_after_external_binding_drift(path: str | Path) 
             raise FullPlanJobError("unsafe Gate ID in registered Full Plan job")
         gate_ids.append(item["gate_id"])
     supervisor = DurableFullPlanSupervisor(
-        raw["harness_root"], project_id=raw["project_id"], run_id=raw["run_id"], gates=gate_ids,
+        job_state_root(raw), project_id=raw["project_id"], run_id=raw["run_id"], gates=gate_ids,
         authority_core_sha256=str(raw["authority_core_sha256"]), **dict(raw.get("policy") or {}),
     )
     if supervisor.state_path.is_symlink() or not supervisor.state_path.is_file():
@@ -188,7 +192,9 @@ def load_registered_job(path: str | Path) -> dict[str, Any]:
 def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
     project = Path(str(job["project_root"])).resolve()
     harness = Path(str(job["harness_root"])).resolve()
-    if not project.is_dir() or project.is_symlink() or not harness.is_dir() or harness.is_symlink():
+    state_root = job_state_root(job)
+    if (not project.is_dir() or project.is_symlink() or not harness.is_dir() or harness.is_symlink()
+            or not state_root.is_dir() or state_root.is_symlink()):
         return {"status": "BLOCK", "state": "BLOCKED", "reason": "PROJECT_OR_HARNESS_ROOT_INVALID"}
     python_executable = Path(str(job.get("python_executable") or sys.executable)).expanduser()
     if not python_executable.is_absolute():
@@ -243,7 +249,7 @@ def build_gate_executor(job: Mapping[str, Any]):
         from .operator_plan_execution import build_operator_plan_executor
         return build_operator_plan_executor(job)
     project_root = str(Path(str(job["project_root"])).resolve())
-    harness_root = str(Path(str(job["harness_root"])).resolve())
+    harness_root = str(job_state_root(job))
     specs = {str(item["gate_id"]): dict(item) for item in job["gates"]}
 
     def execute(gate_id: str, gate_run_id: str, resume: bool) -> Mapping[str, Any]:
@@ -301,7 +307,7 @@ def run_job(path: str | Path) -> dict[str, Any]:
     gate_ids = [str(item["gate_id"]) for item in job["gates"]]
     policy = dict(job.get("policy") or {})
     supervisor = DurableFullPlanSupervisor(
-        job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids,
+        job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids,
         authority_core_sha256=str(job.get("authority_core_sha256") or ""), **policy,
     )
     previous_mapping_root = os.environ.get(MAPPING_ROOT_ENV)

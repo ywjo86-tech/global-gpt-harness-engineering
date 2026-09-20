@@ -10,6 +10,7 @@ from typing import Any
 
 from .production_attention import AttentionOutbox
 from .user_interaction_policy import STALL_CONFIRMED, evaluate_attention_delivery
+from .harness_state_root import discovery_roots, job_dedupe_key, job_state_root
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -22,27 +23,33 @@ def _load_json(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def discover_registered_jobs(search_root: str | Path) -> list[dict[str, Any]]:
-    root = Path(search_root).resolve()
+def discover_registered_jobs(search_root: str | Path, *, legacy_roots: tuple[str | Path, ...] = ()) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
-    for path in root.rglob("*.job.json"):
-        if "production-full-plan-jobs" not in path.parts:
+    for root in discovery_roots(search_root, legacy_roots):
+        if not root.is_dir():
             continue
-        job = _load_json(path)
-        if not job:
-            continue
-        project_id = str(job.get("project_id") or "")
-        run_id = str(job.get("run_id") or "")
-        harness_root = str(job.get("harness_root") or "")
-        if not project_id or not run_id or not harness_root:
-            continue
-        key = (project_id, run_id, str(Path(harness_root).resolve()))
-        if key in seen:
-            continue
-        seen.add(key)
-        jobs.append({"project_id": project_id, "run_id": run_id, "harness_root": key[2], "job_path": str(path)})
-    return sorted(jobs, key=lambda item: (item["project_id"], item["run_id"], item["harness_root"]))
+        for path in root.rglob("*.job.json"):
+            if "production-full-plan-jobs" not in path.parts:
+                continue
+            job = _load_json(path)
+            if not job:
+                continue
+            project_id = str(job.get("project_id") or "")
+            run_id = str(job.get("run_id") or "")
+            harness_root = str(job.get("harness_root") or "")
+            if not project_id or not run_id or not harness_root:
+                continue
+            key = job_dedupe_key(job, source_path=path)
+            if key in seen:
+                continue
+            seen.add(key)
+            jobs.append({
+                "project_id": project_id, "run_id": run_id,
+                "harness_root": str(Path(harness_root).resolve()),
+                "harness_state_root": str(job_state_root(job)), "job_path": str(path),
+            })
+    return sorted(jobs, key=lambda item: (item["project_id"], item["run_id"], item["harness_state_root"]))
 
 
 def _age_seconds(value: object, *, now: datetime) -> float:
@@ -58,7 +65,7 @@ def _age_seconds(value: object, *, now: datetime) -> float:
 
 
 def discover_pending_attention(
-    search_root: str | Path, *, stale_after_seconds: int = 120,
+    search_root: str | Path, *, legacy_roots: tuple[str | Path, ...] = (), stale_after_seconds: int = 120,
     user_attention_after_seconds: int = 300, now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     if stale_after_seconds <= 0 or user_attention_after_seconds <= 0:
@@ -68,9 +75,9 @@ def discover_pending_attention(
         raise ValueError("attention clock must be timezone-aware")
     current = current.astimezone(timezone.utc)
     rows: list[dict[str, Any]] = []
-    for job in discover_registered_jobs(search_root):
-        harness = Path(job["harness_root"])
-        run_base = harness / "_workspace" / "production-full-plan" / job["project_id"] / job["run_id"]
+    for job in discover_registered_jobs(search_root, legacy_roots=legacy_roots):
+        state_root = Path(job["harness_state_root"])
+        run_base = state_root / "_workspace" / "production-full-plan" / job["project_id"] / job["run_id"]
         state = _load_json(run_base / "state.json") or {}
         outbox = AttentionOutbox(run_base, project_id=job["project_id"], run_id=job["run_id"])
         pending = outbox.pending()

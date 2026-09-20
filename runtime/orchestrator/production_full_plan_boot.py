@@ -16,6 +16,7 @@ from .production_full_plan_entry import (
 from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, discover_predecessor_transactions
 from .production_full_plan_runner import ACTIVE_STATES, TERMINAL_STATES, WAIT_STATES, DurableFullPlanSupervisor, ProductionFullPlanError
 from .production_attention import AttentionOutbox
+from .harness_state_root import discovery_roots, job_dedupe_key, job_state_root
 
 
 class FullPlanBootError(ValueError):
@@ -44,29 +45,26 @@ def _unit_active(unit: str) -> bool:
     return completed.stdout.strip() in {"active", "activating", "reloading"}
 
 
-def discover_registered_jobs(search_root: str | Path) -> list[Path]:
-    root = Path(search_root).resolve()
-    if not root.is_dir():
-        return []
+def discover_registered_jobs(search_root: str | Path, *, legacy_roots: tuple[str | Path, ...] = ()) -> list[Path]:
     found: list[Path] = []
     seen: set[tuple[str, str, str]] = set()
-    for path in root.rglob("*.job.json"):
-        if "production-full-plan-jobs" not in path.parts or path.is_symlink() or not path.is_file():
+    for root in discovery_roots(search_root, legacy_roots):
+        if not root.is_dir():
             continue
-        try:
-            job = load_job(path)
-        except Exception:
-            key = ("INVALID", str(path.resolve()), "")
-        else:
-            key = (
-                str(job["project_id"]), str(job["run_id"]),
-                str(Path(str(job["harness_root"])).resolve()),
-            )
-        if key in seen:
-            continue
-        seen.add(key)
-        found.append(path)
-    return sorted(found)
+        for path in root.rglob("*.job.json"):
+            if "production-full-plan-jobs" not in path.parts or path.is_symlink() or not path.is_file():
+                continue
+            try:
+                job = load_job(path)
+            except Exception:
+                key = ("INVALID", str(path.resolve()), "")
+            else:
+                key = job_dedupe_key(job, source_path=path)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(path)
+    return found
 
 
 def discover_jobs(harness_root: str | Path) -> list[Path]:
@@ -81,7 +79,7 @@ def _migration_successor_is_registered(job: Mapping[str, Any], state: Mapping[st
     successor_sha = str(state.get("migration_successor_state_sha256") or "")
     if not successor_run_id or len(successor_sha) != 64:
         return False
-    path = Path(str(job["harness_root"])).resolve() / "_workspace" / "production-full-plan-jobs" / str(job["project_id"]) / f"{successor_run_id}.job.json"
+    path = job_state_root(job) / "_workspace" / "production-full-plan-jobs" / str(job["project_id"]) / f"{successor_run_id}.job.json"
     if path.is_symlink() or not path.is_file():
         return False
     try:
@@ -90,7 +88,7 @@ def _migration_successor_is_registered(job: Mapping[str, Any], state: Mapping[st
             return False
         gates = [str(item["gate_id"]) for item in successor["gates"]]
         sup = DurableFullPlanSupervisor(
-            successor["harness_root"], project_id=successor["project_id"], run_id=successor["run_id"], gates=gates,
+            job_state_root(successor), project_id=successor["project_id"], run_id=successor["run_id"], gates=gates,
             authority_core_sha256=str(successor.get("authority_core_sha256") or ""), **dict(successor.get("policy") or {}),
         )
         return sup.state_path.is_file() and not sup.state_path.is_symlink()
@@ -99,7 +97,7 @@ def _migration_successor_is_registered(job: Mapping[str, Any], state: Mapping[st
 
 
 def _incomplete_migrations(job: Mapping[str, Any]):
-    rows = discover_predecessor_transactions(str(job["harness_root"]), str(job["project_id"]), str(job["run_id"]))
+    rows = discover_predecessor_transactions(str(job_state_root(job)), str(job["project_id"]), str(job["run_id"]))
     terminal = {MigrationPhase.PREDECESSOR_CLOSED, MigrationPhase.ROLLED_BACK}
     return tuple(tx for tx in rows if tx.phase not in terminal)
 
@@ -119,7 +117,7 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         if status not in TERMINAL_STATES:
             gates = [str(item["gate_id"]) for item in job["gates"]]
             supervisor = DurableFullPlanSupervisor(
-                job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+                job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gates,
                 authority_core_sha256=str(job.get("authority_core_sha256") or ""), **dict(job.get("policy") or {}),
             )
             reason = f"external binding drift on nonterminal job: {load_exc}"
@@ -133,7 +131,7 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         external_binding_drift = str(load_exc)
     gates = [str(item["gate_id"]) for item in job["gates"]]
     supervisor = DurableFullPlanSupervisor(
-        job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+        job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gates,
         authority_core_sha256=str(job.get("authority_core_sha256") or ""),
         **dict(job.get("policy") or {}),
     )
@@ -287,7 +285,7 @@ def _active_jobs_under(root: Path) -> list[str]:
             job = load_job(job_path)
             gates = [str(item["gate_id"]) for item in job["gates"]]
             state, _ = DurableFullPlanSupervisor(
-                job["harness_root"], project_id=job["project_id"], run_id=job["run_id"], gates=gates,
+                job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gates,
                 authority_core_sha256=str(job.get("authority_core_sha256") or ""),
                 **dict(job.get("policy") or {}),
             ).load()
