@@ -1,0 +1,16 @@
+{
+  "baseline_id": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
+  "cli_anything": "QUALIFIED_TOOL_IMPLEMENTATION",
+  "codegraph": "PRODUCTION_READ_ONLY_ACTIVE",
+  "decision": "ALL_PASS / GO",
+  "diagnostic_intelligence": "ADVISORY",
+  "edp_final_sha256": "888c598f892b2ffed9fb27f4950d5c1c8d99eca3bbbb78421a0786f6d8601e3c",
+  "graphify": "PRODUCTION_READ_ONLY_ACTIVE",
+  "groq": "ACTIVE / FREE_TIER_ONLY",
+  "holmes_inspired_rca": "ACTIVE_READ_ONLY",
+  "provider_gateway": "PROVIDER_EXPANSION_RUNTIME_ALL_PASS",
+  "runtime_release_status": "ACTIVE",
+  "schema_version": "gch.final-operational-baseline-declaration.v1",
+  "status": "DECLARED",
+  "validated_source_head": "246b6989903ee1f3717f33ae28287f8eb4c255f7"
+}

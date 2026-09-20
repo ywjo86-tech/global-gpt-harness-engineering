@@ -1,0 +1,28 @@
+{
+  "artifacts": {
+    "docs/DEVELOPMENT_PLAN.txt": "5c3e97bdaa27c837a3c2ef7b28f89bd8b62b27f7f385dcb7f0d220461f3e939e",
+    "docs/harness/CURRENT_OPERATIONAL_STATE.json": "4a46a3ad01bfdb3ba71fac0d62eadfe8f1ac81219d8481037a25f4302e3e3f14",
+    "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/EDP_POST_OPERATIONAL_ALL_PASS.md": "52da8512c8ffa0ed158b9c4eae83969be1c94820b5447bb139198c9cb8795c1b",
+    "docs/history/upgrades/2026-09-20-DIAGNOSTIC-INTELLIGENCE/ADVISORY_QUALIFICATION.json": "98046dcc67001f796bc186becead2024dcb16d6b017326c6cd86216e52f6fb3e",
+    "docs/history/upgrades/2026-09-20-DIAGNOSTIC-INTELLIGENCE/SHADOW_QUALIFICATION.json": "32f4f8011cbd69681db526524b78c13d0e347d925592317e15b5ff704773c96d",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE_DECLARATION.json": "46a3318e5d5f960ff3669b9662216b21e20bdb419d96a4f41cae4e2275a58eae",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CLI_ANYTHING_EDP_QUALIFICATION.json": "5dab09de1a662f244299984dee6b9168c31c4dd2393adbbad90054ce55b18f4a",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CLI_ANYTHING_EDP_QUALIFICATION.md": "0c74ca4fd0152afa501bb0ff6fe82c25b85595ff13c0fbd2f5ce6f306a277362",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CLI_ANYTHING_SOURCE_QUALIFICATION.json": "07af346b61ef065be7ff3bd2affc6756ca5655354a2216a70010e4df8b6bbd5b",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CONTINUITY_RUNTIME_MIGRATION_EVIDENCE.json": "f4b15e979e9abf6983ebd084cc1d7963c30b19a25fb042f013295240c796a352",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/EDP_CONTINUITY_POST_REMEDIATION.json": "782d7477311b1347070432725642e94f3e3b0c568e6aba9e27b3947353234721",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/EDP_FINAL_ALL_PASS.json": "888c598f892b2ffed9fb27f4950d5c1c8d99eca3bbbb78421a0786f6d8601e3c",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/EDP_FINAL_ALL_PASS.md": "779ccf4272a46a126e89e02ba81d19c1ef19a58c3d90c51b9aa048f34a7fca94",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/ORIGINAL_TASK014_SUCCESSOR_CLOSURE.json": "cb1fb04fe35b2b061dd92ca8ea6dc3602fd7717e0bea8d0e44aead8480e58805",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/R2_TO_SUCCESSOR_RECOVERY.json": "d3ad40410c39b009d98c566dd80bacfc5447d6934878b9443e780d9eb058112a",
+    "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/RUNTIME_ACTIVATION_EVIDENCE.json": "33ce415807d0706b08e7ff3d033e82c2cff2c190e2d67ee28f3488c3dec64d5e",
+    "docs/superpowers/plans/2026-09-20-full-plan-continuity-skill-remediation.md": "b409ed8b1a0abbaf7e372781adf5fd40761588c23b545ab1d21539b2c16ec568",
+    "docs/superpowers/specs/2026-09-20-diagnostic-intelligence-final-operationalization-design.md": "1d79f6418cafedec7d263c17149fff4ffef2b8c5b662214d14874bb3e4e52647",
+    "docs/superpowers/specs/2026-09-20-final-operational-scope-integrity-amendment-design.md": "0b6eb32752cc673d402e21010ca65bf1679502d86a68c2af34b2b414b439d16e",
+    "docs/superpowers/specs/2026-09-20-full-plan-continuity-skill-remediation-design.md": "fc5f1f808365fffc134c78e51006501365cef0b92b5e36bb9a73eb10386b20cf"
+  },
+  "baseline_id": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
+  "manifest_sha256": "839cf8ced5485c14273576b61bf642a05228dc1aaf7b3fffd05810e52d796596",
+  "schema_version": "gch.final-operational-manifest.v1",
+  "validated_source_head": "246b6989903ee1f3717f33ae28287f8eb4c255f7"
+}

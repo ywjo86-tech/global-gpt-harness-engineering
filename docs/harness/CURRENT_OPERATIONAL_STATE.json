@@ -1,28 +1,42 @@
 {
   "ai_office_stable_baseline": "DECLARED",
   "authority": "PROJECTION_ONLY",
-  "diagnostic_intelligence": "ADVISORY_QUALIFIED",
+  "cli_anything": "QUALIFIED_TOOL_IMPLEMENTATION",
+  "codegraph": "PRODUCTION_READ_ONLY_ACTIVE",
+  "current_operational_state": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
+  "diagnostic_intelligence": "ADVISORY",
   "evidence": [
     {
-      "path": "docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/STABLE-BASELINE/AI_OFFICE_STABLE_BASELINE_DECLARATION.json",
-      "sha256": "24a67d9a77c68d667a694cc7f792ab491e228dafd5e38143ad2b4433f61899b8"
+      "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/EDP_FINAL_ALL_PASS.json",
+      "sha256": "888c598f892b2ffed9fb27f4950d5c1c8d99eca3bbbb78421a0786f6d8601e3c"
     },
     {
-      "path": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/EDP_POST_OPERATIONAL_ALL_PASS.md",
-      "sha256": "52da8512c8ffa0ed158b9c4eae83969be1c94820b5447bb139198c9cb8795c1b"
+      "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE_DECLARATION.json",
+      "sha256": "46a3318e5d5f960ff3669b9662216b21e20bdb419d96a4f41cae4e2275a58eae"
     },
     {
-      "path": "docs/history/upgrades/2026-09-20-DIAGNOSTIC-INTELLIGENCE/SHADOW_QUALIFICATION.json",
-      "sha256": "32f4f8011cbd69681db526524b78c13d0e347d925592317e15b5ff704773c96d"
+      "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/ORIGINAL_TASK014_SUCCESSOR_CLOSURE.json",
+      "sha256": "cb1fb04fe35b2b061dd92ca8ea6dc3602fd7717e0bea8d0e44aead8480e58805"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CLI_ANYTHING_EDP_QUALIFICATION.json",
+      "sha256": "5dab09de1a662f244299984dee6b9168c31c4dd2393adbbad90054ce55b18f4a"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CONTINUITY_RUNTIME_MIGRATION_EVIDENCE.json",
+      "sha256": "f4b15e979e9abf6983ebd084cc1d7963c30b19a25fb042f013295240c796a352"
     },
     {
       "path": "docs/history/upgrades/2026-09-20-DIAGNOSTIC-INTELLIGENCE/ADVISORY_QUALIFICATION.json",
       "sha256": "98046dcc67001f796bc186becead2024dcb16d6b017326c6cd86216e52f6fb3e"
     }
   ],
+  "final_edp": "ALL_PASS",
+  "graphify": "PRODUCTION_READ_ONLY_ACTIVE",
   "groq": "ACTIVE / FREE_TIER_ONLY",
+  "holmes_inspired_rca": "ACTIVE_READ_ONLY",
   "ph7_provider_expansion": "PROVIDER_EXPANSION_RUNTIME_ALL_PASS",
-  "runtime_release": "PENDING_FINAL_ACTIVATION",
-  "schema_version": "gch.current-operational-state.v1",
-  "status": "FINAL_OPERATIONALIZATION_IN_PROGRESS"
+  "runtime_release": "ACTIVE",
+  "schema_version": "gch.current-operational-state.v2",
+  "status": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE"
 }

@@ -1,0 +1,412 @@
+{
+  "adversarial_second_pass": {
+    "new_blocker_major": 0,
+    "notes": [
+      "stale parent spec status found and resolved",
+      "Graphify smoke command path assumption corrected; tool output itself was valid",
+      "CodeGraph smoke argument name corrected from directory to path; one-shot then returned rc=0"
+    ],
+    "status": "PASS"
+  },
+  "baseline_id": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
+  "decision": "ALL_PASS",
+  "evidence_matrix": [
+    {
+      "authority": "user-approved final operationalization + continuity + CLI amendment specs",
+      "claim": "Canonical authority/source set is available and valid",
+      "domain_id": "ED-00",
+      "evidence": "all three specs USER-APPROVED; source HEAD 246b6989903ee1f3717f33ae28287f8eb4c255f7",
+      "result": "PASS",
+      "target": "approved specs/current source"
+    },
+    {
+      "authority": "CI-CONT-01..05",
+      "claim": "Design skill requires Stateful Continuity Review",
+      "domain_id": "ED-01",
+      "evidence": "test_harness_design_continuity_skill + SKILL_CONTINUITY_PRESSURE_TEST.md",
+      "result": "PASS",
+      "target": ".agents/skills/harness-design/SKILL.md"
+    },
+    {
+      "authority": "CI-CONT-04",
+      "claim": "Self-reference/zero-owner paradox is detected",
+      "domain_id": "ED-02",
+      "evidence": "runtime migration focused tests + exact predecessor exemption",
+      "result": "PASS",
+      "target": "runtime migration design/activation guard"
+    },
+    {
+      "authority": "continuity spec \u00a76",
+      "claim": "Migration transaction is digest-bound and immutable",
+      "domain_id": "ED-03",
+      "evidence": "test_runtime_migration_handoff + CONTINUITY_RUNTIME_MIGRATION_EVIDENCE.json",
+      "result": "PASS",
+      "target": "runtime/orchestrator/runtime_migration_handoff.py"
+    },
+    {
+      "authority": "continuity spec \u00a76",
+      "claim": "Quiescence and activation guard do not permit generic bypass",
+      "domain_id": "ED-04",
+      "evidence": "transaction-bound activation tests; no generic ignore/force path",
+      "result": "PASS",
+      "target": "runtime release/Full Plan runner"
+    },
+    {
+      "authority": "CI-CONT-01..03",
+      "claim": "Durable successor is verified before predecessor close",
+      "domain_id": "ED-05",
+      "evidence": "R3 MIGRATED_TO_SUCCESSOR; R4 verified; migration evidence PASS",
+      "result": "PASS",
+      "target": "R3\u2192R4 live migration"
+    },
+    {
+      "authority": "continuity spec \u00a78",
+      "claim": "Crash/restart recovery is deterministic",
+      "domain_id": "ED-06",
+      "evidence": "failure injection/crash replay tests PASS",
+      "result": "PASS",
+      "target": "migration recovery/reconciler"
+    },
+    {
+      "authority": "CI-CONT-03",
+      "claim": "Terminal orphan produces outbound Attention",
+      "domain_id": "ED-07",
+      "evidence": "RUNTIME_MIGRATION_ORPHANED regression + R4 current pending attention count 0",
+      "result": "PASS",
+      "target": "production_full_plan_boot.py"
+    },
+    {
+      "authority": "approved implementation plan",
+      "claim": "Full Plan continuity regression remains green",
+      "domain_id": "ED-08",
+      "evidence": "1875 tests PASS, 15 skipped",
+      "result": "PASS",
+      "target": "full repository"
+    },
+    {
+      "authority": "existing authority core",
+      "claim": "Provider authority remains Provider Router only",
+      "domain_id": "ED-09",
+      "evidence": "provider focused regression in 136-test authority suite",
+      "result": "PASS",
+      "target": "provider router/integration"
+    },
+    {
+      "authority": "tool authorization contract",
+      "claim": "Tool/effect authority remains authorization\u2192registry\u2192broker\u2192journal",
+      "domain_id": "ED-10",
+      "evidence": "tool/effect + CLI broker tests PASS",
+      "result": "PASS",
+      "target": "tool_authorization.py/production_tool_transport.py"
+    },
+    {
+      "authority": "completion authority contract",
+      "claim": "Completion authority did not move",
+      "domain_id": "ED-11",
+      "evidence": "completion focused regression PASS; migration/CLI control_authority NONE",
+      "result": "PASS",
+      "target": "completion_authority.py"
+    },
+    {
+      "authority": "diagnostic spec",
+      "claim": "Graphify is production read-only/on-demand and fresh",
+      "domain_id": "ED-12",
+      "evidence": "live graph 4186071 bytes; query PASS; SHADOW qualification PASS",
+      "result": "PASS",
+      "target": "Graphify 0.9.58"
+    },
+    {
+      "authority": "diagnostic spec",
+      "claim": "CodeGraph is graph-only/read-only with telemetry off",
+      "domain_id": "ED-13",
+      "evidence": "live one-shot 1532 bytes; isolated HOME; graph profile",
+      "result": "PASS",
+      "target": "CodeGraph 0.20.1"
+    },
+    {
+      "authority": "diagnostic spec",
+      "claim": "Holmes-inspired RCA is evidence-only",
+      "domain_id": "ED-14",
+      "evidence": "RCA tests + diagnostic authority negative-space PASS",
+      "result": "PASS",
+      "target": "runtime/diagnostics/rca.py"
+    },
+    {
+      "authority": "CLI amendment",
+      "claim": "CLI-Anything TI-01..TI-08 and invariants are qualified",
+      "domain_id": "ED-15",
+      "evidence": "CLI_ANYTHING_EDP_QUALIFICATION.json: 8/8 domains, 7/7 invariants, 28-test matrix PASS",
+      "result": "PASS",
+      "target": "tool implementation plane"
+    },
+    {
+      "authority": "CODE_INTELLIGENCE_DIAGNOSTIC_EXTENSION",
+      "claim": "Diagnostic freshness/conflict/fallback/security are bounded",
+      "domain_id": "ED-16",
+      "evidence": "diagnostic failure injection/negative-space tests PASS; config ADVISORY 0600",
+      "result": "PASS",
+      "target": "diagnostic bridge/adapters/config"
+    },
+    {
+      "authority": "Task15 Step6",
+      "claim": "Governance projection matches measured final state",
+      "domain_id": "ED-17",
+      "evidence": "final projection fields generated from this measured run",
+      "result": "PASS",
+      "target": "CURRENT_OPERATIONAL_STATE.json + DEVELOPMENT_PLAN.txt"
+    },
+    {
+      "authority": "runtime release contract",
+      "claim": "Operational restart path is immutable-runtime based",
+      "domain_id": "ED-18",
+      "evidence": "runtime-current=/home/ywjo/.local/share/global-gpt-harness/releases/15c32c5c325c2d23ef5b94614cbf749c1b2074e9; reconcile blocked=0; timer enabled/active",
+      "result": "PASS",
+      "target": "runtime-current + systemd reconciler"
+    },
+    {
+      "authority": "continuity spec \u00a711",
+      "claim": "Interrupted original TASK-014 is closed without rewriting R2",
+      "domain_id": "ED-19",
+      "evidence": "successor closure PASS; historical R2 TASK-014 receipt absent",
+      "result": "PASS",
+      "target": "ORIGINAL_TASK014_SUCCESSOR_CLOSURE.json"
+    },
+    {
+      "authority": "PH7 provider expansion baseline",
+      "claim": "OmniRoute provider gateway remains loopback/authenticated and free-tier Groq remains qualified",
+      "domain_id": "ED-20",
+      "evidence": "OmniRoute 3.8.50; unauth=401; auth=200; Groq FREE_TIER_ONLY evidence retained",
+      "result": "PASS",
+      "target": "127.0.0.1:20128"
+    },
+    {
+      "authority": "EDP-1.0 Universal PASS Gate",
+      "claim": "TASK-015 final EDP can close from measured evidence",
+      "domain_id": "ED-21",
+      "evidence": "all mandatory metrics computed below; no unresolved material finding",
+      "result": "PASS",
+      "target": "this final diagnosis"
+    }
+  ],
+  "findings": [
+    {
+      "artifact": "docs/superpowers/specs/2026-09-20-diagnostic-intelligence-final-operationalization-design.md",
+      "correction": "Synchronize header with actual approved authority state.",
+      "evidence": "Cross-document second pass found stale header; changed only status/approval metadata to USER-APPROVED / USER 2026-09-20.",
+      "finding_id": "EDP-FINAL-001",
+      "impact": "Would have prevented SOURCE_AUTHORITY_STATUS=VALID and CROSS_DOCUMENT_CONFLICT_COUNT=0.",
+      "owner": "governance projection",
+      "problem": "Header retained SPEC-REVIEW-PENDING after user approval and execution.",
+      "regression_scope": "approved spec status scan + focused authority regression + final cross-document validator",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "artifact": "tests/test_current_operational_state_projection.py",
+      "correction": "Update projection contract test to assert complete final baseline fields.",
+      "evidence": "Test failed on final projection, then passed after expectation was aligned with approved Task15 Step6 values.",
+      "finding_id": "EDP-FINAL-002",
+      "impact": "False release regression; no runtime authority or execution defect.",
+      "owner": "governance regression test",
+      "problem": "Projection regression test still expected intermediate ADVISORY_QUALIFIED after approved final projection changed to ADVISORY.",
+      "regression_scope": "projection test + final full regression 1875 PASS",
+      "severity": "MINOR",
+      "status": "RESOLVED"
+    }
+  ],
+  "go": "GO",
+  "metrics": {
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "BLOCKER_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "MATERIAL_DEFECT_SEARCH": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE",
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "SOURCE_AUTHORITY_STATUS": "VALID",
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MATERIAL_OPEN_QUESTION_COUNT": 0,
+    "UNRESOLVED_MATERIAL_TBD_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0
+  },
+  "negative_space": {
+    "arbitrary_cli_shell_surface": 0,
+    "completion_authority_movement": 0,
+    "generated_skill_self_activation": 0,
+    "generic_active_job_bypass": 0,
+    "historical_r2_receipt_fabrication": 0,
+    "orphan_noncompleted_terminal_without_successor_or_attention": 0,
+    "provider_authority_movement": 0,
+    "runtime_current_points_to_disposable_worktree": 0,
+    "stale_diagnostic_advisory": 0,
+    "stale_governance_open_projection": 0,
+    "tool_effect_authority_movement": 0,
+    "zero_owner_migration_gap": 0
+  },
+  "pass_challenge": {
+    "open_count": 0,
+    "status": "PASS"
+  },
+  "protocol": "EXHAUSTIVE_DIAGNOSIS_PROTOCOL / EDP-1.0",
+  "rtm": [
+    {
+      "id": "REQ-FINAL-01",
+      "proof": "Tasks 1-9 evidence/full regression",
+      "source_obligation": "Diagnosed runtime/governance/continuity remediation",
+      "status": "PASS",
+      "target": "continuity skill + migration transaction + orphan Attention"
+    },
+    {
+      "id": "REQ-FINAL-02",
+      "proof": "Graphify 0.9.58 live extract/query + SHADOW/ADVISORY evidence",
+      "source_obligation": "Graphify production read-only adoption",
+      "status": "PASS",
+      "target": "diagnostic plane"
+    },
+    {
+      "id": "REQ-FINAL-03",
+      "proof": "0.20.1 graph-only one-shot live smoke + adapter tests",
+      "source_obligation": "CodeGraph read-only impact intelligence",
+      "status": "PASS",
+      "target": "CodeGraph adapter"
+    },
+    {
+      "id": "REQ-FINAL-04",
+      "proof": "RCA/failure-injection/authority-negative tests",
+      "source_obligation": "Holmes-inspired evidence-first RCA",
+      "status": "PASS",
+      "target": "bounded RCA module"
+    },
+    {
+      "id": "REQ-FINAL-05",
+      "proof": "TI-01..08 100%; TI-INV-01..07 100%",
+      "source_obligation": "CLI-Anything bounded Tool Implementation integration",
+      "status": "PASS",
+      "target": "manifest/adapter/broker path"
+    },
+    {
+      "id": "REQ-FINAL-06",
+      "proof": "loopback auth smoke + PH7 Groq evidence",
+      "source_obligation": "Provider gateway/Groq remains governed",
+      "status": "PASS",
+      "target": "OmniRoute/Provider Router"
+    },
+    {
+      "id": "REQ-FINAL-07",
+      "proof": "136-test focused authority suite + negative-space scans",
+      "source_obligation": "No authority expansion",
+      "status": "PASS",
+      "target": "provider/tool/completion/attention boundaries"
+    },
+    {
+      "id": "REQ-FINAL-08",
+      "proof": "verified successor before predecessor close",
+      "source_obligation": "No zero-owner runtime migration gap",
+      "status": "PASS",
+      "target": "R3\u2192R4 migration"
+    },
+    {
+      "id": "REQ-FINAL-09",
+      "proof": "orphan Attention regression + migration recovery tests",
+      "source_obligation": "Non-COMPLETED terminal cannot silently orphan",
+      "status": "PASS",
+      "target": "terminal reconciler"
+    },
+    {
+      "id": "REQ-FINAL-10",
+      "proof": "TASK-014.json absent; successor closure artifact present",
+      "source_obligation": "Historical R2 TASK-014 receipt must not be fabricated",
+      "status": "PASS",
+      "target": "R2 receipt store"
+    },
+    {
+      "id": "REQ-FINAL-11",
+      "proof": "final fields set from measured evidence",
+      "source_obligation": "Current governance must project final state",
+      "status": "PASS",
+      "target": "CURRENT_OPERATIONAL_STATE + DEVELOPMENT_PLAN header"
+    },
+    {
+      "id": "REQ-FINAL-12",
+      "proof": "immutable release; reconcile blocked=0; timer enabled/active",
+      "source_obligation": "Runtime restart/reconcile path must be operational",
+      "status": "PASS",
+      "target": "runtime-current/systemd"
+    },
+    {
+      "id": "REQ-FINAL-13",
+      "proof": "1875 PASS/15 skipped + focused 136 PASS/1 skipped",
+      "source_obligation": "Full regression after correction",
+      "status": "PASS",
+      "target": "tests/runtime/docs"
+    },
+    {
+      "id": "REQ-FINAL-14",
+      "proof": "all closure metrics exact PASS values",
+      "source_obligation": "Final EDP closure only at universal PASS",
+      "status": "PASS",
+      "target": "EDP_FINAL_ALL_PASS"
+    }
+  ],
+  "schema_version": "gch.edp-final-all-pass.v1",
+  "validated_source_head": "246b6989903ee1f3717f33ae28287f8eb4c255f7",
+  "validated_source_tree": "f5371ced684b77b101b0ef36871e567fe7d51c7a",
+  "verification": {
+    "attention": {
+      "current_r4_pending_count": 0,
+      "historical_pending_count": 40,
+      "status": "PASS"
+    },
+    "cli_anything_e2e": "PASS",
+    "codegraph": {
+      "bytes": 1532,
+      "directory": ".",
+      "sha256": "64acbb2d307cb356e21982c66e9f0557f3d239f23f9cade73a72e010ef666143",
+      "status": "PASS"
+    },
+    "compileall_rc": 0,
+    "diagnostic_config": {
+      "enabled": true,
+      "file_mode": "0o600",
+      "mode": "ADVISORY",
+      "sha256": "76f2a12f6afe66b77ed5652cd364a986c272c7692fb6bf3da6fb94c07c347d5b",
+      "status": "PASS"
+    },
+    "diff_check_rc": 0,
+    "focused_regression": {
+      "log_sha256": "554c46bd7e022ac7aa71ffe9d83795e34164277036d2433f863363169b405f5b",
+      "skipped": 1,
+      "status": "PASS",
+      "tests_run": 136
+    },
+    "full_regression": {
+      "log_sha256": "26aca6d3f38dbe69a6ddba95a3f0649013fd72eb661854a5d7254d33d302e771",
+      "skipped": 15,
+      "status": "PASS",
+      "tests_run": 1875
+    },
+    "graphify": {
+      "graph_bytes": 4186071,
+      "graph_sha256": "618d786db7a5a9a795d431416f5a04cda854bc082f27d76dbe920d79482d1864",
+      "query_sha256": "afa8712472b23952794e321295b905e11f2201900adcd826dfa28bde3cb1a9b8",
+      "status": "PASS"
+    },
+    "omniroute": {
+      "auth_http": 200,
+      "listener": "127.0.0.1:20128",
+      "status": "PASS",
+      "unauth_http": 401,
+      "version": "3.8.50"
+    },
+    "runtime_reconcile": {
+      "blocked": 0,
+      "jobs_found": 50,
+      "resume_requested": 0,
+      "status": "PASS"
+    }
+  }
+}
