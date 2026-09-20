@@ -10,12 +10,15 @@ class CurrentStateProjectionTests(unittest.TestCase):
    'PH7_PROVIDER_EXPANSION: PROVIDER_EXPANSION_RUNTIME_ALL_PASS','GROQ: ACTIVE / FREE_TIER_ONLY',
    'RUNTIME_RELEASE: ACTIVE','GRAPHIFY: PRODUCTION_READ_ONLY_ACTIVE','CODEGRAPH: PRODUCTION_READ_ONLY_ACTIVE',
    'HOLMES_INSPIRED_RCA: ACTIVE_READ_ONLY','CLI_ANYTHING: QUALIFIED_TOOL_IMPLEMENTATION',
+   'CLI_HUB_DISCOVERY: QUALIFIED_READ_ONLY','CLI_ANYTHING_GENERATOR: CANDIDATE_ONLY',
    'DIAGNOSTIC_INTELLIGENCE: ADVISORY',
   )
   for value in expected: self.assertIn(value,text[:3000])
   d=json.loads(Path('docs/harness/CURRENT_OPERATIONAL_STATE.json').read_text())
   self.assertEqual(d['current_operational_state'],'AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE')
   self.assertEqual(d['final_edp'],'ALL_PASS')
+  self.assertEqual(d['cli_hub_discovery'],'QUALIFIED_READ_ONLY')
+  self.assertEqual(d['cli_anything_generator'],'CANDIDATE_ONLY')
   for e in d['evidence']: self.assertEqual(hashlib.sha256(Path(e['path']).read_bytes()).hexdigest(),e['sha256'])
 
 if __name__=='__main__': unittest.main()

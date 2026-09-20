@@ -1,16 +1,19 @@
 {
   "baseline_id": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
   "cli_anything": "QUALIFIED_TOOL_IMPLEMENTATION",
+  "cli_anything_generator": "CANDIDATE_ONLY",
+  "cli_hub_discovery": "QUALIFIED_READ_ONLY",
   "codegraph": "PRODUCTION_READ_ONLY_ACTIVE",
   "decision": "ALL_PASS / GO",
   "diagnostic_intelligence": "ADVISORY",
-  "edp_final_sha256": "d28a470fa37e1995534438c2c2af51f4d778a8f3a691b998ffa88bbeffc60eb5",
+  "edp_final_sha256": "76dfdea6bd4a61241dd1bf8b11ea5e4346b76ca045bb0fa844a02b4cee8c12bb",
   "graphify": "PRODUCTION_READ_ONLY_ACTIVE",
   "groq": "ACTIVE / FREE_TIER_ONLY",
   "holmes_inspired_rca": "ACTIVE_READ_ONLY",
   "provider_gateway": "PROVIDER_EXPANSION_RUNTIME_ALL_PASS",
+  "publication_binding_policy": "VALIDATED_IMPLEMENTATION_HEAD + DOCS_ONLY_CLOSURE_DESCENDANT; TASK-016 MUST REPUBLISH EXACT REMOTE HEAD",
   "runtime_release_status": "ACTIVE",
   "schema_version": "gch.final-operational-baseline-declaration.v1",
   "status": "DECLARED",
-  "validated_source_head": "798403fb1169498f7184f754f09a333a88aee77d"
+  "validated_source_head": "7946c4b32f2d027e5e6b48c1770f09097432fff8"
 }

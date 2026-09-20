@@ -6,7 +6,9 @@
       "Graphify smoke command path assumption corrected; tool output itself was valid",
       "CodeGraph smoke argument name corrected from directory to path; one-shot then returned rc=0",
       "TASK-016 publication challenge found historical terminal external-binding drift false blocker; resolved with sealed-core/canonical-path/durable-terminal proof.",
-      "Final re-diagnosis crossed a one-second boundary and exposed timestamp-sensitive RCA integration assertion; corrected to compare control semantics only."
+      "Final re-diagnosis crossed a one-second boundary and exposed timestamp-sensitive RCA integration assertion; corrected to compare control semantics only.",
+      "R7 audit found approved CLI-Hub discovery/generator traceability gap; implemented and requalified.",
+      "R7 audit found final EDP source binding lagged later runtime fixes; resealed against current implementation head."
     ],
     "status": "PASS"
   },
@@ -17,7 +19,7 @@
       "authority": "user-approved final operationalization + continuity + CLI amendment specs",
       "claim": "Canonical authority/source set is available and valid",
       "domain_id": "ED-00",
-      "evidence": "all three specs USER-APPROVED; source HEAD 798403fb1169498f7184f754f09a333a88aee77d",
+      "evidence": "all three specs USER-APPROVED; validated implementation HEAD 7946c4b32f2d027e5e6b48c1770f09097432fff8",
       "result": "PASS",
       "target": "approved specs/current source"
     },
@@ -81,7 +83,7 @@
       "authority": "approved implementation plan",
       "claim": "Full Plan continuity regression remains green",
       "domain_id": "ED-08",
-      "evidence": "1876 tests PASS, 15 skipped after TASK-016 activation-blocker and timestamp-flake remediation",
+      "evidence": "1887 tests PASS, 15 skipped after CLI-Hub/generator remediation",
       "result": "PASS",
       "target": "full repository"
     },
@@ -137,7 +139,7 @@
       "authority": "CLI amendment",
       "claim": "CLI-Anything TI-01..TI-08 and invariants are qualified",
       "domain_id": "ED-15",
-      "evidence": "CLI_ANYTHING_EDP_QUALIFICATION.json: 8/8 domains, 7/7 invariants, 28-test matrix PASS",
+      "evidence": "CLI_ANYTHING_EDP_QUALIFICATION.json: 8/8 domains, 7/7 invariants, 35-test matrix PASS; live CLI-Hub discovery + CANDIDATE-only generator PASS",
       "result": "PASS",
       "target": "tool implementation plane"
     },
@@ -161,7 +163,7 @@
       "authority": "runtime release contract",
       "claim": "Operational restart path is immutable-runtime based",
       "domain_id": "ED-18",
-      "evidence": "runtime-current=/home/ywjo/.local/share/global-gpt-harness/releases/15c32c5c325c2d23ef5b94614cbf749c1b2074e9; reconcile blocked=0; timer enabled/active",
+      "evidence": "immutable runtime architecture PASS; pre-republish runtime e1d04ca remains active pending TASK-016; reconcile blocked=0; timer active/enabled",
       "result": "PASS",
       "target": "runtime-current + systemd reconciler"
     },
@@ -185,7 +187,7 @@
       "authority": "EDP-1.0 Universal PASS Gate",
       "claim": "TASK-015 final EDP can close from measured evidence",
       "domain_id": "ED-21",
-      "evidence": "all mandatory metrics computed below; no unresolved material finding",
+      "evidence": "mandatory metrics recomputed after R7 remediation; no unresolved material finding",
       "result": "PASS",
       "target": "this final diagnosis"
     },
@@ -199,6 +201,17 @@
       ],
       "result": "PASS",
       "target": "runtime/orchestrator/runtime_release.py historical job classification"
+    },
+    {
+      "authority": "CLI-Anything scope amendment \u00a73-\u00a77 + approved Task 11",
+      "claim": "Approved catalog/hub discovery and generator-degradation requirement is implemented",
+      "domain_id": "ED-23",
+      "evidence": "CLI_HUB_DISCOVERY_GENERATOR_QUALIFICATION.json; 7 tests PASS; live CLI-Hub 0.4.1 PASS; generator CANDIDATE PASS",
+      "finding_ids": [
+        "EDP-FINAL-005"
+      ],
+      "result": "PASS",
+      "target": "CLI-Hub discovery / CLI-Anything skill generator"
     }
   ],
   "findings": [
@@ -248,6 +261,30 @@
       "problem": "RCA authority regression compared volatile created_at timestamps across independent runs, producing a second-boundary false failure.",
       "regression_scope": "diagnostic Full Plan integration 2 PASS + full repository 1876 PASS, 15 skipped",
       "severity": "MINOR",
+      "status": "RESOLVED"
+    },
+    {
+      "artifact": "runtime/tool_implementation",
+      "correction": "Added digest-bound read-only CLI-Hub discovery and isolated CANDIDATE-only generator; installed sealed upstream CLI-Hub in a user-owned isolated runtime.",
+      "evidence": "7 RED/GREEN tests; CLI matrix 35 PASS; full regression 1887 PASS; live qualification artifact.",
+      "finding_id": "EDP-FINAL-005",
+      "impact": "TI-INV-03/TI-INV-07 and Task 11 traceability were overstated.",
+      "owner": "CLI-Anything Tool Implementation plane",
+      "problem": "Approved CLI-Hub informational discovery and generator-unavailable requirements were documented but absent from current implementation.",
+      "regression_scope": "CLI domains/invariants + authority negative space + full repository",
+      "severity": "MAJOR",
+      "status": "RESOLVED"
+    },
+    {
+      "artifact": "EDP/baseline/manifest",
+      "correction": "Re-ran EDP after all runtime fixes and CLI-Hub remediation against implementation HEAD 7946c4b32f2d027e5e6b48c1770f09097432fff8; any later runtime/tool source change invalidates this EDP.",
+      "evidence": "1887 PASS/15 skipped; focused 149 PASS/1 skipped; Graphify/CodeGraph/OmniRoute/reconcile/CLI-Hub live PASS.",
+      "finding_id": "EDP-FINAL-006",
+      "impact": "ALL_PASS evidence lagged runtime source lineage.",
+      "owner": "final EDP source binding",
+      "problem": "Final EDP remained bound to 798403f while later runtime fixes advanced deployed source through e1d04ca.",
+      "regression_scope": "full repository + authority/continuity/diagnostics/tool implementation",
+      "severity": "MAJOR",
       "status": "RESOLVED"
     }
   ],
@@ -321,7 +358,7 @@
     },
     {
       "id": "REQ-FINAL-05",
-      "proof": "TI-01..08 100%; TI-INV-01..07 100%",
+      "proof": "TI-01..08 100%; TI-INV-01..07 100%; CLI-Hub read-only discovery + CANDIDATE-only generator live qualification",
       "source_obligation": "CLI-Anything bounded Tool Implementation integration",
       "status": "PASS",
       "target": "manifest/adapter/broker path"
@@ -377,7 +414,7 @@
     },
     {
       "id": "REQ-FINAL-13",
-      "proof": "1875 PASS/15 skipped + focused 136 PASS/1 skipped",
+      "proof": "1887 PASS/15 skipped + focused 149 PASS/1 skipped after R7 correction",
       "source_obligation": "Full regression after correction",
       "status": "PASS",
       "target": "tests/runtime/docs"
@@ -391,19 +428,32 @@
     }
   ],
   "schema_version": "gch.edp-final-all-pass.v1",
-  "validated_source_head": "798403fb1169498f7184f754f09a333a88aee77d",
-  "validated_source_tree": "f8b59e3b381059087ea74acf7bc7b359613e2209",
+  "validated_source_head": "7946c4b32f2d027e5e6b48c1770f09097432fff8",
+  "validated_source_tree": "541dff7b421404233f01d61a8dca45f8cce04893",
   "verification": {
     "attention": {
-      "current_r4_pending_count": 0,
-      "historical_pending_count": 40,
+      "final_incident_count": 0,
+      "note": "current pending events are operator-receipt waits for active R7, not orphan/decision incidents",
+      "r7_pending_operator_waits": 2,
+      "status": "PASS_EXPECTED_ACTIVE_OPERATOR_WAIT"
+    },
+    "cli_anything_e2e": {
+      "cli_hub_discovery": [
+        "list",
+        "search",
+        "matrix search"
+      ],
+      "cli_hub_version": "0.4.1",
+      "focused_tests": 35,
+      "generator_qualified": false,
+      "generator_status": "CANDIDATE",
+      "qualification_sha256": "9dce5b5b8a5b723943c81a94d9041e10661f8338046ebeccac97e38a2084a060",
       "status": "PASS"
     },
-    "cli_anything_e2e": "PASS",
     "codegraph": {
-      "bytes": 1532,
-      "directory": ".",
-      "sha256": "64acbb2d307cb356e21982c66e9f0557f3d239f23f9cade73a72e010ef666143",
+      "bytes": 2795,
+      "mode": "graph-only/profile=graph/isolated HOME/telemetry off",
+      "sha256": "18715536774b3e3eea51428ed8aea86687ea182308e6d3e1f1667b98fac9293c",
       "status": "PASS"
     },
     "compileall_rc": 0,
@@ -416,21 +466,21 @@
     },
     "diff_check_rc": 0,
     "focused_regression": {
-      "log_sha256": "554c46bd7e022ac7aa71ffe9d83795e34164277036d2433f863363169b405f5b",
+      "log_sha256": "01b34b4bd9bfc2f6c4456efd4cccc80f718de3047d65dfa44bae64399b413bd2",
       "skipped": 1,
       "status": "PASS",
-      "tests_run": 136
+      "tests_run": 149
     },
     "full_regression": {
-      "log_sha256": "9c73d07e00fa967a43145ee8159fae8b06395a410592a80b5cb87f0cd2078d09",
+      "log_sha256": "3fd138fee37a932530c0cef12af0bfb3b40971955ae8a70222d45020bf21975c",
       "skipped": 15,
       "status": "PASS",
-      "tests_run": 1876
+      "tests_run": 1887
     },
     "graphify": {
-      "graph_bytes": 4186071,
-      "graph_sha256": "618d786db7a5a9a795d431416f5a04cda854bc082f27d76dbe920d79482d1864",
-      "query_sha256": "afa8712472b23952794e321295b905e11f2201900adcd826dfa28bde3cb1a9b8",
+      "graph_bytes": 4194638,
+      "graph_sha256": "41c66d4de38577b7842a3abdd17f07a09e7aad7e9704c50370b517ee97bd89f0",
+      "query_sha256": "32b4762c890b32f03118431c1b0cc515f16bba894f58965b4fd26e22e6c1b599",
       "status": "PASS"
     },
     "omniroute": {
@@ -440,9 +490,16 @@
       "unauth_http": 401,
       "version": "3.8.50"
     },
+    "publication_binding": {
+      "allowed_post_validation_changes": "docs + governance projection test only; runtime/orchestrator/tool implementation change invalidates EDP",
+      "pre_republish_runtime_head": "e1d04ca9e34f2c3fe4937a465756c5e874834767",
+      "republish_required": true,
+      "validated_implementation_head": "7946c4b32f2d027e5e6b48c1770f09097432fff8"
+    },
     "runtime_reconcile": {
       "blocked": 0,
-      "jobs_found": 50,
+      "jobs_found": 41,
+      "r7_action": "PRESERVE_WAIT",
       "resume_requested": 0,
       "status": "PASS"
     },

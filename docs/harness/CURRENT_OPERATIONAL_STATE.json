@@ -2,17 +2,19 @@
   "ai_office_stable_baseline": "DECLARED",
   "authority": "PROJECTION_ONLY",
   "cli_anything": "QUALIFIED_TOOL_IMPLEMENTATION",
+  "cli_anything_generator": "CANDIDATE_ONLY",
+  "cli_hub_discovery": "QUALIFIED_READ_ONLY",
   "codegraph": "PRODUCTION_READ_ONLY_ACTIVE",
   "current_operational_state": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
   "diagnostic_intelligence": "ADVISORY",
   "evidence": [
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/EDP_FINAL_ALL_PASS.json",
-      "sha256": "d28a470fa37e1995534438c2c2af51f4d778a8f3a691b998ffa88bbeffc60eb5"
+      "sha256": "76dfdea6bd4a61241dd1bf8b11ea5e4346b76ca045bb0fa844a02b4cee8c12bb"
     },
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE_DECLARATION.json",
-      "sha256": "b4a7d8e1672c5b793171020d5812ac7eb56e1ba44472a721f56dc73085ee112c"
+      "sha256": "2c08845304ebbd0d8a3ceedec1bafa422cf9b634a41fc952ba0ca90c88c7fe6e"
     },
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/ORIGINAL_TASK014_SUCCESSOR_CLOSURE.json",
@@ -20,7 +22,11 @@
     },
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CLI_ANYTHING_EDP_QUALIFICATION.json",
-      "sha256": "5dab09de1a662f244299984dee6b9168c31c4dd2393adbbad90054ce55b18f4a"
+      "sha256": "39b1090530a310798082e90b7b9e30c4443bc917d8f45a1abf0a748ae4d7ee94"
+    },
+    {
+      "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CLI_HUB_DISCOVERY_GENERATOR_QUALIFICATION.json",
+      "sha256": "c1733a5df79708521bd473950a26993ee200a9f8564ea7ee98822df6c6061341"
     },
     {
       "path": "docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/CONTINUITY_RUNTIME_MIGRATION_EVIDENCE.json",
@@ -38,5 +44,6 @@
   "ph7_provider_expansion": "PROVIDER_EXPANSION_RUNTIME_ALL_PASS",
   "runtime_release": "ACTIVE",
   "schema_version": "gch.current-operational-state.v2",
-  "status": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE"
+  "status": "AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE",
+  "validated_source_head": "7946c4b32f2d027e5e6b48c1770f09097432fff8"
 }
