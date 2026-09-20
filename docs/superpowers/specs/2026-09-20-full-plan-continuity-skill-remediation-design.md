@@ -1,6 +1,7 @@
 # Full Plan Continuity + Design Skill Root-Cause Remediation Design
 
-Status: SPEC-REVIEW-PENDING
+Status: USER-APPROVED
+Approval: USER / 2026-09-20
 Protocol: EXHAUSTIVE_DIAGNOSIS_PROTOCOL / EDP-1.0
 Incident: FINAL-OP-20260920-R2 / TASK-014 runtime activation migration
 Scope: design-time prevention + runtime continuity + user attention + interrupted final operationalization resume

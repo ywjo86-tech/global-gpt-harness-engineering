@@ -1,6 +1,7 @@
 # Final Operational Scope Integrity Amendment — CLI-Anything
 
-Status: SPEC-REVIEW-PENDING
+Status: USER-APPROVED
+Approval: USER / 2026-09-20
 Protocol: EXHAUSTIVE_DIAGNOSIS_PROTOCOL / EDP-1.0
 Parent: `2026-09-20-diagnostic-intelligence-final-operationalization-design.md`
 Companion: `2026-09-20-full-plan-continuity-skill-remediation-design.md`
