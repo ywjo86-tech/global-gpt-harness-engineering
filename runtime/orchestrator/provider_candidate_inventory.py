@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
+import json
+from pathlib import Path
 import re
 from typing import Any, Mapping
 
 from .provider_router import ELIGIBILITY_SCHEMA_V1, ProviderEligibilitySnapshotV1
 
 PROVIDER_CANDIDATE_SCHEMA_V1 = "gch.provider-candidate.v1"
+PROVIDER_CANDIDATE_INVENTORY_SCHEMA_V1 = "gch.provider-candidate-inventory.v1"
+CANONICAL_CANDIDATE_INVENTORY_PATH = Path("docs/harness/provider-candidate-inventory.json")
 ADMISSION_STATES = ("DISCOVERED", "CANDIDATE", "VALIDATING", "QUALIFIED", "APPROVAL", "ACTIVE")
 ALLOWED_TRANSITIONS = {
     "DISCOVERED": {"CANDIDATE"},
@@ -90,6 +94,48 @@ def transition_candidate(record: ProviderCandidateRecordV1, new_state: str, **ch
     if new_state not in ALLOWED_TRANSITIONS.get(record.state, set()):
         raise CandidateInventoryError(f"invalid admission transition: {record.state}->{new_state}")
     return replace(record, state=new_state, **changes)
+
+
+def _record_from_mapping(payload: Mapping[str, Any]) -> ProviderCandidateRecordV1:
+    expected = {item.name for item in fields(ProviderCandidateRecordV1)}
+    if set(payload) != expected:
+        raise CandidateInventoryError("candidate record fields mismatch")
+    if not isinstance(payload.get("credential_required"), bool):
+        raise CandidateInventoryError("candidate credential requirement must be boolean")
+    tuple_fields = {"model_refs", "capability_refs", "readiness_evidence_refs"}
+    values = dict(payload)
+    for name in tuple_fields:
+        raw = values.get(name)
+        if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+            raise CandidateInventoryError(f"candidate {name} must be a string list")
+        values[name] = tuple(raw)
+    for name in expected - tuple_fields - {"credential_required"}:
+        if not isinstance(values.get(name), str):
+            raise CandidateInventoryError(f"candidate {name} must be a string")
+    return ProviderCandidateRecordV1(**values)
+
+
+def load_canonical_candidate_inventory(project_root: str | Path) -> ProviderCandidateInventoryV1:
+    root = Path(project_root).resolve()
+    path = root / CANONICAL_CANDIDATE_INVENTORY_PATH
+    if not path.exists():
+        return ProviderCandidateInventoryV1(())
+    if path.is_symlink() or not path.is_file():
+        raise CandidateInventoryError("canonical candidate inventory is unsafe")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CandidateInventoryError("canonical candidate inventory is malformed") from exc
+    if not isinstance(payload, Mapping) or set(payload) != {"schema_version", "records"}:
+        raise CandidateInventoryError("canonical candidate inventory schema mismatch")
+    if payload.get("schema_version") != PROVIDER_CANDIDATE_INVENTORY_SCHEMA_V1:
+        raise CandidateInventoryError("canonical candidate inventory schema mismatch")
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise CandidateInventoryError("canonical candidate inventory records list required")
+    if any(not isinstance(item, Mapping) for item in records):
+        raise CandidateInventoryError("canonical candidate inventory contains malformed record")
+    return ProviderCandidateInventoryV1(tuple(_record_from_mapping(item) for item in records))
 
 
 def import_omniroute_discovery(payload: Mapping[str, Any]) -> ProviderCandidateInventoryV1:

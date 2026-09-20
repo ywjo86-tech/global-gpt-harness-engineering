@@ -105,7 +105,7 @@ def run_omniroute_provider(
     body: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0, "stream": False, "max_tokens": int(max_tokens)}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "GCH-Harness/1.0"}
     if connection_id:
         headers["X-OmniRoute-Connection"] = connection_id
     req = urllib.request.Request(OMNIROUTE_BASE_URL + "/chat/completions", data=json.dumps(body).encode(), headers=headers, method="POST")

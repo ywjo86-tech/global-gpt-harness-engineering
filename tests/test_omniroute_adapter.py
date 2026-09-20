@@ -56,6 +56,17 @@ class OmniRouteAdapterTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertNotIn("a" * 32, json.dumps(result))
 
+    def test_adapter_sets_stable_user_agent_for_upstream_compatibility(self) -> None:
+        sent = {}
+        def opener(req, timeout=None):
+            sent["headers"] = {k.lower(): v for k, v in req.header_items()}
+            return _Response()
+        run_omniroute_provider(
+            prompt="x", provider="provider-x", model="provider-x/model-1",
+            connection_id="conn-x", api_key="a" * 32, opener=opener,
+        )
+        self.assertEqual(sent["headers"].get("user-agent"), "GCH-Harness/1.0")
+
     def test_target_binding_rejects_provider_model_or_fallback_mismatch(self) -> None:
         for headers in (
             {"X-OmniRoute-Provider": "other", "X-OmniRoute-Model": "provider-x/model-1", "X-OmniRoute-Fallback-Attempts": "0"},

@@ -1,0 +1,32 @@
+{
+  "schema_version": "gch.provider-candidate-inventory.v1",
+  "records": [
+    {
+      "schema_version": "gch.provider-candidate.v1",
+      "provider_id": "groq",
+      "protocol_class": "omniroute-openai-v1",
+      "state": "ACTIVE",
+      "model_refs": [
+        "openai/gpt-oss-120b"
+      ],
+      "credential_required": true,
+      "cost_class": "free",
+      "capability_refs": [
+        "reasoning",
+        "read_only",
+        "patch_generation",
+        "implementation_generation",
+        "test_design",
+        "integration"
+      ],
+      "readiness_evidence_refs": [
+        "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/groq-live-qualification.json#sha256:d0a52b1862033eee738f81767347b644280953892e13c2954de09aa8e2efb5c8#read"
+      ],
+      "action_evidence_ref": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/groq-live-qualification.json#sha256:d0a52b1862033eee738f81767347b644280953892e13c2954de09aa8e2efb5c8#action",
+      "reroute_evidence_ref": "docs/history/upgrades/2026-09-20-AI-OFFICE-OMNIROUTE-PH7/live-qualification/groq-live-qualification.json#sha256:d0a52b1862033eee738f81767347b644280953892e13c2954de09aa8e2efb5c8#reroute",
+      "activation_approval_ref": "USER-DIRECTIVE-2026-09-20-GROQ-FREE-API-KEY-PROCEED",
+      "cost_risk_approval_ref": "",
+      "connection_id": "18092b07-6bca-4841-93f1-76c11e2d0f41"
+    }
+  ]
+}

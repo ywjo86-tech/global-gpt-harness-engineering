@@ -93,6 +93,20 @@ DEFAULT_PROVIDER_RUNNER_REGISTRY = ProviderRunnerRegistry(
     read_runners={NVIDIA_PROVIDER: _run_builtin_nvidia_provider},
     action_runners={NVIDIA_PROVIDER: _run_builtin_nvidia_provider},
 )
+
+
+def _production_provider_runner_registry_for_root(project_root: str | Path) -> ProviderRunnerRegistry:
+    from .omniroute_adapter import make_omniroute_runner
+    from .provider_candidate_inventory import load_canonical_candidate_inventory
+    from .provider_execution_registry import build_active_provider_runner_registry
+    inventory = load_canonical_candidate_inventory(project_root)
+    if not inventory.records:
+        return DEFAULT_PROVIDER_RUNNER_REGISTRY
+    return build_active_provider_runner_registry(
+        inventory, make_omniroute_runner,
+        base_read={NVIDIA_PROVIDER: _run_builtin_nvidia_provider},
+        base_action={NVIDIA_PROVIDER: _run_builtin_nvidia_provider},
+    )
 CHECKPOINT_GIT_USER_NAME = "Global GPT Harness"
 CHECKPOINT_GIT_USER_EMAIL = "harness@localhost.invalid"
 _SECRET = re.compile(r"(?i)(api[_-]?key|authorization|bearer|password|token)\s*[:=]\s*(\S+)")
@@ -2808,7 +2822,10 @@ def execute_production_worker(request: WorkerRequest, *,
             raise ProductionWorkerError(f"PROVIDER_ROUTE_INVALID:{exc}") from exc
         if not route_decision.eligible:
             raise ProductionWorkerError(f"PROVIDER_ROUTE_BLOCKED:{route_decision.reason_code}")
-    runner_registry = provider_runner_registry or DEFAULT_PROVIDER_RUNNER_REGISTRY
+    try:
+        runner_registry = provider_runner_registry or _production_provider_runner_registry_for_root(root)
+    except Exception as exc:
+        raise ProductionWorkerError(f"PROVIDER_RUNNER_REGISTRY_INVALID:{exc}") from exc
     owned = _safe_scope(request.task.editable_scope)
     baseline = str(request.extra_context.get("source_snapshot", {}).get("source_head") or request.state_snapshot.get("head", ""))
     baseline_status = _git(root, "status", "--porcelain=v1", "-uall").stdout
