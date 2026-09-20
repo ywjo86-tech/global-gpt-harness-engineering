@@ -41,12 +41,34 @@ def _unit_active(unit: str) -> bool:
     return completed.stdout.strip() in {"active", "activating", "reloading"}
 
 
-def discover_jobs(harness_root: str | Path) -> list[Path]:
-    root = Path(harness_root).resolve()
-    registry = root / "_workspace" / "production-full-plan-jobs"
-    if not registry.exists():
+def discover_registered_jobs(search_root: str | Path) -> list[Path]:
+    root = Path(search_root).resolve()
+    if not root.is_dir():
         return []
-    return sorted(path for path in registry.glob("*/*.job.json") if path.is_file() and not path.is_symlink())
+    found: list[Path] = []
+    seen: set[tuple[str, str, str]] = set()
+    for path in root.rglob("*.job.json"):
+        if "production-full-plan-jobs" not in path.parts or path.is_symlink() or not path.is_file():
+            continue
+        try:
+            job = load_job(path)
+        except Exception:
+            key = ("INVALID", str(path.resolve()), "")
+        else:
+            key = (
+                str(job["project_id"]), str(job["run_id"]),
+                str(Path(str(job["harness_root"])).resolve()),
+            )
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(path)
+    return sorted(found)
+
+
+def discover_jobs(harness_root: str | Path) -> list[Path]:
+    # Backward-compatible alias for recursive registered-job discovery.
+    return discover_registered_jobs(harness_root)
 
 
 def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any]:
@@ -109,12 +131,19 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
             "launched": completed.returncode == 0}
 
 
-def reconcile_all(harness_root: str | Path, *, launch: bool = True) -> dict[str, Any]:
-    jobs = discover_jobs(harness_root)
-    results = [reconcile_job(path, launch=launch) for path in jobs]
+def reconcile_all(search_root: str | Path, *, launch: bool = True) -> dict[str, Any]:
+    jobs = discover_registered_jobs(search_root)
+    results: list[dict[str, Any]] = []
+    for path in jobs:
+        try:
+            results.append(reconcile_job(path, launch=launch))
+        except Exception as exc:
+            results.append({"job": str(path), "action": "BLOCKED", "reason": str(exc), "launched": False})
+    resolved = str(Path(search_root).resolve())
     return {
         "schema_version": "orchestration.production-full-plan-boot-reconcile.v1",
-        "harness_root": str(Path(harness_root).resolve()),
+        "search_root": resolved,
+        "harness_root": resolved,
         "jobs_found": len(jobs),
         "resume_requested": sum(1 for item in results if item["action"] == "RESUME_REQUESTED"),
         "blocked": sum(1 for item in results if item["action"] in {"BLOCKED", "LAUNCH_FAILED"}),
@@ -122,11 +151,30 @@ def reconcile_all(harness_root: str | Path, *, launch: bool = True) -> dict[str,
     }
 
 
-def systemd_user_unit(*, harness_root: str | Path, python_executable: str = "/usr/bin/python3",
-                      preserve_root_path: bool = False) -> str:
-    source = Path(harness_root).expanduser()
-    root = source.absolute() if preserve_root_path else source.resolve()
-    return f'''[Unit]\nDescription=Global GPT Harness Full Plan boot reconciliation\nAfter=default.target\n\n[Service]\nType=oneshot\nWorkingDirectory={root}\nExecStart={python_executable} -m runtime.orchestrator.production_full_plan_boot --harness-root {root}\n\n[Install]\nWantedBy=default.target\n'''
+def systemd_user_unit(
+    *, runtime_root: str | Path | None = None, search_root: str | Path | None = None,
+    harness_root: str | Path | None = None, python_executable: str = "/usr/bin/python3",
+    preserve_runtime_path: bool = False, preserve_root_path: bool | None = None,
+) -> str:
+    source = runtime_root if runtime_root is not None else harness_root
+    if source is None:
+        raise FullPlanBootError("runtime root is required")
+    preserve = preserve_runtime_path if preserve_root_path is None else bool(preserve_root_path)
+    raw_runtime = Path(source).expanduser()
+    runtime = raw_runtime.absolute() if preserve else raw_runtime.resolve()
+    jobs = Path(search_root if search_root is not None else (harness_root or source)).expanduser().resolve()
+    return f'''[Unit]
+Description=Global GPT Harness Full Plan boot reconciliation
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={runtime}
+ExecStart={python_executable} -m runtime.orchestrator.production_full_plan_boot --search-root {jobs}
+
+[Install]
+WantedBy=default.target
+'''
 
 
 def _active_jobs_under(root: Path) -> list[str]:
@@ -190,8 +238,11 @@ def systemd_user_timer(*, service_unit_name: str = "global-gpt-harness-full-plan
     return f'''[Unit]\nDescription=Global GPT Harness Full Plan periodic reconciliation\n\n[Timer]\nOnBootSec=30s\nOnUnitActiveSec={interval_seconds}s\nAccuracySec=10s\nPersistent=true\nUnit={service_unit_name}\n\n[Install]\nWantedBy=timers.target\n'''
 
 
-def install_user_unit(*, harness_root: str | Path, unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
-                      python_executable: str | None = None, runtime_link: str | Path | None = None) -> Path:
+def install_user_unit(
+    *, harness_root: str | Path, unit_name: str = "global-gpt-harness-full-plan-reconcile.service",
+    python_executable: str | None = None, runtime_link: str | Path | None = None,
+    search_root: str | Path | None = None,
+) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_.@-]+\.service", unit_name):
         raise FullPlanBootError("unsafe boot reconcile unit name")
     interpreter = str(Path(python_executable or sys.executable).resolve())
@@ -200,13 +251,14 @@ def install_user_unit(*, harness_root: str | Path, unit_name: str = "global-gpt-
     target = Path.home() / ".config" / "systemd" / "user" / unit_name
     target.parent.mkdir(parents=True, exist_ok=True)
     from .durable_io import atomic_write_text
-    unit_root: str | Path = harness_root
-    preserve_root_path = False
+    runtime_root: str | Path = harness_root
+    preserve_runtime_path = False
     if runtime_link is not None:
-        unit_root = ensure_runtime_link(harness_root, runtime_link)
-        preserve_root_path = True
+        runtime_root = ensure_runtime_link(harness_root, runtime_link)
+        preserve_runtime_path = True
     atomic_write_text(target, systemd_user_unit(
-        harness_root=unit_root, python_executable=interpreter, preserve_root_path=preserve_root_path))
+        runtime_root=runtime_root, search_root=search_root or harness_root,
+        python_executable=interpreter, preserve_runtime_path=preserve_runtime_path))
     env = _systemd_env()
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=20, env=env)
     subprocess.run(["systemctl", "--user", "enable", unit_name], check=True, timeout=20, env=env)
@@ -231,20 +283,27 @@ def install_reconcile_timer(*, service_unit_name: str = "global-gpt-harness-full
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reconcile authorized active FULL_PLAN runs after boot")
-    parser.add_argument("--harness-root", required=True)
+    parser.add_argument("--search-root")
+    parser.add_argument("--harness-root")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--install-user-unit", action="store_true")
     parser.add_argument("--runtime-link")
     parser.add_argument("--install-reconcile-timer", action="store_true")
     parser.add_argument("--reconcile-interval-seconds", type=int, default=60)
     args = parser.parse_args(argv)
+    search_root = args.search_root or args.harness_root
+    if not search_root:
+        parser.error("one of --search-root or --harness-root is required")
     if args.install_user_unit:
-        print(install_user_unit(harness_root=args.harness_root, runtime_link=args.runtime_link))
+        print(install_user_unit(
+            harness_root=args.harness_root or search_root, runtime_link=args.runtime_link,
+            search_root=search_root,
+        ))
         return 0
     if args.install_reconcile_timer:
         print(install_reconcile_timer(interval_seconds=args.reconcile_interval_seconds))
         return 0
-    result = reconcile_all(args.harness_root, launch=not args.dry_run)
+    result = reconcile_all(search_root, launch=not args.dry_run)
     print(json.dumps(result, ensure_ascii=False))
     return 2 if result["blocked"] else 0
 

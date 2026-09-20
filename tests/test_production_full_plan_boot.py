@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from runtime.orchestrator.production_full_plan_boot import (
     discover_jobs,
+    discover_registered_jobs,
     reconcile_all,
     reconcile_job,
     systemd_user_unit,
@@ -36,6 +37,42 @@ class ProductionFullPlanBootTests(unittest.TestCase):
 
     def registered(self, root: Path, run_id: str = "run") -> Path:
         job = load_job(self.job(root, run_id)); return register_job(job)
+
+
+    def test_discover_registered_jobs_finds_jobs_across_worktrees(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            a = root / "a"; b = root / "b"
+            a.mkdir(); b.mkdir()
+            ja = self.registered(a, "r1")
+            jb = self.registered(b, "r2")
+            self.assertEqual(discover_registered_jobs(root), sorted([ja, jb]))
+
+    def test_discover_registered_jobs_ignores_unrelated_and_symlinked_jobs(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            a = root / "a"; a.mkdir()
+            registered = self.registered(a, "r1")
+            unrelated = root / "unrelated.job.json"
+            unrelated.write_text("{}")
+            link_dir = root / "linked/_workspace/production-full-plan-jobs/P"
+            link_dir.mkdir(parents=True)
+            (link_dir / "S.job.json").symlink_to(registered)
+            self.assertEqual(discover_registered_jobs(root), [registered])
+
+    def test_systemd_unit_decouples_runtime_code_root_from_job_search_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            runtime = root / "runtime-current"; runtime.mkdir()
+            search = root / "workspace"; search.mkdir()
+            python = root / "python"; python.write_text("#!/bin/sh\nexit 0\n"); python.chmod(0o755)
+            text = systemd_user_unit(
+                runtime_root=runtime, search_root=search, python_executable=str(python))
+            self.assertIn(f"WorkingDirectory={runtime.resolve()}", text)
+            self.assertIn(
+                f"ExecStart={python.resolve()} -m runtime.orchestrator.production_full_plan_boot --search-root {search.resolve()}",
+                text,
+            )
 
     def test_register_and_discover_authorized_job(self):
         with tempfile.TemporaryDirectory() as d:
