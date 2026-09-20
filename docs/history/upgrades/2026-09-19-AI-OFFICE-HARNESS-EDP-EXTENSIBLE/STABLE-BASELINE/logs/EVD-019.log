@@ -1,0 +1,8 @@
+test_028_ai_office_has_no_direct_router_mprf_full_mcp_or_gate_authority (tests.test_ai_office_authority_negative_space.AIOfficeAuthorityNegativeSpaceTest.test_028_ai_office_has_no_direct_router_mprf_full_mcp_or_gate_authority) ... ok
+test_028_phase7_provider_lifecycle_capabilities_remain_outside_ai_office (tests.test_ai_office_authority_negative_space.AIOfficeAuthorityNegativeSpaceTest.test_028_phase7_provider_lifecycle_capabilities_remain_outside_ai_office) ... ok
+test_028_state_change_and_mixed_owner_paths_fail_closed (tests.test_ai_office_authority_negative_space.AIOfficeAuthorityNegativeSpaceTest.test_028_state_change_and_mixed_owner_paths_fail_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.031s
+
+OK

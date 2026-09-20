@@ -1,0 +1,11 @@
+test_032_alias_set_or_digest_mismatch_is_no_go (tests.test_ai_office_baseline_closure.AIOfficeBaselineClosureTest.test_032_alias_set_or_digest_mismatch_is_no_go) ... ok
+test_032_closure_candidate_module_has_no_git_merge_push_deploy_effects (tests.test_ai_office_baseline_closure.AIOfficeBaselineClosureTest.test_032_closure_candidate_module_has_no_git_merge_push_deploy_effects) ... ok
+test_032_complete_exit_evidence_and_identical_alias_is_go_candidate (tests.test_ai_office_baseline_closure.AIOfficeBaselineClosureTest.test_032_complete_exit_evidence_and_identical_alias_is_go_candidate) ... ok
+test_032_material_exit_metrics_block_candidate (tests.test_ai_office_baseline_closure.AIOfficeBaselineClosureTest.test_032_material_exit_metrics_block_candidate) ... ok
+test_032_missing_or_extra_evidence_is_no_go_not_partial_success (tests.test_ai_office_baseline_closure.AIOfficeBaselineClosureTest.test_032_missing_or_extra_evidence_is_no_go_not_partial_success) ... ok
+test_032_non_pass_evidence_and_duplicate_identity_fail_closed (tests.test_ai_office_baseline_closure.AIOfficeBaselineClosureTest.test_032_non_pass_evidence_and_duplicate_identity_fail_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.005s
+
+OK

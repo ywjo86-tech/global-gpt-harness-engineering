@@ -1,0 +1,8 @@
+test_027_daily_loop_preserves_external_authority_and_correlates_observability (tests.test_ai_office_daily_loop_e2e.AIOfficeDailyLoopE2ETest.test_027_daily_loop_preserves_external_authority_and_correlates_observability) ... ok
+test_027_mixed_owner_capability_cannot_become_an_ai_office_assignment (tests.test_ai_office_daily_loop_e2e.AIOfficeDailyLoopE2ETest.test_027_mixed_owner_capability_cannot_become_an_ai_office_assignment) ... ok
+test_029_representative_task015_flows_pass_as_a_single_qualification_suite (tests.test_ai_office_integrated_qualification.AIOfficeIntegratedQualificationTest.test_029_representative_task015_flows_pass_as_a_single_qualification_suite) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.285s
+
+OK

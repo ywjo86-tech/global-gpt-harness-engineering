@@ -1,0 +1,7 @@
+test_026_authorized_factory_flow_reaches_report_without_owning_routing_or_effect_truth (tests.test_ai_office_project_factory_e2e.AIOfficeProjectFactoryE2ETest.test_026_authorized_factory_flow_reaches_report_without_owning_routing_or_effect_truth) ... ok
+test_026_factory_scope_escape_is_not_created_by_e2e_fixture (tests.test_ai_office_project_factory_e2e.AIOfficeProjectFactoryE2ETest.test_026_factory_scope_escape_is_not_created_by_e2e_fixture) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.088s
+
+OK
