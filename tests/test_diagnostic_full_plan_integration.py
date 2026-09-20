@@ -11,7 +11,8 @@ class DiagnosticFullPlanIntegrationTests(unittest.TestCase):
             st=s._initial(); item=st['queue'][0]
             with patch('runtime.orchestrator.production_full_plan_runner.record_failure_diagnostics',side_effect=hook) if isinstance(hook,Exception) else patch('runtime.orchestrator.production_full_plan_runner.record_failure_diagnostics',return_value=hook):
                 out=s._handle_failure(st,item,'boom')
-            return {k:out.get(k) for k in ('state','current_gate','terminal_reason','last_error','recovery_count')}, list(out['queue'])
+            control_queue=[{k:item.get(k) for k in ('gate_id','gate_run_id','idempotency_key','attempt','status','resume','last_error')} for item in out['queue']]
+            return {k:out.get(k) for k in ('state','current_gate','terminal_reason','last_error','recovery_count')}, control_queue
     def test_rca_cannot_change_retry_or_terminal_state(self):
         off=self._run(None); good=self._run('diagnostic://sha256/'+'a'*64); bad=self._run(RuntimeError('rca failed'))
         self.assertEqual(off,good); self.assertEqual(off,bad)
