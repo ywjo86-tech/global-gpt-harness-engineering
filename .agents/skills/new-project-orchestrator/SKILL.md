@@ -42,6 +42,8 @@ Create each new project under `project-workspace/{project-slug}/` by default. Us
 
 For every new project, follow: global principles first, orchestration and gate rules second, project contract/history/log last.
 
+When architecture or implementation planning emits a stateful self-replacing design (runtime/service/supervisor/worktree/scheduler/state-store replacement, migration, restart, or durable-owner termination), require the harness-design `Stateful Continuity Review` before the design can advance. Reference the shared continuity standard instead of duplicating it.
+
 Always run the full harness lifecycle for new projects: requirements analysis, team architecture, project subagent definition, skill analysis and creation, orchestration, MVP milestone delivery, implementation, integration, QA, release readiness, and final deployment handoff. Treat MVP as an intermediate milestone, not the final objective, unless the user explicitly asks to stop at MVP. Do not downshift to a reduced planning mode just to save tokens; preserve scope stability by keeping the full lifecycle visible and controlled.
 
 When resuming an existing project, read `docs/DEVELOPMENT_PLAN.txt`, `CHANGELOG.txt`, and `logs/app.log` first. Treat `docs/DEVELOPMENT_PLAN.txt` as the execution contract, not a passive status note. If the required records are missing for a new project, create them before entering implementation.
