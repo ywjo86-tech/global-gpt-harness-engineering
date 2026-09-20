@@ -37,11 +37,17 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
     def test_forward_sequence_is_one_step_and_idempotent_load(self):
         with tempfile.TemporaryDirectory() as td:
             s=self.store(td); tx=s.create(valid_spec())
-            q=s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED)
+            q=s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})
             self.assertEqual(s.load(tx.migration_id),q); self.assertEqual(s.load(tx.migration_id),q)
             a=s.advance(tx.migration_id,MigrationPhase.RUNTIME_ACTIVATED)
             self.assertEqual(a.phase,MigrationPhase.RUNTIME_ACTIVATED)
             with self.assertRaises(MigrationHandoffError): s.advance(tx.migration_id,MigrationPhase.PREPARED)
+
+    def test_quiesce_requires_write_once_state_sha(self):
+        with tempfile.TemporaryDirectory() as td:
+            s=self.store(td); tx=s.create(valid_spec())
+            with self.assertRaises(MigrationHandoffError):
+                s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED)
 
     def test_tampered_successor_digest_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
@@ -74,12 +80,12 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             s=self.store(td); tx=s.create(valid_spec())
             for phase in (MigrationPhase.PREDECESSOR_QUIESCED,MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED,MigrationPhase.PREDECESSOR_CLOSED):
-                tx=s.advance(tx.migration_id,phase)
+                tx=s.advance(tx.migration_id,phase,updates={'quiesced_state_sha256':'3'*64} if phase==MigrationPhase.PREDECESSOR_QUIESCED else None)
             with self.assertRaises(MigrationHandoffError): s.rollback(tx.migration_id,'too late')
 
     def test_rollback_before_close_preserves_authority_bindings(self):
         with tempfile.TemporaryDirectory() as td:
-            s=self.store(td); tx=s.create(valid_spec()); tx=s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED)
+            s=self.store(td); tx=s.create(valid_spec()); tx=s.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})
             rb=s.rollback(tx.migration_id,'activation aborted')
             self.assertEqual(rb.phase,MigrationPhase.ROLLED_BACK); self.assertEqual(rb.approved_plan_sha256,'a'*64)
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from runtime.orchestrator.production_full_plan_entry import load_job, register_job
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+from runtime.orchestrator.runtime_migration_handoff import MigrationPhase, MigrationStore
 from runtime.orchestrator.runtime_release import (
     RuntimeReleaseError,
     _extract_archive_bytes,
@@ -116,6 +117,71 @@ class RuntimeReleaseTests(unittest.TestCase):
             runtime_link = base / "runtime-current"
             with self.assertRaisesRegex(RuntimeReleaseError, "active Full Plan jobs"):
                 activate_runtime_release(manifest, runtime_link, job_search_root=base)
+
+
+class RuntimeMigrationActivationTests(unittest.TestCase):
+    def make_release(self, base: Path):
+        repo=base/'repo'; repo.mkdir(); RuntimeReleaseTests.make_repo(self,repo)
+        return build_runtime_release(repo,base/'releases')
+
+    def register(self, base: Path, run_id: str):
+        harness=base/f'harness-{run_id}'; harness.mkdir(parents=True)
+        subprocess.run(['git','init','-q',str(harness)],check=True)
+        payload={
+            'schema_version':'orchestration.production-full-plan-job.v1',
+            'project_root':str(harness),'harness_root':str(harness),'project_id':'P','run_id':run_id,'required_executables':['git'],
+            'gates':[{'gate_id':'G1','approval_evidence':str(harness/'a.json'),'requirements_sha256':'a'*64,'branch':'main','head':'b'*40,'full_plan_opt_in':True,'project_final_validation':True}],
+            'policy':{'retry_budget':0,'gate_timeout_seconds':1,'heartbeat_seconds':.03,'lease_seconds':.08,'min_disk_free_bytes':0,'min_inode_free':0,'min_memory_available_bytes':0},
+        }
+        requested=harness/'job.json'; requested.write_text(json.dumps(payload)); registered=register_job(load_job(requested)); job=load_job(registered)
+        sup=DurableFullPlanSupervisor(harness,project_id='P',run_id=run_id,gates=['G1'],authority_core_sha256=job['authority_core_sha256'],**job['policy'])
+        return job,sup
+
+    def prepare_quiesced_tx(self, base: Path, manifest, *, successor='R3', quiesced_sha_override=None, manifest_sha=None, advance=True):
+        job,sup=self.register(base,'R2'); initial,_=sup.load()
+        state=dict(initial); state['state']='WAITING_RESOURCE'; state['lease']=None; state['last_error']='RUNTIME_MIGRATION_PREDECESSOR_QUIESCED'; state['migration_id']='MIG-A'; state['migration_successor_run_id']=successor
+        quiesced=sup._persist(state,{'event':'TEST_MIGRATION_QUIESCE'})
+        spec={
+            'migration_id':'MIG-A','project_id':'P','predecessor_run_id':'R2','successor_run_id':successor,
+            'current_gate':'G1','resume_gate':'G1','approved_plan_sha256':'a'*64,'approved_spec_sha256':'b'*64,
+            'authority_core_sha256':job['authority_core_sha256'],'predecessor_state_sha256':initial['state_sha256'],'source_head':'e'*40,
+            'target_release_head':manifest.source_head,'target_manifest_sha256':manifest_sha or manifest.manifest_sha256,'successor_job_spec_sha256':'2'*64,
+        }
+        store=MigrationStore(base/'migrations'); tx=store.create(spec)
+        if advance:
+            tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':quiesced_sha_override or quiesced['state_sha256']})
+        return tx,quiesced
+
+    def test_exact_quiesced_predecessor_is_only_exempt_active_job(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); manifest=self.make_release(base); tx,_=self.prepare_quiesced_tx(base,manifest)
+            link=base/'runtime-current'; activate_runtime_release(manifest,link,job_search_root=base,migration_transaction=tx)
+            self.assertEqual(link.resolve(),Path(manifest.release_path).resolve())
+
+    def test_unrelated_active_job_still_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); manifest=self.make_release(base); tx,_=self.prepare_quiesced_tx(base,manifest); self.register(base,'RX')
+            with self.assertRaisesRegex(RuntimeReleaseError,'active Full Plan jobs'): activate_runtime_release(manifest,base/'runtime-current',job_search_root=base,migration_transaction=tx)
+
+    def test_quiesced_state_sha_mismatch_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); manifest=self.make_release(base); tx,_=self.prepare_quiesced_tx(base,manifest,quiesced_sha_override='0'*64)
+            with self.assertRaises(RuntimeReleaseError): activate_runtime_release(manifest,base/'runtime-current',job_search_root=base,migration_transaction=tx)
+
+    def test_target_manifest_binding_mismatch_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); manifest=self.make_release(base); tx,_=self.prepare_quiesced_tx(base,manifest,manifest_sha='0'*64)
+            with self.assertRaises(RuntimeReleaseError): activate_runtime_release(manifest,base/'runtime-current',job_search_root=base,migration_transaction=tx)
+
+    def test_prepared_transaction_cannot_exempt_active_job(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); manifest=self.make_release(base); tx,_=self.prepare_quiesced_tx(base,manifest,advance=False)
+            with self.assertRaises(RuntimeReleaseError): activate_runtime_release(manifest,base/'runtime-current',job_search_root=base,migration_transaction=tx)
+
+    def test_successor_active_before_activation_is_blocker(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); manifest=self.make_release(base); tx,_=self.prepare_quiesced_tx(base,manifest); self.register(base,'R3')
+            with self.assertRaises(RuntimeReleaseError): activate_runtime_release(manifest,base/'runtime-current',job_search_root=base,migration_transaction=tx)
 
 
 if __name__ == "__main__":

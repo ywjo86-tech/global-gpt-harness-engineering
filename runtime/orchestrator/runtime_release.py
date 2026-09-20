@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .durable_io import atomic_write_json
+from .runtime_migration_handoff import MigrationPhase, RuntimeMigrationTransaction
 
 SCHEMA_VERSION = "gch.runtime-release.v1"
 
@@ -184,12 +185,24 @@ def build_runtime_release(
     return verify_runtime_release(release, head)
 
 
-def _active_registered_jobs(search_root: str | Path) -> list[str]:
+@dataclass(frozen=True, slots=True)
+class ActiveRegisteredJob:
+    job_path: str
+    project_id: str
+    run_id: str
+    state: str
+    state_sha256: str
+    migration_id: str = ""
+    migration_successor_run_id: str = ""
+    load_error: bool = False
+
+
+def _active_registered_jobs(search_root: str | Path) -> list[ActiveRegisteredJob]:
     from .production_full_plan_boot import discover_registered_jobs
     from .production_full_plan_entry import load_job
     from .production_full_plan_runner import DurableFullPlanSupervisor, TERMINAL_STATES
 
-    active: list[str] = []
+    active: list[ActiveRegisteredJob] = []
     for job_path in discover_registered_jobs(search_root):
         try:
             job = load_job(job_path)
@@ -200,21 +213,51 @@ def _active_registered_jobs(search_root: str | Path) -> list[str]:
                 **dict(job.get("policy") or {}),
             ).load()
         except Exception:
-            active.append(str(job_path))
+            active.append(ActiveRegisteredJob(str(job_path), "", "", "UNKNOWN", "", load_error=True))
             continue
         if str(state.get("state")) not in TERMINAL_STATES:
-            active.append(str(job_path))
+            active.append(ActiveRegisteredJob(
+                str(job_path), str(job.get("project_id") or ""), str(job.get("run_id") or ""),
+                str(state.get("state") or ""), str(state.get("state_sha256") or ""),
+                str(state.get("migration_id") or ""), str(state.get("migration_successor_run_id") or ""),
+            ))
     return active
+
+
+def _migration_activation_blockers(
+    active: list[ActiveRegisteredJob], manifest: RuntimeReleaseManifest,
+    transaction: RuntimeMigrationTransaction | None,
+) -> list[ActiveRegisteredJob]:
+    if transaction is None:
+        return active
+    if transaction.phase != MigrationPhase.PREDECESSOR_QUIESCED:
+        raise RuntimeReleaseError("runtime migration transaction is not quiesced")
+    if (transaction.target_release_head != manifest.source_head
+            or transaction.target_manifest_sha256 != manifest.manifest_sha256):
+        raise RuntimeReleaseError("runtime migration target binding mismatch")
+    predecessor = [item for item in active if item.project_id == transaction.project_id
+                   and item.run_id == transaction.predecessor_run_id]
+    if len(predecessor) != 1:
+        raise RuntimeReleaseError("runtime migration predecessor is not uniquely active")
+    item = predecessor[0]
+    if (item.load_error or item.state != "WAITING_RESOURCE"
+            or item.state_sha256 != transaction.quiesced_state_sha256
+            or item.migration_id != transaction.migration_id
+            or item.migration_successor_run_id != transaction.successor_run_id):
+        raise RuntimeReleaseError("runtime migration predecessor quiescence binding mismatch")
+    return [candidate for candidate in active if candidate is not item]
 
 
 def activate_runtime_release(
     manifest: RuntimeReleaseManifest, runtime_link: str | Path, *, job_search_root: str | Path,
+    migration_transaction: RuntimeMigrationTransaction | None = None,
 ) -> Path:
     verified = verify_runtime_release(manifest.release_path, manifest.source_head)
     if verified != manifest:
         raise RuntimeReleaseError("runtime release manifest binding mismatch")
     active = _active_registered_jobs(job_search_root)
-    if active:
+    blockers = _migration_activation_blockers(active, manifest, migration_transaction)
+    if blockers:
         raise RuntimeReleaseError("cannot retarget runtime link while active Full Plan jobs exist")
     link = Path(runtime_link).expanduser().absolute()
     link.parent.mkdir(parents=True, exist_ok=True)

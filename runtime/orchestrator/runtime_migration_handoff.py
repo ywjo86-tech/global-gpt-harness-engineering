@@ -47,7 +47,7 @@ class RuntimeMigrationTransaction:
     predecessor_state_sha256:str; source_head:str; target_release_head:str
     target_manifest_sha256:str; successor_job_spec_sha256:str
     phase:MigrationPhase; created_at:str; updated_at:str
-    block_reason:str=''; rollback_reason:str=''; transaction_sha256:str=''
+    quiesced_state_sha256:str=''; block_reason:str=''; rollback_reason:str=''; transaction_sha256:str=''
 
 
 def _now()->str: return datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -67,6 +67,10 @@ def _validate(tx:RuntimeMigrationTransaction)->None:
         if not _SHA256.fullmatch(str(getattr(tx,name))): raise MigrationHandoffError(f'invalid {name}')
     for name in ('source_head','target_release_head'):
         if not _SHA40_64.fullmatch(str(getattr(tx,name))): raise MigrationHandoffError(f'invalid {name}')
+    if tx.quiesced_state_sha256 and not _SHA256.fullmatch(tx.quiesced_state_sha256): raise MigrationHandoffError('invalid quiesced_state_sha256')
+    if tx.phase in {MigrationPhase.PREDECESSOR_QUIESCED,MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED,MigrationPhase.PREDECESSOR_CLOSED} and not tx.quiesced_state_sha256:
+        raise MigrationHandoffError('quiesced predecessor state binding missing')
+    if tx.quiesced_state_sha256 and not _SHA256.fullmatch(tx.quiesced_state_sha256): raise MigrationHandoffError('invalid quiesced_state_sha256')
     if not tx.created_at or not tx.updated_at: raise MigrationHandoffError('transaction timestamps missing')
     expected=sha256_bytes(canonical_json_bytes(_payload(tx,signed=False)))
     if tx.transaction_sha256!=expected: raise MigrationHandoffError('transaction SHA mismatch')
@@ -112,7 +116,13 @@ class MigrationStore:
         if _FORWARD.get(tx.phase)!=phase: raise MigrationHandoffError('illegal migration phase transition')
         changes=dict(updates or {})
         if any(k in _BINDING_FIELDS for k in changes): raise MigrationHandoffError('migration authority/identity binding is immutable')
-        if changes: raise MigrationHandoffError('unsupported migration transition update')
+        if changes:
+            if phase != MigrationPhase.PREDECESSOR_QUIESCED or set(changes) != {'quiesced_state_sha256'}:
+                raise MigrationHandoffError('unsupported migration transition update')
+            qsha=str(changes['quiesced_state_sha256'])
+            if tx.quiesced_state_sha256 or not _SHA256.fullmatch(qsha):
+                raise MigrationHandoffError('invalid quiesced predecessor state binding')
+            tx=replace(tx,quiesced_state_sha256=qsha)
         return self._save(replace(tx,phase=phase,block_reason='',rollback_reason=''))
 
     def block(self,migration_id:str,reason:str)->RuntimeMigrationTransaction:
