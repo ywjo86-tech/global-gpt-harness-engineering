@@ -44,3 +44,13 @@ def prepare_action_diagnostic_context(
             return _degraded(fallback)
         except Exception:
             return None
+
+def record_failure_diagnostics(*, output_root, harness_root, project_id, run_id, gate_id, reason, failure_class, recorder=None):
+    """Best-effort evidence recording only; never returns a control decision."""
+    root=Path(output_root).resolve(); allowed=(Path(harness_root).resolve()/'_workspace'/'production-full-plan'/project_id/run_id/'diagnostics').resolve()
+    if root != allowed:
+        raise ValueError('diagnostic failure evidence root is outside the run')
+    root.mkdir(parents=True,exist_ok=True)
+    if recorder is None:
+        return None
+    return recorder(output_root=root,project_id=project_id,run_id=run_id,gate_id=gate_id,reason=reason,failure_class=failure_class)

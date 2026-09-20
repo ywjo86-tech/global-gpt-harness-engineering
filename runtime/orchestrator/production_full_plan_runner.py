@@ -24,6 +24,7 @@ from typing import Any, Callable, Mapping, Sequence
 from .durable_io import DurableIOError, atomic_write_bytes, durable_json_save, resource_snapshot
 from .production_attention import AttentionOutbox
 from .user_interaction_policy import DEFERRED_INCIDENT, IMMEDIATE_DECISION, STALL_CONFIRMED
+from .diagnostic_context_bridge import record_failure_diagnostics
 
 
 SCHEMA_VERSION = "orchestration.production-full-plan.v1"
@@ -439,6 +440,16 @@ class DurableFullPlanSupervisor:
         state["last_error"] = reason
         state["lease"] = None
         failure_class = _failure_class(reason)
+        try:
+            diagnostic_ref = record_failure_diagnostics(
+                output_root=self.base / "diagnostics", harness_root=self.root,
+                project_id=self.project_id, run_id=self.run_id, gate_id=str(item["gate_id"]),
+                reason=reason, failure_class=failure_class,
+            )
+            if diagnostic_ref:
+                self._append_line(self.events_path, {"event":"DIAGNOSTIC_RCA_RECORDED", "gate_id":item["gate_id"], "evidence_ref":str(diagnostic_ref)})
+        except Exception as exc:
+            self._append_line(self.events_path, {"event":"DIAGNOSTIC_RCA_FAILED", "gate_id":item["gate_id"], "error_type":type(exc).__name__})
         if wait_state in WAIT_STATES:
             item["status"] = "READY"
             item["resume"] = True
