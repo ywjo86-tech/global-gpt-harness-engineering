@@ -1,39 +1,45 @@
 # Orchestration State
 
-> Updated: 2026-09-18
-> Scope: MULTI_PROVIDER_FOUNDATION final closure + EDP/governance reconciliation + runtime transient hygiene
+> Updated: 2026-09-20
+> Scope: AI Office Harness Upgrade — provider-neutral extensibility EDP remediation and final qualification
 
 ## Current Execution Binding
 
-Current phase: FINAL_CLOSURE
+Current phase: AI_OFFICE_HARNESS_UPGRADE — EDP_EXTENSIBILITY_REMEDIATION_ALL_PASS
 
-- Active project: MULTI_PROVIDER_FOUNDATION
-- Active lifecycle: PREPH5MPRF
+- Active project: AI_OFFICE_HARNESS_UPGRADE
+- Active lifecycle: PHASE5 / GATE-005 post-completion remediation
 - Active contract: docs/DEVELOPMENT_PLAN.txt
-- Contract SHA-256: 7a5758cae4976ade902ffd4cde920cddea9390c7fb25fbc33eb7b3854604601f
+- Contract SHA-256: 0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2
 - Diagnosis standard: EDP-1.0 / EXHAUSTIVE_DIAGNOSIS_PROTOCOL
 - Diagnosis standard SHA-256: 7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf
-- Canonical Gate: GATE-010
-- Canonical phase: FINAL_CLOSURE
-- Gate closure: CLOSED
-- Technical baseline commit: 211b8bb10eaec8a7e43dbee0cefd4884d2f55417
-- Project closure commit: ede7e071279e1f58ece96ff52cc2c485f37827c5
-- EDP/status remediation commit: 1ce2e0b35474d6eb4bbff03e6eaaf84133b10ea0
-- Runtime transient hygiene commit: e77b35445d4302e7b7d49a68f06db6229d8894ce
-- Multi-Provider baseline: APPROVED_SEALED / DECLARED
-- Full Plan GATE-001 through GATE-010: PASS / COMPLETED
-- PHASE 5 execution: NOT_AUTHORIZED
-- PHASE 7 execution: NOT_AUTHORIZED
-- Provider expansion: NOT_AUTHORIZED
+- Active remediation branch: upgrade/ai-office-harness-edp-extensible-20260919
+- Current implementation checkpoint: 892b799a0bde8d78b5f4aacc55f2c259ea975427
+- Predecessor Multi-Provider Foundation: APPROVED_SEALED / DECLARED
+- AI Office PHASE 5 execution: AUTHORIZED
+- AI Office TASK-015 / TASK-016 / TASK-017: IMPLEMENTED / QUALIFIED in R33 lineage
+- AI Office GATE-005 R33: COMPLETED / ALL_GATES_COMPLETED
+- EDP extensibility remediation: ALL_PASS
+- Final EDP evidence: docs/history/upgrades/2026-09-19-AI-OFFICE-HARNESS-EDP-EXTENSIBLE/EDP_POST_REMEDIATION_ALL_PASS.md + .json
+- AI Office Stable Baseline: OPEN pending canonical TASK-017 closure/evidence-equality validation
+- Provider-neutral core remediation: AUTHORIZED within the current AI Office Harness Upgrade amendment
+- Current production provider activation: Codex + NVIDIA only
+- External third-provider live activation / credentials / new network integration: NOT_AUTHORIZED
+- Separate provider-expansion activation: REQUIRES explicit future approval
 - Deployment: NOT_AUTHORIZED
-- Runtime binding note: this block supersedes earlier current-state blocks below; prior records remain historical evidence.
+- Runtime binding note: this block supersedes earlier current-state blocks below; prior records remain immutable historical evidence.
 
 ## Current Safety / Integration Boundary
 
-- Final MPRF Plan, Gate ledger, approval records, and prior immutable closure evidence remain unchanged.
-- The EDP/status remediation restores the Plan-bound diagnosis artifact and correct current-phase projection.
-- Runtime-generated transient evidence is excluded from Git by the dedicated hygiene rule.
-- No provider policy, Provider Router authority, Full MCP action authority, deployment authority, or Phase 5/7 execution authority is expanded by this reconciliation.
+- Full Plan retains Task/Gate/fan-in/next-state authority; no Provider adapter or MPRF component receives that authority.
+- Multi-Provider Router remains the sole provider/model selection authority and now uses provider-neutral eligibility and deterministic neutral ranking.
+- MPRF owns runtime eligibility, lifecycle/health/quota facts, checkpoint/recovery prerequisites, and safe reroute facts; it does not select providers.
+- Provider execution profiles and runner registries dispatch the Router-selected provider without provider-name backend branching.
+- Full MCP / governed execution backend remains the sole state-changing effect authority.
+- AI Office continues to consume external routing/runtime/effect truth without owning those authorities.
+- Safe reroute requires complete recovery prerequisites; INVALID_RESPONSE additionally requires CONFIRMED_NO_EFFECT and exclusion of the failed provider/model.
+- Invalid Provider output is durably retained only as private sanitized/hash-bound failure evidence before validation.
+- Provider-neutral core extensibility does not itself authorize any new external Provider, credential, network endpoint, deployment, merge, or push.
 
 ## Historical State Preserved Below
 > Updated: `2026-09-15`

@@ -1,0 +1,141 @@
+{
+  "schema_version": "gch.edp-post-remediation-result.v1",
+  "project_id": "PHASE5_AI_OFFICE_HARNESS_UPGRADE",
+  "remediation_id": "AI-OFFICE-HARNESS-EDP-EXTENSIBLE-20260919",
+  "diagnosis_standard": "EDP-1.0",
+  "diagnosis_standard_sha256": "7a74df80220143f3b5aaad9d7d67285f955156b95df885690b52fec76d427baf",
+  "canonical_plan_sha256": "0bfc75bf688f1d4d541b8e7cb8e699fc314da4cc3066612ff4c57925ff5cc0c2",
+  "implementation_checkpoint": "892b799a0bde8d78b5f4aacc55f2c259ea975427",
+  "decision": "ALL_PASS",
+  "metrics": {
+    "BLOCKER_COUNT": 0,
+    "UNRESOLVED_MAJOR_COUNT": 0,
+    "UNRESOLVED_MINOR_COUNT": 0,
+    "MUST_REQUIREMENT_COVERAGE": "100%",
+    "MUST_TRACEABILITY_COVERAGE": "100%",
+    "DOMAIN_EVIDENCE_COVERAGE": "100%",
+    "NEGATIVE_SPACE_OPEN_MATERIAL_COUNT": 0,
+    "CROSS_DOCUMENT_CONFLICT_COUNT": 0,
+    "BROKEN_REFERENCE_COUNT": 0,
+    "ADVERSARIAL_NEW_BLOCKER_MAJOR": 0,
+    "PASS_CHALLENGE_OPEN_COUNT": 0,
+    "REGRESSION_REDIAGNOSIS_STATUS": "PASS",
+    "MATERIAL_DEFECT_SEARCH": "EXHAUSTED_FOR_AVAILABLE_EVIDENCE"
+  },
+  "validation": {
+    "focused_regression": {
+      "tests": 254,
+      "failures": 0,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "full_regression": {
+      "tests": 1706,
+      "skipped": 16,
+      "failures": 0,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "adversarial_negative_space": {
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "third_provider_core_plugin": "PASS",
+    "neutral_selection_distribution": "PASS",
+    "cross_document_active_state": "PASS"
+  },
+  "findings": [
+    {
+      "id": "MPX-001",
+      "pre_remediation": "MPRF provider identity closed to Codex/NVIDIA",
+      "post_remediation": "PASS",
+      "evidence_commit": "43f16fa9f91a776b14ed513d7c85acafd354080d",
+      "evidence": "Generic provider identity/registry/lifecycle/observability contracts; third-provider registry probe PASS."
+    },
+    {
+      "id": "MPX-002",
+      "pre_remediation": "Router eligibility/decision closed to Codex/NVIDIA",
+      "post_remediation": "PASS",
+      "evidence_commit": "43f16fa9f91a776b14ed513d7c85acafd354080d",
+      "evidence": "Provider-neutral snapshot/decision contracts; provider-x Router probe PASS."
+    },
+    {
+      "id": "MPX-003",
+      "pre_remediation": "Dispatcher/core execution hardcoded provider branches",
+      "post_remediation": "PASS",
+      "evidence_commit": "892b799a0bde8d78b5f4aacc55f2c259ea975427",
+      "evidence": "Adapter + execution-profile + read/action Runner Registry; core provider-name backend branches = 0."
+    },
+    {
+      "id": "MPX-004",
+      "pre_remediation": "Hidden provider selection bias",
+      "post_remediation": "PASS",
+      "evidence_commit": "3683b65a75ff87fefa34a6d0d635b3cf1fb7e3bb",
+      "evidence": "Request-bound deterministic neutral ranking; 64-request challenge selects both Codex and NVIDIA."
+    },
+    {
+      "id": "MPX-005",
+      "pre_remediation": "Full Plan loses real Codex readiness",
+      "post_remediation": "PASS",
+      "evidence_commit": "9157731bd4c6d54b95b03e53437083eaf285b2df",
+      "evidence": "Missing precollected readiness preserves auto-detection; explicit readiness remains evidence-bound."
+    },
+    {
+      "id": "MPX-006",
+      "pre_remediation": "Lifecycle/health/quota/capability not used in production eligibility",
+      "post_remediation": "PASS",
+      "evidence_commit": "9157731bd4c6d54b95b03e53437083eaf285b2df",
+      "evidence": "Production MPRF binding consumes lifecycle and required capabilities."
+    },
+    {
+      "id": "MPX-007",
+      "pre_remediation": "Cross-provider reroute not activated",
+      "post_remediation": "PASS",
+      "evidence_commit": "71db3a37af2df60946c1a5265f791173f5f761f4",
+      "evidence": "Evidence-safe MPRF reroute enabled with original provider/model binding and failed-candidate exclusion."
+    },
+    {
+      "id": "MPX-008",
+      "pre_remediation": "INVALID_RESPONSE cannot reroute after proven no-effect",
+      "post_remediation": "PASS",
+      "evidence_commit": "71db3a37af2df60946c1a5265f791173f5f761f4",
+      "evidence": "INVALID_RESPONSE eligible only with CONFIRMED_NO_EFFECT; ambiguous effect remains blocked."
+    },
+    {
+      "id": "MPX-009",
+      "pre_remediation": "Invalid provider response not durably retained",
+      "post_remediation": "PASS",
+      "evidence_commit": "c454416713dc8de9e5190d3862d2fadf52241cf1",
+      "evidence": "Private 0600 sanitized/hash-bound failure evidence is written before parse/validation; secret redaction test PASS."
+    },
+    {
+      "id": "MPX-010",
+      "pre_remediation": "Model fallback projection provider-specific",
+      "post_remediation": "PASS",
+      "evidence_commit": "892b799a0bde8d78b5f4aacc55f2c259ea975427",
+      "evidence": "Production fallback projection generalized for every provider present in the eligibility snapshot."
+    },
+    {
+      "id": "MPX-011",
+      "pre_remediation": "Governance current-state projection stale",
+      "post_remediation": "PASS",
+      "evidence_commit": "docs/harness/orchestration-state.md#sha256:cb34f6a02831f34aba8e03aa1c47e52d02c8607297a98cb4ba2f9ce04afae481",
+      "evidence": "Top current-state projection reconciled to AI Office PH5/R33 + current remediation; historical blocks preserved."
+    }
+  ],
+  "activation_boundary": {
+    "production_provider_activation": [
+      "codex",
+      "nvidia"
+    ],
+    "third_provider_live_activation": "NOT_AUTHORIZED",
+    "external_credentials_or_new_network_integration": "NOT_AUTHORIZED",
+    "statement": "ALL_PASS covers provider-neutral extensible core and current Codex/NVIDIA production activation. It does not authorize a new external provider."
+  },
+  "stable_baseline_boundary": "AI_OFFICE_STABLE_BASELINE remains OPEN until its canonical closure/evidence-equality contract is independently satisfied.",
+  "governance_state_sha256": "cb34f6a02831f34aba8e03aa1c47e52d02c8607297a98cb4ba2f9ce04afae481"
+}
