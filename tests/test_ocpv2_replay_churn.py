@@ -32,29 +32,38 @@ class FakeTransport:
         self.projections.append(dict(projection))
 
 
+def envelope():
+    return SimpleNamespace(
+        message_id="MSG-1",
+        directive_digest="d" * 64,
+        project_id="P1",
+        run_id="R1",
+        gate_id="G1",
+        task_id="T1",
+    )
+
+
+def service_for(result_class: str):
+    env = envelope()
+    transport = FakeTransport()
+    service = RemoteOperatorService(
+        transport=transport,
+        decode_envelope=lambda raw: env,
+        ingress=lambda value: IngressDecision(
+            accepted=False,
+            result_class=result_class,
+            message_id=value.message_id,
+            directive_digest=value.directive_digest,
+            directive=None,
+        ),
+        execute_authorized=lambda value, directive: {},
+    )
+    return service, transport
+
+
 class ReplayChurnRegressionTests(unittest.TestCase):
     def test_idempotent_replay_is_silent_and_acknowledged(self):
-        envelope = SimpleNamespace(
-            message_id="MSG-1",
-            directive_digest="d" * 64,
-            project_id="P1",
-            run_id="R1",
-            gate_id="G1",
-            task_id="T1",
-        )
-        transport = FakeTransport()
-        service = RemoteOperatorService(
-            transport=transport,
-            decode_envelope=lambda raw: envelope,
-            ingress=lambda env: IngressDecision(
-                accepted=False,
-                result_class="IDEMPOTENT_REPLAY",
-                message_id=env.message_id,
-                directive_digest=env.directive_digest,
-                directive=None,
-            ),
-            execute_authorized=lambda env, directive: {},
-        )
+        service, transport = service_for("IDEMPOTENT_REPLAY")
 
         result = service.poll_once(mode=ControlMode.OBSERVE_ONLY)
 
@@ -63,6 +72,30 @@ class ReplayChurnRegressionTests(unittest.TestCase):
         self.assertEqual(result.projected, 0)
         self.assertEqual(result.acknowledged, 1)
         self.assertEqual(result.blocked, 0)
+
+    def test_tamper_detected_remains_visible_and_blocked(self):
+        service, transport = service_for("TAMPER_DETECTED")
+
+        result = service.poll_once(mode=ControlMode.OBSERVE_ONLY)
+
+        self.assertEqual(len(transport.projections), 1)
+        self.assertEqual(transport.projections[0]["result_class"], "TAMPER_DETECTED")
+        self.assertEqual(transport.acks, ["MSG-1"])
+        self.assertEqual(result.projected, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(result.blocked, 1)
+
+    def test_replay_rejected_remains_visible_and_blocked(self):
+        service, transport = service_for("REPLAY_REJECTED")
+
+        result = service.poll_once(mode=ControlMode.OBSERVE_ONLY)
+
+        self.assertEqual(len(transport.projections), 1)
+        self.assertEqual(transport.projections[0]["result_class"], "REPLAY_REJECTED")
+        self.assertEqual(transport.acks, ["MSG-1"])
+        self.assertEqual(result.projected, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(result.blocked, 1)
 
 
 if __name__ == "__main__":
