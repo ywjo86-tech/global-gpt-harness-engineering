@@ -12,10 +12,13 @@ from runtime.orchestrator.remote_operator_envelope import (
     validate_remote_envelope,
 )
 from runtime.orchestrator.remote_operator_ingress import (
+    CanonicalCompletionEvidence,
     prepare_existing_operator_directive,
+    reconcile_canonical_completion,
     validate_ingress,
 )
-from runtime.orchestrator.remote_operator_receipt import RemoteOperatorReceiptStore
+from runtime.orchestrator.remote_operator_outbox import RemoteResultOutbox
+from runtime.orchestrator.remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
 
 
 def _env(*, adapter="GITHUB_CONTROL_V1", channel="CTRL-1", actor="235775273", risk="f" * 64):
@@ -53,6 +56,25 @@ def _env(*, adapter="GITHUB_CONTROL_V1", channel="CTRL-1", actor="235775273", ri
         "envelope_sha256": "",
     }
     return validate_remote_envelope(seal_remote_envelope(payload), now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc))
+
+
+def _completion_evidence(env):
+    return CanonicalCompletionEvidence(
+        message_id=env.message_id,
+        directive_digest=env.directive_digest,
+        project_id=env.project_id,
+        run_id=env.run_id,
+        gate_id=env.gate_id,
+        task_id=env.task_id,
+        canonical_state_ref="state:R1:T1",
+        canonical_state_sha256="a" * 64,
+        effect_evidence_refs=("effect:1",),
+        checkpoint_ref="checkpoint:R1:T1",
+        checkpoint_sha256="b" * 64,
+        migration_transaction_sha256="",
+        result_summary="canonical mutation already committed",
+        completed_at="2026-09-21T00:06:00+00:00",
+    )
 
 
 class RemoteOperatorIngressTests(unittest.TestCase):
@@ -133,6 +155,83 @@ class RemoteOperatorIngressTests(unittest.TestCase):
             )
             self.assertFalse(decision.accepted)
             self.assertEqual(decision.result_class, "TAMPER_DETECTED")
+
+    def test_restart_after_canonical_commit_reconstructs_without_second_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env = _env()
+            receipt_store = RemoteOperatorReceiptStore(root / "receipts")
+            outbox = RemoteResultOutbox(root / "outbox")
+            resolver_calls = []
+
+            def resolve(message_id, directive_digest):
+                resolver_calls.append((message_id, directive_digest))
+                return _completion_evidence(env)
+
+            decision = reconcile_canonical_completion(
+                env,
+                receipt_store=receipt_store,
+                outbox=outbox,
+                canonical_evidence_resolver=resolve,
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.result_class, "CANONICAL_ACTION_COMPLETED")
+            self.assertEqual(resolver_calls, [(env.message_id, env.directive_digest)])
+            self.assertEqual(receipt_store.classify_delivery(env), ReceiptStatus.IDEMPOTENT_REPLAY)
+            pending = outbox.pending()
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0].directive_digest, env.directive_digest)
+            self.assertEqual(pending[0].result_class, "CANONICAL_ACTION_COMPLETED")
+
+    def test_missing_receipt_and_ambiguous_canonical_evidence_blocks_replay(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env = _env()
+            receipt_store = RemoteOperatorReceiptStore(root / "receipts")
+            outbox = RemoteResultOutbox(root / "outbox")
+            decision = reconcile_canonical_completion(
+                env,
+                receipt_store=receipt_store,
+                outbox=outbox,
+                canonical_evidence_resolver=lambda message_id, directive_digest: None,
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.result_class, "RECONCILIATION_REQUIRED")
+            self.assertEqual(receipt_store.classify_delivery(env), ReceiptStatus.NEW)
+            self.assertEqual(outbox.pending(), ())
+
+    def test_mismatched_canonical_evidence_blocks_reconstruction(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env = _env()
+            receipt_store = RemoteOperatorReceiptStore(root / "receipts")
+            outbox = RemoteResultOutbox(root / "outbox")
+            evidence = _completion_evidence(env)
+            mismatched = CanonicalCompletionEvidence(
+                message_id="OTHER",
+                directive_digest=evidence.directive_digest,
+                project_id=evidence.project_id,
+                run_id=evidence.run_id,
+                gate_id=evidence.gate_id,
+                task_id=evidence.task_id,
+                canonical_state_ref=evidence.canonical_state_ref,
+                canonical_state_sha256=evidence.canonical_state_sha256,
+                effect_evidence_refs=evidence.effect_evidence_refs,
+                checkpoint_ref=evidence.checkpoint_ref,
+                checkpoint_sha256=evidence.checkpoint_sha256,
+                migration_transaction_sha256=evidence.migration_transaction_sha256,
+                result_summary=evidence.result_summary,
+                completed_at=evidence.completed_at,
+            )
+            decision = reconcile_canonical_completion(
+                env,
+                receipt_store=receipt_store,
+                outbox=outbox,
+                canonical_evidence_resolver=lambda message_id, directive_digest: mismatched,
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.result_class, "RECONCILIATION_REQUIRED")
+            self.assertEqual(outbox.pending(), ())
 
 
 if __name__ == "__main__":
