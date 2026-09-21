@@ -102,7 +102,7 @@ class DiagnosticResult(unittest.TestResult):
         self._mapping_env_before: dict[int, str | None] = {}
         self._safe_python = safe_python
         self._python_shim_root = python_shim_root
-        self._uid_getter_before: dict[int, object] = {}
+        self._path_write_text_before: dict[int, object] = {}
         self._sys_executable_before: dict[int, str] = {}
         self._path_before: dict[int, str] = {}
 
@@ -112,9 +112,16 @@ class DiagnosticResult(unittest.TestResult):
         if test_id == _UID_NAMESPACE_FIXTURE_TEST:
             if not hasattr(os, "getuid"):
                 raise SystemExit("UID namespace fixture requires POSIX os.getuid")
-            self._uid_getter_before[id(test)] = os.getuid
-            os.getuid = lambda: 1000  # type: ignore[attr-defined,assignment]
-            print(f"HERMETIC_FIXTURE_ADAPTER test={test_id} adapter=uid-map-1000")
+            original_write_text = Path.write_text
+            self._path_write_text_before[id(test)] = original_write_text
+
+            def fixture_write_text(path: Path, data: str, *args, **kwargs):
+                if path.name == "uid_map" and path.parent.name == "self" and data == "1000 0 1\n":
+                    data = f"{os.getuid()} 0 1\n"
+                return original_write_text(path, data, *args, **kwargs)
+
+            Path.write_text = fixture_write_text  # type: ignore[assignment]
+            print(f"HERMETIC_FIXTURE_ADAPTER test={test_id} adapter=uid-map-current-user")
         if test_id == _EXTERNAL_INTERPRETER_FIXTURE_TEST:
             self._sys_executable_before[id(test)] = sys.executable
             self._path_before[id(test)] = os.environ.get("PATH", "")
@@ -128,8 +135,8 @@ class DiagnosticResult(unittest.TestResult):
         if test_key in self._sys_executable_before:
             sys.executable = self._sys_executable_before.pop(test_key)
             os.environ["PATH"] = self._path_before.pop(test_key)
-        if test_key in self._uid_getter_before:
-            os.getuid = self._uid_getter_before.pop(test_key)  # type: ignore[attr-defined,assignment]
+        if test_key in self._path_write_text_before:
+            Path.write_text = self._path_write_text_before.pop(test_key)  # type: ignore[assignment]
 
         before = self._mapping_env_before.pop(test_key, None)
         after = os.environ.get(MAPPING_ROOT_ENV)
