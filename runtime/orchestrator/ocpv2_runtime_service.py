@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -18,7 +19,6 @@ from runtime.operator_transport.github_control_adapter import GitHubControlAdapt
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
 from .harness_state_root import resolve_harness_state_root
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
-from .production_worker_executor import _secret_findings
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2, validate_remote_envelope
 from .remote_operator_ingress import validate_ingress
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
@@ -43,6 +43,9 @@ _OPTIONAL_ENV = {
     "OCP_CANARY_GATE_ID",
     "OCP_CANARY_DIRECTIVE_ID",
 }
+_PROJECTION_SECRET = re.compile(
+    rb"(?i)(api[_-]?key|authorization|bearer|password|token|credential|secret)\s*[:=]\s*([^\s,;}]+)"
+)
 
 
 class RuntimeServiceError(ValueError):
@@ -59,6 +62,14 @@ class RuntimeConfig:
     token_file: Path | None
     state_root: Path | None
     environment: Mapping[str, str]
+
+
+def _projection_secret_findings(payload: bytes) -> dict[str, int]:
+    findings: dict[str, int] = {}
+    for match in _PROJECTION_SECRET.finditer(payload):
+        kind = match.group(1).decode("ascii", errors="ignore").lower()
+        findings[kind] = findings.get(kind, 0) + 1
+    return findings
 
 
 def _safe_id(value: object, label: str) -> str:
@@ -217,7 +228,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             allowed_actor_ids=frozenset(config.allowed_actor_ids),
         ),
         rest_client=rest_client,
-        secret_scan=_secret_findings,
+        secret_scan=_projection_secret_findings,
         delivery_ack_path=config.state_root / "transport" / "github-delivery-acks.json",
     )
     receipts = RemoteOperatorReceiptStore(config.state_root / "receipts")
