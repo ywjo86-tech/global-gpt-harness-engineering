@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +22,7 @@ def load_bootstrap():
 
 
 class OCPv2DeployPackageTests(unittest.TestCase):
-    def test_example_config_contains_no_secret(self):
+    def test_example_config_contains_no_secret_or_live_server_path(self):
         text = (DEPLOY_ROOT / "ocpv2.example.env").read_text(encoding="utf-8")
         self.assertIn("OCP_MODE=DISABLED", text)
         self.assertIn("OCP_GITHUB_CONTROL_REPOSITORY_ID=0", text)
@@ -29,14 +30,13 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("OCP_GITHUB_ALLOWED_ACTOR_IDS=", text)
         self.assertIn("OCP_GITHUB_TOKEN_FILE=", text)
         self.assertIn("OCP_STATE_ROOT=", text)
-        self.assertIn(
-            "OCP_REPO_ROOT=/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering",
-            text,
-        )
+        self.assertIn("OCP_REPO_ROOT=/path/to/global-gpt-harness-engineering", text)
         lowered = text.lower()
         self.assertNotIn("ghp_", lowered)
         self.assertNotIn("github_pat_", lowered)
         self.assertNotIn("bearer ", lowered)
+        self.assertNotIn("/home/", text)
+        self.assertNotIn("ywjo", lowered)
 
     def test_invalid_repo_or_pr_id_cannot_enter_control_mode(self):
         bootstrap = load_bootstrap()
@@ -120,6 +120,23 @@ class OCPv2DeployPackageTests(unittest.TestCase):
             self.assertFalse((repo / ".config").exists())
             self.assertTrue((output / "ocpv2.service").is_file())
             self.assertTrue((output / "ocpv2.timer").is_file())
+
+    def test_readme_preserves_separate_gate_b_activation_boundary(self):
+        text = (DEPLOY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Gate B", text)
+        self.assertIn("OBSERVE_ONLY", text)
+        self.assertIn("DISABLED", text)
+        self.assertIn("systemctl --user daemon-reload", text)
+        self.assertIn("systemctl --user enable --now ocpv2.timer", text)
+        self.assertIn("separate authorization", text.lower())
+        self.assertNotIn("/home/ywjo/", text)
+
+    def test_non_mutating_composition_constructs_durable_outbox(self):
+        bootstrap = load_bootstrap()
+        source = inspect.getsource(bootstrap._compose_non_mutating_service)
+        self.assertIn("RemoteResultOutbox", source)
+        self.assertIn("RemoteResultProjectionV1", source)
+        self.assertIn("outbox", source)
 
 
 if __name__ == "__main__":
