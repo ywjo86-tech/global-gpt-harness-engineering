@@ -23,7 +23,7 @@ class FakeHTTP:
 
 
 class GitHubRESTClientLatestWindowTests(unittest.TestCase):
-    def test_list_comments_reads_latest_bounded_window(self):
+    def test_list_comments_reads_latest_window_but_returns_oldest_first(self):
         with tempfile.TemporaryDirectory() as td:
             token = Path(td) / "github.token"
             token.write_text("ghp_test_token\n", encoding="utf-8")
@@ -39,7 +39,7 @@ class GitHubRESTClientLatestWindowTests(unittest.TestCase):
                 http_transport=http,
             )
             comments = client.list_comments()
-            self.assertEqual([item["id"] for item in comments], [201, 200])
+            self.assertEqual([item["id"] for item in comments], [200, 201])
             self.assertIn("per_page=100", http.calls[1][1])
             self.assertIn("sort=created", http.calls[1][1])
             self.assertIn("direction=desc", http.calls[1][1])
