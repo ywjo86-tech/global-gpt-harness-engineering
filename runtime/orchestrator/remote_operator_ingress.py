@@ -5,12 +5,14 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
 
 from .operator_control import OperatorDirectiveV1
-from .production_execution_gateway import GatewayError, validate_gateway_request
+from .production_execution_gateway import GatewayError, HOST_GATEWAY, validate_gateway_request
 from .production_full_plan_runner import ContinuationOwnerToken, DurableFullPlanSupervisor, ProductionFullPlanError
+from .production_worker_executor import ProductionWorkerError, execute_production_worker
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
 from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, MigrationStore, RuntimeMigrationTransaction
+from .schemas import WorkerRequest
 
 
 class RemoteExecutionGatewayError(ValueError):
@@ -144,6 +146,148 @@ def execute_remote_directive_in_canonical_transaction(
         result = dict(mutation(owner_token))
         supervisor.assert_current_epoch_locked(owner_token)
         return result
+
+
+def _assert_optional_runtime_binding(expected: str, current: Callable[[], str], label: str) -> None:
+    if expected and str(current()) != expected:
+        raise ProductionFullPlanError(f"STALE_DIRECTIVE: {label} mismatch")
+
+
+def _validate_canonical_worker_request(
+    request: WorkerRequest,
+    directive: OperatorDirectiveV1,
+    envelope: RemoteOperatorEnvelopeV2,
+) -> WorkerRequest:
+    if not isinstance(request, WorkerRequest):
+        raise RemoteExecutionGatewayError("WORKER_REQUEST_BINDING_MISMATCH: canonical resolver returned invalid type")
+    if (
+        request.task.thread_id != directive.task_id
+        or request.task.task_execution_id != directive.task_execution_id
+        or request.task.state_change_required is not True
+        or (request.task.runtime_stage and request.task.runtime_stage != "ACTION")
+    ):
+        raise RemoteExecutionGatewayError("WORKER_REQUEST_BINDING_MISMATCH: task identity")
+
+    contract = request.contract_summary
+    context = request.extra_context
+    if (
+        str(contract.get("project_id") or "") != directive.project_id
+        or str(contract.get("gate_id") or "") != directive.gate_id
+        or str(contract.get("lv_id") or "") != directive.task_id
+        or str(context.get("run_id") or "") != directive.run_id
+        or str(context.get("gate_id") or "") != directive.gate_id
+        or str(context.get("lv_id") or "") != directive.task_id
+    ):
+        raise RemoteExecutionGatewayError("WORKER_REQUEST_BINDING_MISMATCH: canonical request identity")
+    if context.get("execution_backend") != HOST_GATEWAY:
+        raise RemoteExecutionGatewayError("HOST_GATEWAY_REQUIRED: remote mutation cannot select another execution backend")
+    if envelope.expected.source_head and str(request.state_snapshot.get("head") or "") != envelope.expected.source_head:
+        raise RemoteExecutionGatewayError("WORKER_REQUEST_BINDING_MISMATCH: source head")
+    if (
+        envelope.expected.runtime_release_digest
+        and str(context.get("runtime_release_digest") or "") != envelope.expected.runtime_release_digest
+    ):
+        raise RemoteExecutionGatewayError("WORKER_REQUEST_BINDING_MISMATCH: runtime release")
+    return request
+
+
+def execute_remote_action_through_canonical_full_plan(
+    envelope: RemoteOperatorEnvelopeV2,
+    directive: OperatorDirectiveV1,
+    *,
+    supervisor: DurableFullPlanSupervisor,
+    transaction_store: Any,
+    canonical_continuation_state_sha256: Callable[[], str],
+    canonical_run_state_sha256: Callable[[], str],
+    current_source_head: Callable[[], str],
+    current_runtime_release_digest: Callable[[], str],
+    worker_request_resolver: Callable[
+        [ContinuationOwnerToken, RemoteOperatorEnvelopeV2, OperatorDirectiveV1], WorkerRequest
+    ],
+) -> Mapping[str, Any]:
+    """Execute a remote ACTION only through canonical Full Plan worker authority.
+
+    OCPv2 contributes no shell, provider, broker, filesystem, or secondary execution
+    authority.  The accepted directive is fenced by the existing Full Plan owner/epoch
+    transaction, resolves an already-canonical WorkerRequest inside that transaction,
+    requires the production HOST_GATEWAY backend, and delegates execution to the existing
+    production worker which owns Provider Router and Production Execution Gateway / Full MCP
+    integration.
+    """
+    if directive.directive_digest != envelope.directive_digest or (
+        directive.project_id,
+        directive.run_id,
+        directive.task_id,
+        directive.task_execution_id,
+        directive.gate_id,
+    ) != (
+        envelope.project_id,
+        envelope.run_id,
+        envelope.task_id,
+        envelope.task_execution_id,
+        envelope.gate_id,
+    ):
+        raise RemoteExecutionGatewayError("OPERATOR_DIRECTIVE_BLOCKED: envelope/directive binding mismatch")
+    if not directive.state_change_required or not (
+        directive.current_stage == "PREPARE" and directive.requested_next_stage == "ACTION"
+    ):
+        raise RemoteExecutionGatewayError("EXECUTION_GATEWAY_BLOCKED: state-changing directive is not ACTION")
+
+    _assert_optional_runtime_binding(
+        envelope.expected.canonical_run_state_sha256,
+        canonical_run_state_sha256,
+        "canonical run state",
+    )
+    _assert_optional_runtime_binding(envelope.expected.source_head, current_source_head, "source head")
+    _assert_optional_runtime_binding(
+        envelope.expected.runtime_release_digest,
+        current_runtime_release_digest,
+        "runtime release",
+    )
+
+    def mutation(owner_token: ContinuationOwnerToken) -> Mapping[str, Any]:
+        if (
+            owner_token.project_id != directive.project_id
+            or owner_token.run_id != directive.run_id
+            or owner_token.gate_id != directive.gate_id
+        ):
+            raise ProductionFullPlanError("STALE_DIRECTIVE: continuation owner identity mismatch")
+        if owner_token.epoch != envelope.expected.continuation_owner_epoch:
+            raise ProductionFullPlanError("STALE_DIRECTIVE: continuation owner epoch mismatch")
+
+        _assert_optional_runtime_binding(
+            envelope.expected.canonical_run_state_sha256,
+            canonical_run_state_sha256,
+            "canonical run state",
+        )
+        _assert_optional_runtime_binding(envelope.expected.source_head, current_source_head, "source head")
+        _assert_optional_runtime_binding(
+            envelope.expected.runtime_release_digest,
+            current_runtime_release_digest,
+            "runtime release",
+        )
+
+        request = _validate_canonical_worker_request(
+            worker_request_resolver(owner_token, envelope, directive),
+            directive,
+            envelope,
+        )
+        try:
+            result = execute_production_worker(request)
+        except ProductionWorkerError as exc:
+            raise RemoteExecutionGatewayError(f"CANONICAL_WORKER_BLOCKED: {exc}") from exc
+        if not isinstance(result, Mapping):
+            raise RemoteExecutionGatewayError("CANONICAL_WORKER_BLOCKED: worker result is malformed")
+        return dict(result)
+
+    return execute_remote_directive_in_canonical_transaction(
+        supervisor,
+        transaction_store,
+        expected_gate_id=directive.gate_id,
+        expected_state_sha256=envelope.expected.continuation_state_sha256,
+        canonical_state_sha256=canonical_continuation_state_sha256,
+        mutation=mutation,
+    )
 
 
 def dispatch_action_through_production_gateway(
