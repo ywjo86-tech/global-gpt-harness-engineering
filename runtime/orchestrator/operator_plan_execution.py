@@ -18,6 +18,7 @@ from typing import Any, Mapping, Sequence
 from .durable_io import atomic_write_json
 from .production_run_authority import executor_runtime_identity
 from .harness_state_root import resolve_harness_state_root, job_state_root
+from .gate_continuation_contract import GateContinuationContract
 
 EXECUTOR_KIND = "GPT_OPERATOR_PLAN"
 RECEIPT_SCHEMA = "orchestration.operator-plan-receipt.v1"
@@ -82,7 +83,7 @@ def build_operator_plan_job(
     harness_state_root: str | Path | None = None, runtime_code_root: str | Path,
     project_id: str, run_id: str, task_ids: Sequence[str],
     approved_plan_path: str | Path, approved_spec_path: str | Path,
-    approval_ref: str,
+    approval_ref: str, continuation_contracts_by_gate: Mapping[str, Mapping[str, Any] | GateContinuationContract] | None = None,
 ) -> dict[str, Any]:
     project = Path(project_root).resolve()
     runtime = Path(runtime_code_root).resolve()
@@ -121,15 +122,30 @@ def build_operator_plan_job(
         common_path = (project / common_path).resolve()
     plan_sha = _sha256_file(plan)
     spec_sha = _sha256_file(spec)
-    gates = [{
-        "gate_id": task,
-        "approval_evidence": str(spec),
-        "requirements_sha256": plan_sha,
-        "branch": branch,
-        "head": head,
-        "full_plan_opt_in": True,
-        "project_final_validation": True,
-    } for task in tasks]
+    raw_contracts = dict(continuation_contracts_by_gate or {})
+    unknown_contract_gates = set(raw_contracts) - set(tasks)
+    if unknown_contract_gates:
+        raise OperatorPlanExecutionError("continuation contract references unknown Gate")
+    gates = []
+    for task in tasks:
+        gate = {
+            "gate_id": task,
+            "approval_evidence": str(spec),
+            "requirements_sha256": plan_sha,
+            "branch": branch,
+            "head": head,
+            "full_plan_opt_in": True,
+            "project_final_validation": True,
+        }
+        raw_contract = raw_contracts.get(task)
+        if raw_contract is not None:
+            try:
+                contract = raw_contract if isinstance(raw_contract, GateContinuationContract) else GateContinuationContract.from_mapping(raw_contract)
+                contract.require_gate(task)
+            except ValueError as exc:
+                raise OperatorPlanExecutionError(str(exc)) from exc
+            gate["continuation_contract"] = contract.canonical_projection()
+        gates.append(gate)
     job: dict[str, Any] = {
         "schema_version": "orchestration.production-full-plan-job.v1",
         "executor_kind": EXECUTOR_KIND,
@@ -185,6 +201,14 @@ def validate_operator_plan_job(job: Mapping[str, Any]) -> None:
     ids = [str(item.get("gate_id") or "") for item in gates if isinstance(item, Mapping)]
     if len(ids) != len(gates) or any(not _SAFE_ID.fullmatch(item) for item in ids) or len(set(ids)) != len(ids):
         raise OperatorPlanExecutionError("operator plan Task IDs are empty or duplicated")
+    for gate in gates:
+        raw_contract = gate.get("continuation_contract") if isinstance(gate, Mapping) else None
+        if raw_contract is not None:
+            try:
+                contract = GateContinuationContract.from_mapping(raw_contract)
+                contract.require_gate(str(gate["gate_id"]))
+            except ValueError as exc:
+                raise OperatorPlanExecutionError(str(exc)) from exc
     if not str(job.get("approval_ref") or "").strip():
         raise OperatorPlanExecutionError("approval reference is required")
 
