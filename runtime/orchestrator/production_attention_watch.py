@@ -11,6 +11,7 @@ from typing import Any
 from .production_attention import AttentionOutbox
 from .user_interaction_policy import STALL_CONFIRMED, evaluate_attention_delivery
 from .harness_state_root import discovery_roots, job_dedupe_key, job_state_root
+from .run_supersession import RunSupersessionStore, evaluate_supersession
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -48,6 +49,7 @@ def discover_registered_jobs(search_root: str | Path, *, legacy_roots: tuple[str
                 "project_id": project_id, "run_id": run_id,
                 "harness_root": str(Path(harness_root).resolve()),
                 "harness_state_root": str(job_state_root(job)), "job_path": str(path),
+                "authority_core_sha256": str(job.get("authority_core_sha256") or ""),
             })
     return sorted(jobs, key=lambda item: (item["project_id"], item["run_id"], item["harness_state_root"]))
 
@@ -75,13 +77,38 @@ def discover_pending_attention(
         raise ValueError("attention clock must be timezone-aware")
     current = current.astimezone(timezone.utc)
     rows: list[dict[str, Any]] = []
-    for job in discover_registered_jobs(search_root, legacy_roots=legacy_roots):
+    jobs = discover_registered_jobs(search_root, legacy_roots=legacy_roots)
+    job_index = {(item["project_id"], item["run_id"], item.get("authority_core_sha256", "")): item for item in jobs}
+    for job in jobs:
         state_root = Path(job["harness_state_root"])
         run_base = state_root / "_workspace" / "production-full-plan" / job["project_id"] / job["run_id"]
         state = _load_json(run_base / "state.json") or {}
         outbox = AttentionOutbox(run_base, project_id=job["project_id"], run_id=job["run_id"])
         pending = outbox.pending()
         for event in pending:
+            archived = False
+            event_with_authority = {**event, "authority_core_sha256": job.get("authority_core_sha256", "")}
+            try:
+                supersession_store = RunSupersessionStore(state_root)
+                for record in supersession_store.find(project_id=job["project_id"], predecessor_run_id=job["run_id"]):
+                    successor_job = job_index.get((record.project_id, record.successor_run_id, record.successor_authority_sha256))
+                    if successor_job is None:
+                        continue
+                    successor_base = Path(successor_job["harness_state_root"]) / "_workspace" / "production-full-plan" / record.project_id / record.successor_run_id
+                    successor_state = _load_json(successor_base / "state.json") or {}
+                    candidate = {
+                        "project_id": record.project_id, "run_id": record.successor_run_id,
+                        "authority_core_sha256": record.successor_authority_sha256,
+                        "state": successor_state.get("state"),
+                        "semantic_progress_verified": int(successor_state.get("progress_sequence") or 0) > 0,
+                    }
+                    if evaluate_supersession(event_with_authority, candidate, record=record).archived:
+                        archived = True
+                        break
+            except Exception:
+                archived = False
+            if archived:
+                continue
             assessment = evaluate_attention_delivery(
                 event, state, now=current, threshold_seconds=user_attention_after_seconds,
             )
