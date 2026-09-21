@@ -21,4 +21,12 @@ Pre-flight shared interfaces:
 - Task 7 migration wrapper -> Gate E: exact migration transaction/phase CAS; no migration recreation.
 - Task 9 transport -> Task 10/11: transport API exposes no mutation primitive.
 
-Next task: Task 1 — Remote Operator Envelope V2 (TDD RED first).
+Task 1: complete
+- RED run `35564595205`: expected missing-module failure.
+- Initial GREEN attempt `35564644696`: implementation passed all behaviors except a test harness error around deliberately forbidden provider/model fields.
+- Ruling: `seal_remote_envelope()` correctly delegates to existing `OperatorDirectiveV1` and rejects provider/model fields before validation. The test expectation was moved to the sealing boundary because earlier fail-closed behavior is stronger and exactly preserves the approved operator contract.
+- GREEN run `35564724551`: PASS for remote envelope, operator regression, continuation locking, migration, production gateway, production tool transport, compileall, and diff check.
+- Envelope implementation commit: `bd58c2ee147f37fa52759e710bad49a4dbaea970`.
+- Final Task-1 test commit: `556b1fdcee0d11fbf8786737caff434fb1affc13`.
+
+Next task: Task 2 — Non-Authoritative Receipt / Replay Ledger (TDD RED first).
