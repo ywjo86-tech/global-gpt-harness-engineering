@@ -9,6 +9,7 @@ from .production_execution_gateway import GatewayError, validate_gateway_request
 from .production_full_plan_runner import ContinuationOwnerToken, DurableFullPlanSupervisor, ProductionFullPlanError
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
+from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, MigrationStore, RuntimeMigrationTransaction
 
 
 class RemoteExecutionGatewayError(ValueError):
@@ -151,3 +152,37 @@ def dispatch_action_through_production_gateway(
     if not isinstance(result, Mapping):
         raise RemoteExecutionGatewayError("EXECUTION_GATEWAY_BLOCKED: gateway result is malformed")
     return dict(result)
+
+
+def advance_migration_if_current(
+    store: MigrationStore,
+    migration_id: str,
+    *,
+    expected_transaction_sha256: str,
+    expected_phase: MigrationPhase,
+    next_phase: MigrationPhase,
+    expected_qualification_evidence_sha256: str = "",
+    updates: Mapping[str, Any] | None = None,
+) -> RuntimeMigrationTransaction:
+    """Compare exact migration identity/state before delegating to MigrationStore.advance.
+
+    This wrapper deliberately leaves MigrationStore as the sole migration mutation
+    authority.  Callers performing a remote mutation must invoke it inside
+    ``execute_remote_directive_in_canonical_transaction`` so the existing Full Plan
+    owner epoch and transaction lock provide the single-writer boundary.
+    """
+    tx = store.load(migration_id)
+    expected_phase = MigrationPhase(expected_phase)
+    next_phase = MigrationPhase(next_phase)
+    if tx.transaction_sha256 != str(expected_transaction_sha256):
+        raise MigrationHandoffError("STALE_DIRECTIVE: migration transaction CAS mismatch")
+    if tx.phase != expected_phase:
+        raise MigrationHandoffError("STALE_DIRECTIVE: migration phase CAS mismatch")
+    if expected_qualification_evidence_sha256:
+        if tx.qualification_evidence_sha256 != str(expected_qualification_evidence_sha256):
+            raise MigrationHandoffError("STALE_DIRECTIVE: qualification evidence CAS mismatch")
+    elif next_phase == MigrationPhase.PREDECESSOR_CLOSED and tx.schema_version.endswith(".v2"):
+        if not tx.qualification_evidence_sha256:
+            # Preserve the existing MigrationStore error vocabulary for an unqualified close.
+            return store.advance(migration_id, next_phase, updates=updates)
+    return store.advance(migration_id, next_phase, updates=updates)
