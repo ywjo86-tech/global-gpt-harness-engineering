@@ -2478,6 +2478,27 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 and (manual_action_authorizations_by_lv or {}).get(lv_id) is not None
             )
             if not route_decision_value.eligible and not manual_route_authorized:
+                from .wait_recovery import record_provider_wait_recovery_evidence
+                record_provider_wait_recovery_evidence(
+                    harness_root, project_id=plan.project_id, gate_run_id=run_id,
+                    gate_id=gate_id, lv_id=lv_id, lv_run_id=lv_run_id,
+                    project_root=root, source_head=head,
+                    router_request=route_request_value.to_dict(),
+                    router_decision=route_decision_value.to_dict(),
+                    output_contract={
+                        "purpose": selected_lv.purpose,
+                        "owned_files": list(selected_lv.owned_files),
+                    },
+                    validation_contract={
+                        "completion_criteria": list(selected_lv.completion_criteria),
+                        "tests": list(selected_lv.tests),
+                    },
+                    risk_contract={
+                        "stage": route_request_value.stage,
+                        "state_change_required": route_request_value.state_change_required,
+                        "required_capabilities": list(route_request_value.required_capabilities),
+                    },
+                )
                 raise GateOrchestrationError(
                     f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
                 )

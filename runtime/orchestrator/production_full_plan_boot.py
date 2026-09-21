@@ -17,6 +17,10 @@ from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, di
 from .production_full_plan_runner import ACTIVE_STATES, TERMINAL_STATES, WAIT_STATES, DurableFullPlanSupervisor, ProductionFullPlanError
 from .production_attention import AttentionOutbox
 from .harness_state_root import discovery_roots, job_dedupe_key, job_state_root
+from .wait_recovery import (
+    WaitRecoveryError, classify_wait_recovery, evaluate_provider_wait_recovery,
+    evaluate_resource_wait_recovery, load_active_provider_wait_recovery_evidence,
+)
 
 
 class FullPlanBootError(ValueError):
@@ -101,6 +105,83 @@ def _incomplete_migrations(job: Mapping[str, Any]):
     terminal = {MigrationPhase.PREDECESSOR_CLOSED, MigrationPhase.ROLLED_BACK}
     return tuple(tx for tx in rows if tx.phase not in terminal)
 
+def _git_head(project_root: str | Path) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(Path(project_root).resolve()), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _attempt_typed_wait_recovery(
+    job: Mapping[str, Any], state: Mapping[str, Any], supervisor: DurableFullPlanSupervisor,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Evaluate one wait generation without acquiring any foreign authority."""
+    try:
+        assessment = classify_wait_recovery(state)
+    except WaitRecoveryError as exc:
+        return None, {"status": "NOT_ELIGIBLE", "reason": str(exc)}
+    if not assessment.auto_recoverable:
+        return None, {"status": "NOT_ELIGIBLE", "owner": assessment.owner, "reason": assessment.reason}
+    expected_sha = str(state.get("state_sha256") or "")
+    expected_epoch = int(state.get("epoch", 0))
+    if assessment.owner == "RESOURCE_RECOVERY":
+        resources_ok, snapshot = supervisor._resource_gate(state)
+        decision = evaluate_resource_wait_recovery(
+            state, resources_ok=resources_ok, expected_state_sha256=expected_sha, expected_epoch=expected_epoch,
+        )
+        if not decision.resume_allowed:
+            return None, {"status": "WAIT", "owner": assessment.owner, "reason": decision.reason, "resources": snapshot}
+        try:
+            resumed = supervisor.resume_wait_cas(
+                "WAITING_RESOURCE", expected_state_sha256=expected_sha, expected_epoch=expected_epoch)
+        except ProductionFullPlanError as exc:
+            return None, {"status": "STALE", "owner": assessment.owner, "reason": str(exc)}
+        return resumed, {"status": "RECOVERED", "owner": assessment.owner, "resources": snapshot}
+    if assessment.owner == "PROVIDER_RECOVERY":
+        candidates = [
+            item for item in state.get("queue", [])
+            if item.get("gate_id") == state.get("current_gate")
+            and item.get("status") not in {"COMPLETED", "BLOCKED", "CANCELLED"}
+        ]
+        if len(candidates) != 1:
+            return None, {"status": "WAIT", "owner": assessment.owner, "reason": "PROVIDER_WAIT_QUEUE_AMBIGUOUS"}
+        gate_run_id = str(candidates[0].get("gate_run_id") or "")
+        evidence = load_active_provider_wait_recovery_evidence(
+            job_state_root(job), project_id=str(job["project_id"]), gate_run_id=gate_run_id)
+        if evidence is None:
+            return None, {"status": "WAIT", "owner": assessment.owner, "reason": "PROVIDER_WAIT_EVIDENCE_MISSING"}
+        from .provider_runtime_binding import ProviderRuntimeBindingError, collect_production_provider_eligibility
+        try:
+            fresh = collect_production_provider_eligibility(
+                str(job["project_root"]), str(evidence["lv_run_id"]),
+                required_capabilities=tuple(evidence.get("required_capabilities", ())),
+                extra_evidence_refs=("full-plan-wait-recovery",),
+            )
+        except ProviderRuntimeBindingError as exc:
+            return None, {"status": "WAIT", "owner": assessment.owner, "reason": f"PROVIDER_FACT_REFRESH_FAILED:{exc}"}
+        decision = evaluate_provider_wait_recovery(
+            evidence, fresh_snapshot=fresh, current_head=_git_head(str(job["project_root"])))
+        if not decision.resume_allowed:
+            return None, {
+                "status": "WAIT", "owner": assessment.owner, "reason": decision.reason,
+                "router_request_sha256": decision.router_request_sha256,
+                "fresh_router_request_sha256": decision.fresh_router_request_sha256,
+            }
+        try:
+            resumed = supervisor.resume_wait_cas(
+                "WAITING_PROVIDER", expected_state_sha256=expected_sha, expected_epoch=expected_epoch)
+        except ProductionFullPlanError as exc:
+            return None, {"status": "STALE", "owner": assessment.owner, "reason": str(exc)}
+        return resumed, {
+            "status": "RECOVERED", "owner": assessment.owner,
+            "router_request_sha256": decision.router_request_sha256,
+            "fresh_router_request_sha256": decision.fresh_router_request_sha256,
+            "router_decision": dict(decision.router_decision),
+        }
+    return None, {"status": "NOT_ELIGIBLE", "owner": assessment.owner, "reason": assessment.reason}
+
+
 def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any]:
     external_binding_drift = ""
     preloaded_state: dict[str, Any] | None = None
@@ -167,15 +248,21 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         )
         return {"job": str(job_path), "action": "MIGRATION_RECOVERY_REQUIRED", "state": status,
                 "migration_id": tx.migration_id, "migration_phase": tx.phase.value, "launched": False}
+    wait_recovery = None
     if status in WAIT_STATES:
-        AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
-            kind=status, state=status, reason=str(state.get("last_error") or status),
-            gate_id=str(state.get("current_gate") or "") or None,
-            state_sha256=str(state.get("state_sha256") or "") or None,
-            details={"source": "periodic_reconciler"},
-        )
-        return {"job": str(job_path), "action": "PRESERVE_WAIT", "state": status,
-                "recovered_previous_generation": recovered, "launched": False}
+        resumed, wait_recovery = _attempt_typed_wait_recovery(job, state, supervisor)
+        if resumed is None:
+            AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+                kind=status, state=status, reason=str(state.get("last_error") or status),
+                gate_id=str(state.get("current_gate") or "") or None,
+                state_sha256=str(state.get("state_sha256") or "") or None,
+                details={"source": "periodic_reconciler", "wait_recovery": wait_recovery},
+            )
+            return {"job": str(job_path), "action": "PRESERVE_WAIT", "state": status,
+                    "wait_recovery": wait_recovery,
+                    "recovered_previous_generation": recovered, "launched": False}
+        state = resumed
+        status = str(state.get("state"))
     if status in TERMINAL_STATES:
         terminal_reason = str(state.get("terminal_reason") or "")
         if status == "CANCELLED" and (
@@ -207,8 +294,11 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
                 "unit": unit, "launched": False}
     command = transient_systemd_command(job_path, unit_name=unit)
     if not launch:
-        return {"job": str(job_path), "action": "WOULD_RESUME", "state": status,
-                "unit": unit, "command": command, "launched": False}
+        result = {"job": str(job_path), "action": "WOULD_RESUME", "state": status,
+                  "unit": unit, "command": command, "launched": False}
+        if wait_recovery is not None:
+            result["wait_recovery"] = wait_recovery
+        return result
     completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=20)
     if completed.returncode != 0:
         AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(

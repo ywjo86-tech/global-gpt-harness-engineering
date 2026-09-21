@@ -454,8 +454,16 @@ class DurableFullPlanSupervisor:
             item["status"] = "READY"
             item["resume"] = True
             state["state"] = wait_state
+            if wait_state == "WAITING_PROVIDER":
+                state["wait_reason"] = "PROVIDER_UNAVAILABLE"
+            elif wait_state == "WAITING_RESOURCE":
+                state["wait_reason"] = reason if reason in {
+                    "OPERATOR_TASK_RECEIPT_PENDING", "CONTINUATION_RECOVERY_PENDING",
+                    "LOW_RESOURCE_BACKPRESSURE", "RUNTIME_MIGRATION_QUIESCED",
+                } else "CONTINUATION_RECOVERY_PENDING"
             state = self._persist(state, {"event": wait_state, "gate_id": item["gate_id"],
-                                          "reason": reason, "failure_class": failure_class})
+                                          "reason": reason, "wait_reason": state.get("wait_reason"),
+                                          "failure_class": failure_class})
             self._alert(wait_state, state, gate_id=item["gate_id"], reason=reason)
             return state
         attempt = int(item.get("attempt", 1))
@@ -464,9 +472,11 @@ class DurableFullPlanSupervisor:
             item["status"] = "READY"
             item["resume"] = True
             state["state"] = "WAITING_PROVIDER"
+            state["wait_reason"] = "PROVIDER_UNAVAILABLE"
             state["terminal_reason"] = None
             state = self._persist(state, {"event":"WAITING_PROVIDER", "gate_id":item["gate_id"],
-                                          "reason":reason, "failure_class":failure_class})
+                                          "reason":reason, "wait_reason":"PROVIDER_UNAVAILABLE",
+                                          "failure_class":failure_class})
             self._alert("WAITING_PROVIDER", state, gate_id=item["gate_id"], reason=reason)
             return state
         # Artifact/evidence contract failures must never blindly rerun a worker.
@@ -595,8 +605,10 @@ class DurableFullPlanSupervisor:
             resources_ok, snapshot = self._resource_gate(state)
             if not resources_ok:
                 state["state"] = "WAITING_RESOURCE"
+                state["wait_reason"] = "LOW_RESOURCE_BACKPRESSURE"
                 state["last_error"] = "LOW_RESOURCE_BACKPRESSURE"
                 state = self._persist(state, {"event": "WAITING_RESOURCE", "resources": snapshot,
+                                              "wait_reason": "LOW_RESOURCE_BACKPRESSURE",
                                               "gate_id": item["gate_id"]})
                 self._alert("WAITING_RESOURCE", state, resources=snapshot, gate_id=item["gate_id"])
                 break
@@ -735,8 +747,23 @@ class DurableFullPlanSupervisor:
         item["resume"] = True
         state["state"] = "RECOVERING"
         state["last_error"] = None
+        state.pop("wait_reason", None)
         return self._persist(state, {"event": "WAIT_RESUMED", "from_state": expected_state,
                                      "gate_id": item["gate_id"]})
+
+    def resume_wait_cas(self, expected_state: str, *, expected_state_sha256: str, expected_epoch: int) -> dict[str, Any]:
+        """Resume one exact wait generation; stale observers fail closed."""
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if state.get("state") != expected_state:
+                raise ProductionFullPlanError("Full Plan wait-state mismatch")
+            if (str(state.get("state_sha256") or "") != str(expected_state_sha256)
+                    or int(state.get("epoch", 0)) != int(expected_epoch)):
+                raise ProductionFullPlanError("WAIT_RECOVERY_CAS_MISMATCH")
+            return self._resume_wait_locked(expected_state)
+        finally:
+            self._release_run_lock(handle)
 
     def quiesce_for_runtime_migration(self, migration_id: str, successor_run_id: str) -> dict[str, Any]:
         migration = _safe_id(migration_id, "migration ID"); successor = _safe_id(successor_run_id, "successor run ID")
@@ -749,6 +776,7 @@ class DurableFullPlanSupervisor:
             if item is not None and item.get("status") in {"DISPATCHED", "RUNNING"}:
                 raise ProductionFullPlanError("runtime migration cannot quiesce an active worker")
             state["state"] = "WAITING_RESOURCE"
+            state["wait_reason"] = "RUNTIME_MIGRATION_QUIESCED"
             state["last_error"] = "RUNTIME_MIGRATION_QUIESCED"
             state["lease"] = None
             state["migration_id"] = migration

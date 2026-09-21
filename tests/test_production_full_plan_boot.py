@@ -195,4 +195,66 @@ class ProductionFullPlanBootTests(unittest.TestCase):
             self.assertNotIn(f"WorkingDirectory={harness.resolve()}", content)
 
 
+    def test_low_resource_wait_recovers_only_after_fresh_probe(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); registered = self.registered(root); job = load_job(registered)
+            sup = DurableFullPlanSupervisor(root, project_id="proj", run_id="run", gates=["G1"],
+                                            authority_core_sha256=job["authority_core_sha256"],
+                                            retry_budget=0, gate_timeout_seconds=1, heartbeat_seconds=.03,
+                                            lease_seconds=.08, min_disk_free_bytes=0, min_inode_free=0,
+                                            min_memory_available_bytes=0)
+            state, _ = sup.load(); state["state"] = "WAITING_RESOURCE"
+            state["wait_reason"] = "LOW_RESOURCE_BACKPRESSURE"; state["last_error"] = "disk pressure"
+            sup._persist(state, {"event":"TEST_LOW_RESOURCE_WAIT"})
+            with patch("runtime.orchestrator.production_full_plan_boot.DurableFullPlanSupervisor._resource_gate",
+                       return_value=(True,{"disk_free_bytes":999999999})),                  patch("runtime.orchestrator.production_full_plan_boot._unit_active", return_value=False):
+                result = reconcile_job(registered, launch=False)
+            self.assertEqual(result["action"], "WOULD_RESUME")
+            self.assertEqual(result["state"], "RECOVERING")
+
+    def test_provider_wait_recovery_uses_fresh_router_snapshot(self):
+        from runtime.orchestrator.provider_router import (
+            ELIGIBILITY_SCHEMA_V1, ProviderEligibilitySnapshotV1,
+            normalize_legacy_hybrid_request, route_request,
+        )
+        from runtime.orchestrator.wait_recovery import record_provider_wait_recovery_evidence
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); registered = self.registered(root); job = load_job(registered)
+            subprocess.run(["git","-C",str(root),"config","user.email","wait@example.invalid"],check=True)
+            subprocess.run(["git","-C",str(root),"config","user.name","Wait Recovery"],check=True)
+            (root/"source.txt").write_text("stable\n")
+            (root/"source.txt").write_text("stable\n")
+            subprocess.run(["git","-C",str(root),"add","source.txt"],check=True)
+            subprocess.run(["git","-C",str(root),"commit","-qm","source"],check=True)
+            head=subprocess.check_output(["git","-C",str(root),"rev-parse","HEAD"],text=True).strip()
+            sup = DurableFullPlanSupervisor(root, project_id="proj", run_id="run", gates=["G1"],
+                                            authority_core_sha256=job["authority_core_sha256"],
+                                            retry_budget=0, gate_timeout_seconds=1, heartbeat_seconds=.03,
+                                            lease_seconds=.08, min_disk_free_bytes=0, min_inode_free=0,
+                                            min_memory_available_bytes=0)
+            state,_=sup.load(); state["state"]="WAITING_PROVIDER"; state["wait_reason"]="PROVIDER_UNAVAILABLE"
+            state["last_error"]="PROVIDER_ROUTE_BLOCKED:read_provider_unavailable"
+            state=sup._persist(state,{"event":"TEST_PROVIDER_WAIT"})
+            gate_run_id=state["queue"][0]["gate_run_id"]
+            unavailable=ProviderEligibilitySnapshotV1(
+                ELIGIBILITY_SCHEMA_V1,"old",{"nvidia":False,"codex":False},{"codex":"openai/test"},("old",),
+                provider_capabilities={"codex":("read_only","reasoning")})
+            request=normalize_legacy_hybrid_request(
+                required_capabilities=("read_only","reasoning"),eligibility_snapshot=unavailable,
+                request_id="req",project_id="proj",run_id=gate_run_id,task_id="LV1",
+                task_execution_id=f"{gate_run_id}-LV1-worker",directive_digest="d"*64)
+            record_provider_wait_recovery_evidence(
+                root,project_id="proj",gate_run_id=gate_run_id,gate_id="G1",lv_id="LV1",lv_run_id=gate_run_id,
+                project_root=root,source_head=head,router_request=request.to_dict(),router_decision=route_request(request).to_dict(),
+                output_contract={"purpose":"read"},validation_contract={"tests":["T1"]},
+                risk_contract={"state_change_required":False})
+            fresh=ProviderEligibilitySnapshotV1(
+                ELIGIBILITY_SCHEMA_V1,"fresh",{"nvidia":False,"codex":True},{"codex":"openai/test"},("fresh-health",),
+                provider_capabilities={"codex":("read_only","reasoning")})
+            with patch("runtime.orchestrator.provider_runtime_binding.collect_production_provider_eligibility", return_value=fresh),                  patch("runtime.orchestrator.production_full_plan_boot._unit_active", return_value=False):
+                result=reconcile_job(registered,launch=False)
+            self.assertEqual(result["action"],"WOULD_RESUME")
+            self.assertEqual(result["state"],"RECOVERING")
+
+
 if __name__ == "__main__": unittest.main()
