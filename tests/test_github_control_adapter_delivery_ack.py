@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
+from runtime.operator_transport.github_control_adapter import (
+    GitHubControlAdapter,
+    GitHubControlAdapterError,
+    GitHubControlConfig,
+)
 from runtime.operator_transport.github_rest_client import GitHubRESTClientError, VerifiedRepository
 
 
@@ -94,7 +98,7 @@ class DurableDeliveryAckTests(unittest.TestCase):
             path = Path(td) / "acks.json"
             first = adapter(path, (comment(),), fail_publish=True)
             self.assertEqual(len(first.receive()), 1)
-            with self.assertRaises(GitHubRESTClientError):
+            with self.assertRaisesRegex(GitHubControlAdapterError, "projection publish failed"):
                 first.publish_projection({"schema_version": "x", "message_id": "M1"})
 
             second = adapter(path, (comment(),))
