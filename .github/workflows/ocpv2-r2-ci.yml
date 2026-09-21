@@ -61,3 +61,77 @@ jobs:
           python-version: "3.12"
       - name: Full repository unittest discovery
         run: python3 scripts/ocpv2_full_regression.py
+
+  regression-delta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current implementation
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: control
+      - name: Checkout approved source baseline
+        uses: actions/checkout@v4
+        with:
+          ref: e2ce97a3741c070e538f817113a1b90845cc53c3
+          fetch-depth: 0
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run identical baseline and current regressions
+        shell: bash
+        run: |
+          set +e
+          python3 control/scripts/ocpv2_full_regression.py \
+            --repo-root "$GITHUB_WORKSPACE/baseline" \
+            --report-json "$GITHUB_WORKSPACE/baseline-report.json" \
+            --ids-only
+          baseline_rc=$?
+          python3 control/scripts/ocpv2_full_regression.py \
+            --repo-root "$GITHUB_WORKSPACE/control" \
+            --report-json "$GITHUB_WORKSPACE/current-report.json" \
+            --ids-only
+          current_rc=$?
+          echo "BASELINE_RC=$baseline_rc CURRENT_RC=$current_rc"
+          exit 0
+      - name: Compare regression failure identity
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path.cwd()
+          baseline = json.loads((root / "baseline-report.json").read_text())
+          current = json.loads((root / "current-report.json").read_text())
+
+          def typed(report):
+              return ({"FAIL:" + item for item in report["failure_ids"]}
+                      | {"ERROR:" + item for item in report["error_ids"]})
+
+          baseline_bad = typed(baseline)
+          current_bad = typed(current)
+          current_only = sorted(current_bad - baseline_bad)
+          baseline_only = sorted(baseline_bad - current_bad)
+
+          print(
+              "REGRESSION_DELTA_SUMMARY "
+              f"baseline_run={baseline['tests_run']} "
+              f"current_run={current['tests_run']} "
+              f"baseline_bad={len(baseline_bad)} "
+              f"current_bad={len(current_bad)} "
+              f"current_only={len(current_only)} "
+              f"baseline_only={len(baseline_only)}"
+          )
+          if current_only:
+              print("CURRENT_ONLY_REGRESSIONS")
+              for item in current_only:
+                  print(item)
+          if baseline_only:
+              print("BASELINE_ONLY_FAILURES")
+              for item in baseline_only:
+                  print(item)
+          if current_only:
+              raise SystemExit(1)
+          PY
