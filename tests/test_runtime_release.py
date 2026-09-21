@@ -12,6 +12,8 @@ from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupe
 from runtime.orchestrator.runtime_migration_handoff import MigrationPhase, MigrationStore
 from runtime.orchestrator.runtime_release import (
     RuntimeReleaseError,
+    RuntimeReleaseManifest,
+    _digest,
     _extract_archive_bytes,
     activate_runtime_release,
     build_runtime_release,
@@ -81,6 +83,33 @@ class RuntimeReleaseTests(unittest.TestCase):
             path.write_text(json.dumps(data))
             with self.assertRaises(RuntimeReleaseError):
                 build_runtime_release(repo, releases)
+
+
+    def test_new_release_manifest_binds_publication_head(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d); repo = base / "repo"; repo.mkdir(); self.make_repo(repo)
+            manifest = build_runtime_release(repo, base / "releases")
+            self.assertEqual(manifest.schema_version, "gch.runtime-release.v2")
+            self.assertEqual(manifest.publication_head, manifest.source_head)
+
+    def test_v1_release_manifest_remains_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            release = Path(d) / "release"; entry = release / "runtime/orchestrator/production_full_plan_boot.py"
+            entry.parent.mkdir(parents=True); entry.write_text("# boot\n", encoding="utf-8")
+            source_head = "a" * 40
+            unsigned = {
+                "schema_version": "gch.runtime-release.v1",
+                "source_head": source_head,
+                "source_tree": "b" * 40,
+                "release_path": str(release.absolute()),
+                "runtime_entry": "runtime/orchestrator/production_full_plan_boot.py",
+                "runtime_entry_sha256": __import__("hashlib").sha256(entry.read_bytes()).hexdigest(),
+            }
+            payload = {**unsigned, "manifest_sha256": _digest(unsigned)}
+            (release / "RUNTIME_RELEASE_MANIFEST.json").write_text(json.dumps(payload), encoding="utf-8")
+            manifest = verify_runtime_release(release, source_head)
+            self.assertEqual(manifest.schema_version, "gch.runtime-release.v1")
+            self.assertEqual(manifest.publication_head, source_head)
 
     def test_activation_repairs_broken_runtime_link_when_no_active_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as d:

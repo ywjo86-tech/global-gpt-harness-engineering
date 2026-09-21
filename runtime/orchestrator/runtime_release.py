@@ -17,7 +17,8 @@ from .durable_io import atomic_write_json
 from .harness_state_root import job_state_root
 from .runtime_migration_handoff import MigrationPhase, RuntimeMigrationTransaction
 
-SCHEMA_VERSION = "gch.runtime-release.v1"
+SCHEMA_VERSION_V1 = "gch.runtime-release.v1"
+SCHEMA_VERSION = "gch.runtime-release.v2"
 
 
 class RuntimeReleaseError(ValueError):
@@ -57,22 +58,30 @@ class RuntimeReleaseManifest:
     runtime_entry: str
     runtime_entry_sha256: str
     manifest_sha256: str
+    publication_head: str = ""
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> "RuntimeReleaseManifest":
-        required = {
+        common = {
             "schema_version", "source_head", "source_tree", "release_path",
             "runtime_entry", "runtime_entry_sha256", "manifest_sha256",
         }
-        if set(payload) != required:
+        schema = str(payload.get("schema_version") or "")
+        required = common if schema == SCHEMA_VERSION_V1 else common | {"publication_head"}
+        if schema not in {SCHEMA_VERSION_V1, SCHEMA_VERSION} or set(payload) != required:
             raise RuntimeReleaseError("runtime release manifest fields mismatch")
-        manifest = cls(**{key: str(payload[key]) for key in required})
-        if manifest.schema_version != SCHEMA_VERSION:
-            raise RuntimeReleaseError("runtime release manifest schema mismatch")
-        unsigned = asdict(manifest); unsigned.pop("manifest_sha256")
-        if _digest(unsigned) != manifest.manifest_sha256:
+        unsigned = {key: payload[key] for key in required if key != "manifest_sha256"}
+        if _digest(unsigned) != str(payload.get("manifest_sha256") or ""):
             raise RuntimeReleaseError("runtime release manifest digest mismatch")
-        return manifest
+        publication_head = str(payload.get("publication_head") or payload.get("source_head") or "")
+        if publication_head != str(payload.get("source_head") or ""):
+            raise RuntimeReleaseError("runtime release publication/source head mismatch")
+        return cls(
+            schema_version=schema, source_head=str(payload["source_head"]),
+            source_tree=str(payload["source_tree"]), release_path=str(payload["release_path"]),
+            runtime_entry=str(payload["runtime_entry"]), runtime_entry_sha256=str(payload["runtime_entry_sha256"]),
+            manifest_sha256=str(payload["manifest_sha256"]), publication_head=publication_head,
+        )
 
 
 def _safe_member_name(name: str) -> PurePosixPath:
@@ -174,6 +183,7 @@ def build_runtime_release(
         "release_path": str(release.absolute()),
         "runtime_entry": entry_relative,
         "runtime_entry_sha256": entry_sha,
+        "publication_head": head,
     }
     payload = {**unsigned, "manifest_sha256": _digest(unsigned)}
     atomic_write_json(temporary / "RUNTIME_RELEASE_MANIFEST.json", payload)
