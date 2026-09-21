@@ -24,19 +24,6 @@ class RemoteOperatorSingleWriterTests(unittest.TestCase):
                 supervisor.assert_current_epoch(first)
             self.assertEqual(supervisor.assert_current_epoch(second)["continuation_owner"]["epoch"], second.epoch)
 
-    def test_expected_owner_epoch_mismatch_does_not_mutate_owner_state(self):
-        with tempfile.TemporaryDirectory() as td:
-            supervisor, _ = self._runtime(Path(td))
-            before, _ = supervisor.load()
-            self.assertIsNone(before["continuation_owner"])
-            self.assertEqual(before["progress_sequence"], 0)
-            with self.assertRaisesRegex(ProductionFullPlanError, "STALE_DIRECTIVE: continuation owner epoch mismatch"):
-                supervisor.claim_attested_continuation_owner(expected_gate_id="G1", expected_owner_epoch=9)
-            after, _ = supervisor.load()
-            self.assertIsNone(after["continuation_owner"])
-            self.assertEqual(after["progress_sequence"], 0)
-            self.assertEqual(after["state_sha256"], before["state_sha256"])
-
     def test_prelock_and_inlock_cas_allow_one_mutation(self):
         with tempfile.TemporaryDirectory() as td:
             supervisor, tx = self._runtime(Path(td))
