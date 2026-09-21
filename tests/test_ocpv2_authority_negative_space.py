@@ -17,6 +17,7 @@ OCP_ORCHESTRATOR_FILES = (
     ORCHESTRATOR_ROOT / "remote_operator_transport.py",
     ORCHESTRATOR_ROOT / "remote_operator_service.py",
     ORCHESTRATOR_ROOT / "operator_console_projection.py",
+    ORCHESTRATOR_ROOT / "ocpv2_runtime_service.py",
 )
 
 
@@ -44,6 +45,7 @@ class OCPv2AuthorityNegativeSpaceTests(unittest.TestCase):
             ORCHESTRATOR_ROOT / "remote_operator_service.py",
             ORCHESTRATOR_ROOT / "operator_console_projection.py",
             ORCHESTRATOR_ROOT / "remote_operator_transport.py",
+            ORCHESTRATOR_ROOT / "ocpv2_runtime_service.py",
         )
         forbidden_imports = {
             "subprocess",
