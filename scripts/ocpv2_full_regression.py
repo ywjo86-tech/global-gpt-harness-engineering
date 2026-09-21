@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -21,6 +22,43 @@ def _bounded_env_state(value: str | None) -> str:
         return "UNSET"
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
     return f"SET:{digest}"
+
+
+def _install_hermetic_codex_probe(root: Path) -> None:
+    """Install a probe-only Codex fixture for hermetic unit tests.
+
+    It supports only the pinned version query and protocol-schema generation used
+    by compatibility tests. Any attempt to use it as an execution backend fails
+    closed. Actual Codex integration tests remain separately opt-in.
+    """
+    stub = root / "codex"
+    stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "if args == ['--version']:\n"
+        "    print('codex-cli 0.150.1')\n"
+        "    raise SystemExit(0)\n"
+        "if args[:3] == ['app-server', 'generate-json-schema', '--experimental'] and '--out' in args:\n"
+        "    try:\n"
+        "        target = Path(args[args.index('--out') + 1])\n"
+        "    except (ValueError, IndexError):\n"
+        "        raise SystemExit(97)\n"
+        "    target.mkdir(parents=True, exist_ok=True)\n"
+        "    payload = {\n"
+        "        'experimentalApi': True,\n"
+        "        'method': 'item/tool/call',\n"
+        "        'dynamicTools': [],\n"
+        "        'contentItems': [],\n"
+        "        'environments': 'Empty disables environment access',\n"
+        "    }\n"
+        "    (target / 'codex_app_server_protocol.schemas.json').write_text(json.dumps(payload), encoding='utf-8')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(97)\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
 
 
 class DiagnosticResult(unittest.TestResult):
@@ -103,7 +141,15 @@ def main() -> int:
     repo_root = args.repo_root.resolve()
     suite = build_suite(repo_root)
     result = DiagnosticResult()
-    suite.run(result)
+    original_path = os.environ.get("PATH", "")
+    with tempfile.TemporaryDirectory(prefix="ocpv2-codex-probe-") as directory:
+        probe_root = Path(directory)
+        _install_hermetic_codex_probe(probe_root)
+        os.environ["PATH"] = str(probe_root) + os.pathsep + original_path
+        try:
+            suite.run(result)
+        finally:
+            os.environ["PATH"] = original_path
 
     print(
         "FULL_REGRESSION_SUMMARY "
