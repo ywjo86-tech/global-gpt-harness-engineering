@@ -81,7 +81,12 @@ class GitHubControlAdapter:
         self.config = config
         self.rest_client = rest_client
         self.secret_scan = secret_scan
-        self.delivery_ack_path = None if delivery_ack_path is None else Path(delivery_ack_path).absolute()
+        configured_ack_path: str | Path | None = delivery_ack_path
+        if configured_ack_path is None:
+            state_root = str(os.environ.get("OCP_STATE_ROOT") or "").strip()
+            if state_root:
+                configured_ack_path = Path(state_root) / "transport" / "github-delivery-acks.json"
+        self.delivery_ack_path = None if configured_ack_path is None else Path(configured_ack_path).absolute()
         if self.delivery_ack_path is not None and self.delivery_ack_path.is_symlink():
             raise GitHubControlAdapterError("delivery ack path must not be a symlink")
         self._acknowledged: set[str] = set()
