@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .durable_io import atomic_write_json
+from .harness_state_root import job_state_root
 from .runtime_migration_handoff import MigrationPhase, RuntimeMigrationTransaction
 
 SCHEMA_VERSION = "gch.runtime-release.v1"
@@ -208,7 +209,7 @@ def _active_registered_jobs(search_root: str | Path) -> list[ActiveRegisteredJob
             job = load_job(job_path)
             gates = [str(item["gate_id"]) for item in job["gates"]]
             state, _ = DurableFullPlanSupervisor(
-                job["harness_root"], project_id=job["project_id"], run_id=job["run_id"],
+                job_state_root(job), project_id=job["project_id"], run_id=job["run_id"],
                 gates=gates, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
                 **dict(job.get("policy") or {}),
             ).load()

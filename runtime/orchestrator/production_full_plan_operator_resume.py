@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 from .durable_io import atomic_write_json
+from .harness_state_root import job_state_root
 from .production_full_plan_entry import (
     canonical_job_path,
     load_job,
@@ -112,10 +113,10 @@ def _bind_manual_action_and_resume_locked(
 ) -> dict[str, Any]:
     canonical, job = _canonical_registered_job(job_path)
     root = Path(str(job["project_root"])).resolve()
-    harness = Path(str(job["harness_root"])).resolve()
+    state_root = job_state_root(job)
     gate_ids = [str(item["gate_id"]) for item in job["gates"]]
     supervisor = DurableFullPlanSupervisor(
-        harness, project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+        state_root, project_id=str(job["project_id"]), run_id=str(job["run_id"]),
         gates=gate_ids, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
         **dict(job.get("policy") or {}),
     )
@@ -247,7 +248,7 @@ def bind_manual_action_and_resume(
     action_path: str | Path, authorization_path: str | Path, launch: bool = False,
 ) -> dict[str, Any]:
     canonical, job = _canonical_registered_job(job_path)
-    base = (Path(str(job["harness_root"])).resolve() / "_workspace" / "production-full-plan"
+    base = (job_state_root(job) / "_workspace" / "production-full-plan"
             / str(job["project_id"]) / str(job["run_id"]))
     with _operator_resume_lock(base):
         return _bind_manual_action_and_resume_locked(
