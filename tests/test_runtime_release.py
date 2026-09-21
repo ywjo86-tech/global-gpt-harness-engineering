@@ -16,6 +16,8 @@ from runtime.orchestrator.runtime_release import (
     _digest,
     _extract_archive_bytes,
     activate_runtime_release,
+    reverse_activate_runtime_release,
+    rollback_evidence_path,
     build_runtime_release,
     verify_runtime_release,
 )
@@ -184,6 +186,16 @@ class RuntimeReleaseTests(unittest.TestCase):
 
 
 class RuntimeMigrationActivationTests(unittest.TestCase):
+    def make_source_target_releases(self, base: Path):
+        repo=base/'repo'; repo.mkdir(); RuntimeReleaseTests.make_repo(self,repo)
+        source=build_runtime_release(repo,base/'releases')
+        target_file=repo/'runtime/orchestrator/production_full_plan_boot.py'
+        target_file.write_text('# boot target\n',encoding='utf-8')
+        subprocess.run(['git','-C',str(repo),'add','.'],check=True)
+        subprocess.run(['git','-C',str(repo),'commit','-qm','target runtime'],check=True)
+        target=build_runtime_release(repo,base/'releases')
+        return source,target
+
     def make_release(self, base: Path):
         repo=base/'repo'; repo.mkdir(); RuntimeReleaseTests.make_repo(self,repo)
         return build_runtime_release(repo,base/'releases')
@@ -215,6 +227,66 @@ class RuntimeMigrationActivationTests(unittest.TestCase):
         if advance:
             tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':quiesced_sha_override or quiesced['state_sha256']})
         return tx,quiesced
+
+
+    def prepare_v2_reverse_fixture(self, base: Path):
+        source,target=self.make_source_target_releases(base)
+        job,sup=self.register(base,'R2'); initial,_=sup.load()
+        quiesced=sup.quiesce_for_runtime_migration('MIG-RB','R3',require_active_qualification=True)
+        spec={
+            'migration_id':'MIG-RB','project_id':'P','predecessor_run_id':'R2','successor_run_id':'R3',
+            'current_gate':'G1','resume_gate':'G1','approved_plan_sha256':'a'*64,'approved_spec_sha256':'b'*64,
+            'authority_core_sha256':job['authority_core_sha256'],'predecessor_state_sha256':initial['state_sha256'],
+            'source_head':source.source_head,'source_tree':source.source_tree,'source_manifest_sha256':source.manifest_sha256,
+            'target_release_head':target.source_head,'target_manifest_sha256':target.manifest_sha256,'successor_job_spec_sha256':'2'*64,
+        }
+        store=MigrationStore(base/'migrations'); tx=store.create_v2(spec)
+        tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':quiesced['state_sha256']})
+        link=base/'runtime-current'
+        activate_runtime_release(target,link,job_search_root=base,migration_transaction=tx)
+        tx=store.advance(tx.migration_id,MigrationPhase.RUNTIME_ACTIVATED)
+        return source,target,link,store,tx,sup
+
+    def test_reverse_activation_restores_bound_source_release(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); source,target,link,store,tx,_=self.prepare_v2_reverse_fixture(base)
+            restored=reverse_activate_runtime_release(source,link,job_search_root=base,migration_transaction=tx)
+            self.assertEqual(restored.resolve(),Path(source.release_path).resolve())
+            evidence=rollback_evidence_path(base,tx.project_id,tx.migration_id)
+            self.assertTrue(evidence.is_file())
+            payload=json.loads(evidence.read_text())
+            self.assertEqual(payload['source_manifest_sha256'],source.manifest_sha256)
+            self.assertEqual(payload['replaced_target_head'],target.source_head)
+            tx=store.record_restored_runtime_evidence(tx.migration_id,payload['evidence_sha256'])
+            tx=store.rollback(tx.migration_id,'qualification failed')
+            self.assertEqual(tx.phase,MigrationPhase.ROLLED_BACK)
+
+    def test_reverse_activation_rejects_wrong_source_manifest(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); source,_,link,_,tx,_=self.prepare_v2_reverse_fixture(base)
+            poisoned=type(source)(**{**source.__dict__,'manifest_sha256':'0'*64}) if hasattr(source,'__dict__') else None
+            payload=json.loads((Path(source.release_path)/'RUNTIME_RELEASE_MANIFEST.json').read_text())
+            payload['manifest_sha256']='0'*64
+            from runtime.orchestrator.runtime_release import RuntimeReleaseManifest
+            with self.assertRaises(Exception):
+                RuntimeReleaseManifest.from_mapping(payload)
+            # A different valid release is still wrong for the sealed source binding.
+            other_repo=base/'other'; other_repo.mkdir(); RuntimeReleaseTests.make_repo(self,other_repo)
+            other=build_runtime_release(other_repo,base/'other-releases')
+            with self.assertRaisesRegex(RuntimeReleaseError,'source binding'):
+                reverse_activate_runtime_release(other,link,job_search_root=base,migration_transaction=tx)
+
+    def test_reverse_activation_rejects_unrelated_active_job(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); source,_,link,_,tx,_=self.prepare_v2_reverse_fixture(base); self.register(base,'RX')
+            with self.assertRaisesRegex(RuntimeReleaseError,'active Full Plan jobs'):
+                reverse_activate_runtime_release(source,link,job_search_root=base,migration_transaction=tx)
+
+    def test_reverse_activation_rejects_nonquiesced_successor(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d); source,_,link,_,tx,_=self.prepare_v2_reverse_fixture(base); self.register(base,'R3')
+            with self.assertRaisesRegex(RuntimeReleaseError,'active Full Plan jobs'):
+                reverse_activate_runtime_release(source,link,job_search_root=base,migration_transaction=tx)
 
     def test_exact_quiesced_predecessor_is_only_exempt_active_job(self):
         with tempfile.TemporaryDirectory() as d:

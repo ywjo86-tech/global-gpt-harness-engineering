@@ -6,10 +6,12 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -303,6 +305,121 @@ def activate_runtime_release(
         os.close(fd)
     return link
 
+
+
+def rollback_evidence_path(job_search_root: str | Path, project_id: str, migration_id: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,160}", str(project_id or "")):
+        raise RuntimeReleaseError("rollback evidence project ID is invalid")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,160}", str(migration_id or "")):
+        raise RuntimeReleaseError("rollback evidence migration ID is invalid")
+    return (Path(job_search_root).expanduser().resolve() / "_workspace" / "runtime-rollback-evidence"
+            / str(project_id) / f"{migration_id}.json")
+
+
+def _migration_reverse_blockers(
+    active: list[ActiveRegisteredJob], transaction: RuntimeMigrationTransaction,
+) -> list[ActiveRegisteredJob]:
+    from .runtime_migration_handoff import MIGRATION_SCHEMA_V2
+    if transaction.schema_version != MIGRATION_SCHEMA_V2:
+        raise RuntimeReleaseError("reverse activation requires migration v2")
+    if transaction.phase not in {
+        MigrationPhase.RUNTIME_ACTIVATED, MigrationPhase.SUCCESSOR_REGISTERED,
+        MigrationPhase.SUCCESSOR_VERIFIED, MigrationPhase.ACTIVE_RUNTIME_QUALIFICATION,
+    }:
+        raise RuntimeReleaseError("runtime migration is not in a reversible activated phase")
+    predecessor = [item for item in active if item.project_id == transaction.project_id
+                   and item.run_id == transaction.predecessor_run_id]
+    if len(predecessor) != 1:
+        raise RuntimeReleaseError("runtime migration predecessor is not uniquely active")
+    item = predecessor[0]
+    if (item.load_error or item.state != "WAITING_RESOURCE"
+            or item.state_sha256 != transaction.quiesced_state_sha256
+            or item.migration_id != transaction.migration_id
+            or item.migration_successor_run_id != transaction.successor_run_id):
+        raise RuntimeReleaseError("runtime migration predecessor quiescence binding mismatch")
+    return [candidate for candidate in active if candidate is not item]
+
+
+def reverse_activate_runtime_release(
+    source_manifest: RuntimeReleaseManifest, runtime_link: str | Path, *, job_search_root: str | Path,
+    migration_transaction: RuntimeMigrationTransaction,
+) -> Path:
+    """Restore the sealed v2 source runtime and emit durable rollback evidence.
+
+    This is the runtime effect. MigrationStore.rollback() remains bookkeeping and
+    is intentionally illegal after activation until this evidence is recorded.
+    """
+    verified_source = verify_runtime_release(source_manifest.release_path, source_manifest.source_head)
+    if verified_source != source_manifest:
+        raise RuntimeReleaseError("runtime rollback source manifest binding mismatch")
+    if (migration_transaction.source_head != source_manifest.source_head
+            or migration_transaction.source_tree != source_manifest.source_tree
+            or migration_transaction.source_manifest_sha256 != source_manifest.manifest_sha256):
+        raise RuntimeReleaseError("runtime rollback source binding mismatch")
+
+    link = Path(runtime_link).expanduser().absolute()
+    if not link.is_symlink():
+        raise RuntimeReleaseError("runtime rollback requires an active runtime symlink")
+    try:
+        current_release = link.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise RuntimeReleaseError("active runtime link is broken") from exc
+    current_manifest = verify_runtime_release(current_release, migration_transaction.target_release_head)
+    if current_manifest.manifest_sha256 != migration_transaction.target_manifest_sha256:
+        raise RuntimeReleaseError("active runtime target binding mismatch")
+
+    active = _active_registered_jobs(job_search_root)
+    blockers = _migration_reverse_blockers(active, migration_transaction)
+    if blockers:
+        raise RuntimeReleaseError("cannot reverse runtime link while unrelated active Full Plan jobs exist")
+
+    temporary = link.with_name(link.name + f".rollback-{os.getpid()}")
+    temporary.unlink(missing_ok=True)
+    os.symlink(str(Path(source_manifest.release_path).resolve()), str(temporary))
+    os.replace(temporary, link)
+    fd = os.open(str(link.parent), getattr(os, "O_DIRECTORY", 0) | os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    restored = verify_runtime_release(link.resolve(strict=True), source_manifest.source_head)
+    if restored.manifest_sha256 != source_manifest.manifest_sha256:
+        raise RuntimeReleaseError("restored runtime verification failed")
+
+    evidence_path = rollback_evidence_path(job_search_root, migration_transaction.project_id, migration_transaction.migration_id)
+    unsigned = {
+        "schema_version": "gch.runtime-rollback-evidence.v1",
+        "project_id": migration_transaction.project_id,
+        "migration_id": migration_transaction.migration_id,
+        "predecessor_run_id": migration_transaction.predecessor_run_id,
+        "successor_run_id": migration_transaction.successor_run_id,
+        "source_head": source_manifest.source_head,
+        "source_tree": source_manifest.source_tree,
+        "source_manifest_sha256": source_manifest.manifest_sha256,
+        "replaced_target_head": current_manifest.source_head,
+        "replaced_target_manifest_sha256": current_manifest.manifest_sha256,
+        "runtime_link": str(link),
+        "restored_release_path": str(Path(source_manifest.release_path).resolve()),
+        "restored_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    evidence = {**unsigned, "evidence_sha256": _digest(unsigned)}
+    if evidence_path.exists():
+        if evidence_path.is_symlink() or not evidence_path.is_file():
+            raise RuntimeReleaseError("rollback evidence path is unsafe")
+        try:
+            existing = json.loads(evidence_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeReleaseError("rollback evidence is malformed") from exc
+        # Idempotent re-entry may have a different restored_at only if the prior
+        # effect already completed. Preserve the first immutable evidence.
+        for key in unsigned:
+            if key == "restored_at":
+                continue
+            if existing.get(key) != unsigned[key]:
+                raise RuntimeReleaseError("conflicting rollback evidence exists")
+    else:
+        atomic_write_json(evidence_path, evidence)
+    return link
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build, verify, or activate immutable Harness runtime releases")

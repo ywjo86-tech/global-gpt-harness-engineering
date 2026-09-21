@@ -67,6 +67,18 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
             with self.assertRaises(MigrationHandoffError):
                 store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'source_manifest_sha256':'0'*64})
 
+
+    def test_v2_rollback_after_activation_requires_restored_runtime_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=self.store(td); tx=store.create_v2(valid_v2_spec())
+            tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})
+            tx=store.advance(tx.migration_id,MigrationPhase.RUNTIME_ACTIVATED)
+            with self.assertRaisesRegex(MigrationHandoffError,'restored runtime evidence'):
+                store.rollback(tx.migration_id,'activation failed')
+            tx=store.record_restored_runtime_evidence(tx.migration_id,'7'*64)
+            tx=store.rollback(tx.migration_id,'activation failed')
+            self.assertEqual(tx.phase,MigrationPhase.ROLLED_BACK)
+
     def test_v2_rollback_remains_legal_after_active_qualification_before_close(self):
         with tempfile.TemporaryDirectory() as td:
             store=self.store(td); tx=store.create_v2(valid_v2_spec())
@@ -74,6 +86,7 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
             for phase in (MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED):
                 tx=store.advance(tx.migration_id,phase)
             tx=store.advance(tx.migration_id,MigrationPhase.ACTIVE_RUNTIME_QUALIFICATION,updates={'qualification_evidence_sha256':'6'*64})
+            tx=store.record_restored_runtime_evidence(tx.migration_id,'7'*64)
             tx=store.rollback(tx.migration_id,'qualification failed after evidence capture')
             self.assertEqual(tx.phase,MigrationPhase.ROLLED_BACK)
 

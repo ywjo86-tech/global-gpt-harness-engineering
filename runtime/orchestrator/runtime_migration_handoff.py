@@ -309,6 +309,11 @@ class MigrationStore:
             raise MigrationHandoffError("migration rollback is no longer legal")
         if not str(reason).strip():
             raise MigrationHandoffError("rollback reason required")
+        if (tx.schema_version == MIGRATION_SCHEMA_V2
+                and tx.phase in {MigrationPhase.RUNTIME_ACTIVATED, MigrationPhase.SUCCESSOR_REGISTERED,
+                                 MigrationPhase.SUCCESSOR_VERIFIED, MigrationPhase.ACTIVE_RUNTIME_QUALIFICATION}
+                and not tx.restored_runtime_evidence_sha256):
+            raise MigrationHandoffError("restored runtime evidence is required before v2 rollback")
         return self._save(replace(tx, phase=MigrationPhase.ROLLED_BACK, rollback_reason=str(reason).strip()))
 
 
