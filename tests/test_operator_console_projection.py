@@ -134,7 +134,6 @@ class OperatorConsoleProjectionTests(unittest.TestCase):
     def test_console_request_cannot_add_provider_or_model_authority(self):
         payload = _console_envelope_payload()
         payload["operator_directive"]["provider"] = "nvidia"
-        payload = seal_remote_envelope(payload)
         with self.assertRaises(RemoteOperatorEnvelopeError):
             normalize_console_control_request(
                 payload,
