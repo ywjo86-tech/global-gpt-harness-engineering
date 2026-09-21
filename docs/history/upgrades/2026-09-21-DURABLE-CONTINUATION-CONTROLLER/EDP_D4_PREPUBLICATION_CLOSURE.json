@@ -1,0 +1,14 @@
+{
+  "schema_version": "gch.dcc-hwo-d4-prepublication.v1",
+  "date": "2026-09-21",
+  "decision": "PASS",
+  "validated_code_head": "86c53470709a53cdb41f8979bd77b7d5c055cf6b",
+  "validated_code_tree": "a8f625bba0f74df2245fef9a328eb3fee44a28e1",
+  "predecessor_runtime_head": "a40626c31353f90c0d4c9e677d3886ea5ccce393",
+  "focused": {"tests": 82, "status": "PASS", "log_sha256": "9d2507b6ec171e9d13fb4451174774f1b75e2fc538581e405e4a8c9d0b2c8b0b"},
+  "full": {"tests": 1976, "skipped": 15, "status": "PASS", "log_sha256": "106325f92bfbf49674f75a02d16b0178a9363544dd9eae33be6a0a6066d357f3"},
+  "compileall": "PASS",
+  "diff_check": "PASS",
+  "runtime_effects_executed": false,
+  "rollback_window_required": true
+}
