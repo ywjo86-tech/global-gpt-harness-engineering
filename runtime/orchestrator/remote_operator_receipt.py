@@ -57,7 +57,7 @@ class RemoteOperatorReceiptStore:
         channel = _safe_component(envelope.transport.channel_id, "channel ID")
         path = self.root / adapter / channel
         for parent in (self.root / adapter, path):
-            if parent.exists() and (parent.is_symlink() or not parent.is_dir()):
+            if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
                 raise RemoteOperatorReceiptError("unsafe receipt channel")
         path.mkdir(parents=True, exist_ok=True)
         if path.is_symlink():
@@ -72,10 +72,11 @@ class RemoteOperatorReceiptStore:
 
     @staticmethod
     def _load_object(path: Path) -> tuple[dict[str, Any], bool] | None:
-        if not path.exists() and not path.with_suffix(path.suffix + ".prev").exists():
-            return None
-        if path.exists() and path.is_symlink():
+        previous = path.with_suffix(path.suffix + ".prev")
+        if path.is_symlink() or previous.is_symlink():
             raise RemoteOperatorReceiptError("receipt state is a symlink")
+        if not path.exists() and not previous.exists():
+            return None
         try:
             return durable_json_load(path)
         except (DurableIOError, OSError, ValueError) as exc:
@@ -145,7 +146,7 @@ class RemoteOperatorReceiptStore:
             "terminal_projection_status": "PENDING",
         }
         receipt_path = self._receipt_path(envelope)
-        if receipt_path.exists() and receipt_path.is_symlink():
+        if receipt_path.is_symlink():
             raise RemoteOperatorReceiptError("receipt state is a symlink")
         try:
             # Receipt first: if a crash occurs before the sequence watermark write,
