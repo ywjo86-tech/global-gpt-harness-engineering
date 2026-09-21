@@ -110,12 +110,18 @@ Task 14: complete — Prepared-only deployment package
 - Final hardening commit: `e336e5d7e3ddd7f0028171b250dcbde5e18cd452`.
 - Public example configuration uses the generic `/path/to/global-gpt-harness-engineering` placeholder; no live Jarvis path is committed.
 - `deploy/operator-control-plane-v2/README.md` states PREPARED ONLY, separate Gate B authorization, default DISABLED, first live target OBSERVE_ONLY, dedicated private control repository, token-file `0600`, and no provider/model selection authority.
-- Non-mutating composition now constructs the durable result outbox and replays only already-sealed strict result projections. This recovery path is transport delivery only and grants no execution/completion/provider-routing/canonical-mutation authority.
+- Non-mutating composition constructs the durable result outbox and replays only already-sealed strict result projections. This recovery path is transport delivery only and grants no execution/completion/provider-routing/canonical-mutation authority.
 - `install-user-service` writes reviewed user-level files only and never invokes `systemctl`.
 - Exact-head CI run `35584359324`: PASS across focused deploy/authority tests, whole-repository regression, and baseline/current delta.
 
+Final documentation verification:
+- Documentation diagnosis HEAD: `3bd8346e5b29d649a0ae9fb13bc8db6a4fbf4442`.
+- CI run `35584807893`: focused PASS; full-regression PASS; regression-delta PASS.
+- The second session interruption occurred only because this hosted CI was still in progress when the prior conversation ended; it was not a Harness or product-code stall. See `docs/harness/OCPV2_R2_INTERRUPTION_20260921.md`.
+
 Implementation status after Task 14:
-- Source implementation: COMPLETE pending final documentation-only exact-head re-verification.
+- Source implementation: COMPLETE and VERIFIED through final documentation HEAD `3bd8346e5b29d649a0ae9fb13bc8db6a4fbf4442`.
+- Closure-record-only commits after that verified HEAD require no production logic change; their exact HEAD is re-verified before the session is closed.
 - Live bootstrap/systemd install: NOT PERFORMED.
 - Dedicated private control repository/token: NOT CREATED.
 - Live migration: UNCHANGED by OCPv2 implementation.
