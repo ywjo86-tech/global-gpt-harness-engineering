@@ -5,10 +5,12 @@ import copy
 import hashlib
 import json
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from .durable_io import atomic_write_json
+from .harness_state_root import job_state_root
 
 AUTHORITY_SCHEMA = "orchestration.production-run-authority.v1"
 OVERLAY_SCHEMA = "orchestration.production-run-runtime-bindings.v1"
@@ -20,6 +22,27 @@ RUNTIME_GATE_FIELDS = frozenset({
 
 class RunAuthorityError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class JobRoots:
+    project_root: Path
+    runtime_code_root: Path
+    harness_state_root: Path
+    modern: bool
+
+    @classmethod
+    def from_job(cls, job: Mapping[str, Any]) -> "JobRoots":
+        project = Path(str(job.get("project_root") or "")).expanduser().resolve()
+        runtime = Path(str(job.get("runtime_code_root") or job.get("harness_root") or "")).expanduser().resolve()
+        state = job_state_root(job)
+        modern = bool(job.get("harness_state_root"))
+        if modern:
+            if state == project or project in state.parents:
+                raise RunAuthorityError("HARNESS_STATE_ROOT_NOT_INDEPENDENT")
+            if runtime == project:
+                raise RunAuthorityError("EXECUTOR_RUNTIME_NOT_SEPARATE")
+        return cls(project, runtime, state, modern)
 
 
 def _digest(value: object) -> str:
@@ -99,6 +122,7 @@ def authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def seal_authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
+    JobRoots.from_job(job)
     value = copy.deepcopy(dict(job))
     if "executor_runtime_identity" not in value:
         value["executor_runtime_identity"] = executor_runtime_identity(str(value.get("runtime_code_root") or value["harness_root"]))
@@ -124,7 +148,7 @@ def validate_authority_core(job: Mapping[str, Any]) -> str:
 
 
 def runtime_binding_overlay_path(job: Mapping[str, Any]) -> Path:
-    root = Path(str(job["harness_root"])).resolve()
+    root = job_state_root(job)
     return (root / "_workspace" / "production-full-plan-jobs" / str(job["project_id"])
             / f"{job['run_id']}.runtime-bindings.json")
 

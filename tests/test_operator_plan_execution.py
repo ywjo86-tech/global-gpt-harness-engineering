@@ -1,5 +1,6 @@
 import hashlib
 import json
+import inspect
 import subprocess
 import tempfile
 import unittest
@@ -193,6 +194,62 @@ class OperatorPlanExecutionTests(unittest.TestCase):
             resumed = resume_operator_plan_after_receipt(canonical, "TASK-001")
             self.assertEqual(resumed["state"], "RECOVERING")
             self.assertEqual(resumed["current_gate"], "TASK-001")
+
+
+    def test_three_root_job_allows_project_head_advance_with_fixed_runtime(self) -> None:
+        self.assertIn("harness_state_root", inspect.signature(build_operator_plan_job).parameters)
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d); project = base / "project"; project.mkdir()
+            spec, plan = self.make_repo(project)
+            runtime = base / "runtime-release"; (runtime / "runtime").mkdir(parents=True)
+            (runtime / "runtime/executor.py").write_text("VALUE = 1\n")
+            state = base / "durable-state"; state.mkdir()
+            job = build_operator_plan_job(
+                project_root=project, harness_state_root=state, runtime_code_root=runtime,
+                project_id="proj", run_id="run-three-root", task_ids=("TASK-001",),
+                approved_plan_path=plan, approved_spec_path=spec, approval_ref="chat://approved",
+            )
+            requested = project / "job.json"; requested.write_text(json.dumps(job))
+            canonical = register_job(load_job(requested)); registered = load_registered_job(canonical)
+            identity = dict(registered["executor_runtime_identity"])
+            (project / "project-only.txt").write_text("advance\n")
+            subprocess.run(["git", "-C", str(project), "add", "project-only.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "project advance"], check=True)
+            reloaded = load_registered_job(canonical)
+            self.assertEqual(preflight_job(reloaded)["status"], "PASS")
+            self.assertEqual(reloaded["executor_runtime_identity"], identity)
+            self.assertEqual(Path(reloaded["harness_state_root"]).resolve(), state.resolve())
+
+    def test_three_root_job_rejects_runtime_source_mutation(self) -> None:
+        self.assertIn("harness_state_root", inspect.signature(build_operator_plan_job).parameters)
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d); project = base / "project"; project.mkdir()
+            spec, plan = self.make_repo(project)
+            runtime = base / "runtime-release"; (runtime / "runtime").mkdir(parents=True)
+            executor = runtime / "runtime/executor.py"; executor.write_text("VALUE = 1\n")
+            state = base / "durable-state"; state.mkdir()
+            job = build_operator_plan_job(
+                project_root=project, harness_state_root=state, runtime_code_root=runtime,
+                project_id="proj", run_id="run-runtime-drift", task_ids=("TASK-001",),
+                approved_plan_path=plan, approved_spec_path=spec, approval_ref="chat://approved",
+            )
+            requested = project / "job.json"; requested.write_text(json.dumps(job))
+            canonical = register_job(load_job(requested)); registered = load_registered_job(canonical)
+            executor.write_text("VALUE = 2\n")
+            self.assertEqual(preflight_job(registered)["reason"], "EXECUTOR_RUNTIME_SOURCE_DRIFT")
+
+    def test_three_root_job_rejects_state_root_inside_project(self) -> None:
+        self.assertIn("harness_state_root", inspect.signature(build_operator_plan_job).parameters)
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d); spec, plan = self.make_repo(project)
+            runtime = project.parent / f"{project.name}-runtime"; (runtime / "runtime").mkdir(parents=True)
+            with self.assertRaisesRegex((OperatorPlanExecutionError, ValueError), "independent of project worktree"):
+                build_operator_plan_job(
+                    project_root=project, harness_state_root=project / ".state", runtime_code_root=runtime,
+                    project_id="proj", run_id="run-bad-state", task_ids=("TASK-001",),
+                    approved_plan_path=plan, approved_spec_path=spec, approval_ref="chat://approved",
+                )
+
 
 
 if __name__ == "__main__":

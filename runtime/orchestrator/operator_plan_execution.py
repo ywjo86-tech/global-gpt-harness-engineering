@@ -17,6 +17,7 @@ from typing import Any, Mapping, Sequence
 
 from .durable_io import atomic_write_json
 from .production_run_authority import executor_runtime_identity
+from .harness_state_root import resolve_harness_state_root, job_state_root
 
 EXECUTOR_KIND = "GPT_OPERATOR_PLAN"
 RECEIPT_SCHEMA = "orchestration.operator-plan-receipt.v1"
@@ -77,18 +78,34 @@ def _committed_regular_file(root: Path, path: str | Path, label: str) -> Path:
     return absolute
 
 def build_operator_plan_job(
-    *, project_root: str | Path, harness_root: str | Path, runtime_code_root: str | Path,
+    *, project_root: str | Path, harness_root: str | Path | None = None,
+    harness_state_root: str | Path | None = None, runtime_code_root: str | Path,
     project_id: str, run_id: str, task_ids: Sequence[str],
     approved_plan_path: str | Path, approved_spec_path: str | Path,
     approval_ref: str,
 ) -> dict[str, Any]:
     project = Path(project_root).resolve()
-    harness = Path(harness_root).resolve()
     runtime = Path(runtime_code_root).resolve()
-    if not project.is_dir() or project.is_symlink() or not harness.is_dir() or harness.is_symlink():
+    modern_state = harness_state_root is not None
+    if modern_state:
+        try:
+            state_root = resolve_harness_state_root(
+                project_root=project, environ={"GCH_STATE_ROOT": str(harness_state_root)}
+            )
+        except ValueError as exc:
+            raise OperatorPlanExecutionError(str(exc)) from exc
+        if harness_root is not None and Path(harness_root).resolve() != state_root:
+            raise OperatorPlanExecutionError("harness_root must match harness_state_root for modern jobs")
+    else:
+        if harness_root is None:
+            raise OperatorPlanExecutionError("harness_state_root is required for new operator jobs")
+        state_root = Path(harness_root).resolve()
+    if not project.is_dir() or project.is_symlink() or not state_root.is_dir() or state_root.is_symlink():
         raise OperatorPlanExecutionError("project/harness root is invalid")
     if not runtime.is_dir():
         raise OperatorPlanExecutionError("runtime code root is invalid")
+    if modern_state and runtime == project:
+        raise OperatorPlanExecutionError("runtime code root must be immutable and separate from project worktree")
     plan = _committed_regular_file(project, approved_plan_path, "approved plan")
     spec = _committed_regular_file(project, approved_spec_path, "approved spec")
     tasks = tuple(_safe_id(value, "Task ID") for value in task_ids)
@@ -116,7 +133,7 @@ def build_operator_plan_job(
     job: dict[str, Any] = {
         "schema_version": "orchestration.production-full-plan-job.v1",
         "executor_kind": EXECUTOR_KIND,
-        "project_root": str(project), "harness_root": str(harness),
+        "project_root": str(project), "harness_root": str(state_root),
         "runtime_code_root": str(runtime), "project_id": _safe_id(project_id, "project ID"),
         "run_id": _safe_id(run_id, "run ID"), "git_common_dir": str(common_path),
         "expected_branch": branch, "approved_plan_path": str(plan),
@@ -128,6 +145,8 @@ def build_operator_plan_job(
                    "heartbeat_seconds": 5, "lease_seconds": 20,
                    "stall_alert_seconds": 300},
     }
+    if modern_state:
+        job["harness_state_root"] = str(state_root)
     validate_operator_plan_job(job)
     return job
 
@@ -136,6 +155,17 @@ def validate_operator_plan_job(job: Mapping[str, Any]) -> None:
         raise OperatorPlanExecutionError("operator plan executor kind mismatch")
     project = Path(str(job.get("project_root") or "")).resolve()
     runtime = Path(str(job.get("runtime_code_root") or "")).resolve()
+    if job.get("harness_state_root"):
+        try:
+            state_root = resolve_harness_state_root(
+                project_root=project, environ={"GCH_STATE_ROOT": str(job["harness_state_root"])}
+            )
+        except ValueError as exc:
+            raise OperatorPlanExecutionError(str(exc)) from exc
+        if Path(str(job.get("harness_root") or "")).resolve() != state_root:
+            raise OperatorPlanExecutionError("harness root/state root binding mismatch")
+        if runtime == project:
+            raise OperatorPlanExecutionError("runtime code root must be immutable and separate from project worktree")
     if not project.is_dir() or project.is_symlink():
         raise OperatorPlanExecutionError("project root is invalid")
     if not runtime.is_dir():
@@ -250,7 +280,7 @@ def build_operator_plan_executor(
 ):
     validate_operator_plan_job(job)
     store = receipt_store or OperatorPlanReceiptStore(
-        str(job["harness_root"]), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+        str(job_state_root(job)), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
     )
 
     def execute(gate_id: str, gate_run_id: str, resume: bool) -> Mapping[str, Any]:
@@ -332,14 +362,14 @@ def resume_operator_plan_after_receipt(job_path: str | Path, gate_id: str) -> di
     if gate_id not in known:
         raise OperatorPlanExecutionError("Task is outside approved operator plan")
     store = OperatorPlanReceiptStore(
-        str(job["harness_root"]), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+        str(job_state_root(job)), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
     )
     receipt = store.load(gate_id)
     if receipt is None:
         raise OperatorPlanExecutionError("operator task PASS receipt is missing")
     _validate_receipt_for_job(job, gate_id, receipt)
     supervisor = DurableFullPlanSupervisor(
-        str(job["harness_root"]), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+        str(job_state_root(job)), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
         gates=known, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
         **dict(job.get("policy") or {}),
     )
