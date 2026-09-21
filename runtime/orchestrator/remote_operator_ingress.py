@@ -34,6 +34,26 @@ class ReconciliationDecision:
     projection_id: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class CanonicalCompletionEvidence:
+    """Exact canonical proof used only to reconstruct OCP transport bookkeeping."""
+
+    message_id: str
+    directive_digest: str
+    project_id: str
+    run_id: str
+    gate_id: str
+    task_id: str
+    canonical_state_ref: str
+    canonical_state_sha256: str
+    effect_evidence_refs: tuple[str, ...]
+    checkpoint_ref: str
+    checkpoint_sha256: str
+    migration_transaction_sha256: str
+    result_summary: str
+    completed_at: str
+
+
 def prepare_existing_operator_directive(envelope: RemoteOperatorEnvelopeV2) -> OperatorDirectiveV1:
     """Re-enter the existing operator contract; no OCP-specific stage authority is created."""
     return OperatorDirectiveV1.from_mapping(envelope.operator_directive.to_dict())
@@ -247,3 +267,56 @@ def reconcile_committed_delivery(
         envelope.message_id,
         projection.projection_id,
     )
+
+
+def reconcile_canonical_completion(
+    envelope: RemoteOperatorEnvelopeV2,
+    *,
+    receipt_store: RemoteOperatorReceiptStore,
+    outbox: RemoteResultOutbox,
+    canonical_evidence_resolver: Callable[[str, str], CanonicalCompletionEvidence | None],
+) -> IngressDecision:
+    """Project a proven prior canonical completion without re-accepting execution.
+
+    The returned ``accepted`` flag is always false: reconciliation may rebuild receipt and
+    outbox state, but it can never re-enter the mutation path.
+    """
+    evidence = canonical_evidence_resolver(envelope.message_id, envelope.directive_digest)
+    if evidence is None:
+        return _blocked(envelope, "RECONCILIATION_REQUIRED")
+    if (
+        evidence.message_id != envelope.message_id
+        or evidence.directive_digest != envelope.directive_digest
+        or evidence.project_id != envelope.project_id
+        or evidence.run_id != envelope.run_id
+        or evidence.gate_id != envelope.gate_id
+        or evidence.task_id != envelope.task_id
+    ):
+        return _blocked(envelope, "RECONCILIATION_REQUIRED")
+    projection = RemoteResultProjectionV1(
+        projection_id=f"REC-{envelope.envelope_sha256[:24]}",
+        message_id=evidence.message_id,
+        directive_digest=evidence.directive_digest,
+        project_id=evidence.project_id,
+        run_id=evidence.run_id,
+        gate_id=evidence.gate_id,
+        task_id=evidence.task_id,
+        canonical_state_ref=evidence.canonical_state_ref,
+        canonical_state_sha256=evidence.canonical_state_sha256,
+        effect_evidence_refs=tuple(evidence.effect_evidence_refs),
+        checkpoint_ref=evidence.checkpoint_ref,
+        checkpoint_sha256=evidence.checkpoint_sha256,
+        migration_transaction_sha256=evidence.migration_transaction_sha256,
+        result_class="CANONICAL_ACTION_COMPLETED",
+        result_summary=evidence.result_summary,
+        projected_at=evidence.completed_at,
+    )
+    reconciled = reconcile_committed_delivery(
+        envelope,
+        receipt_store=receipt_store,
+        outbox=outbox,
+        evidence_resolver=lambda _message_id, _directive_digest: projection,
+    )
+    if not reconciled.reconciled:
+        return _blocked(envelope, "RECONCILIATION_REQUIRED")
+    return _blocked(envelope, "CANONICAL_ACTION_COMPLETED")
