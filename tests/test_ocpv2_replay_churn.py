@@ -62,16 +62,17 @@ def service_for(result_class: str):
 
 
 class ReplayChurnRegressionTests(unittest.TestCase):
-    def test_idempotent_replay_is_silent_and_acknowledged(self):
+    def test_idempotent_replay_remains_visible_when_transport_has_no_durable_publish_ack(self):
         service, transport = service_for("IDEMPOTENT_REPLAY")
 
         result = service.poll_once(mode=ControlMode.OBSERVE_ONLY)
 
-        self.assertEqual(transport.projections, [])
+        self.assertEqual(len(transport.projections), 1)
+        self.assertEqual(transport.projections[0]["result_class"], "IDEMPOTENT_REPLAY")
         self.assertEqual(transport.acks, ["MSG-1"])
-        self.assertEqual(result.projected, 0)
+        self.assertEqual(result.projected, 1)
         self.assertEqual(result.acknowledged, 1)
-        self.assertEqual(result.blocked, 0)
+        self.assertEqual(result.blocked, 1)
 
     def test_tamper_detected_remains_visible_and_blocked(self):
         service, transport = service_for("TAMPER_DETECTED")
