@@ -22,6 +22,7 @@ from .gate_continuation_contract import GateContinuationContract
 
 EXECUTOR_KIND = "GPT_OPERATOR_PLAN"
 RECEIPT_SCHEMA = "orchestration.operator-plan-receipt.v1"
+ATTESTED_RECEIPT_SCHEMA = "orchestration.operator-plan-receipt.v2"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SHA40_64 = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SAFE_ID = re.compile(r"[A-Za-z0-9._-]{1,160}\Z")
@@ -233,7 +234,7 @@ class OperatorPlanReceiptStore:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise OperatorPlanExecutionError("operator plan receipt is malformed") from exc
-        if not isinstance(value, dict) or value.get("schema_version") != RECEIPT_SCHEMA:
+        if not isinstance(value, dict) or value.get("schema_version") not in {RECEIPT_SCHEMA, ATTESTED_RECEIPT_SCHEMA}:
             raise OperatorPlanExecutionError("operator plan receipt schema mismatch")
         expected = value.get("receipt_sha256")
         unsigned = {k: v for k, v in value.items() if k != "receipt_sha256"}
@@ -277,6 +278,41 @@ class OperatorPlanReceiptStore:
         payload["receipt_sha256"] = _digest(payload)
         path = self._path(gate)
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.parent.is_symlink():
+            raise OperatorPlanExecutionError("operator plan receipt root is unsafe")
+        atomic_write_json(path, payload)
+        return payload
+
+    def create_attested_pass_receipt(
+        self, *, attestation: Any, plan_sha256: str, spec_sha256: str, branch: str,
+    ) -> dict[str, Any]:
+        from .verified_gate_attestation import VerifiedGateAttestation
+        if not isinstance(attestation, VerifiedGateAttestation):
+            raise OperatorPlanExecutionError("verified Gate attestation is required")
+        attestation.validate()
+        if attestation.project_id != self.project_id or attestation.run_id != self.run_id:
+            raise OperatorPlanExecutionError("attested receipt identity mismatch")
+        if not _SHA256.fullmatch(str(plan_sha256)) or not _SHA256.fullmatch(str(spec_sha256)):
+            raise OperatorPlanExecutionError("operator plan receipt binding digest is invalid")
+        if not str(branch or "").strip():
+            raise OperatorPlanExecutionError("operator plan receipt branch is invalid")
+        binding = {
+            "schema_version": ATTESTED_RECEIPT_SCHEMA, "project_id": self.project_id, "run_id": self.run_id,
+            "gate_id": attestation.gate_id, "plan_sha256": str(plan_sha256), "spec_sha256": str(spec_sha256),
+            "branch": str(branch), "source_head": attestation.source_head,
+            "source_tree_sha256": attestation.source_tree_sha256, "changed_paths_sha256": attestation.changed_paths_sha256,
+            "authority_core_sha256": attestation.authority_core_sha256, "contract_sha256": attestation.contract_sha256,
+            "attestation_sha256": attestation.attestation_sha256, "status": "PASS",
+        }
+        existing = self.load(attestation.gate_id)
+        if existing is not None:
+            comparable = {k: v for k, v in existing.items() if k not in {"created_at", "receipt_sha256"}}
+            if comparable == binding:
+                return existing
+            raise OperatorPlanExecutionError("conflicting receipt already exists")
+        payload = {**binding, "created_at": _now()}
+        payload["receipt_sha256"] = _digest(payload)
+        path = self._path(attestation.gate_id); path.parent.mkdir(parents=True, exist_ok=True)
         if path.parent.is_symlink():
             raise OperatorPlanExecutionError("operator plan receipt root is unsafe")
         atomic_write_json(path, payload)

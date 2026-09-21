@@ -254,3 +254,23 @@ class OperatorPlanExecutionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class OperatorPlanReceiptV2Tests(unittest.TestCase):
+    def test_auto_path_cannot_mint_v1_receipt(self) -> None:
+        from runtime.orchestrator.verified_gate_attestation import VerifiedGateAttestation
+        with tempfile.TemporaryDirectory() as d:
+            store = OperatorPlanReceiptStore(Path(d), project_id="P", run_id="R")
+            attestation = VerifiedGateAttestation.create(
+                project_id="P", run_id="R", gate_id="G", authority_core_sha256="a"*64,
+                contract_sha256="b"*64, source_head="c"*40, source_tree_sha256="d"*40,
+                changed_paths_sha256="e"*64,
+                verifier_results={"UNITTEST":{"status":"PASS","evidence_sha256":"f"*64}},
+                evidence_digests={"TEST_RESULT":"1"*64})
+            receipt = store.create_attested_pass_receipt(
+                attestation=attestation, plan_sha256="2"*64, spec_sha256="3"*64, branch="feature")
+            self.assertEqual(receipt["schema_version"], "orchestration.operator-plan-receipt.v2")
+            self.assertNotIn("tests", receipt)
+            self.assertEqual(receipt["attestation_sha256"], attestation.attestation_sha256)
+            self.assertEqual(receipt["authority_core_sha256"], "a"*64)
+            self.assertEqual(receipt["contract_sha256"], "b"*64)
+            self.assertEqual(receipt["source_tree_sha256"], "d"*40)
