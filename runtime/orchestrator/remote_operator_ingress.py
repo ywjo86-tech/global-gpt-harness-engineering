@@ -8,6 +8,7 @@ from .operator_control import OperatorDirectiveV1
 from .production_execution_gateway import GatewayError, validate_gateway_request
 from .production_full_plan_runner import ContinuationOwnerToken, DurableFullPlanSupervisor, ProductionFullPlanError
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
+from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
 from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, MigrationStore, RuntimeMigrationTransaction
 
@@ -23,6 +24,14 @@ class IngressDecision:
     message_id: str
     directive_digest: str
     directive: OperatorDirectiveV1 | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationDecision:
+    reconciled: bool
+    result_class: str
+    message_id: str
+    projection_id: str = ""
 
 
 def prepare_existing_operator_directive(envelope: RemoteOperatorEnvelopeV2) -> OperatorDirectiveV1:
@@ -183,6 +192,58 @@ def advance_migration_if_current(
             raise MigrationHandoffError("STALE_DIRECTIVE: qualification evidence CAS mismatch")
     elif next_phase == MigrationPhase.PREDECESSOR_CLOSED and tx.schema_version.endswith(".v2"):
         if not tx.qualification_evidence_sha256:
-            # Preserve the existing MigrationStore error vocabulary for an unqualified close.
             return store.advance(migration_id, next_phase, updates=updates)
     return store.advance(migration_id, next_phase, updates=updates)
+
+
+def reconcile_committed_delivery(
+    envelope: RemoteOperatorEnvelopeV2,
+    *,
+    receipt_store: RemoteOperatorReceiptStore,
+    outbox: RemoteResultOutbox,
+    evidence_resolver: Callable[[str, str], RemoteResultProjectionV1 | None],
+) -> ReconciliationDecision:
+    """Recover transport bookkeeping only when canonical evidence proves completion.
+
+    This function has no execution callback by construction.  A missing/ambiguous or
+    incorrectly bound proof returns ``RECONCILIATION_REQUIRED`` and cannot replay a
+    canonical mutation.
+    """
+    projection = evidence_resolver(envelope.message_id, envelope.directive_digest)
+    if projection is None:
+        return ReconciliationDecision(False, "RECONCILIATION_REQUIRED", envelope.message_id)
+    if (
+        projection.message_id != envelope.message_id
+        or projection.directive_digest != envelope.directive_digest
+        or projection.project_id != envelope.project_id
+        or projection.run_id != envelope.run_id
+        or projection.gate_id != envelope.gate_id
+        or projection.task_id != envelope.task_id
+        or projection.result_class != "CANONICAL_ACTION_COMPLETED"
+    ):
+        return ReconciliationDecision(False, "RECONCILIATION_REQUIRED", envelope.message_id)
+
+    classification = receipt_store.classify_delivery(envelope)
+    if classification == ReceiptStatus.NEW:
+        receipt_store.record_received(envelope)
+    elif classification != ReceiptStatus.IDEMPOTENT_REPLAY:
+        return ReconciliationDecision(False, "RECONCILIATION_REQUIRED", envelope.message_id)
+
+    outbox.enqueue_projection(projection)
+    canonical_refs = []
+    if projection.canonical_state_ref:
+        canonical_refs.append(projection.canonical_state_ref)
+    canonical_refs.extend(projection.effect_evidence_refs)
+    if projection.checkpoint_ref:
+        canonical_refs.append(projection.checkpoint_ref)
+    receipt_store.record_terminal_projection(
+        message_id=envelope.message_id,
+        projection_digest=projection.projection_sha256,
+        canonical_receipt_refs=tuple(canonical_refs),
+    )
+    return ReconciliationDecision(
+        True,
+        "CANONICAL_ACTION_COMPLETED",
+        envelope.message_id,
+        projection.projection_id,
+    )
