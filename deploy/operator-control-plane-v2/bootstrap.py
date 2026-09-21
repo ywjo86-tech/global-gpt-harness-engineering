@@ -280,6 +280,7 @@ def _compose_non_mutating_service(config: BootstrapConfig):
     from runtime.orchestrator.production_worker_executor import _secret_findings
     from runtime.orchestrator.remote_operator_envelope import validate_remote_envelope
     from runtime.orchestrator.remote_operator_ingress import validate_ingress
+    from runtime.orchestrator.remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
     from runtime.orchestrator.remote_operator_receipt import RemoteOperatorReceiptStore
     from runtime.orchestrator.remote_operator_service import RemoteOperatorService, RemoteOperatorServiceError
 
@@ -300,6 +301,16 @@ def _compose_non_mutating_service(config: BootstrapConfig):
         secret_scan=_secret_findings,
     )
     receipt_store = RemoteOperatorReceiptStore(checked.state_root / "receipts")
+    result_outbox = RemoteResultOutbox(checked.state_root / "outbox")
+
+    def publish_pending_projection(projection: RemoteResultProjectionV1) -> None:
+        # Replaying an already-sealed result projection is transport recovery only.
+        # It does not grant execution, completion, provider-routing, or canonical
+        # mutation authority to the bootstrap service.
+        adapter.publish_projection(projection.to_dict())
+        adapter.acknowledge_delivery(projection.message_id)
+
+    result_outbox.publish_pending(publish_pending_projection)
 
     def decode(raw):
         try:
