@@ -24,6 +24,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python3 -m unittest -v tests.test_remote_operator_envelope
       - run: python3 -m unittest -v tests.test_operator_control
       - run: python3 -m unittest -v tests.test_durable_continuation_locking
       - run: python3 -m unittest -v tests.test_runtime_migration_handoff
