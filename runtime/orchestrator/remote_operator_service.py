@@ -134,10 +134,6 @@ class RemoteOperatorService:
             validated += 1
 
             if not decision.accepted:
-                if decision.result_class == "IDEMPOTENT_REPLAY":
-                    self.transport.acknowledge_delivery(envelope.message_id)
-                    acknowledged += 1
-                    continue
                 projection = self._projection(envelope, decision.result_class)
                 self._publish_and_ack(envelope, projection)
                 projected += 1
