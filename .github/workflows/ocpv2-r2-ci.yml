@@ -35,7 +35,9 @@ jobs:
       - run: python3 -m unittest -v tests.test_remote_operator_transport
       - run: python3 -m unittest -v tests.test_github_rest_client
       - run: python3 -m unittest -v tests.test_github_control_adapter
+      - run: python3 -m unittest -v tests.test_github_control_adapter_delivery_ack
       - run: python3 -m unittest -v tests.test_remote_operator_service
+      - run: python3 -m unittest -v tests.test_ocpv2_replay_churn
       - run: python3 -m unittest -v tests.test_operator_console_projection
       - run: python3 -m unittest -v tests.test_ocpv2_deploy_package
       - run: python3 -m unittest -v tests.test_ocpv2_authority_negative_space
