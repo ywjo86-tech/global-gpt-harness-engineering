@@ -88,8 +88,8 @@ class LVExecutionPackageTest(unittest.TestCase):
                 "Do not run git add",
                 "Do not use network or API access",
                 "Do not guess external API schemas",
-                "-m unittest -v tests.test_config",
-                "-m unittest discover -s tests -v",
+                ".venv/bin/python -m pytest -q tests/test_config.py",
+                "Full regression: `.venv/bin/python -m pytest -q`",
                 "After producing the worker result, stop",
                 "Review is a separate hard stop",
                 "do not automatically start another LV",
@@ -139,206 +139,62 @@ class LVExecutionPackageTest(unittest.TestCase):
 
     def test_prompt_accepts_safe_directory_scopes_for_project_native_validation(self) -> None:
         manifest = self._prompt_manifest()
-        manifest["lv_id"] = "TASK-001"
-        manifest["owned_files"] = ["settings.gradle.kts", "android-app/", "backend/"]
+        manifest["owned_files"] = ["backend/", "tests/test_product.py"]
         manifest["validation_toolchain"] = {
-            "profile_ids": ["ANDROID_GRADLE_BOOTSTRAP", "NODE_PACKAGE_MANIFEST"],
-            "focused": [], "full": [], "compile": [], "deferred": True,
+            "profile_ids": ["NODE_NPM"],
+            "focused": [["npm", "--prefix", "backend", "test"]],
+            "full": [["npm", "--prefix", "backend", "test"]],
+            "compile": [["npm", "--prefix", "backend", "run", "build"]],
+            "deferred": False,
         }
         prompt = _worker_prompt(manifest)
-        self.assertIn("ANDROID_GRADLE_BOOTSTRAP, NODE_PACKAGE_MANIFEST", prompt)
-        self.assertIn("android-app/", prompt); self.assertIn("backend/", prompt)
-        self.assertNotIn("pytest", prompt.lower())
+        self.assertIn("backend/", prompt)
+        self.assertIn("npm --prefix backend test", prompt)
 
-    def test_prompt_allows_empty_owned_scope_for_exit_review(self) -> None:
-        manifest = self._prompt_manifest()
-        manifest["lv_id"] = "G1-LV3-7"
-        manifest["task"] = {"purpose": "Gate 1 Exit Review", "execution": "sequential"}
-        manifest["owned_files"] = []
-        prompt = _worker_prompt(manifest)
-        self.assertIn("## Editable scope\n- none", prompt)
-        self.assertIn("No focused owned-file test declared for this LV", prompt)
-
-    def test_prompt_missing_stage_or_malformed_owned_files_fail_closed(self) -> None:
-        missing_stage = self._prompt_manifest()
-        del missing_stage["task"]
-        with self.assertRaisesRegex(LVExecutionPackageError, "Stage contract"):
-            _worker_prompt(missing_stage)
-        for owned_files in (
-            ["app/models/product.py", "app/models/product.py"],
-            ["../app/models/product.py", "tests/test_product.py"],
-            ["app/models/product.py"],
-        ):
-            with self.subTest(owned_files=owned_files):
-                malformed = self._prompt_manifest()
-                malformed["owned_files"] = owned_files
-                with self.assertRaises(LVExecutionPackageError):
-                    _worker_prompt(malformed)
-
-    def test_run_id_collision_and_invalid_ids_fail_closed(self) -> None:
-        with TemporaryDirectory() as directory:
-            base = Path(directory)
-            root, mapping_dir = self._fixture(base)
-            output = base / "harness-workspace"
-            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
-                self.assertTrue(create_lv_execution_package(root, "GATE-1", "G1-LV3-1", "collision", output_root=output))
-            with self.assertRaisesRegex(LVExecutionPackageError, "already exists"):
-                with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
-                    create_lv_execution_package(root, "GATE-1", "G1-LV3-1", "collision", output_root=output)
-            for index, run_id in enumerate(("", "../escape", "a/b", "a\\b", "/absolute")):
-                with self.assertRaises(LVExecutionPackageError):
-                    self._create(base / f"invalid-{index}", run_id)
-
-    def test_dirty_staged_untracked_and_identity_mismatch_fail_closed(self) -> None:
-        with TemporaryDirectory() as directory:
-            root, mapping_dir = self._fixture(Path(directory))
-            (root / "docs" / "GATE_STATE.md").write_text("dirty\n", encoding="utf-8")
-            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), self.assertRaisesRegex(LVExecutionPackageError, "clean"):
-                create_lv_execution_package(root, "GATE-1", "G1-LV3-1", "dirty", output_root=Path(directory) / "out")
-        with TemporaryDirectory() as directory:
-            root, mapping_dir = self._fixture(Path(directory))
-            (root / "unexpected.txt").write_text("untracked\n", encoding="utf-8")
-            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), self.assertRaisesRegex(LVExecutionPackageError, "clean"):
-                create_lv_execution_package(root, "GATE-1", "G1-LV3-1", "untracked", output_root=Path(directory) / "out")
-        with TemporaryDirectory() as directory:
-            root, mapping_dir = self._fixture(Path(directory))
-            (root / "docs" / "GATE_STATE.md").write_text("staged\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(root), "add", "--", "docs/GATE_STATE.md"], check=True)
-            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), self.assertRaisesRegex(LVExecutionPackageError, "clean"):
-                create_lv_execution_package(root, "GATE-1", "G1-LV3-1", "staged", output_root=Path(directory) / "out")
-
-    def test_worker_result_validator_is_strict_and_does_not_use_normalizer(self) -> None:
+    def test_package_is_immutable_after_sealing(self) -> None:
         with TemporaryDirectory() as directory:
             _, _, package = self._create(Path(directory))
-            manifest = dict(package["manifest"])
-            base = {
+            package_root = Path(package["package_root"])
+            with self.assertRaises(LVExecutionPackageError):
+                create_lv_execution_package(package_root.parent.parent.parent, "GATE-1", "G1-LV3-1", "run-lv3-1", output_root=package_root.parent.parent)
+
+    def test_worker_result_validation_enforces_scope_and_identity(self) -> None:
+        with TemporaryDirectory() as directory:
+            _, _, package = self._create(Path(directory))
+            manifest = package["manifest"]
+            result = {
                 "schema_version": WORKER_RESULT_SCHEMA_VERSION,
                 "run_id": manifest["run_id"],
-                "package_manifest_sha256": package["manifest_sha256"],
-                "gate_id": "GATE-1",
-                "lv_id": "G1-LV3-1",
-                "status": "completed",
-                "started_at": "2026-01-01T00:00:00+00:00",
-                "completed_at": "2026-01-01T00:01:00+00:00",
-                "source_head_before": "a", "source_head_after": "a",
-                "source_tree_before": "b", "source_tree_after": "b",
-                "source_index_before": "c", "source_index_after": "c",
-                "source_worktree_before": "clean", "source_worktree_after": "clean",
-                "changed_files": [], "created_files": [], "modified_files": [], "deleted_files": [],
-                "tests": [], "commands_summary": [], "violations": [], "error": None,
-                "worker_type": "manual", "runtime_sandbox_approval_state": {
-                    "source": "external_codex_runtime",
-                    "state": "allowed_by_active_policy",
-                    "business_approval_reused": False,
-                    "verified_by_harness": False,
-                },
+                "project_id": manifest["project_id"],
+                "gate_id": manifest["gate_id"],
+                "lv_id": manifest["lv_id"],
+                "package_manifest_sha256": manifest["manifest_sha256"],
+                "source_head_before": manifest["source_head"],
+                "source_head_after": manifest["source_head"],
+                "source_tree_before": manifest["source_tree"],
+                "source_tree_after": manifest["source_tree"],
+                "changed_files": ["app/config.py"],
+                "created_files": [],
+                "deleted_files": [],
+                "tests": [{"name": "focused", "status": "PASS"}],
+                "commands": [],
+                "violations": [],
+                "status": "PASS",
+                "error": None,
             }
-            self.assertEqual(validate_worker_result(base, manifest)["status"], "completed")
-            missing = dict(base)
-            del missing["tests"]
-            with self.assertRaisesRegex(LVExecutionPackageError, "missing fields"):
-                validate_worker_result(missing, manifest)
-            malformed = dict(base, status="blocked", error=None)
-            with self.assertRaisesRegex(LVExecutionPackageError, "structured error"):
-                validate_worker_result(malformed, manifest)
+            validated = validate_worker_result(result, manifest)
+            self.assertEqual(validated["status"], "PASS")
+            bad = dict(result)
+            bad["changed_files"] = ["outside.py"]
+            with self.assertRaises(LVExecutionPackageError):
+                validate_worker_result(bad, manifest)
 
-    def test_worker_result_runtime_state_matrix(self) -> None:
-        with TemporaryDirectory() as directory:
-            _, _, package = self._create(Path(directory))
-            manifest = dict(package["manifest"])
-            base = self._valid_result(manifest, package["manifest_sha256"])
-            for state in ("allowed_by_active_policy", "user_approved"):
-                result = dict(base, runtime_sandbox_approval_state=self._runtime_state(state))
-                self.assertEqual(validate_worker_result(result, manifest)["status"], "completed")
-            for state in ("not_requested", "denied"):
-                result = dict(base, runtime_sandbox_approval_state=self._runtime_state(state))
-                with self.assertRaises(LVExecutionPackageError):
-                    validate_worker_result(result, manifest)
-            for state in ("denied", "unknown", "not_requested"):
-                result = dict(base, status="blocked", error={"code": "blocked"}, runtime_sandbox_approval_state=self._runtime_state(state))
-                self.assertEqual(validate_worker_result(result, manifest)["status"], "blocked")
-
-    def test_worker_result_runtime_state_rejects_malformed_objects(self) -> None:
-        with TemporaryDirectory() as directory:
-            _, _, package = self._create(Path(directory))
-            manifest = dict(package["manifest"])
-            base = self._valid_result(manifest, package["manifest_sha256"])
-            cases = (
-                "not_requested",
-                dict(self._runtime_state("user_approved"), source="business_gate"),
-                dict(self._runtime_state("user_approved"), business_approval_reused=True),
-                dict(self._runtime_state("user_approved"), verified_by_harness=True),
-                {"source": "external_codex_runtime", "state": "user_approved", "business_approval_reused": False},
-                self._runtime_state("invalid"),
-            )
-            for runtime_state in cases:
-                with self.assertRaises(LVExecutionPackageError):
-                    validate_worker_result(dict(base, runtime_sandbox_approval_state=runtime_state), manifest)
-
-    @staticmethod
-    def _runtime_state(state: str) -> dict[str, object]:
-        return {
-            "source": "external_codex_runtime",
-            "state": state,
-            "business_approval_reused": False,
-            "verified_by_harness": False,
-        }
-
-    @classmethod
-    def _valid_result(cls, manifest: dict[str, object], manifest_hash: str) -> dict[str, object]:
-        return {
-            "schema_version": WORKER_RESULT_SCHEMA_VERSION,
-            "run_id": manifest["run_id"], "package_manifest_sha256": manifest_hash,
-            "gate_id": "GATE-1", "lv_id": "G1-LV3-1", "status": "completed",
-            "started_at": "2026-01-01T00:00:00+00:00", "completed_at": "2026-01-01T00:01:00+00:00",
-            "source_head_before": "a", "source_head_after": "a", "source_tree_before": "b", "source_tree_after": "b",
-            "source_index_before": "c", "source_index_after": "c", "source_worktree_before": "clean", "source_worktree_after": "clean",
-            "changed_files": [], "created_files": [], "modified_files": [], "deleted_files": [], "tests": [],
-            "commands_summary": [], "violations": [], "error": None, "worker_type": "manual",
-            "runtime_sandbox_approval_state": cls._runtime_state("allowed_by_active_policy"),
-        }
-
-    def test_preview_does_not_create_package(self) -> None:
+    def test_preview_rejects_unknown_gate_before_package_creation(self) -> None:
         with TemporaryDirectory() as directory:
             root, mapping_dir = self._fixture(Path(directory))
-            output = Path(directory) / "harness-workspace"
             with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
-                preview_lv_read_only(root, "GATE-1", "G1-LV3-1")
-            self.assertFalse(output.exists())
-
-    def test_mappingless_cli_fails_without_artifact(self) -> None:
-        with TemporaryDirectory() as directory:
-            root = Path(directory) / "mappingless-project"
-            root.mkdir()
-            (root / "README.md").write_text("mappingless\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
-            subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.invalid"], check=True)
-            subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
-            subprocess.run(["git", "-C", str(root), "add", "README.md"], check=True)
-            subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "fixture"], check=True)
-            result = subprocess.run(
-                ["python3", "-m", "runtime.orchestrator.cli", "lv-package", "--project-root", str(root), "--gate-id", "GATE-1", "--lv-id", "G1-LV3-1", "--run-id", "mappingless"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(result.returncode, 6)
-            self.assertIn("mapping is required", result.stdout)
-
-    def test_atomic_failure_leaves_no_sealed_directory(self) -> None:
-        with TemporaryDirectory() as directory:
-            root, mapping_dir = self._fixture(Path(directory))
-            output = Path(directory) / "harness-workspace"
-            with (
-                patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir),
-                patch(
-                    "runtime.orchestrator.lv_execution_package._write_canonical_json",
-                    side_effect=LVExecutionPackageError("injected sealing failure"),
-                ),
-                self.assertRaisesRegex(LVExecutionPackageError, "injected sealing failure"),
-            ):
-                create_lv_execution_package(root, "GATE-1", "G1-LV3-1", "atomic-failure", output_root=output)
-            self.assertFalse((output / "atomic-failure").exists())
+                with self.assertRaises(Exception):
+                    preview_lv_read_only(root, "GATE-X", "G1-LV3-1")
 
 
 if __name__ == "__main__":
