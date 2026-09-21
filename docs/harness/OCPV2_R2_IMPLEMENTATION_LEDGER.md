@@ -114,18 +114,46 @@ Task 14: complete — Prepared-only deployment package
 - `install-user-service` writes reviewed user-level files only and never invokes `systemctl`.
 - Exact-head CI run `35584359324`: PASS across focused deploy/authority tests, whole-repository regression, and baseline/current delta.
 
-Final documentation verification:
+Final documentation verification (Task 14 era):
 - Documentation diagnosis HEAD: `3bd8346e5b29d649a0ae9fb13bc8db6a4fbf4442`.
 - CI run `35584807893`: focused PASS; full-regression PASS; regression-delta PASS.
 - The second session interruption occurred only because this hosted CI was still in progress when the prior conversation ended; it was not a Harness or product-code stall. See `docs/harness/OCPV2_R2_INTERRUPTION_20260921.md`.
 
-Implementation status after Task 14:
-- Source implementation: COMPLETE and VERIFIED through final documentation HEAD `3bd8346e5b29d649a0ae9fb13bc8db6a4fbf4442`.
-- Closure-record-only commits after that verified HEAD require no production logic change; their exact HEAD is re-verified before the session is closed.
-- Live bootstrap/systemd install: NOT PERFORMED.
-- Dedicated private control repository/token: NOT CREATED.
-- Live migration: UNCHANGED by OCPv2 implementation.
-- CONTROL_MUTATION_CANARY: NOT ENABLED.
-- Production ACTIVE: NOT ENABLED.
+Post-Task-14 live history:
+- A dedicated private OCPv2 control repository/PR was subsequently created and bound outside the public source repository.
+- Live Gate C `OBSERVE_ONLY` requalification succeeded after replay-churn remediation.
+- Live Gate D `CONTROL_READ_ONLY` qualification succeeded.
+- A 2026-09-22 non-mutating liveness probe confirmed that the Jarvis OCPv2 poller remained reachable through the private control channel without RDC.
+- These live transport qualifications do not imply mutation activation.
+
+Task 15: complete — Gate E canonical registered-Full-Plan resume
+- Manual-deployment/Gate-E implementation plan: `docs/superpowers/plans/2026-09-22-ocpv2-manual-deploy-gate-e.md`.
+- Initial RED run `35666352230`: missing canonical Gate E bridge failed as expected.
+- Initial low-level canonical bridge reached GREEN on run `35666422175` across focused, full-regression, and regression-delta.
+- EDP review found a deeper stale-owner-epoch concern: a claim-before-compare ordering could advance continuation ownership before rejecting an obsolete expected epoch.
+- Final design moved live mutation ownership to `runtime/orchestrator/ocpv2_canonical_resume.py`, which resumes only an already-registered immutable Full Plan Job and compares the exact next owner epoch before the single owner-claim persist.
+- The remote path cannot register a Job, choose an LV, construct a WorkerRequest, select a provider/model, or directly invoke a tool backend.
+- Exact bindings include registered Job identity/path/state root, current Gate, active queue `gate_run_id`, Full Plan `state_sha256`, next continuation-owner epoch, project source HEAD, and executor runtime digest.
+- Full Plan Gate/LV/WorkerRequest ownership, Provider Router selection, Production Execution Gateway, and Full MCP remain canonical.
+
+Task 16: complete — Deployable one-shot runtime with manual activation boundary
+- Added `runtime/orchestrator/ocpv2_runtime_service.py` as the deployed one-shot composition root.
+- Systemd `ocpv2.service` now invokes that module rather than the legacy bootstrap poll loop.
+- `OBSERVE_ONLY` and `CONTROL_READ_ONLY` remain non-mutating.
+- `CONTROL_MUTATION_CANARY` requires an exact five-field canary scope and exact canonical Full Plan/runtime bindings; missing scope/bindings fail closed.
+- Bootstrap installation continues to reject direct installation into `CONTROL_MUTATION_CANARY` or `ACTIVE`; initial manual deployment remains `OBSERVE_ONLY`.
+- Added review-only `deploy/operator-control-plane-v2/manual_deploy.py`; it prints/returns activation and rollback commands and never invokes the service manager.
+- Authority negative-space regression now covers the deployed runtime and rejects direct worker/provider/Full MCP/subprocess execution authority in that layer.
+- Code-bearing exact HEAD: `ab184a9293b86524df2e96118bf5815c890a15ab`.
+- Exact-head hosted CI run `35668309502`: workflow SUCCESS; focused PASS; full-regression PASS; regression-delta PASS.
+- Manual deployment readiness record: `docs/harness/OCPV2_MANUAL_DEPLOY_READY_20260922.md`.
+
+Current deployment status:
+- Gate E source/runtime implementation: COMPLETE at the code-bearing verified HEAD above.
+- User-level OCPv2 upgrade on Jarvis: NOT PERFORMED by this closure task.
+- Initial post-upgrade mode: MUST remain `OBSERVE_ONLY`.
+- Live Gate E mutation canary: NOT PERFORMED / NOT AUTHORIZED by this record.
+- Production `ACTIVE`: NOT ENABLED.
 - Merge to `main`: NOT PERFORMED.
-- Next live boundary: separate Gate B authorization; it is not implied by source completion.
+- Next live boundary: user terminal installs/activates the exact verified OCPv2 revision in `OBSERVE_ONLY`, then GPT requalifies the private control channel before any separate mutation-canary approval.
+- Closure-documentation commits after the code-bearing HEAD require one final exact-head CI before this manual-deployment package is called ready.
