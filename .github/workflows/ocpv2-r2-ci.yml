@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  focused:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -44,9 +44,18 @@ jobs:
       - run: python3 -m unittest -v tests.test_runtime_migration_handoff
       - run: python3 -m unittest -v tests.test_production_execution_gateway
       - run: python3 -m unittest -v tests.test_production_tool_transport
-      - name: Full repository unittest discovery
-        run: python3 scripts/ocpv2_full_regression.py
       - name: Full MCP boundary lint
         run: python3 scripts/full_mcp_lint.py runtime/full_mcp runtime/orchestrator/production_execution_gateway.py
       - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
       - run: git diff --check
+
+  full-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Full repository unittest discovery
+        run: python3 scripts/ocpv2_full_regression.py
