@@ -5,9 +5,14 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping
 
 from .operator_control import OperatorDirectiveV1
+from .production_execution_gateway import GatewayError, validate_gateway_request
 from .production_full_plan_runner import ContinuationOwnerToken, DurableFullPlanSupervisor, ProductionFullPlanError
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
+
+
+class RemoteExecutionGatewayError(ValueError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,3 +114,40 @@ def execute_remote_directive_in_canonical_transaction(
         result = dict(mutation(owner_token))
         supervisor.assert_current_epoch_locked(owner_token)
         return result
+
+
+def dispatch_action_through_production_gateway(
+    directive: OperatorDirectiveV1,
+    *,
+    gateway_request: Mapping[str, Any],
+    gateway_dispatch: Callable[[Mapping[str, Any]], Mapping[str, Any] | None],
+) -> Mapping[str, Any] | None:
+    """Route remote ACTION mutation through the existing production gateway contract.
+
+    The transport never receives a broker/file/shell callback.  This bridge accepts only
+    a fully built canonical gateway request and delegates execution to the canonical
+    gateway dispatch supplied by the existing Harness execution path.
+    """
+    if not directive.state_change_required:
+        return None
+    if not (directive.current_stage == "PREPARE" and directive.requested_next_stage == "ACTION"):
+        raise RemoteExecutionGatewayError("EXECUTION_GATEWAY_BLOCKED: state-changing directive is not ACTION")
+    try:
+        validated = validate_gateway_request(
+            gateway_request,
+            expected={
+                "project_id": directive.project_id,
+                "run_id": directive.run_id,
+                "gate_id": directive.gate_id,
+                "lv_id": directive.task_id,
+            },
+            require_canonical_authority=True,
+        )
+        result = gateway_dispatch(validated)
+    except GatewayError as exc:
+        raise RemoteExecutionGatewayError(f"EXECUTION_GATEWAY_BLOCKED: {exc}") from exc
+    if result is None:
+        raise RemoteExecutionGatewayError("EXECUTION_GATEWAY_BLOCKED: gateway produced no result")
+    if not isinstance(result, Mapping):
+        raise RemoteExecutionGatewayError("EXECUTION_GATEWAY_BLOCKED: gateway result is malformed")
+    return dict(result)
