@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 from .operator_control import OperatorDirectiveV1
+from .production_full_plan_runner import ContinuationOwnerToken, DurableFullPlanSupervisor, ProductionFullPlanError
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
 
@@ -76,3 +77,35 @@ def validate_ingress(
         directive_digest=envelope.directive_digest,
         directive=directive,
     )
+
+
+def execute_remote_directive_in_canonical_transaction(
+    supervisor: DurableFullPlanSupervisor,
+    transaction_store: Any,
+    *,
+    expected_gate_id: str,
+    expected_state_sha256: str,
+    canonical_state_sha256: Callable[[], str],
+    mutation: Callable[[ContinuationOwnerToken], Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    """Converge a remote mutation on the existing Full Plan single-writer boundary.
+
+    ``canonical_state_sha256`` reads the authoritative external state that the remote
+    directive bound before execution (for example a continuation or migration CAS
+    projection).  It is checked both before owner claim and again inside the existing
+    run-lock -> continuation-transaction lock order.  No OCP-owned lock is introduced.
+    """
+    expected = str(expected_state_sha256 or "")
+    if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
+        raise ProductionFullPlanError("STALE_DIRECTIVE: expected canonical state digest is invalid")
+    if str(canonical_state_sha256()) != expected:
+        raise ProductionFullPlanError("STALE_DIRECTIVE: pre-lock canonical state mismatch")
+
+    owner_token = supervisor.claim_attested_continuation_owner(expected_gate_id=expected_gate_id)
+    with supervisor.continuation_transaction(owner_token, transaction_store):
+        supervisor.assert_current_epoch_locked(owner_token)
+        if str(canonical_state_sha256()) != expected:
+            raise ProductionFullPlanError("STALE_DIRECTIVE: in-lock canonical state mismatch")
+        result = dict(mutation(owner_token))
+        supervisor.assert_current_epoch_locked(owner_token)
+        return result
