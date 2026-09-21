@@ -20,7 +20,10 @@ from .github_rest_client import (
 
 CONTROL_PREFIX = "OCPV2_CONTROL_V2\n"
 RESULT_PREFIX = "OCPV2_RESULT_V1\n"
-RESULT_SCHEMA = "orchestration.remote-service-projection.v1"
+RESULT_SCHEMAS = frozenset({
+    "orchestration.remote-service-projection.v1",
+    "orchestration.remote-result-projection.v1",
+})
 
 
 class GitHubControlAdapterError(ValueError):
@@ -102,7 +105,7 @@ class GitHubControlAdapter:
                 parsed = json.loads(body[len(RESULT_PREFIX):])
             except Exception:
                 continue
-            if not isinstance(parsed, Mapping) or parsed.get("schema_version") != RESULT_SCHEMA:
+            if not isinstance(parsed, Mapping) or parsed.get("schema_version") not in RESULT_SCHEMAS:
                 continue
             message_id = parsed.get("message_id")
             if isinstance(message_id, str) and message_id:
