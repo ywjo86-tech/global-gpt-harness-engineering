@@ -10,7 +10,7 @@ Task 0: complete
 - Hosted CI run `35564490598`: PASS
 - RDC calls required: 0
 
-Ruling: the GitHub connector cannot atomically upload the local approved 44KB artifact by local path. The branch therefore binds implementation authority to the approved artifact SHA-256 `9e4991292ba087b8e0eb53188153556c998a5f06806a8989b38c74c88b573ced` and retains the byte-identical approved artifact outside the repository. This does not change any runtime contract; the repository pointer is non-authoritative and the SHA-bound approved artifact remains the source authority.
+Ruling: the GitHub connector cannot atomically upload the local approved 44KB artifact by local path. The branch therefore binds implementation authority to the approved artifact SHA-256 `9e4991292ba087b8e0eb53188153556c998a5f06806a8989b38c74c88b573ced` and retains the byte-identical approved artifact outside the repository. This does not change any runtime contract; the repository pointer is non-authoritative and the SHA-bound approved artifact remains the source authority. This ruling remains subject to the final whole-branch authority review; if exact in-repo preservation becomes mechanically achievable before closure, the stronger form will replace this exception.
 
 Pre-flight shared interfaces:
 - Task 1 envelope -> Tasks 2/4/9/10: immutable validated remote message contract.
@@ -49,7 +49,8 @@ Task 4: complete
 - Ingress reuses existing `OperatorDirectiveV1`, validates source/risk/replay identity, records transport receipt only, and creates no new stage authority.
 
 Task 5: complete
-- RED/integration runs established the canonical single-writer contract, including failed integration run `35565277015` before the final helper implementation.
+- RED run `35565227159`: single-writer helper missing as expected.
+- Ruling: the plan proposed the narrow helper in `production_full_plan_runner.py`; implementation places the integration helper in `remote_operator_ingress.py` instead, while exclusively calling the existing supervisor owner/epoch/transaction APIs. This minimizes edits to the authoritative Full Plan module and does not create a second lock or authority. Cost if wrong: integration location could obscure discoverability; mitigated by direct tests and ledger binding.
 - Implementation commit: `8eb5f1c2d51449671f41ada8b1757278d62b00f0`.
 - GREEN run `35565299164`: PASS for envelope, receipt, outbox, ingress, single-writer, operator, continuation locking, migration, production gateway/tool transport, compileall and diff check.
 - The remote mutation path converges on the existing Full Plan continuation-owner epoch and transaction lock; no OCP-owned lock/lease was introduced.
@@ -60,4 +61,11 @@ Task 6: complete
 - GREEN run `35565502046`: PASS.
 - State-changing `PREPARE -> ACTION` requires canonical gateway authority and exact project/run/gate/task binding before one gateway dispatch; read-only transitions do not enter mutation gateway; gateway failure does not fall back to direct execution.
 
-Next task: Task 7 — Migration-v2 CAS integration (TDD RED first).
+Task 7: complete
+- RED run `35565607167`: migration CAS helper absent as expected.
+- Ruling: the approved plan proposed `MigrationStore.advance_if_current`; implementation keeps `MigrationStore` completely unchanged and places `advance_migration_if_current()` in the OCP integration module. It performs exact transaction-SHA / phase / optional qualification-evidence CAS, then delegates the only mutation to existing `MigrationStore.advance()`. Remote callers are required to invoke this wrapper inside Task-5 canonical owner/transaction protection. This is a stricter authority-preservation choice: OCP gains no migration store ownership. Cost if wrong: CAS is not independently atomic outside the canonical transaction; documented caller requirement and Gate-E composition make such use invalid.
+- Implementation commit: `9b94738f00372899cdd04cd6d3e5429de1a0472e`.
+- GREEN run `35565651714`: PASS for OCP migration CAS plus all earlier OCP and baseline authority regressions.
+- Verified: wrong transaction/phase/qualification digest does not advance; SUCCESSOR_VERIFIED cannot skip active qualification; qualified resume closes predecessor once with zero migration recreation/successor re-registration/qualification replay; post-close rollback remains illegal.
+
+Next task: Task 8 — Crash-after-mutation reconciliation (TDD RED first).
