@@ -1,0 +1,72 @@
+{
+  "schema_version": "gch.dcc-hwo-ac-integration-edp.v1",
+  "protocol": "EXHAUSTIVE_DIAGNOSIS_PROTOCOL / EDP-1.0",
+  "date": "2026-09-21",
+  "decision": "A_C_ALL_PASS_D_EFFECT_GATE_READY",
+  "final_harness_decision": "NOT_RUN_WORKSTREAM_D_PENDING",
+  "publication_authorized": false,
+  "validated_source_head": "6a6c5005c8a5e7e0420458216b4956e5172cd112",
+  "validated_source_tree": "49758184e0fd016381d9d36a8790e1f9c28fd542",
+  "immutable_predecessor_runtime": "a40626c31353f90c0d4c9e677d3886ea5ccce393",
+  "approved_amendment_sha256": "6a46268f1b0b4a7e23b5be62642bbe8973d2ad6dd9f17534a0032aac56edad03",
+  "verification": {
+    "focused": {
+      "tests": 207,
+      "status": "PASS",
+      "log_sha256": "44608bebda298978a2878897566c6cec6fedfb12052156033de6a8405a3939e6"
+    },
+    "full": {
+      "tests": 1956,
+      "skipped": 15,
+      "status": "PASS",
+      "log_sha256": "940e78a9e605dee8a3e65616a9219c98f2486da617cd3ac80513577b4900f53a"
+    },
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "worktree": "CLEAN",
+    "authoritative_python": "/tmp/gch-edp-allpass-venv/bin/python"
+  },
+  "metrics": {
+    "a_c_scope_blocker_count": 0,
+    "a_c_scope_unresolved_major_count": 0,
+    "a_c_finding_closure": "13/13",
+    "hwo_must_traceability": "20/20",
+    "hwo_ac_traceability": "15/15",
+    "finding_plan_coverage": "16/16",
+    "d_effect_gated_findings": 3,
+    "d_source_tasks_implemented": "0/4",
+    "d_publication_task_executed": false
+  },
+  "findings": {
+    "DCC-ORCH-F001": "CLOSED_AC",
+    "DCC-ORCH-F002": "CLOSED_AC",
+    "DCC-ORCH-F003": "CLOSED_AC",
+    "DCC-ORCH-F004": "CLOSED_AC",
+    "DCC-ORCH-F005": "CLOSED_AC",
+    "DCC-ORCH-F006": "CLOSED_AC",
+    "DCC-ORCH-F007": "DEFERRED_EFFECT_GATED_D0",
+    "DCC-HW-F008": "CLOSED_AC",
+    "DCC-HW-F009": "CLOSED_AC_CONTRACT_ONLY_LIVE_TRANSPORT_NOT_DEPLOYED",
+    "DCC-HW-F010": "CLOSED_AC",
+    "DCC-HW-F011": "CLOSED_AC",
+    "DCC-HW-F012": "CLOSED_AC",
+    "DCC-HW-F013": "CLOSED_AC",
+    "DCC-HW-F014": "CLOSED_AC",
+    "DCC-HW-F015": "DEFERRED_EFFECT_GATED_D1_D2_D4",
+    "DCC-HW-F016": "DEFERRED_EFFECT_GATED_D3_D4"
+  },
+  "negative_space": {
+    "dcc_provider_effect_runtime_approval_next_gate": "PASS",
+    "wait_recovery_router_observation_only": "PASS",
+    "attention_outbound_evidence_only": "PASS",
+    "operator_checkpoint_control_authority_none": "PASS",
+    "runtime_migration_adjacent_authority": "PASS"
+  },
+  "effect_boundary": {
+    "push": "NOT_AUTHORIZED_NOT_EXECUTED",
+    "runtime_activation": "NOT_AUTHORIZED_NOT_EXECUTED",
+    "live_notification_transport": "NOT_AUTHORIZED_NOT_CONFIGURED",
+    "network_credentials": "NOT_TOUCHED",
+    "workstream_d": "SEPARATE_USER_APPROVAL_REQUIRED"
+  }
+}
