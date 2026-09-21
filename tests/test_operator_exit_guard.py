@@ -214,5 +214,35 @@ class OperatorExitGuardTests(unittest.TestCase):
         self.assertEqual(result.control_authority, "NONE")
 
 
+    def test_budget_yield_with_bound_checkpoint_object_is_allowed(self) -> None:
+        from runtime.orchestrator.operator_turn_checkpoint import OperatorTurnCheckpoint
+        state=full_plan_state(); state["authority_core_sha256"]="a"*64
+        checkpoint=OperatorTurnCheckpoint.create(
+            project_id="P",run_id="R",gate_id_or_stage="G1",authority_core_sha256="a"*64,
+            checkpoint_kind="OPERATOR_HANDOFF_CHECKPOINT",owner_kind="OPERATOR_HANDOFF",
+            owner_ref="ledger:G1",resume_contract_sha256="b"*64,
+            last_semantic_progress_at=state["last_semantic_progress_at"])
+        result=assess_operator_turn_exit(
+            state,now=NOW,completion_obligations={},bounded_turn_yield=True,
+            turn_checkpoint=checkpoint)
+        self.assertEqual(result.disposition,REPORT_BOUNDED_CHECKPOINT)
+        self.assertTrue(result.allow_final_response)
+        self.assertFalse(result.successful_completion)
+
+    def test_budget_yield_rejects_checkpoint_bound_to_other_authority(self) -> None:
+        from runtime.orchestrator.operator_turn_checkpoint import OperatorTurnCheckpoint
+        state=full_plan_state(); state["authority_core_sha256"]="a"*64
+        checkpoint=OperatorTurnCheckpoint.create(
+            project_id="P",run_id="R",gate_id_or_stage="G1",authority_core_sha256="c"*64,
+            checkpoint_kind="OPERATOR_HANDOFF_CHECKPOINT",owner_kind="OPERATOR_HANDOFF",
+            owner_ref="ledger:G1",resume_contract_sha256="b"*64,
+            last_semantic_progress_at=state["last_semantic_progress_at"])
+        result=assess_operator_turn_exit(
+            state,now=NOW,completion_obligations={},bounded_turn_yield=True,
+            turn_checkpoint=checkpoint)
+        self.assertEqual(result.disposition,CONTINUE_EXECUTION)
+        self.assertFalse(result.allow_final_response)
+
+
 if __name__ == "__main__":
     unittest.main()

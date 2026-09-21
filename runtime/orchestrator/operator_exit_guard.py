@@ -117,6 +117,7 @@ def assess_operator_turn_exit(
     recoverable_continuation: bool = False,
     bounded_turn_yield: bool = False,
     durable_turn_checkpoint: bool = False,
+    turn_checkpoint: Mapping[str, Any] | object | None = None,
     attention_threshold_seconds: int = 300,
 ) -> OperatorExitAssessment:
     """Classify whether the Operator may end the user-facing turn.
@@ -164,8 +165,23 @@ def assess_operator_turn_exit(
         )
 
     if bounded_turn_yield:
-        if not durable_turn_checkpoint:
-            return _continue("bounded turn yield requires a durable continuation checkpoint")
+        checkpoint_valid = bool(durable_turn_checkpoint)
+        if turn_checkpoint is not None:
+            try:
+                from .operator_turn_checkpoint import OperatorTurnCheckpoint
+                checkpoint = (turn_checkpoint if isinstance(turn_checkpoint, OperatorTurnCheckpoint)
+                              else OperatorTurnCheckpoint.from_dict(turn_checkpoint))
+                checkpoint.validate()
+                checkpoint_valid = (
+                    checkpoint.project_id == str(full_plan_state.get("project_id") or "")
+                    and checkpoint.run_id == str(full_plan_state.get("run_id") or "")
+                    and (not str(full_plan_state.get("authority_core_sha256") or "")
+                         or checkpoint.authority_core_sha256 == str(full_plan_state.get("authority_core_sha256")))
+                )
+            except Exception:
+                checkpoint_valid = False
+        if not checkpoint_valid:
+            return _continue("bounded turn yield requires a bound durable continuation checkpoint")
         return OperatorExitAssessment(
             REPORT_BOUNDED_CHECKPOINT, True, False,
             "bounded turn soft budget reached at a durable continuation checkpoint", (), "NONE"
@@ -207,6 +223,7 @@ def assess_run_base(
     recoverable_continuation: bool = False,
     bounded_turn_yield: bool = False,
     durable_turn_checkpoint: bool = False,
+    turn_checkpoint: Mapping[str, Any] | object | None = None,
     attention_threshold_seconds: int = 300,
 ) -> OperatorExitAssessment:
     """Read persisted Full Plan state/attention and assess turn exit without mutation."""
@@ -238,7 +255,7 @@ def assess_run_base(
         continuation_states=continuation_states, user_decision=user_decision,
         recoverable_continuation=recoverable_continuation,
         bounded_turn_yield=bounded_turn_yield, durable_turn_checkpoint=durable_turn_checkpoint,
-        attention_threshold_seconds=attention_threshold_seconds,
+        turn_checkpoint=turn_checkpoint, attention_threshold_seconds=attention_threshold_seconds,
     )
 
 
