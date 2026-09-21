@@ -63,12 +63,17 @@ def control(comment_id=444, message_id="M1"):
     return issue_comment(comment_id, body)
 
 
-def result(comment_id=445, message_id="M1", actor_id=235775273):
+def result(
+    comment_id=445,
+    message_id="M1",
+    actor_id=235775273,
+    schema_version="orchestration.remote-service-projection.v1",
+):
     body = RESULT_PREFIX + json.dumps(
         {
             "message_id": message_id,
             "result_class": "OBSERVED",
-            "schema_version": "orchestration.remote-service-projection.v1",
+            "schema_version": schema_version,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -86,6 +91,13 @@ class GitHubControlAdapterDurableAckTests(unittest.TestCase):
 
     def test_prior_result_projection_suppresses_control_on_fresh_adapter(self):
         adapter = self.adapter((control(), result()))
+        self.assertEqual(adapter.receive(), ())
+
+    def test_outbox_result_projection_suppresses_control_on_fresh_adapter(self):
+        adapter = self.adapter((
+            control(),
+            result(schema_version="orchestration.remote-result-projection.v1"),
+        ))
         self.assertEqual(adapter.receive(), ())
 
     def test_result_for_different_message_does_not_suppress_control(self):
