@@ -9,14 +9,19 @@ Execution mode: Full Plan HYBRID
 
 ## Goal verdict
 
-Source implementation through Task 14 is functionally complete and reached ALL PASS on the pre-documentation exact implementation HEAD `e336e5d7e3ddd7f0028171b250dcbde5e18cd452`.
+Source implementation through Task 14 is functionally complete and verified.
 
-The evidence run `35584359324` completed all three required jobs successfully:
+Pre-documentation exact implementation HEAD `e336e5d7e3ddd7f0028171b250dcbde5e18cd452` passed CI run `35584359324`:
 - focused OCP/authority/deploy regression: PASS
 - whole-repository unittest regression: PASS (`2066` run, `0` failures, `0` errors, `14` skipped)
 - approved-baseline/current regression delta: PASS
 
-Final documentation commits are intentionally followed by another exact-HEAD CI run before branch closure. Therefore this document records the implementation verdict but does not treat its own creation as verified until that final run is GREEN.
+Final documentation HEAD `3bd8346e5b29d649a0ae9fb13bc8db6a4fbf4442` then passed CI run `35584807893`:
+- focused: PASS
+- full-regression: PASS
+- regression-delta: PASS
+
+The closure-record commits made after that verified documentation HEAD change documentation only and are followed by one final exact-HEAD verification before this session is closed.
 
 ## Authority diagnosis
 
@@ -50,9 +55,13 @@ PASS — `install-user-service` writes user-level configuration/unit files only;
 
 ## Interruption diagnosis
 
-The recorded interruption was not a Harness, Provider Router, or live-runtime stall. Work stopped while Task 14 was intentionally RED under TDD because a new deployment test required durable outbox composition before production bootstrap code had been changed. The cause and exact resume point are recorded in `docs/harness/OCPV2_R2_INTERRUPTION_20260921.md`.
+Interruption 1 was not a Harness, Provider Router, or live-runtime stall. Work stopped while Task 14 was intentionally RED under TDD because a new deployment test required durable outbox composition before production bootstrap code had been changed. That missing composition was subsequently implemented and verified.
 
-After resumption, the missing outbox composition was implemented and the exact-head evidence run returned GREEN. A separate one-off TemporaryDirectory cleanup error observed earlier did not reproduce in the final pre-documentation whole-repository run and is not a current blocker.
+Interruption 2 was also not a product/runtime stall. The prior conversation ended while final documentation exact-HEAD CI run `35584807893` was still executing. On resumption, the branch HEAD was unchanged and the run had completed successfully across all three jobs. No production-code fix was required.
+
+Both causes and resume points are recorded in `docs/harness/OCPV2_R2_INTERRUPTION_20260921.md`.
+
+A separate one-off TemporaryDirectory cleanup error observed earlier did not reproduce in the final whole-repository runs and is not a current blocker.
 
 ## Public-repository safety diagnosis
 
@@ -66,7 +75,7 @@ PASS — public source repository and control repository roles remain explicitly
 
 ## Live/runtime disposition
 
-Source implementation status: COMPLETE, subject to the final documentation-only exact-HEAD CI run.
+Source implementation status: COMPLETE and VERIFIED through documentation HEAD `3bd8346e5b29d649a0ae9fb13bc8db6a4fbf4442`; closure-record-only commits are re-verified before session closure.
 
 Jarvis bootstrap/systemd installation: NOT PERFORMED.
 
@@ -84,4 +93,4 @@ Merge to `main`: NOT PERFORMED.
 
 ## Next boundary
 
-After the final exact-HEAD CI is GREEN, the source-implementation phase can be closed on the implementation branch. The next live step is Gate B, which requires separate authorization before any private control-repository provisioning, user-service installation/activation, OBSERVE_ONLY runtime bootstrap, or other live operational action. Source completion does not authorize or imply Gate B.
+After the final exact-HEAD closure-record CI is GREEN, the source-implementation phase is closed on the implementation branch. The next live step is Gate B, which requires separate authorization before any private control-repository provisioning, user-service installation/activation, OBSERVE_ONLY runtime bootstrap, or other live operational action. Source completion does not authorize or imply Gate B.
