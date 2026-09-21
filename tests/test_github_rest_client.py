@@ -121,7 +121,7 @@ class GitHubRESTClientTests(unittest.TestCase):
             self.assertEqual(http.calls[1][0], "GET")
             self.assertIn("/repos/owner/private-control/issues/7/comments", http.calls[1][1])
             self.assertIn("per_page=100", http.calls[1][1])
-            self.assertIn("direction=asc", http.calls[1][1])
+            self.assertIn("direction=desc", http.calls[1][1])
 
     def test_publish_only_posts_bounded_result_comment(self):
         with tempfile.TemporaryDirectory() as td:
