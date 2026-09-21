@@ -1,0 +1,14 @@
+[Unit]
+Description=OCPv2 Remote Operator one-shot poll
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=%h/.config/gch/ocpv2.env
+ExecStart=/usr/bin/python3 @REPO_ROOT@/deploy/operator-control-plane-v2/bootstrap.py run-once --env-file %h/.config/gch/ocpv2.env
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
