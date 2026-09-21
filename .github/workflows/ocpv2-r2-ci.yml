@@ -36,10 +36,11 @@ jobs:
       - run: python3 -m unittest -v tests.test_github_rest_client
       - run: python3 -m unittest -v tests.test_github_control_adapter
       - run: python3 -m unittest -v tests.test_remote_operator_service
+      - run: python3 -m unittest -v tests.test_ocpv2_deploy_package
       - run: python3 -m unittest -v tests.test_operator_control
       - run: python3 -m unittest -v tests.test_durable_continuation_locking
       - run: python3 -m unittest -v tests.test_runtime_migration_handoff
       - run: python3 -m unittest -v tests.test_production_execution_gateway
       - run: python3 -m unittest -v tests.test_production_tool_transport
-      - run: python3 -m compileall -q runtime tests
+      - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
       - run: git diff --check
