@@ -7,13 +7,15 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BOOTSTRAP_PATH = REPO_ROOT / "deploy" / "operator-control-plane-v2" / "bootstrap.py"
+DEPLOY_ROOT = REPO_ROOT / "deploy" / "operator-control-plane-v2"
+BOOTSTRAP_PATH = DEPLOY_ROOT / "bootstrap.py"
+MANUAL_DEPLOY_PATH = DEPLOY_ROOT / "manual_deploy.py"
 
 
-def load_bootstrap():
-    spec = importlib.util.spec_from_file_location("ocpv2_bootstrap_manual_preview", BOOTSTRAP_PATH)
+def load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise AssertionError("bootstrap module cannot be loaded")
+        raise AssertionError(f"module cannot be loaded: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -21,7 +23,8 @@ def load_bootstrap():
 
 class OCPv2ManualDeployPreviewTests(unittest.TestCase):
     def test_install_result_exposes_reviewable_manual_activation_and_rollback_only(self):
-        bootstrap = load_bootstrap()
+        bootstrap = load_module(BOOTSTRAP_PATH, "ocpv2_bootstrap_manual_preview")
+        manual = load_module(MANUAL_DEPLOY_PATH, "ocpv2_manual_deploy_preview")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             repo = root / "repo"
@@ -44,7 +47,7 @@ class OCPv2ManualDeployPreviewTests(unittest.TestCase):
                 user_config_root=root / "config",
                 user_unit_root=root / "units",
             )
-            preview = bootstrap.manual_activation_preview(rendered)
+            preview = manual.manual_activation_preview(rendered)
 
             self.assertFalse(preview["service_manager_invoked"])
             self.assertEqual(
@@ -66,10 +69,11 @@ class OCPv2ManualDeployPreviewTests(unittest.TestCase):
             self.assertEqual(preview["generated_paths"]["timer"], str(rendered.timer_path))
 
     def test_preview_source_cannot_invoke_systemctl(self):
-        bootstrap = load_bootstrap()
-        source = bootstrap.manual_activation_preview.__code__.co_names
-        self.assertNotIn("subprocess", source)
-        self.assertNotIn("system", source)
+        bootstrap = load_module(BOOTSTRAP_PATH, "ocpv2_bootstrap_mode_guard")
+        manual = load_module(MANUAL_DEPLOY_PATH, "ocpv2_manual_deploy_guard")
+        names = manual.manual_activation_preview.__code__.co_names
+        self.assertNotIn("subprocess", names)
+        self.assertNotIn("system", names)
         self.assertEqual(bootstrap.validate_install_mode("OBSERVE_ONLY"), "OBSERVE_ONLY")
         with self.assertRaises(bootstrap.BootstrapError):
             bootstrap.validate_install_mode("ACTIVE")
