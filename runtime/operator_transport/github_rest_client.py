@@ -155,7 +155,9 @@ class GitHubRESTClient:
         value = self._request_json("GET", url)
         if not isinstance(value, list) or not all(isinstance(item, Mapping) for item in value):
             raise GitHubRESTClientError("comments response is malformed")
-        return tuple(dict(item) for item in value)
+        # Query the latest bounded window, but process it chronologically so
+        # receipt sequence fencing sees older controls before newer controls.
+        return tuple(dict(item) for item in reversed(value))
 
     def publish_comment(self, body: str) -> Mapping[str, Any]:
         if not isinstance(body, str):
