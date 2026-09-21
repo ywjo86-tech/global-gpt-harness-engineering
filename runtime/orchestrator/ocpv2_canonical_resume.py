@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -154,8 +155,6 @@ def execute_registered_full_plan_continuation(
         if next_epoch != owner_epoch:
             raise ProductionFullPlanError("STALE_DIRECTIVE: continuation owner epoch mismatch")
 
-        # Recheck mutable external identities under the same run lock immediately before
-        # the single owner-claim write.  No OCP state is persisted on any stale result.
         if expected_source_head and str(current_project_head(job)) != str(expected_source_head):
             raise ProductionFullPlanError("STALE_DIRECTIVE: source head mismatch")
         if (
@@ -164,7 +163,11 @@ def execute_registered_full_plan_continuation(
         ):
             raise ProductionFullPlanError("STALE_DIRECTIVE: runtime release mismatch")
 
-        state["continuation_owner"] = {"gate_id": gate, "epoch": next_epoch, "claimed_at": "OCPV2_CANONICAL_RESUME"}
+        state["continuation_owner"] = {
+            "gate_id": gate,
+            "epoch": next_epoch,
+            "claimed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
         supervisor._persist(
             state,
             {"event": "CONTINUATION_OWNER_CLAIMED", "gate_id": gate, "owner_epoch": next_epoch, "source": "OCPV2"},
@@ -172,13 +175,19 @@ def execute_registered_full_plan_continuation(
 
         if mapping_root is not None:
             os.environ[MAPPING_ROOT_ENV] = str(mapping_root)
-        result = supervisor._run_locked(
+        full = supervisor._run_locked(
             build_gate_executor(job),
             preflight=lambda _: preflight_job(job),
-        ).to_dict()
-        result["result_class"] = "CANONICAL_FULL_PLAN_RESULT"
-        result["registered_job"] = str(path)
-        return result
+        )
+        result_state = full.state
+        return {
+            "result_class": "CANONICAL_FULL_PLAN_RESULT",
+            "status": full.status,
+            "state_sha256": str(result_state.get("state_sha256") or ""),
+            "current_gate": str(result_state.get("current_gate") or ""),
+            "executed_gates": list(full.executed_gates),
+            "recovered_on_startup": bool(full.recovered_on_startup),
+        }
     finally:
         if previous_mapping_root is None:
             os.environ.pop(MAPPING_ROOT_ENV, None)
