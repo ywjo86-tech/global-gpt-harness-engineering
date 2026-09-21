@@ -29,6 +29,7 @@ jobs:
       - run: python3 -m unittest -v tests.test_remote_operator_outbox
       - run: python3 -m unittest -v tests.test_remote_operator_ingress
       - run: python3 -m unittest -v tests.test_remote_operator_single_writer
+      - run: python3 -m unittest -v tests.test_remote_operator_gateway_boundary
       - run: python3 -m unittest -v tests.test_operator_control
       - run: python3 -m unittest -v tests.test_durable_continuation_locking
       - run: python3 -m unittest -v tests.test_runtime_migration_handoff
