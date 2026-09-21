@@ -16,6 +16,7 @@ import os
 import signal
 import time
 import traceback
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,9 @@ from .durable_io import DurableIOError, atomic_write_bytes, durable_json_save, r
 from .production_attention import AttentionOutbox
 from .user_interaction_policy import DEFERRED_INCIDENT, IMMEDIATE_DECISION, STALL_CONFIRMED
 from .diagnostic_context_bridge import record_failure_diagnostics
+from .durable_continuation import (
+    enter_full_plan_run_lock, exit_full_plan_run_lock, full_plan_run_lock_held,
+)
 
 
 SCHEMA_VERSION = "orchestration.production-full-plan.v1"
@@ -156,6 +160,14 @@ def _child_entry(connection: Any, executor: Callable[[str, str, bool], Mapping[s
         connection.close()
 
 
+@dataclass(frozen=True, slots=True)
+class ContinuationOwnerToken:
+    project_id: str
+    run_id: str
+    gate_id: str
+    epoch: int
+
+
 @dataclass(frozen=True)
 class FullPlanResult:
     status: str
@@ -252,6 +264,7 @@ class DurableFullPlanSupervisor:
             "queue": [self._queue_item(self.gates[0], 0)],
             "lease": None,
             "epoch": 0,
+            "continuation_owner": None,
             "dead_letter": [],
             "authority_core_sha256": self.authority_core_sha256,
             "last_progress_at": _now(),
@@ -341,17 +354,19 @@ class DurableFullPlanSupervisor:
         )
 
     def _acquire_run_lock(self):
+        enter_full_plan_run_lock()
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
         try:
             fd = os.open(str(self.lock_path), flags, 0o600)
         except OSError as exc:
+            exit_full_plan_run_lock()
             raise ProductionFullPlanError("unsafe Full Plan supervisor lock") from exc
         handle = os.fdopen(fd, "a+")
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            handle.close()
+            handle.close(); exit_full_plan_run_lock()
             raise ProductionFullPlanError("duplicate Full Plan supervisor is active") from exc
         return handle
 
@@ -360,7 +375,59 @@ class DurableFullPlanSupervisor:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
-            handle.close()
+            handle.close(); exit_full_plan_run_lock()
+
+    def _assert_current_epoch_locked(self, owner_token: ContinuationOwnerToken) -> dict[str, Any]:
+        if not full_plan_run_lock_held():
+            raise ProductionFullPlanError("Full Plan run lock is required for owner epoch verification")
+        if not isinstance(owner_token, ContinuationOwnerToken):
+            raise ProductionFullPlanError("continuation owner token is invalid")
+        state, _ = self.load()
+        owner = state.get("continuation_owner")
+        if (owner_token.project_id != self.project_id or owner_token.run_id != self.run_id
+                or not isinstance(owner, Mapping)
+                or owner.get("gate_id") != owner_token.gate_id
+                or int(owner.get("epoch", -1)) != int(owner_token.epoch)):
+            raise ProductionFullPlanError("stale continuation owner epoch")
+        return state
+
+    def assert_current_epoch_locked(self, owner_token: ContinuationOwnerToken) -> dict[str, Any]:
+        return self._assert_current_epoch_locked(owner_token)
+
+    def assert_current_epoch(self, owner_token: ContinuationOwnerToken) -> dict[str, Any]:
+        handle = self._acquire_run_lock()
+        try:
+            return self._assert_current_epoch_locked(owner_token)
+        finally:
+            self._release_run_lock(handle)
+
+    def claim_attested_continuation_owner(self, *, expected_gate_id: str) -> ContinuationOwnerToken:
+        gate_id = _safe_id(expected_gate_id, "Gate ID")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if state.get("current_gate") != gate_id or state.get("state") in TERMINAL_STATES:
+                raise ProductionFullPlanError("continuation owner Gate binding mismatch")
+            prior = state.get("continuation_owner")
+            prior_epoch = int(prior.get("epoch", 0)) if isinstance(prior, Mapping) else 0
+            epoch = max(prior_epoch, int(state.get("epoch", 0))) + 1
+            state["continuation_owner"] = {"gate_id": gate_id, "epoch": epoch, "claimed_at": _now()}
+            self._persist(state, {"event": "CONTINUATION_OWNER_CLAIMED", "gate_id": gate_id, "owner_epoch": epoch})
+            return ContinuationOwnerToken(self.project_id, self.run_id, gate_id, epoch)
+        finally:
+            self._release_run_lock(handle)
+
+    @contextmanager
+    def continuation_transaction(self, owner_token: ContinuationOwnerToken, transaction_store: Any, *, timeout_seconds: float = 2.0):
+        handle = self._acquire_run_lock()
+        try:
+            self._assert_current_epoch_locked(owner_token)
+            with transaction_store.transaction_lock(owner_token.gate_id, timeout_seconds=timeout_seconds):
+                self._assert_current_epoch_locked(owner_token)
+                yield owner_token
+                self._assert_current_epoch_locked(owner_token)
+        finally:
+            self._release_run_lock(handle)
 
     def _active_item(self, state: Mapping[str, Any]) -> dict[str, Any] | None:
         for item in state.get("queue", []):

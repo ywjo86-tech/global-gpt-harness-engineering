@@ -1,10 +1,12 @@
 """Durable, versioned Gate continuation transaction evidence."""
 from __future__ import annotations
-import hashlib, json, re
+import fcntl, hashlib, json, os, re, time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 from .durable_io import atomic_write_json
+from .durable_continuation import enter_continuation_transaction_lock, exit_continuation_transaction_lock
 
 SCHEMA = "orchestration.gate-continuation-transaction.v1"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._-]{1,160}\Z")
@@ -29,6 +31,39 @@ class GateContinuationTransactionStore:
         self.root=Path(state_root).resolve(); self.project_id=_sid(project_id,"project_id"); self.run_id=_sid(run_id,"run_id")
         self.base=self.root/"_workspace"/"dcc-transactions"/self.project_id/self.run_id
     def path(self,gate_id:str)->Path: return self.base/f"{_sid(gate_id,'gate_id')}.json"
+    def lock_path(self,gate_id:str)->Path: return self.base/f"{_sid(gate_id,'gate_id')}.lock"
+
+    @contextmanager
+    def transaction_lock(self, gate_id: str, *, timeout_seconds: float = 2.0):
+        if timeout_seconds <= 0:
+            raise TransactionError("transaction lock timeout must be positive")
+        enter_continuation_transaction_lock()
+        handle = None
+        try:
+            path = self.lock_path(gate_id); path.parent.mkdir(parents=True, exist_ok=True)
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+            try:
+                fd = os.open(str(path), flags, 0o600)
+            except OSError as exc:
+                raise TransactionError("unsafe continuation transaction lock") from exc
+            handle = os.fdopen(fd, "a+")
+            deadline = time.monotonic() + float(timeout_seconds)
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError as exc:
+                    if time.monotonic() >= deadline:
+                        raise TransactionError("continuation transaction lock timeout") from exc
+                    time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+            yield handle
+        finally:
+            if handle is not None:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                finally:
+                    handle.close()
+            exit_continuation_transaction_lock()
     def _seal(self,payload:dict[str,Any])->dict[str,Any]:
         unsigned={k:v for k,v in payload.items() if k!="transaction_sha256"}; return {**unsigned,"transaction_sha256":_digest(unsigned)}
     def _write(self,gate_id:str,payload:dict[str,Any])->dict[str,Any]:
