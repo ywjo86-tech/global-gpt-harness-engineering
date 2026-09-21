@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -11,10 +12,39 @@ from pathlib import Path
 
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+MAPPING_ROOT_ENV = "HARNESS_CONTRACT_MAPPING_ROOT"
+
+
+def _bounded_env_state(value: str | None) -> str:
+    """Describe env state without disclosing the underlying path/value."""
+    if value is None:
+        return "UNSET"
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"SET:{digest}"
 
 
 class DiagnosticResult(unittest.TestResult):
-    pass
+    """Capture failures plus cross-test environment leakage diagnostics."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._mapping_env_before: dict[int, str | None] = {}
+
+    def startTest(self, test: unittest.case.TestCase) -> None:
+        self._mapping_env_before[id(test)] = os.environ.get(MAPPING_ROOT_ENV)
+        super().startTest(test)
+
+    def stopTest(self, test: unittest.case.TestCase) -> None:
+        before = self._mapping_env_before.pop(id(test), None)
+        after = os.environ.get(MAPPING_ROOT_ENV)
+        if before != after:
+            print(
+                "ENV_MUTATION "
+                f"test={test.id()} "
+                f"before={_bounded_env_state(before)} "
+                f"after={_bounded_env_state(after)}"
+            )
+        super().stopTest(test)
 
 
 def build_suite(repo_root: Path) -> unittest.TestSuite:
