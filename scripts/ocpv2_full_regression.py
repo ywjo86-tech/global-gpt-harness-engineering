@@ -44,6 +44,10 @@ class DiagnosticResult(unittest.TestResult):
                 f"before={_bounded_env_state(before)} "
                 f"after={_bounded_env_state(after)}"
             )
+            if before is None:
+                os.environ.pop(MAPPING_ROOT_ENV, None)
+            else:
+                os.environ[MAPPING_ROOT_ENV] = before
         super().stopTest(test)
 
 
