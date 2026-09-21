@@ -105,7 +105,7 @@ class LVExecutionPackageTest(unittest.TestCase):
             "package_status": "sealed",
             "run_id": "candidate-stage-01",
             "project_id": "fixture-project",
-            "gate_id": "G1-LV3-2",
+            "gate_id": "GATE-1",
             "lv_id": "G1-LV3-2",
             "task": {"purpose": "Internal standard candidate model", "execution": "parallel-eligible"},
             "dependencies": ["Gate 0"],
