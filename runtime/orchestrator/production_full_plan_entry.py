@@ -248,6 +248,9 @@ def build_gate_executor(job: Mapping[str, Any]):
     if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
         from .operator_plan_execution import build_operator_plan_executor
         return build_operator_plan_executor(job)
+    if job.get("executor_kind") == "DCC_LIVE_AUTO_CANARY":
+        from .live_auto_canary import build_live_auto_canary_executor
+        return build_live_auto_canary_executor(job)
     project_root = str(Path(str(job["project_root"])).resolve())
     harness_root = str(job_state_root(job))
     specs = {str(item["gate_id"]): dict(item) for item in job["gates"]}
