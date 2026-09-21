@@ -38,10 +38,15 @@ jobs:
       - run: python3 -m unittest -v tests.test_remote_operator_service
       - run: python3 -m unittest -v tests.test_operator_console_projection
       - run: python3 -m unittest -v tests.test_ocpv2_deploy_package
+      - run: python3 -m unittest -v tests.test_ocpv2_authority_negative_space
       - run: python3 -m unittest -v tests.test_operator_control
       - run: python3 -m unittest -v tests.test_durable_continuation_locking
       - run: python3 -m unittest -v tests.test_runtime_migration_handoff
       - run: python3 -m unittest -v tests.test_production_execution_gateway
       - run: python3 -m unittest -v tests.test_production_tool_transport
+      - name: Full repository unittest discovery
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Full MCP boundary lint
+        run: python3 scripts/full_mcp_lint.py runtime/full_mcp runtime/orchestrator/production_execution_gateway.py
       - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
       - run: git diff --check
