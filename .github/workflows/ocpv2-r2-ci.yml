@@ -30,6 +30,7 @@ jobs:
       - run: python3 -m unittest -v tests.test_remote_operator_ingress
       - run: python3 -m unittest -v tests.test_remote_operator_single_writer
       - run: python3 -m unittest -v tests.test_remote_operator_gateway_boundary
+      - run: python3 -m unittest -v tests.test_ocpv2_gate_e_canonical_path
       - run: python3 -m unittest -v tests.test_remote_operator_migration
       - run: python3 -m unittest -v tests.test_remote_operator_recovery
       - run: python3 -m unittest -v tests.test_remote_operator_transport
