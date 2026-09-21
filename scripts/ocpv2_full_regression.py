@@ -14,6 +14,14 @@ from pathlib import Path
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
 MAPPING_ROOT_ENV = "HARNESS_CONTRACT_MAPPING_ROOT"
+_UID_NAMESPACE_FIXTURE_TEST = (
+    "tests.test_lv_review.LVReviewTest."
+    "test_interpreter_accepts_standard_venv_symlink_chain_with_verified_probe"
+)
+_EXTERNAL_INTERPRETER_FIXTURE_TEST = (
+    "tests.test_global_gate_integration.GlobalGateIntegrationTests."
+    "test_generic_production_fixture_accepts_opaque_gate_and_lv_ids"
+)
 
 
 def _bounded_env_state(value: str | None) -> str:
@@ -61,19 +69,69 @@ def _install_hermetic_codex_probe(root: Path) -> None:
     stub.chmod(0o755)
 
 
-class DiagnosticResult(unittest.TestResult):
-    """Capture failures plus cross-test environment leakage diagnostics."""
+def _safe_external_python() -> Path:
+    """Select a real, non-writable system Python for one legacy integration fixture."""
+    candidates = (
+        Path("/usr/bin/python3"),
+        Path("/usr/local/bin/python3"),
+        Path(sys.executable),
+    )
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+            mode = resolved.stat().st_mode
+        except OSError:
+            continue
+        if resolved.is_file() and os.access(resolved, os.X_OK) and not mode & 0o022:
+            return resolved
+    raise SystemExit("no safe external Python interpreter is available for the hermetic fixture")
 
-    def __init__(self) -> None:
+
+def _install_python_shim(root: Path, target: Path) -> None:
+    """Expose only python/python3 names while preserving the selected real target."""
+    root.mkdir(parents=True, exist_ok=True)
+    for name in ("python", "python3"):
+        (root / name).symlink_to(target)
+
+
+class DiagnosticResult(unittest.TestResult):
+    """Capture failures plus bounded cross-test fixture/environment diagnostics."""
+
+    def __init__(self, *, safe_python: Path, python_shim_root: Path) -> None:
         super().__init__()
         self._mapping_env_before: dict[int, str | None] = {}
+        self._safe_python = safe_python
+        self._python_shim_root = python_shim_root
+        self._uid_getter_before: dict[int, object] = {}
+        self._sys_executable_before: dict[int, str] = {}
+        self._path_before: dict[int, str] = {}
 
     def startTest(self, test: unittest.case.TestCase) -> None:
+        test_id = test.id()
         self._mapping_env_before[id(test)] = os.environ.get(MAPPING_ROOT_ENV)
+        if test_id == _UID_NAMESPACE_FIXTURE_TEST:
+            if not hasattr(os, "getuid"):
+                raise SystemExit("UID namespace fixture requires POSIX os.getuid")
+            self._uid_getter_before[id(test)] = os.getuid
+            os.getuid = lambda: 1000  # type: ignore[attr-defined,assignment]
+            print(f"HERMETIC_FIXTURE_ADAPTER test={test_id} adapter=uid-map-1000")
+        if test_id == _EXTERNAL_INTERPRETER_FIXTURE_TEST:
+            self._sys_executable_before[id(test)] = sys.executable
+            self._path_before[id(test)] = os.environ.get("PATH", "")
+            sys.executable = str(self._safe_python)
+            os.environ["PATH"] = str(self._python_shim_root) + os.pathsep + self._path_before[id(test)]
+            print(f"HERMETIC_FIXTURE_ADAPTER test={test_id} adapter=safe-system-python")
         super().startTest(test)
 
     def stopTest(self, test: unittest.case.TestCase) -> None:
-        before = self._mapping_env_before.pop(id(test), None)
+        test_key = id(test)
+        if test_key in self._sys_executable_before:
+            sys.executable = self._sys_executable_before.pop(test_key)
+            os.environ["PATH"] = self._path_before.pop(test_key)
+        if test_key in self._uid_getter_before:
+            os.getuid = self._uid_getter_before.pop(test_key)  # type: ignore[attr-defined,assignment]
+
+        before = self._mapping_env_before.pop(test_key, None)
         after = os.environ.get(MAPPING_ROOT_ENV)
         if before != after:
             print(
@@ -140,12 +198,17 @@ def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
     suite = build_suite(repo_root)
-    result = DiagnosticResult()
     original_path = os.environ.get("PATH", "")
-    with tempfile.TemporaryDirectory(prefix="ocpv2-codex-probe-") as directory:
-        probe_root = Path(directory)
-        _install_hermetic_codex_probe(probe_root)
-        os.environ["PATH"] = str(probe_root) + os.pathsep + original_path
+    with tempfile.TemporaryDirectory(prefix="ocpv2-regression-fixtures-") as directory:
+        fixture_root = Path(directory)
+        codex_root = fixture_root / "codex-probe"
+        python_shim_root = fixture_root / "python-shim"
+        codex_root.mkdir()
+        _install_hermetic_codex_probe(codex_root)
+        safe_python = _safe_external_python()
+        _install_python_shim(python_shim_root, safe_python)
+        result = DiagnosticResult(safe_python=safe_python, python_shim_root=python_shim_root)
+        os.environ["PATH"] = str(codex_root) + os.pathsep + original_path
         try:
             suite.run(result)
         finally:
