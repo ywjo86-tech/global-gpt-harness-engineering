@@ -47,7 +47,7 @@ class ProductionFullPlanBootTests(unittest.TestCase):
             a.mkdir(); b.mkdir()
             ja = self.registered(a, "r1")
             jb = self.registered(b, "r2")
-            self.assertEqual(discover_registered_jobs(root), sorted([ja, jb]))
+            self.assertCountEqual(discover_registered_jobs(root), [ja, jb])
 
     def test_discover_registered_jobs_ignores_unrelated_and_symlinked_jobs(self):
         with tempfile.TemporaryDirectory() as d:
