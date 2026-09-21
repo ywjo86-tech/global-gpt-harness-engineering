@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
@@ -11,6 +12,7 @@ from .tool_authorization import (
     validate_contract,
 )
 from .worker_authority import GovernedEffectEvidence
+from .gate_continuation_contract import GateContinuationContract
 
 WRITE_OPERATION = "PROJECT_OWNED_FILE_WRITE"
 _SENSITIVE_SCOPE_PARTS = frozenset({".git", ".env", "auth.json", "credentials", "credentials.json"})
@@ -293,3 +295,118 @@ def verify_single_governed_write_effect(
         "effect_id": item.effect_id,
         "evidence_refs": list(item.evidence_refs),
     }
+
+
+@dataclass(frozen=True, slots=True)
+class EffectReconciliationEvidence:
+    status: str
+    reason_taxonomy: str
+    retry_disposition: str
+    effect_count: int
+    effect_ids: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+    evidence_sha256: str
+
+
+def _reconciliation_evidence(
+    *, status: str, reason_taxonomy: str, retry_disposition: str,
+    effect_ids: Sequence[str] = (), evidence_refs: Sequence[str] = (),
+) -> EffectReconciliationEvidence:
+    ids = tuple(sorted(str(item) for item in effect_ids))
+    refs = tuple(sorted(str(item) for item in evidence_refs))
+    unsigned = {
+        "schema_version": "orchestration.effect-reconciliation-evidence.v1",
+        "status": status,
+        "reason_taxonomy": reason_taxonomy,
+        "retry_disposition": retry_disposition,
+        "effect_count": len(ids),
+        "effect_ids": list(ids),
+        "evidence_refs": list(refs),
+    }
+    return EffectReconciliationEvidence(
+        status=status, reason_taxonomy=reason_taxonomy, retry_disposition=retry_disposition,
+        effect_count=len(ids), effect_ids=ids, evidence_refs=refs, evidence_sha256=_digest(unsigned),
+    )
+
+
+def verify_auto_effect_reconciliation(
+    journal_root: str | Path, *, contract: GateContinuationContract,
+    active_write_contract: ToolAuthorizationContract | None = None,
+    expected_owned_scope: Sequence[str] = (), expected_scope_ref: str | None = None,
+) -> EffectReconciliationEvidence:
+    """Read-only AUTO effect reconciliation against the canonical ToolEffectJournal.
+
+    This verifier never executes or repairs an effect. Any incomplete, unsafe, or
+    unbound effect evidence fails closed so ownership remains with Full MCP / the
+    user-decision boundary rather than DCC.
+    """
+    if not isinstance(contract, GateContinuationContract):
+        raise TypeError("GateContinuationContract is required")
+
+    root = Path(journal_root)
+    if root.exists() and (root.is_symlink() or not root.is_dir()):
+        return _reconciliation_evidence(
+            status="BLOCKED", reason_taxonomy="EFFECT_EVIDENCE_UNSAFE", retry_disposition="BLOCKED"
+        )
+
+    observed_paths = () if not root.exists() else tuple(sorted(
+        path for path in root.iterdir()
+        if path.is_file() and (path.name.endswith(".intent.json") or path.name.endswith(".receipt.json"))
+    ))
+    observed_ids = tuple(sorted({path.name.split(".", 1)[0] for path in observed_paths}))
+
+    if contract.external_effect_policy == "NO_EXTERNAL_EFFECT":
+        if observed_paths:
+            return _reconciliation_evidence(
+                status="BLOCKED", reason_taxonomy="UNEXPECTED_EFFECT_EVIDENCE", retry_disposition="BLOCKED",
+                effect_ids=observed_ids,
+            )
+        return _reconciliation_evidence(
+            status="PASS", reason_taxonomy="NO_EXTERNAL_EFFECT_VERIFIED", retry_disposition="NO_EFFECT"
+        )
+
+    if contract.external_effect_policy != "GOVERNED_REPOSITORY_EFFECTS_ONLY":
+        return _reconciliation_evidence(
+            status="BLOCKED", reason_taxonomy="EFFECT_POLICY_UNSUPPORTED", retry_disposition="BLOCKED"
+        )
+    if active_write_contract is None or not expected_owned_scope or not expected_scope_ref:
+        return _reconciliation_evidence(
+            status="BLOCKED", reason_taxonomy="EFFECT_EVIDENCE_AUTHORITY_MISSING", retry_disposition="BLOCKED",
+            effect_ids=observed_ids,
+        )
+
+    try:
+        evidence = collect_governed_write_effect_evidence(
+            root, active_write_contract=active_write_contract, expected_owned_scope=expected_owned_scope
+        )
+    except EffectEvidenceBridgeError as exc:
+        reason = (
+            "AMBIGUOUS_EFFECT_EVIDENCE"
+            if exc.reason_taxonomy in {"EFFECT_EVIDENCE_RECOVERY_AMBIGUOUS", "EFFECT_EVIDENCE_MISSING"}
+            else exc.reason_taxonomy
+        )
+        return _reconciliation_evidence(
+            status="BLOCKED", reason_taxonomy=reason, retry_disposition="BLOCKED", effect_ids=observed_ids
+        )
+
+    matching = [
+        item for item in evidence
+        if item.operation == WRITE_OPERATION and item.scope_ref == expected_scope_ref
+    ]
+    all_refs = tuple(ref for item in evidence for ref in item.evidence_refs)
+    ids = tuple(item.effect_id for item in evidence)
+    if len(evidence) != 1 or len(matching) != 1:
+        return _reconciliation_evidence(
+            status="BLOCKED", reason_taxonomy="EFFECT_EVIDENCE_COUNT_OR_SCOPE_MISMATCH",
+            retry_disposition="BLOCKED", effect_ids=ids, evidence_refs=all_refs,
+        )
+    item = matching[0]
+    if not (item.authorized and item.mutation_performed and item.security_passed and item.intent_receipt_consistent):
+        return _reconciliation_evidence(
+            status="BLOCKED", reason_taxonomy="EFFECT_EVIDENCE_NOT_SAFE", retry_disposition="BLOCKED",
+            effect_ids=ids, evidence_refs=all_refs,
+        )
+    return _reconciliation_evidence(
+        status="PASS", reason_taxonomy="GOVERNED_REPOSITORY_EFFECT_VERIFIED", retry_disposition="COMPLETED",
+        effect_ids=ids, evidence_refs=all_refs,
+    )

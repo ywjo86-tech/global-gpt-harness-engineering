@@ -10,8 +10,10 @@ from runtime.orchestrator.effect_evidence_bridge import (
     EffectEvidenceBridgeError,
     collect_governed_write_effect_evidence,
     verify_single_governed_write_effect,
+    verify_auto_effect_reconciliation,
 )
 from runtime.orchestrator.production_tool_transport import ProductionToolTransport
+from runtime.orchestrator.gate_continuation_contract import GateContinuationContract
 from runtime.orchestrator.tool_authorization import (
     activate_contract,
     build_dec007_approved_contracts,
@@ -61,6 +63,26 @@ def request():
             item.to_dict() for item in active_contracts()
         ],
     }
+
+
+def continuation_contract(*, effect_policy: str, evidence_classes=("TEST_RESULT", "EFFECT_RECONCILIATION")):
+    return GateContinuationContract.from_mapping({
+        "schema_version": "orchestration.gate-continuation-contract.v1",
+        "gate_id": "GATE_1",
+        "continuation_policy": "AUTO_WITHIN_APPROVED_CONTRACT",
+        "approved_base_head": "c" * 40,
+        "source_lineage_policy": "APPROVED_DESCENDANT_CHAIN",
+        "allowed_write_paths": ["owned.txt"],
+        "forbidden_paths": [".git/"],
+        "required_verifiers": ["UNITTEST"],
+        "required_evidence_classes": list(evidence_classes),
+        "commit_policy": "LOCAL_COMMIT_ALLOWED",
+        "risk_classes": ["REPOSITORY_WRITE"],
+        "approval_coverage_ref": "approval://test",
+        "approval_coverage_digest": "d" * 64,
+        "external_effect_policy": effect_policy,
+        "runtime_migration_policy": "NO_RUNTIME_MIGRATION",
+    })
 
 
 class EffectEvidenceBridgeTests(unittest.TestCase):
@@ -284,6 +306,81 @@ class EffectEvidenceBridgeTests(unittest.TestCase):
             )
             self.assertEqual(result["status"], "FAIL")
             self.assertEqual(result["reason_taxonomy"], "EFFECT_EVIDENCE_COUNT_OR_SCOPE_MISMATCH")
+
+
+    def test_auto_no_external_effect_accepts_empty_journal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = verify_auto_effect_reconciliation(
+                Path(directory) / "journal",
+                contract=continuation_contract(effect_policy="NO_EXTERNAL_EFFECT", evidence_classes=("TEST_RESULT",)),
+            )
+            self.assertEqual(result.status, "PASS")
+            self.assertEqual(result.retry_disposition, "NO_EFFECT")
+            self.assertEqual(result.effect_count, 0)
+            self.assertRegex(result.evidence_sha256, r"^[0-9a-f]{64}$")
+
+    def test_auto_no_external_effect_blocks_any_effect_intent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "owned.txt").write_text("initial", encoding="utf-8")
+            self._transport(root).handle(ToolRequestEnvelope(
+                "PROJECT_OWNED_FILE_WRITE", "TASK-4A-08", "PRODUCTION_WORKER_TURN",
+                {"owned_file_id": "OWNED_0001", "content": "changed"}, "CALL_NO_EFFECT_POLICY",
+            ))
+            result = verify_auto_effect_reconciliation(
+                root / "journal",
+                contract=continuation_contract(effect_policy="NO_EXTERNAL_EFFECT", evidence_classes=("TEST_RESULT",)),
+            )
+            self.assertEqual(result.status, "BLOCKED")
+            self.assertEqual(result.reason_taxonomy, "UNEXPECTED_EFFECT_EVIDENCE")
+
+    def test_auto_governed_effect_requires_exact_safe_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "owned.txt").write_text("initial", encoding="utf-8")
+            self._transport(root).handle(ToolRequestEnvelope(
+                "PROJECT_OWNED_FILE_WRITE", "TASK-4A-08", "PRODUCTION_WORKER_TURN",
+                {"owned_file_id": "OWNED_0001", "content": "changed"}, "CALL_GOVERNED_AUTO",
+            ))
+            result = verify_auto_effect_reconciliation(
+                root / "journal", contract=continuation_contract(effect_policy="GOVERNED_REPOSITORY_EFFECTS_ONLY"),
+                active_write_contract=write_contract(), expected_owned_scope=("owned.txt",), expected_scope_ref="owned.txt",
+            )
+            self.assertEqual(result.status, "PASS")
+            self.assertEqual(result.retry_disposition, "COMPLETED")
+            self.assertEqual(result.effect_count, 1)
+
+    def test_auto_governed_effect_blocks_begun_intent_without_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "owned.txt").write_text("initial", encoding="utf-8")
+            self._transport(root).handle(ToolRequestEnvelope(
+                "PROJECT_OWNED_FILE_WRITE", "TASK-4A-08", "PRODUCTION_WORKER_TURN",
+                {"owned_file_id": "OWNED_0001", "content": "changed"}, "CALL_AMBIGUOUS_AUTO",
+            ))
+            next((root / "journal").glob("*.receipt.json")).unlink()
+            result = verify_auto_effect_reconciliation(
+                root / "journal", contract=continuation_contract(effect_policy="GOVERNED_REPOSITORY_EFFECTS_ONLY"),
+                active_write_contract=write_contract(), expected_owned_scope=("owned.txt",), expected_scope_ref="owned.txt",
+            )
+            self.assertEqual(result.status, "BLOCKED")
+            self.assertEqual(result.reason_taxonomy, "AMBIGUOUS_EFFECT_EVIDENCE")
+
+    def test_auto_governed_effect_blocks_security_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "owned.txt").write_text("initial", encoding="utf-8")
+            with self.assertRaises(Exception):
+                self._transport(root, security_scan=lambda _: False).handle(ToolRequestEnvelope(
+                    "PROJECT_OWNED_FILE_WRITE", "TASK-4A-08", "PRODUCTION_WORKER_TURN",
+                    {"owned_file_id": "OWNED_0001", "content": "blocked"}, "CALL_BLOCKED_AUTO",
+                ))
+            result = verify_auto_effect_reconciliation(
+                root / "journal", contract=continuation_contract(effect_policy="GOVERNED_REPOSITORY_EFFECTS_ONLY"),
+                active_write_contract=write_contract(), expected_owned_scope=("owned.txt",), expected_scope_ref="owned.txt",
+            )
+            self.assertEqual(result.status, "BLOCKED")
+            self.assertEqual(result.reason_taxonomy, "EFFECT_EVIDENCE_NOT_SAFE")
 
 
 if __name__ == "__main__":

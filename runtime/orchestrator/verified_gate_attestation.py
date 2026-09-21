@@ -70,6 +70,23 @@ class VerifiedGateAttestation:
 
     def canonical_projection(self) -> dict[str, Any]: return asdict(self)
 
+    def validate_for_contract(self, contract: Any) -> None:
+        from .gate_continuation_contract import GateContinuationContract
+        if not isinstance(contract, GateContinuationContract):
+            raise AttestationError("GateContinuationContract is required")
+        self.validate()
+        contract.require_gate(self.gate_id)
+        if self.contract_sha256 != contract.contract_sha256:
+            raise AttestationError("attestation contract digest mismatch")
+        missing = [name for name in contract.required_evidence_classes if name not in self.evidence_digests]
+        if missing:
+            raise AttestationError("required evidence class is missing")
+        if contract.external_effect_policy == "GOVERNED_REPOSITORY_EFFECTS_ONLY":
+            if "EFFECT_RECONCILIATION" not in contract.required_evidence_classes:
+                raise AttestationError("governed effect policy requires EFFECT_RECONCILIATION evidence")
+            if "EFFECT_RECONCILIATION" not in self.evidence_digests:
+                raise AttestationError("required evidence class is missing")
+
     def validate(self) -> None:
         payload=self.canonical_projection(); observed=payload.pop("attestation_sha256")
         if observed != _digest(payload): raise AttestationError("attestation SHA mismatch")
