@@ -117,9 +117,8 @@ class RemoteOperatorEnvelopeTests(unittest.TestCase):
             with self.subTest(field=field):
                 payload = _payload()
                 payload["operator_directive"][field] = "forbidden"
-                payload = seal_remote_envelope(payload)
                 with self.assertRaisesRegex(RemoteOperatorEnvelopeError, "OPERATOR_DIRECTIVE_BLOCKED"):
-                    validate_remote_envelope(payload, now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc))
+                    seal_remote_envelope(payload)
 
     def test_state_change_requires_continuation_digest_and_epoch(self):
         payload = _payload()
