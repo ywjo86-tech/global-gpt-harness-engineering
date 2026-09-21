@@ -150,7 +150,7 @@ class GitHubRESTClient:
         repository = self.verify_repository()
         url = (
             f"{self.api_base}/repos/{repository.full_name}/issues/{self.control_pr_number}/comments"
-            "?per_page=100&sort=created&direction=asc"
+            "?per_page=100&sort=created&direction=desc"
         )
         value = self._request_json("GET", url)
         if not isinstance(value, list) or not all(isinstance(item, Mapping) for item in value):
