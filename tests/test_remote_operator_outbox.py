@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,6 +63,21 @@ class RemoteResultOutboxTests(unittest.TestCase):
             outbox.publish_pending(lambda value: publish_calls.append(value.projection_id))
             self.assertEqual(publish_calls, ["PROJ-1", "PROJ-1"])
             self.assertEqual(outbox.pending(), ())
+
+    def test_outbox_retry_after_restart_only_republishes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first = RemoteResultOutbox(root)
+            projection = _projection()
+            first.enqueue_projection(projection)
+            publish_calls = []
+
+            restarted = RemoteResultOutbox(root)
+            self.assertEqual(restarted.publish_pending(lambda value: publish_calls.append(value.projection_id)), 1)
+            self.assertEqual(publish_calls, ["PROJ-1"])
+            self.assertEqual(restarted.pending(), ())
+            parameters = inspect.signature(RemoteResultOutbox.publish_pending).parameters
+            self.assertEqual(tuple(parameters), ("self", "publisher"))
 
     def test_same_projection_id_and_digest_is_idempotent_but_changed_content_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
