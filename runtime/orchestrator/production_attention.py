@@ -147,6 +147,25 @@ class AttentionOutbox:
             pass
         return delivered
 
+
+    def deliver_with_adapter(
+        self, adapter: Any, *, receipt_store: Any, channel: str,
+        eligible_event_ids: set[str] | frozenset[str] | None = None,
+    ) -> list[str]:
+        """Persist adapter receipt before marking an eligible event delivered."""
+        eligible = set(eligible_event_ids or ())
+        delivered: list[str] = []
+        for event in self.pending():
+            event_id = str(event["event_id"])
+            if infer_delivery_class(event) == DEFERRED_INCIDENT and event_id not in eligible:
+                continue
+            existing = receipt_store.load(event_id)
+            receipt = existing if existing is not None else adapter.send(dict(event))
+            receipt = receipt_store.save(receipt)
+            self.mark_delivered(event_id, channel=channel, receipt=str(receipt.receipt_sha256))
+            delivered.append(event_id)
+        return delivered
+
     def deliver(
         self, sender: Callable[[Mapping[str, Any]], str], *, channel: str,
         eligible_event_ids: set[str] | frozenset[str] | None = None,
