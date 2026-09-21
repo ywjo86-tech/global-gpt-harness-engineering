@@ -29,4 +29,35 @@ Task 1: complete
 - Envelope implementation commit: `bd58c2ee147f37fa52759e710bad49a4dbaea970`.
 - Final Task-1 test commit: `556b1fdcee0d11fbf8786737caff434fb1affc13`.
 
-Next task: Task 2 — Non-Authoritative Receipt / Replay Ledger (TDD RED first).
+Task 2: complete
+- RED run `35564814357`: receipt/replay contract failed before implementation as expected.
+- First GREEN run `35564854493`: all receipt behaviors passed except dangling symlink rejection.
+- Root cause: `Path.exists()` is false for a dangling symlink, so the old guard could treat an unsafe symlink as absent.
+- Fix commit: `015c9101fec1c16ec17eb2b9b31d28cf4d360c08` checks `is_symlink()` before existence on receipt/channel/previous-generation paths.
+- GREEN run `35564912397`: PASS.
+
+Task 3: complete
+- RED run `35564965586`: projection-only durable outbox contract failed before implementation as expected.
+- Implementation commit: `9ac3da534822032601d531cbdae743440ce4cb92`.
+- GREEN run `35565007322`: PASS.
+- Result delivery remains a projection retry only; it does not own canonical completion or re-execute mutation.
+
+Task 4: complete
+- RED run `35565083823`: non-authoritative ingress bridge contract failed before implementation as expected.
+- Implementation commit: `6a50c556a475fcf1f3952b6b08c4521250897770`.
+- GREEN run `35565123419`: PASS.
+- Ingress reuses existing `OperatorDirectiveV1`, validates source/risk/replay identity, records transport receipt only, and creates no new stage authority.
+
+Task 5: complete
+- RED/integration runs established the canonical single-writer contract, including failed integration run `35565277015` before the final helper implementation.
+- Implementation commit: `8eb5f1c2d51449671f41ada8b1757278d62b00f0`.
+- GREEN run `35565299164`: PASS for envelope, receipt, outbox, ingress, single-writer, operator, continuation locking, migration, production gateway/tool transport, compileall and diff check.
+- The remote mutation path converges on the existing Full Plan continuation-owner epoch and transaction lock; no OCP-owned lock/lease was introduced.
+
+Task 6: complete
+- RED run `35565449238`: production gateway boundary contract failed before bridge implementation as expected.
+- Implementation commit: `475d1d4ce2ee8d220beef937cc21990a63af95b3`.
+- GREEN run `35565502046`: PASS.
+- State-changing `PREPARE -> ACTION` requires canonical gateway authority and exact project/run/gate/task binding before one gateway dispatch; read-only transitions do not enter mutation gateway; gateway failure does not fall back to direct execution.
+
+Next task: Task 7 — Migration-v2 CAS integration (TDD RED first).
