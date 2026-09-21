@@ -5,11 +5,8 @@ import unittest
 from pathlib import Path
 
 from runtime.orchestrator.gate_continuation_transaction import GateContinuationTransactionStore
-from runtime.orchestrator.production_full_plan_runner import (
-    DurableFullPlanSupervisor,
-    ProductionFullPlanError,
-    execute_remote_directive_in_canonical_transaction,
-)
+from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
+from runtime.orchestrator.remote_operator_ingress import execute_remote_directive_in_canonical_transaction
 
 
 class RemoteOperatorSingleWriterTests(unittest.TestCase):
