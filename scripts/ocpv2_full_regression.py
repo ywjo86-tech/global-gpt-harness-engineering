@@ -2,16 +2,34 @@
 """Run the full unittest suite while emitting concise, actionable failure evidence."""
 from __future__ import annotations
 
+import os
 import sys
 import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiagnosticResult(unittest.TestResult):
     pass
 
 
+def build_suite() -> unittest.TestSuite:
+    """Discover tests with the repository root as the import authority."""
+    root = str(REPO_ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    os.chdir(REPO_ROOT)
+    return unittest.defaultTestLoader.discover(
+        str(REPO_ROOT / "tests"),
+        pattern="test_*.py",
+        top_level_dir=root,
+    )
+
+
 def main() -> int:
-    suite = unittest.defaultTestLoader.discover("tests", pattern="test_*.py")
+    suite = build_suite()
     result = DiagnosticResult()
     suite.run(result)
 
