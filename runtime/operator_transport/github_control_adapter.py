@@ -20,6 +20,7 @@ from .github_rest_client import (
 
 CONTROL_PREFIX = "OCPV2_CONTROL_V2\n"
 RESULT_PREFIX = "OCPV2_RESULT_V1\n"
+RESULT_SCHEMA = "orchestration.remote-service-projection.v1"
 
 
 class GitHubControlAdapterError(ValueError):
@@ -82,6 +83,32 @@ class GitHubControlAdapter:
     def _canonical_object_bytes(value: Mapping[str, Any]) -> bytes:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
+    def _durably_acknowledged_message_ids(
+        self,
+        comments: tuple[Mapping[str, Any], ...],
+    ) -> frozenset[str]:
+        acknowledged = set(self._acknowledged)
+        for comment in comments:
+            body = comment.get("body")
+            if not isinstance(body, str) or not body.startswith(RESULT_PREFIX):
+                continue
+            if len(body.encode("utf-8")) > self.config.max_comment_bytes:
+                continue
+            user = comment.get("user")
+            actor_id = str(user.get("id")) if isinstance(user, Mapping) and user.get("id") is not None else ""
+            if actor_id not in self.config.allowed_actor_ids:
+                continue
+            try:
+                parsed = json.loads(body[len(RESULT_PREFIX):])
+            except Exception:
+                continue
+            if not isinstance(parsed, Mapping) or parsed.get("schema_version") != RESULT_SCHEMA:
+                continue
+            message_id = parsed.get("message_id")
+            if isinstance(message_id, str) and message_id:
+                acknowledged.add(message_id)
+        return frozenset(acknowledged)
+
     def receive(self, *, limit: int = 16) -> tuple[RawControlEnvelope, ...]:
         repository_id = self._verified_repository_id()
         bounded_limit = min(int(limit), self.config.poll_limit)
@@ -92,6 +119,7 @@ class GitHubControlAdapter:
         except GitHubRESTClientError as exc:
             raise GitHubControlAdapterError(f"SOURCE_NOT_ALLOWED: {exc}") from exc
 
+        acknowledged_message_ids = self._durably_acknowledged_message_ids(comments)
         result: list[RawControlEnvelope] = []
         for comment in comments:
             body = comment.get("body")
@@ -122,6 +150,9 @@ class GitHubControlAdapter:
                 raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload is not JSON") from exc
             if not isinstance(parsed, Mapping):
                 raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload must be an object")
+            message_id = parsed.get("message_id")
+            if isinstance(message_id, str) and message_id in acknowledged_message_ids:
+                continue
             result.append(
                 RawControlEnvelope(
                     source_repository_id=repository_id,
