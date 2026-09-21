@@ -832,7 +832,7 @@ class DurableFullPlanSupervisor:
         finally:
             self._release_run_lock(handle)
 
-    def quiesce_for_runtime_migration(self, migration_id: str, successor_run_id: str) -> dict[str, Any]:
+    def quiesce_for_runtime_migration(self, migration_id: str, successor_run_id: str, *, require_active_qualification: bool = False) -> dict[str, Any]:
         migration = _safe_id(migration_id, "migration ID"); successor = _safe_id(successor_run_id, "successor run ID")
         handle = self._acquire_run_lock()
         try:
@@ -848,7 +848,11 @@ class DurableFullPlanSupervisor:
             state["lease"] = None
             state["migration_id"] = migration
             state["migration_successor_run_id"] = successor
-            state["migration_handoff"] = {"migration_id": migration, "successor_run_id": successor}
+            state["migration_requires_active_qualification"] = bool(require_active_qualification)
+            handoff = {"migration_id": migration, "successor_run_id": successor}
+            if require_active_qualification:
+                handoff["requires_active_qualification"] = True
+            state["migration_handoff"] = handoff
             return self._persist(state, {"event": "RUNTIME_MIGRATION_QUIESCED", "migration_id": migration})
         finally:
             self._release_run_lock(handle)
@@ -873,6 +877,27 @@ class DurableFullPlanSupervisor:
         finally:
             self._release_run_lock(handle)
 
+    def record_active_runtime_qualification(self, migration_id: str, qualification_evidence_sha256: str) -> dict[str, Any]:
+        migration = _safe_id(migration_id, "migration ID")
+        digest = str(qualification_evidence_sha256 or "")
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise ProductionFullPlanError("active runtime qualification evidence SHA is invalid")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if (state.get("state") != "WAITING_RESOURCE" or state.get("migration_id") != migration
+                    or state.get("migration_successor_verified") is not True
+                    or state.get("migration_requires_active_qualification") is not True):
+                raise ProductionFullPlanError("active runtime qualification binding mismatch")
+            state["migration_qualification_evidence_sha256"] = digest
+            handoff = dict(state.get("migration_handoff") or {})
+            handoff["qualification_evidence_sha256"] = digest
+            state["migration_handoff"] = handoff
+            return self._persist(state, {"event": "ACTIVE_RUNTIME_QUALIFICATION_VERIFIED",
+                                         "migration_id": migration, "qualification_evidence_sha256": digest})
+        finally:
+            self._release_run_lock(handle)
+
     def close_migrated_predecessor(self, migration_id: str, successor_state_sha256: str) -> dict[str, Any]:
         migration = _safe_id(migration_id, "migration ID"); sha = str(successor_state_sha256 or "")
         handle = self._acquire_run_lock()
@@ -882,6 +907,9 @@ class DurableFullPlanSupervisor:
                     or state.get("migration_successor_verified") is not True
                     or state.get("migration_successor_state_sha256") != sha):
                 raise ProductionFullPlanError("verified migration successor binding mismatch")
+            if (state.get("migration_requires_active_qualification") is True
+                    and not str(state.get("migration_qualification_evidence_sha256") or "")):
+                raise ProductionFullPlanError("active runtime qualification is required before predecessor close")
             item = self._active_item(state)
             if item is not None and item.get("status") != "COMPLETED": item["status"] = "CANCELLED"
             state["state"] = "CANCELLED"; state["terminal_reason"] = "MIGRATED_TO_SUCCESSOR"

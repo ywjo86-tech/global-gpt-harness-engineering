@@ -5,6 +5,13 @@ from pathlib import Path
 from runtime.orchestrator.runtime_migration_handoff import MigrationHandoffError,MigrationPhase,MigrationStore
 
 
+def valid_v2_spec():
+    spec = valid_spec()
+    spec['source_tree'] = '4' * 40
+    spec['source_manifest_sha256'] = '5' * 64
+    return spec
+
+
 def valid_spec():
     return {
         'migration_id':'MIG-001','project_id':'P','predecessor_run_id':'R2','successor_run_id':'R3',
@@ -21,7 +28,54 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
     def test_allowed_phase_taxonomy_is_exact(self):
         self.assertEqual([p.value for p in MigrationPhase],[
             'PREPARED','PREDECESSOR_QUIESCED','RUNTIME_ACTIVATED','SUCCESSOR_REGISTERED',
-            'SUCCESSOR_VERIFIED','PREDECESSOR_CLOSED','ROLLED_BACK','BLOCKED'])
+            'SUCCESSOR_VERIFIED','ACTIVE_RUNTIME_QUALIFICATION','PREDECESSOR_CLOSED','ROLLED_BACK','BLOCKED'])
+
+
+    def test_v2_binds_last_known_good_source_release_and_is_readable(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=self.store(td); tx=store.create_v2(valid_v2_spec()); loaded=store.load(tx.migration_id)
+            self.assertEqual(loaded.schema_version,'orchestration.runtime-migration.v2')
+            self.assertEqual(loaded.source_tree,'4'*40)
+            self.assertEqual(loaded.source_manifest_sha256,'5'*64)
+            self.assertEqual(loaded,tx)
+
+    def test_v1_transaction_remains_readable_after_v2_support(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=self.store(td); tx=store.create(valid_spec()); loaded=store.load(tx.migration_id)
+            self.assertEqual(loaded.schema_version,'orchestration.runtime-migration.v1')
+            self.assertEqual(loaded.source_tree,'')
+            self.assertEqual(loaded.source_manifest_sha256,'')
+
+    def test_v2_predecessor_close_requires_active_runtime_qualification_digest(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=self.store(td); tx=store.create_v2(valid_v2_spec())
+            tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})
+            for phase in (MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED):
+                tx=store.advance(tx.migration_id,phase)
+            with self.assertRaisesRegex(MigrationHandoffError,'qualification'):
+                store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_CLOSED)
+            with self.assertRaisesRegex(MigrationHandoffError,'qualification'):
+                store.advance(tx.migration_id,MigrationPhase.ACTIVE_RUNTIME_QUALIFICATION)
+            tx=store.advance(tx.migration_id,MigrationPhase.ACTIVE_RUNTIME_QUALIFICATION,updates={'qualification_evidence_sha256':'6'*64})
+            self.assertEqual(tx.qualification_evidence_sha256,'6'*64)
+            tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_CLOSED)
+            self.assertEqual(tx.phase,MigrationPhase.PREDECESSOR_CLOSED)
+
+    def test_v2_source_bindings_are_immutable(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=self.store(td); tx=store.create_v2(valid_v2_spec())
+            with self.assertRaises(MigrationHandoffError):
+                store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'source_manifest_sha256':'0'*64})
+
+    def test_v2_rollback_remains_legal_after_active_qualification_before_close(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=self.store(td); tx=store.create_v2(valid_v2_spec())
+            tx=store.advance(tx.migration_id,MigrationPhase.PREDECESSOR_QUIESCED,updates={'quiesced_state_sha256':'3'*64})
+            for phase in (MigrationPhase.RUNTIME_ACTIVATED,MigrationPhase.SUCCESSOR_REGISTERED,MigrationPhase.SUCCESSOR_VERIFIED):
+                tx=store.advance(tx.migration_id,phase)
+            tx=store.advance(tx.migration_id,MigrationPhase.ACTIVE_RUNTIME_QUALIFICATION,updates={'qualification_evidence_sha256':'6'*64})
+            tx=store.rollback(tx.migration_id,'qualification failed after evidence capture')
+            self.assertEqual(tx.phase,MigrationPhase.ROLLED_BACK)
 
     def test_duplicate_live_transaction_for_same_predecessor_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
@@ -146,6 +200,19 @@ class RuntimeMigrationHandoffTests(unittest.TestCase):
 if __name__=='__main__': unittest.main()
 
 class RuntimeMigrationSupervisorIntegrationTests(unittest.TestCase):
+
+    def test_v2_supervisor_close_requires_bound_active_runtime_qualification(self):
+        from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor,ProductionFullPlanError
+        with tempfile.TemporaryDirectory() as td:
+            sup=DurableFullPlanSupervisor(td,project_id='P',run_id='R2',gates=['G1'])
+            sup.quiesce_for_runtime_migration('M2','R3',require_active_qualification=True)
+            sup.record_verified_migration_successor('M2','R3','3'*64)
+            with self.assertRaisesRegex(ProductionFullPlanError,'qualification'):
+                sup.close_migrated_predecessor('M2','3'*64)
+            qualified=sup.record_active_runtime_qualification('M2','4'*64)
+            self.assertEqual(qualified['migration_qualification_evidence_sha256'],'4'*64)
+            closed=sup.close_migrated_predecessor('M2','3'*64)
+            self.assertEqual(closed['state'],'CANCELLED')
     def test_quiesce_keeps_predecessor_nonterminal_and_binds_successor(self):
         from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
         with tempfile.TemporaryDirectory() as td:
