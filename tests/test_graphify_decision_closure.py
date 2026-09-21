@@ -1,25 +1,21 @@
 from __future__ import annotations
 
 import copy
-import json
 import unittest
-from pathlib import Path
 
 from poc.graphify import decision_closure
-
-ROOT = Path(__file__).resolve().parents[1]
-POC_ROOT = Path("/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500")
-
-
-def _load(relative: str) -> dict:
-    return json.loads((POC_ROOT / relative).read_text(encoding="utf-8"))
+from tests.graphify_test_fixture import (
+    independent_review,
+    open_decision,
+    reserved_phase_isolation,
+)
 
 
 class GraphifyDecisionClosureTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.decision = _load("results/decision_record.json")
-        self.review = _load("records/independent_regression_review.json")
-        self.reserved = _load("records/reserved_phase_isolation.json")
+        self.decision = open_decision()
+        self.review = independent_review()
+        self.reserved = reserved_phase_isolation()
 
     def test_valid_finalized_decision_closes_without_outcome_mutation(self) -> None:
         record = decision_closure.finalize_decision_closure(
