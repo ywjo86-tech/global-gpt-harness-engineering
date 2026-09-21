@@ -73,7 +73,9 @@ class OCPv2DeployPackageTests(unittest.TestCase):
             rendered = bootstrap.render_package(cfg, output_dir=output)
             service = rendered.service_path.read_text(encoding="utf-8")
             self.assertIn(f"WorkingDirectory={repo.resolve()}", service)
-            self.assertIn(f"{repo.resolve()}/deploy/operator-control-plane-v2/bootstrap.py run-once", service)
+            self.assertIn("-m runtime.orchestrator.ocpv2_runtime_service", service)
+            self.assertIn("--env-file %h/.config/gch/ocpv2.env", service)
+            self.assertNotIn("bootstrap.py run-once", service)
             self.assertNotIn("@REPO_ROOT@", service)
 
     def test_timer_runs_one_shot_service_every_30_seconds(self):
