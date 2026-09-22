@@ -14,7 +14,12 @@ from typing import Any, Mapping
 
 from .durable_io import atomic_write_json
 from .gate_continuation_contract import GateContinuationContract
-from .production_run_authority import executor_runtime_identity
+from .production_run_authority import (
+    AUTO_RECONCILE_OWNER,
+    RunAuthorityError,
+    executor_runtime_identity,
+    resolve_execution_owner,
+)
 
 CANARY_EXECUTOR_KIND = "DCC_LIVE_AUTO_CANARY"
 CANARY_PROJECT_ID = "DCC_LIVE_AUTO_CANARY"
@@ -150,7 +155,8 @@ def build_live_auto_canary_executor(job: Mapping[str, Any]):
 
 class LiveAutoCanary:
     def __init__(self, state_root: str | Path, *, runtime_code_root: str | Path,
-                 run_id: str, python_executable: str | Path | None = None) -> None:
+                 run_id: str, python_executable: str | Path | None = None,
+                 execution_owner: str = AUTO_RECONCILE_OWNER) -> None:
         self.state_root = Path(state_root).resolve()
         self.runtime_code_root = Path(runtime_code_root).resolve()
         self.run_id = str(run_id)
@@ -160,6 +166,10 @@ class LiveAutoCanary:
             raise LiveAutoCanaryError("canary runtime code root is unavailable")
         if not self.run_id or "/" in self.run_id or ".." in self.run_id:
             raise LiveAutoCanaryError("canary run ID is unsafe")
+        try:
+            self.execution_owner = resolve_execution_owner({"execution_owner": execution_owner})
+        except RunAuthorityError as exc:
+            raise LiveAutoCanaryError(str(exc)) from exc
         self.python_executable = Path(python_executable or sys.executable).resolve()
         self.base = _canary_base(self.state_root, self.run_id)
         self.project_root = self.base / "project"
@@ -229,6 +239,7 @@ class LiveAutoCanary:
         job = {
             "schema_version": "orchestration.production-full-plan-job.v1",
             "executor_kind": CANARY_EXECUTOR_KIND,
+            "execution_owner": self.execution_owner,
             "project_root": str(self.project_root),
             "harness_root": str(self.state_root),
             "harness_state_root": str(self.state_root),
