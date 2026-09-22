@@ -14,6 +14,7 @@ from runtime.orchestrator.production_full_plan_runner import (
     FullPlanResult,
     ProductionFullPlanError,
 )
+from runtime.orchestrator.production_run_authority import OCPV2_OWNER
 from runtime.orchestrator.ocpv2_canonical_resume import (
     CanonicalRemoteResumeError,
     execute_registered_full_plan_continuation,
@@ -87,6 +88,7 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
         job = {
             "project_id": "P1",
             "run_id": "R1",
+            "execution_owner": OCPV2_OWNER,
             "project_root": str(root / "project"),
             "harness_root": str(root),
             "harness_state_root": str(root),
@@ -157,7 +159,12 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
             root = Path(td)
             runtime_root = Path(__file__).resolve().parents[1]
             run_id = "OCP-REAL-FRESH-CAS"
-            canary = LiveAutoCanary(root, runtime_code_root=runtime_root, run_id=run_id)
+            canary = LiveAutoCanary(
+                root,
+                runtime_code_root=runtime_root,
+                run_id=run_id,
+                execution_owner=OCPV2_OWNER,
+            )
             job_path = canary.prepare()
             job = load_registered_job(job_path)
             gate_ids = [str(item["gate_id"]) for item in job["gates"]]
