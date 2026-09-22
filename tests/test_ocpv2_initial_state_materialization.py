@@ -6,7 +6,9 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import runtime.orchestrator.production_full_plan_entry as full_plan_entry
 from runtime.orchestrator.production_full_plan_entry import load_job, load_registered_job, register_job
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
 
@@ -73,6 +75,36 @@ class OCPv2InitialStateMaterializationTests(unittest.TestCase):
             self.assertEqual(first["state_sha256"], second["state_sha256"])
             self.assertEqual(first["progress_sequence"], 0)
             self.assertFalse((supervisor.base / "artifacts").exists())
+
+    def test_job_publish_happens_after_initial_state_is_durable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = load_job(self._job_path(root))
+            state_path = (
+                root
+                / "_workspace"
+                / "production-full-plan"
+                / "proj"
+                / "gate-e-materialization"
+                / "state.json"
+            )
+            observed_state_at_publish: list[bool] = []
+            real_atomic_write_json = full_plan_entry.atomic_write_json
+
+            def observe_publish(path, payload):
+                target = Path(path)
+                if "production-full-plan-jobs" in target.parts:
+                    observed_state_at_publish.append(state_path.is_file())
+                return real_atomic_write_json(path, payload)
+
+            with patch.object(full_plan_entry, "atomic_write_json", side_effect=observe_publish):
+                register_job(job)
+
+            self.assertEqual(
+                observed_state_at_publish,
+                [True],
+                "canonical job discovery must only become visible after initial state persistence",
+            )
 
 
 if __name__ == "__main__":
