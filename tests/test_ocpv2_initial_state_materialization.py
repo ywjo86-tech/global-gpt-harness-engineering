@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+from runtime.orchestrator.production_full_plan_entry import load_job, load_registered_job, register_job
+from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+
+
+class OCPv2InitialStateMaterializationTests(unittest.TestCase):
+    def _job_path(self, root: Path) -> Path:
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        payload = {
+            "schema_version": "orchestration.production-full-plan-job.v1",
+            "project_root": str(root),
+            "harness_root": str(root),
+            "project_id": "proj",
+            "run_id": "gate-e-materialization",
+            "required_executables": ["git"],
+            "gates": [{
+                "gate_id": "G1",
+                "approval_evidence": str(root / "approval.json"),
+                "requirements_sha256": "a" * 64,
+                "branch": "main",
+                "head": "b" * 40,
+                "full_plan_opt_in": True,
+                "project_final_validation": True,
+            }],
+            "policy": {
+                "retry_budget": 0,
+                "gate_timeout_seconds": 1,
+                "heartbeat_seconds": 0.03,
+                "lease_seconds": 0.08,
+                "min_disk_free_bytes": 0,
+                "min_inode_free": 0,
+                "min_memory_available_bytes": 0,
+            },
+        }
+        path = root / "job.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def test_register_job_materializes_stable_initial_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            registered = register_job(load_job(self._job_path(root)))
+            job = load_registered_job(registered)
+            supervisor = DurableFullPlanSupervisor(
+                root,
+                project_id=job["project_id"],
+                run_id=job["run_id"],
+                gates=[item["gate_id"] for item in job["gates"]],
+                authority_core_sha256=job["authority_core_sha256"],
+                **job["policy"],
+            )
+
+            self.assertTrue(
+                supervisor.state_path.is_file(),
+                "registered jobs must publish a durable initial Full Plan state",
+            )
+            first, recovered_first = supervisor.load()
+            time.sleep(1.05)
+            second, recovered_second = supervisor.load()
+
+            self.assertFalse(recovered_first)
+            self.assertFalse(recovered_second)
+            self.assertEqual(first["state"], "READY")
+            self.assertEqual(first["current_gate"], "G1")
+            self.assertEqual(first["state_sha256"], second["state_sha256"])
+            self.assertEqual(first["progress_sequence"], 0)
+            self.assertFalse((supervisor.base / "artifacts").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
