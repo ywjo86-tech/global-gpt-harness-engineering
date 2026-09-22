@@ -14,6 +14,7 @@ from runtime.orchestrator.read_only_host_diagnostic import (
     DiagnosticSecurityError,
     read_path_metadata,
     read_project_file_range,
+    collect_repo_snapshot,
 )
 
 
@@ -51,6 +52,18 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
 
     def meta_request(self, relative_path: str):
         return self.request("path.metadata", relative_path)
+
+    def repo_request(self):
+        return ReadOnlyDiagnosticRequestV1.from_mapping({
+            "schema_version": REQUEST_SCHEMA,
+            "request_id": "REQ-GIT",
+            "operation": "repo.snapshot",
+            "root_id": "project",
+            "relative_path": "",
+            "start_line": 0,
+            "line_count": 0,
+            "service_id": "",
+        })
 
     def test_file_range_blocks_intermediate_symlink_escape(self):
         outside = self.base / "outside"
@@ -117,6 +130,71 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
         for path in ("link.txt", ".env", "../escape"):
             with self.subTest(path=path), self.assertRaises(DiagnosticSecurityError):
                 read_path_metadata(self.meta_request(path), self.policy)
+
+    def test_repo_snapshot_uses_fixed_shell_false_git_environment(self):
+        calls = []
+
+        class Completed:
+            returncode = 0
+            stderr = ""
+            def __init__(self, stdout=""):
+                self.stdout = stdout
+
+        def runner(argv, **kwargs):
+            calls.append((list(argv), dict(kwargs)))
+            args = argv[3:]
+            if args[:2] == ["status", "--porcelain=v2"]:
+                return Completed("# branch.oid " + "a" * 40 + "\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +1 -2\n")
+            if args[:2] == ["rev-parse", "--verify"]:
+                return Completed("a" * 40 + "\n")
+            if args == ["rev-parse", "--git-dir"]:
+                return Completed(".git\n")
+            if args == ["rev-parse", "--git-common-dir"]:
+                return Completed(".git\n")
+            return Completed("")
+
+        snapshot = collect_repo_snapshot(self.repo_request(), self.policy, runner=runner)
+        self.assertEqual(snapshot["branch"], "main")
+        self.assertEqual(snapshot["ahead"], 1)
+        self.assertEqual(snapshot["behind"], 2)
+        self.assertTrue(calls)
+        for argv, kwargs in calls:
+            self.assertEqual(argv[:3], ["git", "-C", str(self.root.resolve())])
+            self.assertFalse(kwargs["shell"])
+            self.assertTrue(kwargs["capture_output"])
+            self.assertTrue(kwargs["text"])
+            self.assertFalse(kwargs["check"])
+            env = kwargs["env"]
+            self.assertEqual(env["GIT_OPTIONAL_LOCKS"], "0")
+            self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+            self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
+            self.assertEqual(env["GIT_CONFIG_GLOBAL"], "/dev/null")
+            self.assertEqual(env["GIT_PAGER"], "cat")
+            self.assertEqual(env["PAGER"], "cat")
+
+    def test_repo_snapshot_does_not_execute_malicious_diff_helper(self):
+        import subprocess
+
+        repo = self.root
+        subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+        tracked = repo / "tracked.txt"
+        tracked.write_text("one\n", encoding="utf-8")
+        (repo / ".gitattributes").write_text("*.txt diff=evil\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "tracked.txt", ".gitattributes"], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, capture_output=True)
+        marker = self.base / "helper-ran"
+        helper = self.base / "evil-helper.sh"
+        helper.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        helper.chmod(0o700)
+        subprocess.run(["git", "-C", str(repo), "config", "diff.evil.command", str(helper)], check=True)
+        tracked.write_text("two\n", encoding="utf-8")
+
+        snapshot = collect_repo_snapshot(self.repo_request(), self.policy)
+        self.assertFalse(marker.exists())
+        self.assertFalse(snapshot["stale"])
+        self.assertIn("tracked.txt", snapshot["unstaged_paths"])
 
 
 if __name__ == "__main__":
