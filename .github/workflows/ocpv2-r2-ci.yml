@@ -31,6 +31,7 @@ jobs:
       - run: python3 -m unittest -v tests.test_remote_operator_single_writer
       - run: python3 -m unittest -v tests.test_remote_operator_gateway_boundary
       - run: python3 -m unittest -v tests.test_ocpv2_gate_e_canonical_path
+      - run: python3 -m unittest -v tests.test_ocpv2_single_execution_owner
       - run: python3 -m unittest -v tests.test_ocpv2_registered_full_plan_resume
       - run: python3 -m unittest -v tests.test_ocpv2_live_recovery_composition
       - run: python3 -m unittest -v tests.test_ocpv2_initial_state_materialization
