@@ -51,6 +51,8 @@ def _digest(value: object, label: str, *, lengths: tuple[int, ...] = (64,)) -> s
 @dataclass(frozen=True, slots=True)
 class RemoteExecutionBindingV1:
     message_id: str
+    source_message_id: str
+    control_content_sha256: str
     envelope_sha256: str
     directive_digest: str
     project_id: str
@@ -72,6 +74,7 @@ class RemoteExecutionBindingV1:
     def __post_init__(self) -> None:
         for value, label in (
             (self.message_id, "message ID"),
+            (self.source_message_id, "source message ID"),
             (self.project_id, "project ID"),
             (self.run_id, "run ID"),
             (self.gate_id, "Gate ID"),
@@ -79,6 +82,7 @@ class RemoteExecutionBindingV1:
             (self.task_execution_id, "task execution ID"),
         ):
             _safe_id(value, label)
+        _digest(self.control_content_sha256, "control content digest")
         _digest(self.envelope_sha256, "envelope digest")
         _digest(self.directive_digest, "directive digest")
         _digest(self.expected_state_sha256, "expected state digest")
@@ -118,7 +122,8 @@ class RemoteExecutionBindingV1:
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "RemoteExecutionBindingV1":
         expected = {
-            "message_id", "envelope_sha256", "directive_digest", "project_id", "run_id",
+            "message_id", "source_message_id", "control_content_sha256",
+            "envelope_sha256", "directive_digest", "project_id", "run_id",
             "gate_id", "task_id", "task_execution_id", "expected_state_sha256",
             "expected_owner_epoch", "expected_source_head", "expected_runtime_release_digest",
             "status", "projection_id", "bound_at", "updated_at", "binding_sha256",
@@ -126,8 +131,13 @@ class RemoteExecutionBindingV1:
         }
         if set(value) != expected:
             raise RemoteExecutionBindingError("binding fields mismatch")
+        raw_epoch = value["expected_owner_epoch"]
+        if isinstance(raw_epoch, bool) or not isinstance(raw_epoch, int):
+            raise RemoteExecutionBindingError("invalid expected owner epoch")
         return cls(
             message_id=str(value["message_id"]),
+            source_message_id=str(value["source_message_id"]),
+            control_content_sha256=str(value["control_content_sha256"]),
             envelope_sha256=str(value["envelope_sha256"]),
             directive_digest=str(value["directive_digest"]),
             project_id=str(value["project_id"]),
@@ -136,7 +146,7 @@ class RemoteExecutionBindingV1:
             task_id=str(value["task_id"]),
             task_execution_id=str(value["task_execution_id"]),
             expected_state_sha256=str(value["expected_state_sha256"]),
-            expected_owner_epoch=int(value["expected_owner_epoch"]),
+            expected_owner_epoch=raw_epoch,
             expected_source_head=str(value["expected_source_head"]),
             expected_runtime_release_digest=str(value["expected_runtime_release_digest"]),
             status=str(value["status"]),
@@ -151,8 +161,11 @@ class RemoteExecutionBindingV1:
     def from_envelope(cls, envelope: RemoteOperatorEnvelopeV2) -> "RemoteExecutionBindingV1":
         now = _now()
         expected = envelope.expected
+        canonical_control = canonical_json_bytes(envelope.to_dict())
         return cls(
             message_id=envelope.message_id,
+            source_message_id=envelope.transport.source_message_id,
+            control_content_sha256=sha256_bytes(canonical_control),
             envelope_sha256=envelope.envelope_sha256,
             directive_digest=envelope.directive_digest,
             project_id=envelope.project_id,
@@ -204,6 +217,8 @@ class RemoteExecutionBindingStore:
         existing = self._load_path(path)
         if existing is not None:
             immutable = (
+                existing.source_message_id,
+                existing.control_content_sha256,
                 existing.envelope_sha256,
                 existing.directive_digest,
                 existing.project_id,
@@ -217,6 +232,8 @@ class RemoteExecutionBindingStore:
                 existing.expected_runtime_release_digest,
             )
             requested = (
+                candidate.source_message_id,
+                candidate.control_content_sha256,
                 candidate.envelope_sha256,
                 candidate.directive_digest,
                 candidate.project_id,
