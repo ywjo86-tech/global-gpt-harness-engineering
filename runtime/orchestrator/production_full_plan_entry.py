@@ -18,8 +18,8 @@ from .durable_io import atomic_write_json
 from .contract_adapter import MAPPING_ROOT_ENV
 from .harness_state_root import job_state_root
 from .production_run_authority import (
-    RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
-    merge_runtime_bindings, seal_authority_core, validate_authority_core,
+    AUTO_RECONCILE_OWNER, RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
+    merge_runtime_bindings, resolve_execution_owner, seal_authority_core, validate_authority_core,
     validate_executor_runtime,
 )
 
@@ -342,6 +342,14 @@ def run_job(path: str | Path) -> dict[str, Any]:
     requested = load_job(path)
     canonical = register_job(requested)
     job = load_registered_job(canonical)
+    try:
+        execution_owner = resolve_execution_owner(job)
+    except RunAuthorityError as exc:
+        raise FullPlanJobError(str(exc)) from exc
+    if execution_owner != AUTO_RECONCILE_OWNER:
+        raise FullPlanJobError(
+            f"EXECUTION_OWNER_MISMATCH: generic Full Plan runner requires {AUTO_RECONCILE_OWNER}"
+        )
     gate_ids = [str(item["gate_id"]) for item in job["gates"]]
     policy = dict(job.get("policy") or {})
     supervisor = DurableFullPlanSupervisor(
