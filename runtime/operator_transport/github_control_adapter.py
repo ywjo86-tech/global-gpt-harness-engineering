@@ -179,17 +179,56 @@ class GitHubControlAdapter:
             for entry in self._load_delivery_acks()
         )
 
-    def has_durable_ack(self, message_id: str) -> bool:
-        """Report whether a successfully published result durably acked this message.
-
-        This is transport bookkeeping only.  It must never be used as canonical Harness
-        completion evidence; recovery uses it solely to avoid re-publishing a result that
-        the adapter already committed after a successful GitHub publish.
-        """
-        value = str(message_id or "")
-        if not value:
+    def has_durable_ack(
+        self,
+        message_id: str,
+        *,
+        source_message_id: str = "",
+        content_sha256: str = "",
+    ) -> bool:
+        """Read only durable result-ack state; canonical completion is not inferred here."""
+        message = str(message_id or "")
+        source = str(source_message_id or "")
+        digest = str(content_sha256 or "")
+        if not message:
             return False
-        return any(entry["message_id"] == value for entry in self._load_delivery_acks())
+        if bool(source) != bool(digest):
+            raise GitHubControlAdapterError("durable ack exact binding must be paired")
+        for entry in self._load_delivery_acks():
+            if entry["message_id"] != message:
+                continue
+            if source and (
+                entry["source_message_id"] != source
+                or entry["content_sha256"] != digest
+            ):
+                continue
+            return True
+        return False
+
+    def prepare_recovery_delivery(
+        self,
+        *,
+        source_message_id: str,
+        message_id: str,
+        content_sha256: str,
+    ) -> None:
+        """Re-arm exact transport ack bookkeeping for an outbox recovery publish.
+
+        The caller must derive these values from a previously durable execution binding.
+        This method grants no execution authority; it only lets `publish_projection()`
+        persist the same exact delivery fingerprint that normal receive/publish uses.
+        """
+        source = str(source_message_id or "")
+        message = str(message_id or "")
+        digest = str(content_sha256 or "")
+        if not source or not message:
+            raise GitHubControlAdapterError("recovery delivery identity is required")
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise GitHubControlAdapterError("recovery delivery content digest is invalid")
+        pending = _PendingDelivery(source_message_id=source, message_id=message, content_sha256=digest)
+        queue = self._pending.setdefault(message, [])
+        if pending not in queue:
+            queue.append(pending)
 
     def _remember_pending(self, *, source_message_id: str, parsed: Mapping[str, Any], canonical: bytes) -> None:
         message_id = parsed.get("message_id")
