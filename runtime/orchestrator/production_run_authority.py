@@ -14,6 +14,9 @@ from .harness_state_root import job_state_root
 
 AUTHORITY_SCHEMA = "orchestration.production-run-authority.v1"
 OVERLAY_SCHEMA = "orchestration.production-run-runtime-bindings.v1"
+AUTO_RECONCILE_OWNER = "AUTO_RECONCILE"
+OCPV2_OWNER = "OCPV2"
+EXECUTION_OWNERS = frozenset({AUTO_RECONCILE_OWNER, OCPV2_OWNER})
 RUNTIME_GATE_FIELDS = frozenset({
     "manual_action_package_paths_by_lv",
     "manual_action_authorization_paths_by_lv",
@@ -22,6 +25,16 @@ RUNTIME_GATE_FIELDS = frozenset({
 
 class RunAuthorityError(ValueError):
     pass
+
+
+def resolve_execution_owner(job: Mapping[str, Any]) -> str:
+    raw = job.get("execution_owner")
+    if raw is None:
+        return AUTO_RECONCILE_OWNER
+    owner = str(raw)
+    if owner not in EXECUTION_OWNERS:
+        raise RunAuthorityError("EXECUTION_OWNER_INVALID")
+    return owner
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +135,7 @@ def authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def seal_authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
+    resolve_execution_owner(job)
     JobRoots.from_job(job)
     value = copy.deepcopy(dict(job))
     if "executor_runtime_identity" not in value:
@@ -135,6 +149,7 @@ def seal_authority_core(job: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def validate_authority_core(job: Mapping[str, Any]) -> str:
+    resolve_execution_owner(job)
     if job.get("authority_schema_version") != AUTHORITY_SCHEMA:
         raise RunAuthorityError("RUN_AUTHORITY_SCHEMA_MISSING")
     expected = job.get("authority_core_sha256")
