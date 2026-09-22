@@ -4,8 +4,16 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from runtime.orchestrator.production_full_plan_entry import FullPlanJobError, register_job
+from runtime.orchestrator.production_full_plan_boot import reconcile_job
+from runtime.orchestrator.production_full_plan_entry import (
+    FullPlanJobError,
+    load_job,
+    register_job,
+    run_job,
+)
+from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
 from runtime.orchestrator.production_run_authority import (
     AUTO_RECONCILE_OWNER,
     OCPV2_OWNER,
@@ -67,6 +75,58 @@ class OCPv2SingleExecutionOwnerTests(unittest.TestCase):
             self.assertTrue(registered.is_file())
             with self.assertRaisesRegex(FullPlanJobError, "RUN_ID_REBIND_FORBIDDEN"):
                 register_job(self._job(root, owner="OCPV2"))
+
+    def test_boot_skips_ocpv2_ready_job_before_launch(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            registered = register_job(self._job(root, owner="OCPV2"))
+            with patch("runtime.orchestrator.production_full_plan_boot.subprocess.run") as run:
+                result = reconcile_job(registered, launch=True)
+            self.assertEqual(result["action"], "SKIP_EXTERNAL_OWNER")
+            self.assertEqual(result["execution_owner"], "OCPV2")
+            self.assertFalse(result["launched"])
+            run.assert_not_called()
+
+    def test_boot_skips_ocpv2_wait_without_wait_recovery(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            registered = register_job(self._job(root, owner="OCPV2"))
+            loaded = load_job(registered)
+            sup = DurableFullPlanSupervisor(
+                root,
+                project_id="P",
+                run_id="run",
+                gates=["G1"],
+                authority_core_sha256=loaded["authority_core_sha256"],
+                **loaded["policy"],
+            )
+            state, _ = sup.load()
+            state["state"] = "WAITING_RESOURCE"
+            state["wait_reason"] = "LOW_RESOURCE_BACKPRESSURE"
+            before = sup._persist(state, {"event": "TEST_WAIT"})["state_sha256"]
+            with patch("runtime.orchestrator.production_full_plan_boot._attempt_typed_wait_recovery") as recovery:
+                result = reconcile_job(registered, launch=True)
+            self.assertEqual(result["action"], "SKIP_EXTERNAL_OWNER")
+            recovery.assert_not_called()
+            after, _ = sup.load()
+            self.assertEqual(after["state_sha256"], before)
+
+    def test_ownerless_boot_behavior_remains_auto_reconcile(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            registered = register_job(self._job(root))
+            with patch("runtime.orchestrator.production_full_plan_boot._unit_active", return_value=False):
+                result = reconcile_job(registered, launch=False)
+            self.assertEqual(result["action"], "WOULD_RESUME")
+
+    def test_generic_runner_rejects_ocpv2_owner_before_gate_executor(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            registered = register_job(self._job(root, owner="OCPV2"))
+            with patch("runtime.orchestrator.production_full_plan_entry.build_gate_executor") as executor:
+                with self.assertRaisesRegex(FullPlanJobError, "EXECUTION_OWNER_MISMATCH"):
+                    run_job(registered)
+            executor.assert_not_called()
 
 
 if __name__ == "__main__":
