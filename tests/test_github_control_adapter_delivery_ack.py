@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -59,6 +60,12 @@ def comment(*, marker="A"):
     }
 
 
+def content_sha(item):
+    payload = json.loads(item["body"][len(CONTROL_PREFIX):])
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def adapter(path: Path, comments, *, fail_publish=False):
     return GitHubControlAdapter(
         config=config(),
@@ -79,6 +86,35 @@ class DurableDeliveryAckTests(unittest.TestCase):
 
             second = adapter(path, (comment(),))
             self.assertEqual(second.receive(), ())
+            self.assertTrue(second.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(comment())
+            ))
+
+    def test_recovery_publish_persists_exact_delivery_fingerprint(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            original = comment(marker="A")
+            recovered = adapter(path, ())
+            recovered.prepare_recovery_delivery(
+                source_message_id="444",
+                message_id="M1",
+                content_sha256=content_sha(original),
+            )
+            recovered.publish_projection({"schema_version": "x", "message_id": "M1"})
+            recovered.acknowledge_delivery("M1")
+
+            exact = adapter(path, (original,))
+            self.assertEqual(exact.receive(), ())
+            self.assertTrue(exact.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(original)
+            ))
+
+            edited_item = comment(marker="B")
+            edited = adapter(path, (edited_item,))
+            self.assertEqual(len(edited.receive()), 1)
+            self.assertFalse(edited.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(edited_item)
+            ))
 
     def test_edited_same_comment_is_not_hidden_by_durable_ack(self):
         with tempfile.TemporaryDirectory() as td:
