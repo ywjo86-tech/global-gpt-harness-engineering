@@ -321,3 +321,62 @@ def collect_repo_snapshot(
         "truncated": False,
         "redaction_applied": False,
     }
+
+_SYSTEMD_PROPERTIES = (
+    "ActiveState",
+    "SubState",
+    "Result",
+    "ExecMainStatus",
+    "InvocationID",
+)
+
+
+def read_user_service_properties(
+    request: ReadOnlyDiagnosticRequestV1,
+    policy: DiagnosticPolicy,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    if request.operation != "user_service.properties":
+        raise DiagnosticError("wrong operation for user service properties")
+    if request.service_id not in policy.user_services:
+        raise DiagnosticSecurityError("systemd user service is not allowlisted")
+    argv = [
+        "systemctl",
+        "--user",
+        "show",
+        request.service_id,
+        "--no-pager",
+        *[f"--property={name}" for name in _SYSTEMD_PROPERTIES],
+    ]
+    try:
+        completed = runner(
+            argv,
+            shell=False,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=policy.timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise DiagnosticUnavailableError("systemd user service unavailable") from exc
+    stdout = str(completed.stdout or "")
+    stderr = str(completed.stderr or "")
+    if len(stdout.encode("utf-8")) + len(stderr.encode("utf-8")) > policy.max_bytes:
+        raise DiagnosticUnavailableError("systemd user service output exceeds configured cap")
+    if completed.returncode != 0:
+        raise DiagnosticUnavailableError("systemd user service unavailable")
+    parsed: dict[str, str] = {}
+    allowed = frozenset(_SYSTEMD_PROPERTIES)
+    for raw_line in stdout.splitlines():
+        if not raw_line:
+            continue
+        if "=" not in raw_line:
+            raise DiagnosticError("malformed systemd property output")
+        key, value = raw_line.split("=", 1)
+        if key not in allowed:
+            continue
+        if key in parsed:
+            raise DiagnosticError("duplicate systemd property output")
+        parsed[key] = value
+    return parsed

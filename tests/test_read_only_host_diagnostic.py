@@ -6,9 +6,12 @@ import unittest
 
 from runtime.orchestrator.read_only_host_diagnostic_contract import DiagnosticPolicy, ReadOnlyDiagnosticRequestV1
 from runtime.orchestrator.read_only_host_diagnostic import (
+    DiagnosticError,
     DiagnosticSecurityError,
+    DiagnosticUnavailableError,
     collect_repo_snapshot,
     read_path_metadata,
+    read_user_service_properties,
     read_project_file_range,
 )
 
@@ -178,6 +181,65 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
                 out = ""
             return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
         self.assertTrue(collect_repo_snapshot(self.repo_request(), self.policy, runner=runner)["stale"])
+
+
+
+    def service_request(self, service_id="ocpv2.service"):
+        return ReadOnlyDiagnosticRequestV1.from_mapping({
+            "schema_version": "orchestration.read-only-host-diagnostic-request.v1",
+            "request_id": "REQ-SVC", "operation": "user_service.properties", "root_id": "",
+            "relative_path": "", "start_line": 0, "line_count": 0, "service_id": service_id,
+        })
+
+    def test_user_service_properties_blocks_non_allowlisted_unit(self):
+        request = self.service_request("other.service")
+        with self.assertRaisesRegex(DiagnosticSecurityError, "allowlisted"):
+            read_user_service_properties(request, self.policy)
+
+    def test_user_service_properties_uses_exact_fixed_argv(self):
+        calls = []
+        output = "\n".join([
+            "ActiveState=active",
+            "SubState=running",
+            "Result=success",
+            "ExecMainStatus=0",
+            "InvocationID=abc123",
+        ]) + "\n"
+        def runner(argv, **kwargs):
+            calls.append((list(argv), dict(kwargs)))
+            return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+        payload = read_user_service_properties(self.service_request(), self.policy, runner=runner)
+        self.assertEqual(calls[0][0], [
+            "systemctl", "--user", "show", "ocpv2.service", "--no-pager",
+            "--property=ActiveState", "--property=SubState", "--property=Result",
+            "--property=ExecMainStatus", "--property=InvocationID",
+        ])
+        kwargs = calls[0][1]
+        self.assertFalse(kwargs["shell"])
+        self.assertTrue(kwargs["capture_output"])
+        self.assertTrue(kwargs["text"])
+        self.assertFalse(kwargs["check"])
+        self.assertEqual(payload, {
+            "ActiveState": "active", "SubState": "running", "Result": "success",
+            "ExecMainStatus": "0", "InvocationID": "abc123",
+        })
+
+    def test_user_service_properties_rejects_duplicate_or_malformed_output(self):
+        for output in (
+            "ActiveState=active\nActiveState=inactive\n",
+            "ActiveState=active\nmalformed\n",
+        ):
+            def runner(argv, **kwargs):
+                return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+            with self.subTest(output=output), self.assertRaises(DiagnosticError):
+                read_user_service_properties(self.service_request(), self.policy, runner=runner)
+
+    def test_user_service_properties_nonzero_is_unavailable_without_stderr_leak(self):
+        def runner(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="token=do-not-return")
+        with self.assertRaisesRegex(DiagnosticUnavailableError, "systemd user service unavailable") as ctx:
+            read_user_service_properties(self.service_request(), self.policy, runner=runner)
+        self.assertNotIn("do-not-return", str(ctx.exception))
 
 
 
