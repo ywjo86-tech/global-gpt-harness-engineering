@@ -179,6 +179,18 @@ class GitHubControlAdapter:
             for entry in self._load_delivery_acks()
         )
 
+    def has_durable_ack(self, message_id: str) -> bool:
+        """Report whether a successfully published result durably acked this message.
+
+        This is transport bookkeeping only.  It must never be used as canonical Harness
+        completion evidence; recovery uses it solely to avoid re-publishing a result that
+        the adapter already committed after a successful GitHub publish.
+        """
+        value = str(message_id or "")
+        if not value:
+            return False
+        return any(entry["message_id"] == value for entry in self._load_delivery_acks())
+
     def _remember_pending(self, *, source_message_id: str, parsed: Mapping[str, Any], canonical: bytes) -> None:
         message_id = parsed.get("message_id")
         if not isinstance(message_id, str) or not message_id:
