@@ -125,8 +125,10 @@ class ProductionFullPlanBootTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             registered=self._operator_registered(Path(d),terminal=False)
             result=reconcile_job(registered,launch=False)
-            self.assertEqual(result["action"],"BLOCKED"); self.assertEqual(result["state"],"UNKNOWN")
+            self.assertEqual(result["action"],"BLOCKED"); self.assertEqual(result["state"],"READY")
             self.assertIn("external binding drift",result["reason"].lower())
+            self.assertTrue(result["external_binding_drift"])
+            self.assertFalse(result["launched"])
 
     def test_completed_run_is_not_relaunched(self):
         with tempfile.TemporaryDirectory() as d:
