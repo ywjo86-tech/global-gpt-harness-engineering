@@ -69,12 +69,16 @@ class RemoteOperatorService:
             [RemoteOperatorEnvelopeV2, OperatorDirectiveV1], Mapping[str, Any]
         ],
         canary_scope: CanaryScope | None = None,
+        after_projection_published: Callable[
+            [RemoteOperatorEnvelopeV2, Mapping[str, Any]], None
+        ] | None = None,
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
         self.ingress = ingress
         self.execute_authorized = execute_authorized
         self.canary_scope = canary_scope
+        self.after_projection_published = after_projection_published
 
     @staticmethod
     def _projection(
@@ -107,6 +111,8 @@ class RemoteOperatorService:
     ) -> None:
         self.transport.publish_projection(projection)
         self.transport.acknowledge_delivery(envelope.message_id)
+        if self.after_projection_published is not None:
+            self.after_projection_published(envelope, projection)
 
     def poll_once(
         self,
