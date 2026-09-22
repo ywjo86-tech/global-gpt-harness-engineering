@@ -79,11 +79,15 @@ def validate_ingress(
     allowed_channel_id: str,
     allowed_source_actor_ids: Iterable[str],
     expected_risk_envelope_digest: str | None,
+    before_receipt_commit: Callable[[RemoteOperatorEnvelopeV2, OperatorDirectiveV1], None] | None = None,
 ) -> IngressDecision:
     """Validate transport/authorization/replay identity before any canonical dispatch.
 
-    Successful validation records transport receipt only.  The returned directive still
-    requires the existing Full Plan/continuation/execution-gateway path to perform work.
+    Successful validation records transport receipt only.  For state-changing directives,
+    an optional recovery-binding hook runs after all validation but before the receipt is
+    committed, so a process crash cannot leave an accepted mutation without durable
+    recovery identity.  The returned directive still requires the existing Full
+    Plan/continuation/execution-gateway path to perform work.
     """
     allowed_actors = frozenset(str(item) for item in allowed_source_actor_ids)
     if (
@@ -99,6 +103,9 @@ def validate_ingress(
 
     classification = receipt_store.classify_delivery(envelope)
     if classification == ReceiptStatus.IDEMPOTENT_REPLAY:
+        # Re-recording an exact replay is non-authoritative and idempotent, but repairs
+        # a sequence watermark if the previous process died after the receipt write.
+        receipt_store.record_received(envelope)
         return _blocked(envelope, "IDEMPOTENT_REPLAY")
     if classification == ReceiptStatus.TAMPER_DETECTED:
         return _blocked(envelope, "TAMPER_DETECTED")
@@ -106,6 +113,8 @@ def validate_ingress(
         return _blocked(envelope, "REPLAY_REJECTED")
 
     directive = prepare_existing_operator_directive(envelope)
+    if before_receipt_commit is not None and directive.state_change_required:
+        before_receipt_commit(envelope, directive)
     receipt_store.record_received(envelope)
     return IngressDecision(
         accepted=True,
