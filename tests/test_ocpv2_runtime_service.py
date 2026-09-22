@@ -26,6 +26,8 @@ def mutation_envelope(**changes):
     for key, value in changes.items():
         setattr(expected, key, value)
     return SimpleNamespace(
+        message_id="MSG-1",
+        directive_digest="d" * 64,
         project_id="P1",
         run_id="R1",
         gate_id="G1",
@@ -69,6 +71,8 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             expected_owner_epoch=7,
             expected_source_head="b" * 40,
             expected_runtime_release_digest="c" * 64,
+            remote_message_id="MSG-1",
+            remote_directive_digest="d" * 64,
         )
 
     def test_missing_canonical_mutation_binding_fails_before_executor(self):
