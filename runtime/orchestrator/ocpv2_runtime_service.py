@@ -298,6 +298,10 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             raise RuntimeServiceError("remote envelope transport binding mismatch")
         return envelope
 
+    def bind_before_receipt(envelope, directive):
+        if directive.state_change_required:
+            binding_store.record(envelope)
+
     def ingress(envelope):
         decision = validate_ingress(
             envelope,
@@ -306,6 +310,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             allowed_channel_id=f"PR:{config.control_pr_number}",
             allowed_source_actor_ids=config.allowed_actor_ids,
             expected_risk_envelope_digest=None,
+            before_receipt_commit=bind_before_receipt,
         )
         if not decision.accepted and decision.result_class == "IDEMPOTENT_REPLAY":
             binding = binding_store.get(envelope.message_id)
@@ -314,7 +319,6 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         return decision
 
     def execute(envelope, directive):
-        binding_store.record(envelope)
         return execute_authorized_canonical(
             envelope,
             directive,
