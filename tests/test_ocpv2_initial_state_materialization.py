@@ -9,7 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import runtime.orchestrator.production_full_plan_entry as full_plan_entry
-from runtime.orchestrator.production_full_plan_entry import load_job, load_registered_job, register_job
+from runtime.orchestrator.production_full_plan_entry import (
+    FullPlanJobError,
+    load_job,
+    load_registered_job,
+    register_job,
+)
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
 
 
@@ -46,19 +51,23 @@ class OCPv2InitialStateMaterializationTests(unittest.TestCase):
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
 
+    @staticmethod
+    def _supervisor(root: Path, job: dict) -> DurableFullPlanSupervisor:
+        return DurableFullPlanSupervisor(
+            root,
+            project_id=job["project_id"],
+            run_id=job["run_id"],
+            gates=[item["gate_id"] for item in job["gates"]],
+            authority_core_sha256=job["authority_core_sha256"],
+            **job["policy"],
+        )
+
     def test_register_job_materializes_stable_initial_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             registered = register_job(load_job(self._job_path(root)))
             job = load_registered_job(registered)
-            supervisor = DurableFullPlanSupervisor(
-                root,
-                project_id=job["project_id"],
-                run_id=job["run_id"],
-                gates=[item["gate_id"] for item in job["gates"]],
-                authority_core_sha256=job["authority_core_sha256"],
-                **job["policy"],
-            )
+            supervisor = self._supervisor(root, job)
 
             self.assertTrue(
                 supervisor.state_path.is_file(),
@@ -105,6 +114,45 @@ class OCPv2InitialStateMaterializationTests(unittest.TestCase):
                 [True],
                 "canonical job discovery must only become visible after initial state persistence",
             )
+
+    def test_existing_registered_job_without_durable_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = load_job(self._job_path(root))
+            registered = register_job(source)
+            job = load_registered_job(registered)
+            supervisor = self._supervisor(root, job)
+            self.assertTrue(supervisor.state_path.is_file())
+
+            supervisor.state_path.unlink()
+            previous = supervisor.state_path.with_suffix(".json.prev")
+            if previous.exists() or previous.is_symlink():
+                previous.unlink()
+
+            with self.assertRaisesRegex(
+                FullPlanJobError,
+                "durable Full Plan state is unavailable",
+            ):
+                register_job(source)
+
+            self.assertFalse(supervisor.state_path.exists())
+
+    def test_identical_reregistration_keeps_same_state_generation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = load_job(self._job_path(root))
+            registered = register_job(source)
+            job = load_registered_job(registered)
+            supervisor = self._supervisor(root, job)
+            first, _ = supervisor.load()
+            events_before = supervisor.events_path.read_text(encoding="utf-8")
+
+            time.sleep(1.05)
+            self.assertEqual(register_job(source), registered)
+            second, _ = supervisor.load()
+
+            self.assertEqual(first["state_sha256"], second["state_sha256"])
+            self.assertEqual(events_before, supervisor.events_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
