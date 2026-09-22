@@ -100,6 +100,26 @@ class RemoteOperatorReceiptStore:
             raise RemoteOperatorReceiptError("sequence state invalid")
         return value
 
+    def _repair_sequence_watermark(self, envelope: RemoteOperatorEnvelopeV2) -> None:
+        sequence = self._sequence_state(envelope)
+        highest = int(sequence["highest_sequence"])
+        if envelope.sequence < highest:
+            return
+        if envelope.sequence == highest:
+            if highest > 0 and sequence["source_message_id"] != envelope.transport.source_message_id:
+                raise RemoteOperatorReceiptError("sequence watermark conflicts with durable receipt")
+            return
+        repaired = {
+            "schema_version": _SEQUENCE_SCHEMA,
+            "highest_sequence": envelope.sequence,
+            "source_message_id": envelope.transport.source_message_id,
+            "updated_at": _now(),
+        }
+        try:
+            durable_json_save(self._sequence_path(envelope), repaired)
+        except (DurableIOError, OSError, ValueError) as exc:
+            raise RemoteOperatorReceiptError("durable sequence watermark repair failed") from exc
+
     def classify_delivery(self, envelope: RemoteOperatorEnvelopeV2) -> ReceiptStatus:
         receipt_path = self._receipt_path(envelope)
         loaded = self._load_object(receipt_path)
@@ -126,7 +146,9 @@ class RemoteOperatorReceiptStore:
         if status == ReceiptStatus.IDEMPOTENT_REPLAY:
             loaded = self._load_object(self._receipt_path(envelope))
             assert loaded is not None
-            return loaded[0]
+            receipt = loaded[0]
+            self._repair_sequence_watermark(envelope)
+            return receipt
         if status != ReceiptStatus.NEW:
             raise RemoteOperatorReceiptError(status.value)
 
