@@ -269,6 +269,7 @@ class GitHubControlAdapter:
             raise GitHubControlAdapterError(f"SOURCE_NOT_ALLOWED: {exc}") from exc
 
         result: list[RawControlEnvelope] = []
+        first_rejection: GitHubControlAdapterError | None = None
         for comment in comments:
             body = comment.get("body")
             if not isinstance(body, str):
@@ -278,27 +279,41 @@ class GitHubControlAdapter:
             if not body.startswith(CONTROL_PREFIX):
                 continue
             if len(body.encode("utf-8")) > self.config.max_comment_bytes:
-                raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control comment exceeds byte limit")
+                if first_rejection is None:
+                    first_rejection = GitHubControlAdapterError(
+                        "SOURCE_NOT_ALLOWED: control comment exceeds byte limit"
+                    )
+                continue
 
             user = comment.get("user")
             actor_id = str(user.get("id")) if isinstance(user, Mapping) and user.get("id") is not None else ""
             if actor_id not in self.config.allowed_actor_ids:
-                raise GitHubControlAdapterError("ACTOR_NOT_ALLOWED")
+                if first_rejection is None:
+                    first_rejection = GitHubControlAdapterError("ACTOR_NOT_ALLOWED")
+                continue
             comment_id = comment.get("id")
             if isinstance(comment_id, bool) or not isinstance(comment_id, int) or comment_id <= 0:
-                raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: comment identity invalid")
+                if first_rejection is None:
+                    first_rejection = GitHubControlAdapterError("SOURCE_NOT_ALLOWED: comment identity invalid")
+                continue
             source_message_id = str(comment_id)
             created_at = comment.get("created_at")
             if not isinstance(created_at, str) or not created_at:
-                raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: comment timestamp missing")
+                if first_rejection is None:
+                    first_rejection = GitHubControlAdapterError("SOURCE_NOT_ALLOWED: comment timestamp missing")
+                continue
 
             raw_payload = body[len(CONTROL_PREFIX):]
             try:
                 parsed = json.loads(raw_payload)
-            except Exception as exc:
-                raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload is not JSON") from exc
+            except Exception:
+                if first_rejection is None:
+                    first_rejection = GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload is not JSON")
+                continue
             if not isinstance(parsed, Mapping):
-                raise GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload must be an object")
+                if first_rejection is None:
+                    first_rejection = GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload must be an object")
+                continue
             canonical = self._canonical_object_bytes(parsed)
             fingerprint = self._content_sha256(canonical)
             if self._is_durably_acknowledged(source_message_id, fingerprint):
@@ -316,7 +331,11 @@ class GitHubControlAdapter:
             )
             if len(result) >= bounded_limit:
                 break
-        return tuple(result)
+        if result:
+            return tuple(result)
+        if first_rejection is not None:
+            raise first_rejection
+        return ()
 
     def acknowledge_delivery(self, message_id: str) -> None:
         value = str(message_id or "")
