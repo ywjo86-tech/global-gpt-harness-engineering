@@ -100,6 +100,23 @@ class RemoteOperatorReceiptStore:
             raise RemoteOperatorReceiptError("sequence state invalid")
         return value
 
+    def _highest_durable_receipt_sequence(self, envelope: RemoteOperatorEnvelopeV2) -> int:
+        highest = 0
+        for path in self._channel_dir(envelope).glob("*.json"):
+            if path.name == ".sequence.json":
+                continue
+            loaded = self._load_object(path)
+            if loaded is None:
+                continue
+            receipt, _ = loaded
+            if receipt.get("schema_version") != _RECEIPT_SCHEMA:
+                raise RemoteOperatorReceiptError("receipt schema mismatch")
+            receipt_sequence = receipt.get("sequence")
+            if not isinstance(receipt_sequence, int) or receipt_sequence <= 0:
+                raise RemoteOperatorReceiptError("receipt sequence invalid")
+            highest = max(highest, receipt_sequence)
+        return highest
+
     def _repair_sequence_watermark(self, envelope: RemoteOperatorEnvelopeV2) -> None:
         sequence = self._sequence_state(envelope)
         highest = int(sequence["highest_sequence"])
@@ -132,7 +149,10 @@ class RemoteOperatorReceiptStore:
             return ReceiptStatus.TAMPER_DETECTED
 
         sequence = self._sequence_state(envelope)
-        highest = int(sequence["highest_sequence"])
+        highest = max(
+            int(sequence["highest_sequence"]),
+            self._highest_durable_receipt_sequence(envelope),
+        )
         if envelope.sequence < highest:
             return ReceiptStatus.REPLAY_REJECTED
         if envelope.sequence == highest and highest > 0:
