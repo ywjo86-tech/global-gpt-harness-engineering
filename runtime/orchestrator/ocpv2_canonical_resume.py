@@ -23,7 +23,7 @@ from .production_full_plan_entry import (
     preflight_job,
 )
 from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError, TERMINAL_STATES
-from .production_run_authority import executor_runtime_identity
+from .production_run_authority import OCPV2_OWNER, RunAuthorityError, executor_runtime_identity, resolve_execution_owner
 
 
 class CanonicalRemoteResumeError(ValueError):
@@ -129,6 +129,14 @@ def execute_registered_full_plan_continuation(
         raise CanonicalRemoteResumeError("REGISTERED_JOB_STATE_ROOT_MISMATCH")
     if canonical_job_path(job).resolve() != path.resolve():
         raise CanonicalRemoteResumeError("REGISTERED_JOB_CANONICAL_PATH_MISMATCH")
+    try:
+        execution_owner = resolve_execution_owner(job)
+    except RunAuthorityError as exc:
+        raise CanonicalRemoteResumeError(str(exc)) from exc
+    if execution_owner != OCPV2_OWNER:
+        raise CanonicalRemoteResumeError(
+            f"EXECUTION_OWNER_MISMATCH: OCPv2 requires {OCPV2_OWNER}"
+        )
     gate_ids = [str(item.get("gate_id") or "") for item in job.get("gates", []) if isinstance(item, Mapping)]
     if gate not in gate_ids:
         raise CanonicalRemoteResumeError("GATE_BINDING_MISMATCH")
