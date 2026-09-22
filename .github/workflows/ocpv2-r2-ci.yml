@@ -3,6 +3,7 @@ name: OCPv2 R2 CI
 on:
   push:
     branches:
+      - main
       - impl/operator-control-plane-v2-r2
   pull_request:
     paths:
