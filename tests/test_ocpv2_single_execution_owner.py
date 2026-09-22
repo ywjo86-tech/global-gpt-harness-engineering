@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime.orchestrator.live_auto_canary import LiveAutoCanary, LiveAutoCanaryError
 from runtime.orchestrator.ocpv2_canonical_resume import (
     CanonicalRemoteResumeError,
     execute_registered_full_plan_continuation,
@@ -14,6 +15,7 @@ from runtime.orchestrator.production_full_plan_boot import reconcile_job
 from runtime.orchestrator.production_full_plan_entry import (
     FullPlanJobError,
     load_job,
+    load_registered_job,
     register_job,
     run_job,
 )
@@ -171,6 +173,40 @@ class OCPv2SingleExecutionOwnerTests(unittest.TestCase):
                         current_runtime_release_digest=lambda _job: "b" * 64,
                     )
             supervisor.assert_not_called()
+
+    def test_live_canary_defaults_to_auto_reconcile_owner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            runtime_root = Path(__file__).resolve().parents[1]
+            canary = LiveAutoCanary(root, runtime_code_root=runtime_root, run_id="OWNER-AUTO")
+            job = load_registered_job(canary.prepare())
+            self.assertEqual(resolve_execution_owner(job), AUTO_RECONCILE_OWNER)
+
+    def test_live_canary_can_explicitly_bind_ocpv2_owner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            runtime_root = Path(__file__).resolve().parents[1]
+            canary = LiveAutoCanary(
+                root,
+                runtime_code_root=runtime_root,
+                run_id="OWNER-OCP",
+                execution_owner=OCPV2_OWNER,
+            )
+            job = load_registered_job(canary.prepare())
+            self.assertEqual(job["execution_owner"], OCPV2_OWNER)
+            self.assertEqual(resolve_execution_owner(job), OCPV2_OWNER)
+
+    def test_live_canary_rejects_invalid_execution_owner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            runtime_root = Path(__file__).resolve().parents[1]
+            with self.assertRaisesRegex(LiveAutoCanaryError, "EXECUTION_OWNER_INVALID"):
+                LiveAutoCanary(
+                    root,
+                    runtime_code_root=runtime_root,
+                    run_id="OWNER-BAD",
+                    execution_owner="INVALID",
+                )
 
 
 if __name__ == "__main__":
