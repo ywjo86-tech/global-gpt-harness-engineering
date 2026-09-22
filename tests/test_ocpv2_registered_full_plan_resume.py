@@ -6,7 +6,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from runtime.orchestrator.production_full_plan_runner import FullPlanResult, ProductionFullPlanError
+from runtime.orchestrator.harness_state_root import job_state_root
+from runtime.orchestrator.live_auto_canary import LiveAutoCanary
+from runtime.orchestrator.production_full_plan_entry import load_registered_job
+from runtime.orchestrator.production_full_plan_runner import (
+    DurableFullPlanSupervisor,
+    FullPlanResult,
+    ProductionFullPlanError,
+)
 from runtime.orchestrator.ocpv2_canonical_resume import (
     CanonicalRemoteResumeError,
     execute_registered_full_plan_continuation,
@@ -135,6 +142,50 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
                 self.invoke(Path(td), supervisor, task_id="OTHER")
         self.assertEqual(supervisor.persist_calls, 0)
         self.assertEqual(supervisor.run_calls, 0)
+
+    def test_fresh_materialized_state_is_accepted_by_real_supervisor(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            runtime_root = Path(__file__).resolve().parents[1]
+            run_id = "OCP-REAL-FRESH-CAS"
+            canary = LiveAutoCanary(root, runtime_code_root=runtime_root, run_id=run_id)
+            job_path = canary.prepare()
+            job = load_registered_job(job_path)
+            gate_ids = [str(item["gate_id"]) for item in job["gates"]]
+            supervisor = DurableFullPlanSupervisor(
+                job_state_root(job),
+                project_id=job["project_id"],
+                run_id=job["run_id"],
+                gates=gate_ids,
+                authority_core_sha256=str(job["authority_core_sha256"]),
+                **dict(job.get("policy") or {}),
+            )
+            initial, recovered = supervisor.load()
+            self.assertFalse(recovered)
+            self.assertTrue(supervisor.state_path.is_file())
+
+            result = execute_registered_full_plan_continuation(
+                harness_state_root=root,
+                project_id=job["project_id"],
+                run_id=job["run_id"],
+                gate_id="CANARY-A",
+                task_id="CANARY-A",
+                task_execution_id=f"{run_id}--canary-a",
+                expected_state_sha256=initial["state_sha256"],
+                expected_owner_epoch=1,
+                expected_source_head=SOURCE_HEAD,
+                expected_runtime_release_digest=RUNTIME_SHA,
+                current_project_head=lambda _job: SOURCE_HEAD,
+                current_runtime_release_digest=lambda _job: RUNTIME_SHA,
+            )
+
+            self.assertEqual(result["result_class"], "CANONICAL_FULL_PLAN_RESULT")
+            self.assertEqual(result["status"], "COMPLETED")
+            self.assertEqual(result["executed_gates"], ["CANARY-A", "CANARY-B", "CANARY-C"])
+            self.assertEqual(
+                [receipt["gate_id"] for receipt in canary.load_receipts()],
+                ["CANARY-A", "CANARY-B", "CANARY-C"],
+            )
 
     def test_module_has_no_job_registration_path(self):
         import runtime.orchestrator.ocpv2_canonical_resume as module
