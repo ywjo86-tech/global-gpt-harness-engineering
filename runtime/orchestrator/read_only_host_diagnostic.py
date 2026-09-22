@@ -6,7 +6,8 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any
+import subprocess
+from typing import Any, Callable, Mapping
 
 from .read_only_host_diagnostic_contract import DiagnosticPolicy, ReadOnlyDiagnosticRequestV1
 
@@ -156,4 +157,167 @@ def read_path_metadata(request: ReadOnlyDiagnosticRequestV1, policy: DiagnosticP
         "mtime_ns": info.st_mtime_ns,
         "mode_class": oct(stat.S_IMODE(info.st_mode)),
         "canonical_relative_path": request.relative_path,
+    }
+
+_GIT_COMMANDS = frozenset({
+    ("status", "--porcelain=v2", "--branch", "--untracked-files=all"),
+    ("rev-parse", "--verify", "HEAD"),
+    ("rev-parse", "--git-dir"),
+    ("rev-parse", "--git-common-dir"),
+    ("diff", "--no-ext-diff", "--no-textconv", "--stat", "--"),
+    ("diff", "--no-ext-diff", "--no-textconv", "--name-status", "--"),
+    ("diff", "--cached", "--no-ext-diff", "--no-textconv", "--name-status", "--"),
+    ("diff", "--check", "--"),
+    ("ls-files", "--stage"),
+})
+
+
+def _git_environment() -> dict[str, str]:
+    return {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", "/nonexistent"),
+        "LC_ALL": "C",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_PAGER": "cat",
+        "PAGER": "cat",
+        "GIT_CONFIG_COUNT": "4",
+        "GIT_CONFIG_KEY_0": "core.fsmonitor",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "core.untrackedCache",
+        "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_KEY_2": "credential.helper",
+        "GIT_CONFIG_VALUE_2": "",
+        "GIT_CONFIG_KEY_3": "diff.external",
+        "GIT_CONFIG_VALUE_3": "",
+    }
+
+
+def _run_git(
+    root: Path,
+    args: tuple[str, ...] | list[str],
+    timeout_seconds: int,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> subprocess.CompletedProcess[str]:
+    command = tuple(args)
+    if command not in _GIT_COMMANDS:
+        raise DiagnosticSecurityError("unregistered Git diagnostic command")
+    try:
+        return runner(
+            ["git", "-C", str(root.resolve()), *command],
+            shell=False,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+            env=_git_environment(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise DiagnosticUnavailableError("Git diagnostic timed out") from exc
+
+
+def _bounded_completed(
+    result: subprocess.CompletedProcess[str],
+    policy: DiagnosticPolicy,
+    label: str,
+) -> str:
+    stdout = str(result.stdout or "")
+    stderr = str(result.stderr or "")
+    if len(stdout.encode("utf-8")) + len(stderr.encode("utf-8")) > policy.max_bytes:
+        raise DiagnosticUnavailableError(f"{label} output exceeds configured cap")
+    return stdout
+
+
+def collect_repo_snapshot(
+    request: ReadOnlyDiagnosticRequestV1,
+    policy: DiagnosticPolicy,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    if request.operation != "repo.snapshot":
+        raise DiagnosticError("wrong operation for repository snapshot")
+    root = _root_for(request, policy).resolve()
+
+    def run(
+        args: tuple[str, ...],
+        label: str,
+        *,
+        allow_nonzero: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        completed = _run_git(root, args, policy.timeout_seconds, runner)
+        _bounded_completed(completed, policy, label)
+        if completed.returncode != 0 and not allow_nonzero:
+            raise DiagnosticUnavailableError(f"{label} failed")
+        return completed
+
+    status_before = _bounded_completed(
+        run(("status", "--porcelain=v2", "--branch", "--untracked-files=all"), "git status"),
+        policy,
+        "git status",
+    )
+    head = _bounded_completed(
+        run(("rev-parse", "--verify", "HEAD"), "git head"), policy, "git head"
+    ).strip()
+    git_dir = _bounded_completed(
+        run(("rev-parse", "--git-dir"), "git dir"), policy, "git dir"
+    ).strip()
+    git_common_dir = _bounded_completed(
+        run(("rev-parse", "--git-common-dir"), "git common dir"),
+        policy,
+        "git common dir",
+    ).strip()
+    diff_stat = _bounded_completed(
+        run(("diff", "--no-ext-diff", "--no-textconv", "--stat", "--"), "git diff stat"),
+        policy,
+        "git diff stat",
+    )
+    worktree_name_status = _bounded_completed(
+        run(
+            ("diff", "--no-ext-diff", "--no-textconv", "--name-status", "--"),
+            "git diff names",
+        ),
+        policy,
+        "git diff names",
+    )
+    cached_name_status = _bounded_completed(
+        run(
+            ("diff", "--cached", "--no-ext-diff", "--no-textconv", "--name-status", "--"),
+            "git cached names",
+        ),
+        policy,
+        "git cached names",
+    )
+    diff_check_result = run(("diff", "--check", "--"), "git diff check", allow_nonzero=True)
+    diff_check = _bounded_completed(diff_check_result, policy, "git diff check")
+    index = _bounded_completed(
+        run(("ls-files", "--stage"), "git index"), policy, "git index"
+    )
+    status_after = _bounded_completed(
+        run(("status", "--porcelain=v2", "--branch", "--untracked-files=all"), "git status"),
+        policy,
+        "git status",
+    )
+    submodules = sorted(
+        {
+            line.split("\t", 1)[-1]
+            for line in index.splitlines()
+            if line.startswith("160000 ") and "\t" in line
+        }
+    )
+    return {
+        "head": head,
+        "git_dir": git_dir,
+        "git_common_dir": git_common_dir,
+        "status_porcelain_v2": status_after,
+        "diff_stat": diff_stat,
+        "worktree_name_status": worktree_name_status,
+        "cached_name_status": cached_name_status,
+        "diff_check": diff_check,
+        "diff_check_exit_code": int(diff_check_result.returncode),
+        "submodule_paths": submodules,
+        "stale": status_before != status_after,
+        "truncated": False,
+        "redaction_applied": False,
     }

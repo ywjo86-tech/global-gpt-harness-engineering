@@ -1,11 +1,13 @@
 from pathlib import Path
 import os
+import subprocess
 import tempfile
 import unittest
 
 from runtime.orchestrator.read_only_host_diagnostic_contract import DiagnosticPolicy, ReadOnlyDiagnosticRequestV1
 from runtime.orchestrator.read_only_host_diagnostic import (
     DiagnosticSecurityError,
+    collect_repo_snapshot,
     read_path_metadata,
     read_project_file_range,
 )
@@ -20,7 +22,7 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
         self.policy = DiagnosticPolicy(
             roots={"project": self.root.resolve()},
             user_services=("ocpv2.service",),
-            max_bytes=128,
+            max_bytes=32768,
             max_lines=4,
             timeout_seconds=5,
         )
@@ -101,6 +103,82 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
         self.assertTrue(payload["exists"])
         self.assertEqual(payload["type"], "regular")
         self.assertEqual(payload["canonical_relative_path"], "info.txt")
+
+    def repo_request(self):
+        return ReadOnlyDiagnosticRequestV1.from_mapping({
+            "schema_version": "orchestration.read-only-host-diagnostic-request.v1",
+            "request_id": "REQ-REPO", "operation": "repo.snapshot", "root_id": "project",
+            "relative_path": "", "start_line": 0, "line_count": 0, "service_id": "",
+        })
+
+    def test_repo_snapshot_uses_fixed_noninteractive_git_environment(self):
+        calls = []
+        status_count = 0
+        def runner(argv, **kwargs):
+            nonlocal status_count
+            calls.append((list(argv), dict(kwargs)))
+            if "status" in argv:
+                status_count += 1
+                out = "# branch.oid " + "a" * 40 + "\n# branch.head main\n"
+            elif "rev-parse" in argv and "--verify" in argv:
+                out = "a" * 40 + "\n"
+            elif "--git-dir" in argv or "--git-common-dir" in argv:
+                out = ".git\n"
+            else:
+                out = ""
+            return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        payload = collect_repo_snapshot(self.repo_request(), self.policy, runner=runner)
+        self.assertFalse(payload["stale"])
+        self.assertGreaterEqual(status_count, 2)
+        required = {
+            "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_PAGER": "cat", "PAGER": "cat",
+        }
+        for argv, kwargs in calls:
+            self.assertEqual(argv[:3], ["git", "-C", str(self.root.resolve())])
+            self.assertFalse(kwargs["shell"])
+            self.assertTrue(kwargs["capture_output"])
+            self.assertTrue(kwargs["text"])
+            self.assertFalse(kwargs["check"])
+            for key, value in required.items():
+                self.assertEqual(kwargs["env"][key], value)
+
+    def test_repo_snapshot_does_not_execute_malicious_diff_driver(self):
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        tracked = self.root / "tracked.txt"
+        tracked.write_text("one\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "tracked.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "base"], check=True)
+        marker_path = self.base / "helper-ran"
+        helper = self.base / "evil.sh"
+        helper.write_text(f"#!/bin/sh\ntouch {marker_path}\nexit 0\n", encoding="utf-8")
+        helper.chmod(0o700)
+        subprocess.run(["git", "-C", str(self.root), "config", "diff.evil.command", str(helper)], check=True)
+        (self.root / ".gitattributes").write_text("*.txt diff=evil\n", encoding="utf-8")
+        tracked.write_text("two\n", encoding="utf-8")
+        payload = collect_repo_snapshot(self.repo_request(), self.policy)
+        self.assertFalse(marker_path.exists())
+        self.assertIn("tracked.txt", payload["worktree_name_status"])
+
+    def test_repo_snapshot_marks_concurrent_status_drift_stale(self):
+        status_outputs = iter([
+            "# branch.oid " + "a" * 40 + "\n# branch.head main\n",
+            "# branch.oid " + "a" * 40 + "\n# branch.head main\n? changed.txt\n",
+        ])
+        def runner(argv, **kwargs):
+            if "status" in argv:
+                out = next(status_outputs)
+            elif "rev-parse" in argv and "--verify" in argv:
+                out = "a" * 40 + "\n"
+            elif "rev-parse" in argv:
+                out = ".git\n"
+            else:
+                out = ""
+            return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        self.assertTrue(collect_repo_snapshot(self.repo_request(), self.policy, runner=runner)["stale"])
+
 
 
 if __name__ == "__main__":
