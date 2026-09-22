@@ -153,10 +153,17 @@ def _materialize_initial_registered_state(job: Mapping[str, Any]) -> dict[str, A
         job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids,
         authority_core_sha256=str(job.get("authority_core_sha256") or ""), **dict(job.get("policy") or {}),
     )
+    current = supervisor.state_path
+    previous = supervisor.state_path.with_suffix(".json.prev")
+    if current.is_symlink() or previous.is_symlink():
+        raise ProductionFullPlanError("unsafe Full Plan state generation")
+    durable_exists = current.is_file() or previous.is_file()
+    if canonical_job_path(job).exists() and not durable_exists:
+        raise ProductionFullPlanError("durable Full Plan state is unavailable for registered job")
     handle = supervisor._acquire_run_lock()
     try:
         state, _ = supervisor.load()
-        if supervisor.state_path.is_file() and not supervisor.state_path.is_symlink():
+        if durable_exists:
             return state
         return supervisor._persist(
             state,
