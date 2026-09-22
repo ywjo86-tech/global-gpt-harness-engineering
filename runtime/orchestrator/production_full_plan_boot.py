@@ -38,8 +38,7 @@ def _systemd_env() -> dict[str, str]:
     uid = os.getuid()
     env = dict(os.environ)
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
-    env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={uid}/bus")
-    env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
+    env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{uid}/bus")
     return env
 
 
