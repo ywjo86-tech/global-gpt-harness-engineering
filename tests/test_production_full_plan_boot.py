@@ -47,7 +47,7 @@ class ProductionFullPlanBootTests(unittest.TestCase):
             a.mkdir(); b.mkdir()
             ja = self.registered(a, "r1")
             jb = self.registered(b, "r2")
-            self.assertEqual(discover_registered_jobs(root), sorted([ja, jb]))
+            self.assertCountEqual(discover_registered_jobs(root), [ja, jb])
 
     def test_discover_registered_jobs_ignores_unrelated_and_symlinked_jobs(self):
         with tempfile.TemporaryDirectory() as d:
@@ -125,8 +125,10 @@ class ProductionFullPlanBootTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             registered=self._operator_registered(Path(d),terminal=False)
             result=reconcile_job(registered,launch=False)
-            self.assertEqual(result["action"],"BLOCKED"); self.assertEqual(result["state"],"UNKNOWN")
+            self.assertEqual(result["action"],"BLOCKED"); self.assertEqual(result["state"],"READY")
             self.assertIn("external binding drift",result["reason"].lower())
+            self.assertTrue(result["external_binding_drift"])
+            self.assertFalse(result["launched"])
 
     def test_completed_run_is_not_relaunched(self):
         with tempfile.TemporaryDirectory() as d:

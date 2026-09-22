@@ -1,0 +1,151 @@
+name: OCPv2 R2 CI
+
+on:
+  push:
+    branches:
+      - impl/operator-control-plane-v2-r2
+  pull_request:
+    paths:
+      - "runtime/orchestrator/**"
+      - "runtime/operator_transport/**"
+      - "deploy/operator-control-plane-v2/**"
+      - "tests/**"
+      - ".github/workflows/ocpv2-r2-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m unittest -v tests.test_remote_operator_envelope
+      - run: python3 -m unittest -v tests.test_remote_operator_receipt
+      - run: python3 -m unittest -v tests.test_remote_operator_outbox
+      - run: python3 -m unittest -v tests.test_remote_operator_ingress
+      - run: python3 -m unittest -v tests.test_remote_operator_single_writer
+      - run: python3 -m unittest -v tests.test_remote_operator_gateway_boundary
+      - run: python3 -m unittest -v tests.test_ocpv2_gate_e_canonical_path
+      - run: python3 -m unittest -v tests.test_ocpv2_single_execution_owner
+      - run: python3 -m unittest -v tests.test_ocpv2_registered_full_plan_resume
+      - run: python3 -m unittest -v tests.test_ocpv2_live_recovery_composition
+      - run: python3 -m unittest -v tests.test_ocpv2_initial_state_materialization
+      - run: python3 -m unittest -v tests.test_production_full_plan_boot
+      - run: python3 -m unittest -v tests.test_ocpv2_runtime_service
+      - run: python3 -m unittest -v tests.test_remote_operator_migration
+      - run: python3 -m unittest -v tests.test_remote_operator_recovery
+      - run: python3 -m unittest -v tests.test_remote_operator_transport
+      - run: python3 -m unittest -v tests.test_github_rest_client
+      - run: python3 -m unittest -v tests.test_github_control_adapter
+      - run: python3 -m unittest -v tests.test_github_control_adapter_delivery_ack
+      - run: python3 -m unittest -v tests.test_remote_operator_service
+      - run: python3 -m unittest -v tests.test_ocpv2_replay_churn
+      - run: python3 -m unittest -v tests.test_operator_console_projection
+      - run: python3 -m unittest -v tests.test_ocpv2_deploy_package
+      - run: python3 -m unittest -v tests.test_ocpv2_manual_deploy_preview
+      - run: python3 -m unittest -v tests.test_ocpv2_authority_negative_space
+      - run: python3 -m unittest -v tests.test_operator_control
+      - run: python3 -m unittest -v tests.test_durable_continuation_locking
+      - run: python3 -m unittest -v tests.test_runtime_migration_handoff
+      - run: python3 -m unittest -v tests.test_production_execution_gateway
+      - run: python3 -m unittest -v tests.test_production_tool_transport
+      - name: Full MCP boundary lint
+        run: python3 scripts/full_mcp_lint.py runtime/full_mcp runtime/orchestrator/production_execution_gateway.py
+      - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
+      - run: git diff --check
+
+  full-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install canonical Full MCP dependency lock
+        run: python3 -m pip install -r requirements/full-mcp.txt
+      - name: Full repository unittest discovery
+        run: python3 scripts/ocpv2_full_regression.py
+
+  regression-delta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current implementation
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: control
+      - name: Checkout approved source baseline
+        uses: actions/checkout@v4
+        with:
+          ref: e2ce97a3741c070e538f817113a1b90845cc53c3
+          fetch-depth: 0
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install canonical Full MCP dependency lock
+        run: python3 -m pip install -r control/requirements/full-mcp.txt
+      - name: Run identical baseline and current regressions
+        shell: bash
+        run: |
+          set +e
+          python3 control/scripts/ocpv2_full_regression.py \
+            --repo-root "$GITHUB_WORKSPACE/baseline" \
+            --report-json "$GITHUB_WORKSPACE/baseline-report.json" \
+            --ids-only
+          baseline_rc=$?
+          python3 control/scripts/ocpv2_full_regression.py \
+            --repo-root "$GITHUB_WORKSPACE/control" \
+            --report-json "$GITHUB_WORKSPACE/current-report.json" \
+            --ids-only
+          current_rc=$?
+          echo "BASELINE_RC=$baseline_rc CURRENT_RC=$current_rc"
+          exit 0
+      - name: Compare regression failure identity
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path.cwd()
+          baseline = json.loads((root / "baseline-report.json").read_text())
+          current = json.loads((root / "current-report.json").read_text())
+
+          def typed(report):
+              return ({"FAIL:" + item for item in report["failure_ids"]}
+                      | {"ERROR:" + item for item in report["error_ids"]})
+
+          baseline_bad = typed(baseline)
+          current_bad = typed(current)
+          current_only = sorted(current_bad - baseline_bad)
+          baseline_only = sorted(baseline_bad - current_bad)
+
+          print(
+              "REGRESSION_DELTA_SUMMARY "
+              f"baseline_run={baseline['tests_run']} "
+              f"current_run={current['tests_run']} "
+              f"baseline_bad={len(baseline_bad)} "
+              f"current_bad={len(current_bad)} "
+              f"current_only={len(current_only)} "
+              f"baseline_only={len(baseline_only)}"
+          )
+          if current_only:
+              print("CURRENT_ONLY_REGRESSIONS")
+              for item in current_only:
+                  print(item)
+          if baseline_only:
+              print("BASELINE_ONLY_FAILURES")
+              for item in baseline_only:
+                  print(item)
+          if current_only:
+              raise SystemExit(1)
+          PY

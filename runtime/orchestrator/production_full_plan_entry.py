@@ -18,8 +18,8 @@ from .durable_io import atomic_write_json
 from .contract_adapter import MAPPING_ROOT_ENV
 from .harness_state_root import job_state_root
 from .production_run_authority import (
-    RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
-    merge_runtime_bindings, seal_authority_core, validate_authority_core,
+    AUTO_RECONCILE_OWNER, RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
+    merge_runtime_bindings, resolve_execution_owner, seal_authority_core, validate_authority_core,
     validate_executor_runtime,
 )
 
@@ -146,11 +146,40 @@ def recover_registered_job_state_after_external_binding_drift(path: str | Path) 
     return raw, state
 
 
+def _materialize_initial_registered_state(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Persist a stable initial state before the registered job becomes discoverable."""
+    gate_ids = [str(item["gate_id"]) for item in job["gates"]]
+    supervisor = DurableFullPlanSupervisor(
+        job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids,
+        authority_core_sha256=str(job.get("authority_core_sha256") or ""), **dict(job.get("policy") or {}),
+    )
+    current = supervisor.state_path
+    previous = supervisor.state_path.with_suffix(".json.prev")
+    if current.is_symlink() or previous.is_symlink():
+        raise ProductionFullPlanError("unsafe Full Plan state generation")
+    durable_exists = current.is_file() or previous.is_file()
+    if canonical_job_path(job).exists() and not durable_exists:
+        raise ProductionFullPlanError("durable Full Plan state is unavailable for registered job")
+    handle = supervisor._acquire_run_lock()
+    try:
+        state, _ = supervisor.load()
+        if durable_exists:
+            return state
+        return supervisor._persist(
+            state,
+            {"event": "INITIAL_STATE_MATERIALIZED", "source": "register_job"},
+            semantic=False,
+        )
+    finally:
+        supervisor._release_run_lock(handle)
+
+
 def register_job(job: Mapping[str, Any]) -> Path:
     """Persist an immutable authority core and controlled runtime bindings."""
     incoming_bindings = extract_runtime_bindings(job)
     sealed = seal_authority_core(job)
     path = canonical_job_path(sealed)
+    publish_new = False
     if path.exists():
         if path.is_symlink() or not path.is_file():
             raise FullPlanJobError("unsafe registered Full Plan job")
@@ -163,6 +192,12 @@ def register_job(job: Mapping[str, Any]) -> Path:
             raise FullPlanJobError("RUN_ID_REBIND_FORBIDDEN")
         sealed = existing
     else:
+        publish_new = True
+    try:
+        _materialize_initial_registered_state(sealed)
+    except ProductionFullPlanError as exc:
+        raise FullPlanJobError(str(exc)) from exc
+    if publish_new:
         atomic_write_json(path, sealed)
     for gate_id, gate_bindings in incoming_bindings.items():
         packages = gate_bindings.get("manual_action_package_paths_by_lv", {})
@@ -307,6 +342,14 @@ def run_job(path: str | Path) -> dict[str, Any]:
     requested = load_job(path)
     canonical = register_job(requested)
     job = load_registered_job(canonical)
+    try:
+        execution_owner = resolve_execution_owner(job)
+    except RunAuthorityError as exc:
+        raise FullPlanJobError(str(exc)) from exc
+    if execution_owner != AUTO_RECONCILE_OWNER:
+        raise FullPlanJobError(
+            f"EXECUTION_OWNER_MISMATCH: generic Full Plan runner requires {AUTO_RECONCILE_OWNER}"
+        )
     gate_ids = [str(item["gate_id"]) for item in job["gates"]]
     policy = dict(job.get("policy") or {})
     supervisor = DurableFullPlanSupervisor(

@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll OCPv2 remote operator control channel every 30 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+Unit=ocpv2.service
+Persistent=false
+
+[Install]
+WantedBy=timers.target

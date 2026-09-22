@@ -1,42 +1,23 @@
 from __future__ import annotations
 
 import copy
-import json
 import unittest
-from pathlib import Path
 
 from poc.graphify import handoff
+from tests.graphify_test_fixture import (
+    closed_decision_and_closure,
+    comparative_report,
+    evidence_index,
+    gate009,
+)
 
-POC_ROOT = Path("/tmp/gch-graphify-poc/gch-graphify-poc-20260914T191500")
-
-
-def _load(relative: str) -> dict:
-    return json.loads((POC_ROOT / relative).read_text(encoding="utf-8"))
-
-
-def _evidence_index() -> dict[str, str]:
-    return {
-        "decision_record": str(POC_ROOT / "results/decision_record.closed.json"),
-        "decision_closure": str(POC_ROOT / "results/graphify_decision_closure.json"),
-        "backend_independence": str(POC_ROOT / "records/backend_independence.json"),
-        "phase_boundary": str(POC_ROOT / "records/phase_boundary.json"),
-        "current_repository_boundary": str(POC_ROOT / "records/current_repository_boundary.json"),
-        "memory_independence": str(POC_ROOT / "records/memory_independence.json"),
-        "source_precedence": str(POC_ROOT / "records/source_precedence.json"),
-        "context_boundary": str(POC_ROOT / "records/context_assembly_boundary.json"),
-        "reserved_phase_isolation": str(POC_ROOT / "records/reserved_phase_isolation.json"),
-        "independent_regression_review": str(POC_ROOT / "records/independent_regression_review.json"),
-        "fallback_evidence": str(POC_ROOT / "results/fallback_evidence.json"),
-        "comparative_report": str(POC_ROOT / "results/comparative_report.json"),
-    }
 
 class GraphifyHandoffTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.decision = _load("results/decision_record.closed.json")
-        self.closure = _load("results/graphify_decision_closure.json")
-        self.gate009 = _load("records/gate009.json")
-        self.metrics = _load("results/comparative_report.json")["metrics"]
-        self.evidence = _evidence_index()
+        self.decision, self.closure = closed_decision_and_closure()
+        self.gate009 = gate009()
+        self.metrics = comparative_report()["metrics"]
+        self.evidence = evidence_index()
 
     def test_valid_phase3_handoff_is_ready(self) -> None:
         package = handoff.build_phase3_handoff(

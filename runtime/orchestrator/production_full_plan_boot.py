@@ -8,11 +8,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .production_full_plan_entry import (
     load_job, load_registered_job, recover_registered_job_state_after_external_binding_drift, transient_systemd_command,
 )
+from .production_run_authority import AUTO_RECONCILE_OWNER, RunAuthorityError, resolve_execution_owner
 from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, discover_predecessor_transactions
 from .production_full_plan_runner import ACTIVE_STATES, TERMINAL_STATES, WAIT_STATES, DurableFullPlanSupervisor, ProductionFullPlanError
 from .production_attention import AttentionOutbox
@@ -47,6 +48,28 @@ def _unit_active(unit: str) -> bool:
         check=False, timeout=10, env=_systemd_env(),
     )
     return completed.stdout.strip() in {"active", "activating", "reloading"}
+
+
+def _execution_owner_gate(job_path: str | Path, job: Mapping[str, Any]) -> dict[str, Any] | None:
+    try:
+        execution_owner = resolve_execution_owner(job)
+    except RunAuthorityError as exc:
+        return {
+            "job": str(job_path),
+            "action": "BLOCKED",
+            "state": "UNKNOWN",
+            "reason": str(exc),
+            "launched": False,
+        }
+    if execution_owner != AUTO_RECONCILE_OWNER:
+        return {
+            "job": str(job_path),
+            "action": "SKIP_EXTERNAL_OWNER",
+            "state": "UNREAD",
+            "execution_owner": execution_owner,
+            "launched": False,
+        }
+    return None
 
 
 def discover_registered_jobs(search_root: str | Path, *, legacy_roots: tuple[str | Path, ...] = ()) -> list[Path]:
@@ -194,6 +217,9 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
             return {"job": str(job_path), "action": "BLOCKED", "state": "UNKNOWN",
                     "reason": f"external binding drift could not be safely reconciled: {load_exc}",
                     "external_binding_drift": True, "launched": False}
+        owner_result = _execution_owner_gate(job_path, job)
+        if owner_result is not None:
+            return owner_result
         status = str(preloaded_state.get("state") or "")
         if status not in TERMINAL_STATES:
             gates = [str(item["gate_id"]) for item in job["gates"]]
@@ -210,6 +236,10 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
             )
             return {"job": str(job_path), "action": "BLOCKED", "state": status, "reason": reason, "external_binding_drift": True, "launched": False}
         external_binding_drift = str(load_exc)
+    else:
+        owner_result = _execution_owner_gate(job_path, job)
+        if owner_result is not None:
+            return owner_result
     gates = [str(item["gate_id"]) for item in job["gates"]]
     supervisor = DurableFullPlanSupervisor(
         job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gates,

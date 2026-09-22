@@ -1,0 +1,14 @@
+[Unit]
+Description=OCPv2 Remote Operator one-shot poll
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=%h/.config/gch/ocpv2.env
+ExecStart=/usr/bin/python3 -m runtime.orchestrator.ocpv2_runtime_service --env-file %h/.config/gch/ocpv2.env
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
