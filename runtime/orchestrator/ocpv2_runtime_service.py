@@ -18,11 +18,13 @@ from typing import Any, Callable, Mapping
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
 from .harness_state_root import resolve_harness_state_root
+from .ocpv2_canonical_recovery import recover_pending_canonical_results, resolve_registered_full_plan_completion
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2, validate_remote_envelope
 from .remote_operator_ingress import validate_ingress
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import RemoteOperatorReceiptStore
+from .remote_operator_recovery_binding import RemoteExecutionBindingStore
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
 
 
@@ -179,6 +181,8 @@ def execute_authorized_canonical(
         str(directive.current_stage) == "PREPARE" and str(directive.requested_next_stage) == "ACTION"
     ):
         raise RuntimeServiceError("MUTATION_BINDING_REQUIRED: ACTION directive required")
+    message_id = str(getattr(envelope, "message_id", "") or "")
+    directive_digest = str(getattr(envelope, "directive_digest", "") or "")
     expected = envelope.expected
     state_sha = str(expected.canonical_run_state_sha256 or "")
     source_head = str(expected.source_head or "")
@@ -188,7 +192,10 @@ def execute_authorized_canonical(
     except (TypeError, ValueError) as exc:
         raise RuntimeServiceError("MUTATION_BINDING_REQUIRED: owner epoch") from exc
     if (
-        len(state_sha) != 64
+        not message_id
+        or len(directive_digest) != 64
+        or any(ch not in "0123456789abcdef" for ch in directive_digest)
+        or len(state_sha) != 64
         or any(ch not in "0123456789abcdef" for ch in state_sha)
         or owner_epoch <= 0
         or len(source_head) not in {40, 64}
@@ -208,6 +215,8 @@ def execute_authorized_canonical(
         expected_owner_epoch=owner_epoch,
         expected_source_head=source_head,
         expected_runtime_release_digest=runtime_release,
+        remote_message_id=message_id,
+        remote_directive_digest=directive_digest,
     ))
 
 
@@ -233,12 +242,45 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     )
     receipts = RemoteOperatorReceiptStore(config.state_root / "receipts")
     outbox = RemoteResultOutbox(config.state_root / "outbox")
+    binding_store = RemoteExecutionBindingStore(config.state_root / "execution-bindings")
+    harness_state_root = resolve_harness_state_root(
+        project_root=config.repo_root,
+        environ=config.environment,
+    )
+
+    def durable_acknowledged(message_id: str) -> bool:
+        binding = binding_store.get(message_id)
+        if binding is None:
+            return False
+        return adapter.has_durable_ack(
+            message_id,
+            source_message_id=binding.source_message_id,
+            content_sha256=binding.control_content_sha256,
+        )
 
     def publish_pending(projection: RemoteResultProjectionV1) -> None:
+        binding = binding_store.get(projection.message_id)
+        if binding is None or binding.projection_id != projection.projection_id:
+            raise RuntimeServiceError("RECONCILIATION_REQUIRED: outbox binding mismatch")
+        adapter.prepare_recovery_delivery(
+            source_message_id=binding.source_message_id,
+            message_id=binding.message_id,
+            content_sha256=binding.control_content_sha256,
+        )
         adapter.publish_projection(projection.to_dict())
         adapter.acknowledge_delivery(projection.message_id)
 
-    outbox.publish_pending(publish_pending)
+    recover_pending_canonical_results(
+        binding_store=binding_store,
+        receipt_store=receipts,
+        outbox=outbox,
+        evidence_resolver=lambda binding: resolve_registered_full_plan_completion(
+            binding,
+            harness_state_root=harness_state_root,
+        ),
+        publisher=publish_pending,
+        durable_acknowledged=durable_acknowledged,
+    )
 
     def decode(raw):
         try:
@@ -257,7 +299,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         return envelope
 
     def ingress(envelope):
-        return validate_ingress(
+        decision = validate_ingress(
             envelope,
             receipt_store=receipts,
             allowed_adapter_id="GITHUB_CONTROL_V1",
@@ -265,18 +307,25 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             allowed_source_actor_ids=config.allowed_actor_ids,
             expected_risk_envelope_digest=None,
         )
-
-    harness_state_root = resolve_harness_state_root(
-        project_root=config.repo_root,
-        environ=config.environment,
-    )
+        if not decision.accepted and decision.result_class == "IDEMPOTENT_REPLAY":
+            binding = binding_store.get(envelope.message_id)
+            if binding is not None and binding.status != "PROJECTED":
+                raise RuntimeServiceError("RECONCILIATION_REQUIRED: unresolved canonical execution binding")
+        return decision
 
     def execute(envelope, directive):
+        binding_store.record(envelope)
         return execute_authorized_canonical(
             envelope,
             directive,
             harness_state_root=harness_state_root,
         )
+
+    def after_projection_published(envelope, projection):
+        del projection
+        binding = binding_store.get(envelope.message_id)
+        if binding is not None and binding.status != "PROJECTED":
+            binding_store.mark_projected(envelope.message_id, binding.projection_id or None)
 
     return RemoteOperatorService(
         transport=adapter,
@@ -284,6 +333,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         ingress=ingress,
         execute_authorized=execute,
         canary_scope=canary_scope_from_environment(config.mode, config.environment),
+        after_projection_published=after_projection_published,
     )
 
 
