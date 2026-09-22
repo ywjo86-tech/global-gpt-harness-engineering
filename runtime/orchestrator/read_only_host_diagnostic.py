@@ -5,10 +5,16 @@ import os
 import re
 import stat
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
-from .read_only_host_diagnostic_contract import MAX_POLICY_BYTES, DiagnosticPolicy, ReadOnlyDiagnosticRequestV1
+from .read_only_host_diagnostic_contract import (
+    MAX_POLICY_BYTES,
+    DiagnosticPolicy,
+    ReadOnlyDiagnosticRequestV1,
+    ReadOnlyDiagnosticResultV1,
+)
 
 _SENSITIVE_EXACT = frozenset({".env", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials.json"})
 _SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
@@ -179,3 +185,51 @@ def read_user_service_properties(request: ReadOnlyDiagnosticRequestV1, policy: D
         parsed[key]=value
     if set(parsed) != allowed: raise DiagnosticExecutionError("incomplete systemd property output")
     return parsed
+
+
+def utc_now() -> datetime: return datetime.now(timezone.utc)
+
+_OPERATION_HANDLERS = {
+    "repo.snapshot": collect_repo_snapshot,
+    "project.file_range": read_project_file_range,
+    "path.metadata": read_path_metadata,
+    "user_service.properties": read_user_service_properties,
+}
+
+
+def execute_read_only_host_diagnostic(
+    request: ReadOnlyDiagnosticRequestV1,
+    policy: DiagnosticPolicy,
+    *,
+    project_id: str,
+    correlation_id: str,
+    source_sha: str,
+    runtime_sha: str,
+    authorization_decision: str = "ALLOW",
+    now: Callable[[], datetime] = utc_now,
+) -> ReadOnlyDiagnosticResultV1:
+    handler=_OPERATION_HANDLERS[request.operation]; status="OK"; error_class=""; payload={}; freshness="FRESH"; redaction_applied=False; truncated=False
+    try:
+        payload=dict(handler(request,policy)); redaction_applied=bool(payload.get("redaction_applied",False)); truncated=bool(payload.get("truncated",False))
+        if bool(payload.get("stale",False)): status,freshness="STALE","STALE"
+        elif truncated: status="PARTIAL"
+    except DiagnosticSecurityError as exc:
+        status,freshness,error_class,payload="BLOCKED","UNKNOWN",exc.__class__.__name__,{"reason":"policy_denied"}
+    except subprocess.TimeoutExpired as exc:
+        status,freshness,error_class,payload="UNAVAILABLE","UNKNOWN",exc.__class__.__name__,{"reason":"diagnostic_timeout"}
+    except DiagnosticExecutionError as exc:
+        status="UNAVAILABLE" if request.operation=="user_service.properties" else "ERROR"; freshness="UNKNOWN"; error_class=exc.__class__.__name__; payload={"reason":"diagnostic_operation_failed"}
+    except (OSError,UnicodeError) as exc:
+        status,freshness,error_class,payload="ERROR","UNKNOWN",exc.__class__.__name__,{"reason":"diagnostic_io_failed"}
+    except Exception as exc:
+        status,freshness,error_class,payload="ERROR","UNKNOWN",exc.__class__.__name__,{"reason":"diagnostic_error"}
+    captured=now()
+    if captured.tzinfo is None: captured=captured.replace(tzinfo=timezone.utc)
+    return ReadOnlyDiagnosticResultV1.build(
+        request_id=request.request_id, correlation_id=correlation_id, project_id=project_id, root_id=request.root_id,
+        operation_id=request.operation, authorization_decision=authorization_decision,
+        captured_at=captured.astimezone(timezone.utc).isoformat(timespec="seconds"), freshness=freshness,
+        source_sha=source_sha, runtime_sha=runtime_sha,
+        data_class="DIAG_CONTENT" if request.operation=="project.file_range" else "DIAG_SUMMARY",
+        redaction_applied=redaction_applied, truncated=truncated, status=status, error_class=error_class, payload=payload,
+    )
