@@ -146,11 +146,33 @@ def recover_registered_job_state_after_external_binding_drift(path: str | Path) 
     return raw, state
 
 
+def _materialize_initial_registered_state(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Persist a stable initial state before the registered job becomes discoverable."""
+    gate_ids = [str(item["gate_id"]) for item in job["gates"]]
+    supervisor = DurableFullPlanSupervisor(
+        job_state_root(job), project_id=job["project_id"], run_id=job["run_id"], gates=gate_ids,
+        authority_core_sha256=str(job.get("authority_core_sha256") or ""), **dict(job.get("policy") or {}),
+    )
+    handle = supervisor._acquire_run_lock()
+    try:
+        state, _ = supervisor.load()
+        if supervisor.state_path.is_file() and not supervisor.state_path.is_symlink():
+            return state
+        return supervisor._persist(
+            state,
+            {"event": "INITIAL_STATE_MATERIALIZED", "source": "register_job"},
+            semantic=False,
+        )
+    finally:
+        supervisor._release_run_lock(handle)
+
+
 def register_job(job: Mapping[str, Any]) -> Path:
     """Persist an immutable authority core and controlled runtime bindings."""
     incoming_bindings = extract_runtime_bindings(job)
     sealed = seal_authority_core(job)
     path = canonical_job_path(sealed)
+    publish_new = False
     if path.exists():
         if path.is_symlink() or not path.is_file():
             raise FullPlanJobError("unsafe registered Full Plan job")
@@ -163,6 +185,12 @@ def register_job(job: Mapping[str, Any]) -> Path:
             raise FullPlanJobError("RUN_ID_REBIND_FORBIDDEN")
         sealed = existing
     else:
+        publish_new = True
+    try:
+        _materialize_initial_registered_state(sealed)
+    except ProductionFullPlanError as exc:
+        raise FullPlanJobError(str(exc)) from exc
+    if publish_new:
         atomic_write_json(path, sealed)
     for gate_id, gate_bindings in incoming_bindings.items():
         packages = gate_bindings.get("manual_action_package_paths_by_lv", {})
