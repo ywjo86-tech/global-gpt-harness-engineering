@@ -10,6 +10,8 @@ on:
       - "runtime/orchestrator/**"
       - "runtime/operator_transport/**"
       - "deploy/operator-control-plane-v2/**"
+      - "scripts/ocpv2_full_regression.py"
+      - "requirements/full-mcp.txt"
       - "tests/**"
       - ".github/workflows/ocpv2-r2-ci.yml"
 
@@ -55,6 +57,7 @@ jobs:
       - run: python3 -m unittest -v tests.test_runtime_migration_handoff
       - run: python3 -m unittest -v tests.test_production_execution_gateway
       - run: python3 -m unittest -v tests.test_production_tool_transport
+      - run: python3 -m unittest -v tests.test_ocpv2_final_acceptance_release_blockers
       - name: Full MCP boundary lint
         run: python3 scripts/full_mcp_lint.py runtime/full_mcp runtime/orchestrator/production_execution_gateway.py
       - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
