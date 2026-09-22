@@ -78,6 +78,8 @@ def execute_registered_full_plan_continuation(
     expected_owner_epoch: int,
     expected_source_head: str,
     expected_runtime_release_digest: str,
+    remote_message_id: str = "",
+    remote_directive_digest: str = "",
     current_project_head: Callable[[Mapping[str, Any]], str] = _project_head,
     current_runtime_release_digest: Callable[[Mapping[str, Any]], str] = _runtime_release,
 ) -> dict[str, Any]:
@@ -85,7 +87,9 @@ def execute_registered_full_plan_continuation(
 
     Every externally observed binding is checked before the single owner-claim write.
     The owner claim and Full Plan resume then occur while the existing Full Plan run lock
-    remains held, closing the race between CAS validation and dispatch.
+    remains held, closing the race between CAS validation and dispatch.  When invoked by
+    deployed OCP, the exact message/directive identity is sealed into the canonical owner
+    claim so crash recovery can prove which remote instruction owned the completed Gate.
     """
     project = _safe_component(project_id, "project ID")
     run = _safe_component(run_id, "run ID")
@@ -101,6 +105,15 @@ def execute_registered_full_plan_continuation(
         raise CanonicalRemoteResumeError("invalid expected owner epoch") from exc
     if isinstance(expected_owner_epoch, bool) or owner_epoch <= 0:
         raise CanonicalRemoteResumeError("invalid expected owner epoch")
+
+    remote_message = str(remote_message_id or "")
+    remote_digest = str(remote_directive_digest or "")
+    if bool(remote_message) != bool(remote_digest):
+        raise CanonicalRemoteResumeError("REMOTE_BINDING_REQUIRED: message/digest must be paired")
+    if remote_message:
+        _safe_component(remote_message, "remote message ID")
+        if len(remote_digest) != 64 or any(ch not in "0123456789abcdef" for ch in remote_digest):
+            raise CanonicalRemoteResumeError("REMOTE_BINDING_REQUIRED: directive digest invalid")
 
     root = Path(harness_state_root).expanduser().absolute()
     if root.is_symlink() or not root.is_dir():
@@ -163,15 +176,30 @@ def execute_registered_full_plan_continuation(
         ):
             raise ProductionFullPlanError("STALE_DIRECTIVE: runtime release mismatch")
 
-        state["continuation_owner"] = {
+        owner_claim = {
             "gate_id": gate,
             "epoch": next_epoch,
             "claimed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "source": "OCPV2",
+            "task_execution_id": task_execution,
         }
-        supervisor._persist(
-            state,
-            {"event": "CONTINUATION_OWNER_CLAIMED", "gate_id": gate, "owner_epoch": next_epoch, "source": "OCPV2"},
-        )
+        if remote_message:
+            owner_claim["message_id"] = remote_message
+            owner_claim["directive_digest"] = remote_digest
+            owner_claim["expected_state_sha256"] = state_sha
+        state["continuation_owner"] = owner_claim
+
+        owner_event = {
+            "event": "CONTINUATION_OWNER_CLAIMED",
+            "gate_id": gate,
+            "owner_epoch": next_epoch,
+            "source": "OCPV2",
+            "task_execution_id": task_execution,
+        }
+        if remote_message:
+            owner_event["message_id"] = remote_message
+            owner_event["directive_digest"] = remote_digest
+        supervisor._persist(state, owner_event)
 
         if mapping_root is not None:
             os.environ[MAPPING_ROOT_ENV] = str(mapping_root)
