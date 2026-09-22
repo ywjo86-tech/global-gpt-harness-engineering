@@ -23,6 +23,8 @@ from runtime.orchestrator.ocpv2_canonical_resume import (
 STATE_SHA = "a" * 64
 RUNTIME_SHA = "b" * 64
 SOURCE_HEAD = "c" * 40
+MESSAGE_ID = "MSG-R1-G1"
+DIRECTIVE_DIGEST = "f" * 64
 
 
 class FakeSupervisor:
@@ -112,6 +114,8 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
                 expected_owner_epoch=expected_owner_epoch,
                 expected_source_head=SOURCE_HEAD,
                 expected_runtime_release_digest=RUNTIME_SHA,
+                remote_message_id=MESSAGE_ID,
+                remote_directive_digest=DIRECTIVE_DIGEST,
                 current_project_head=lambda _job: SOURCE_HEAD,
                 current_runtime_release_digest=lambda _job: RUNTIME_SHA,
             )
@@ -124,7 +128,12 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
         self.assertEqual(result["result_class"], "CANONICAL_FULL_PLAN_RESULT")
         self.assertEqual(supervisor.persist_calls, 1)
         self.assertEqual(supervisor.run_calls, 1)
-        self.assertEqual(supervisor.state["continuation_owner"]["epoch"], 4)
+        owner = supervisor.state["continuation_owner"]
+        self.assertEqual(owner["epoch"], 4)
+        self.assertEqual(owner["source"], "OCPV2")
+        self.assertEqual(owner["message_id"], MESSAGE_ID)
+        self.assertEqual(owner["directive_digest"], DIRECTIVE_DIGEST)
+        self.assertEqual(owner["task_execution_id"], "R1--g1")
 
     def test_stale_expected_owner_epoch_changes_nothing(self):
         with tempfile.TemporaryDirectory() as td:
@@ -175,6 +184,8 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
                 expected_owner_epoch=1,
                 expected_source_head=SOURCE_HEAD,
                 expected_runtime_release_digest=RUNTIME_SHA,
+                remote_message_id="MSG-REAL-FRESH-CAS",
+                remote_directive_digest=DIRECTIVE_DIGEST,
                 current_project_head=lambda _job: SOURCE_HEAD,
                 current_runtime_release_digest=lambda _job: RUNTIME_SHA,
             )
@@ -186,6 +197,10 @@ class OCPv2RegisteredFullPlanResumeTests(unittest.TestCase):
                 [receipt["gate_id"] for receipt in canary.load_receipts()],
                 ["CANARY-A", "CANARY-B", "CANARY-C"],
             )
+            owner = canary.load_state()["continuation_owner"]
+            self.assertEqual(owner["message_id"], "MSG-REAL-FRESH-CAS")
+            self.assertEqual(owner["directive_digest"], DIRECTIVE_DIGEST)
+            self.assertEqual(owner["source"], "OCPV2")
 
     def test_module_has_no_job_registration_path(self):
         import runtime.orchestrator.ocpv2_canonical_resume as module
