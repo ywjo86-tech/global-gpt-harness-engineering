@@ -6,6 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime.orchestrator.ocpv2_canonical_resume import (
+    CanonicalRemoteResumeError,
+    execute_registered_full_plan_continuation,
+)
 from runtime.orchestrator.production_full_plan_boot import reconcile_job
 from runtime.orchestrator.production_full_plan_entry import (
     FullPlanJobError,
@@ -127,6 +131,46 @@ class OCPv2SingleExecutionOwnerTests(unittest.TestCase):
                 with self.assertRaisesRegex(FullPlanJobError, "EXECUTION_OWNER_MISMATCH"):
                     run_job(registered)
             executor.assert_not_called()
+
+    def test_ocp_rejects_ownerless_auto_job_before_supervisor_or_owner_claim(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            project = root / "project"
+            project.mkdir()
+            job_path = root / "_workspace" / "production-full-plan-jobs" / "P" / "run.job.json"
+            job_path.parent.mkdir(parents=True)
+            job_path.write_text("{}\n", encoding="utf-8")
+            job = {
+                "project_id": "P",
+                "run_id": "run",
+                "project_root": str(project),
+                "harness_root": str(root),
+                "harness_state_root": str(root),
+                "gates": [{"gate_id": "G1"}],
+                "policy": {},
+                "authority_core_sha256": "e" * 64,
+            }
+            with (
+                patch("runtime.orchestrator.ocpv2_canonical_resume.load_registered_job", return_value=job),
+                patch("runtime.orchestrator.ocpv2_canonical_resume.canonical_job_path", return_value=job_path),
+                patch("runtime.orchestrator.ocpv2_canonical_resume.DurableFullPlanSupervisor") as supervisor,
+            ):
+                with self.assertRaisesRegex(CanonicalRemoteResumeError, "EXECUTION_OWNER_MISMATCH"):
+                    execute_registered_full_plan_continuation(
+                        harness_state_root=root,
+                        project_id="P",
+                        run_id="run",
+                        gate_id="G1",
+                        task_id="G1",
+                        task_execution_id="run--g1",
+                        expected_state_sha256="a" * 64,
+                        expected_owner_epoch=1,
+                        expected_source_head="c" * 40,
+                        expected_runtime_release_digest="b" * 64,
+                        current_project_head=lambda _job: "c" * 40,
+                        current_runtime_release_digest=lambda _job: "b" * 64,
+                    )
+            supervisor.assert_not_called()
 
 
 if __name__ == "__main__":
