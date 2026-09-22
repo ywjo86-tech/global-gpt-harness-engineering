@@ -148,14 +148,21 @@ class GitHubRESTClient:
 
     def list_comments(self) -> tuple[Mapping[str, Any], ...]:
         repository = self.verify_repository()
-        url = (
-            f"{self.api_base}/repos/{repository.full_name}/issues/{self.control_pr_number}/comments"
-            "?per_page=100&sort=created&direction=asc"
-        )
-        value = self._request_json("GET", url)
-        if not isinstance(value, list) or not all(isinstance(item, Mapping) for item in value):
-            raise GitHubRESTClientError("comments response is malformed")
-        return tuple(dict(item) for item in value)
+        comments: list[Mapping[str, Any]] = []
+        page = 1
+        while True:
+            url = (
+                f"{self.api_base}/repos/{repository.full_name}/issues/{self.control_pr_number}/comments"
+                f"?per_page=100&page={page}&sort=created&direction=asc"
+            )
+            value = self._request_json("GET", url)
+            if not isinstance(value, list) or not all(isinstance(item, Mapping) for item in value):
+                raise GitHubRESTClientError("comments response is malformed")
+            comments.extend(dict(item) for item in value)
+            if len(value) < 100:
+                break
+            page += 1
+        return tuple(comments)
 
     def publish_comment(self, body: str) -> Mapping[str, Any]:
         if not isinstance(body, str):
