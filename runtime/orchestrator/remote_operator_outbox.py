@@ -5,10 +5,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .host_inspection_contract import HostInspectionResultV1
+
 from .durable_io import DurableIOError, canonical_json_bytes, durable_json_load, durable_json_save, sha256_bytes
 
 
 _RESULT_SCHEMA = "orchestration.remote-result-projection.v1"
+_INSPECTION_RESULT_SCHEMA = "orchestration.remote-inspection-projection.v1"
 _COMPLETED = "CANONICAL_ACTION_COMPLETED"
 
 
@@ -108,6 +111,110 @@ class RemoteResultProjectionV1:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RemoteInspectionProjectionV1:
+    projection_id: str
+    message_id: str
+    request_id: str
+    correlation_id: str
+    project_alias: str
+    operation: str
+    request_digest: str
+    status: str
+    data: Mapping[str, Any]
+    error_code: str = ""
+    schema_version: str = _INSPECTION_RESULT_SCHEMA
+
+    def __post_init__(self) -> None:
+        _safe_id(self.projection_id, "projection ID")
+        _safe_id(self.message_id, "message ID")
+        if self.schema_version != _INSPECTION_RESULT_SCHEMA:
+            raise RemoteOperatorOutboxError("inspection projection schema mismatch")
+        result = HostInspectionResultV1(
+            schema_version="orchestration.host-inspection-result.v1",
+            request_id=self.request_id,
+            correlation_id=self.correlation_id,
+            project_alias=self.project_alias,
+            operation=self.operation,
+            request_digest=self.request_digest,
+            status=self.status,
+            data=self.data,
+            error_code=self.error_code,
+        )
+        object.__setattr__(self, "data", result.data)
+
+    @property
+    def projection_sha256(self) -> str:
+        return sha256_bytes(canonical_json_bytes(self.to_dict()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "projection_id": self.projection_id,
+            "message_id": self.message_id,
+            "request_id": self.request_id,
+            "correlation_id": self.correlation_id,
+            "project_alias": self.project_alias,
+            "operation": self.operation,
+            "request_digest": self.request_digest,
+            "status": self.status,
+            "data": dict(self.data),
+            "error_code": self.error_code,
+            "schema_version": self.schema_version,
+        }
+
+    @classmethod
+    def from_result(cls, result: HostInspectionResultV1, *, message_id: str) -> "RemoteInspectionProjectionV1":
+        _safe_id(message_id, "message ID")
+        material = {"message_id": message_id, "result": result.to_dict()}
+        projection_id = "INSP-" + sha256_bytes(canonical_json_bytes(material))[:32]
+        return cls(
+            projection_id=projection_id,
+            message_id=message_id,
+            request_id=result.request_id,
+            correlation_id=result.correlation_id,
+            project_alias=result.project_alias,
+            operation=result.operation,
+            request_digest=result.request_digest,
+            status=result.status,
+            data=result.data,
+            error_code=result.error_code,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "RemoteInspectionProjectionV1":
+        expected = {
+            "projection_id", "message_id", "request_id", "correlation_id", "project_alias",
+            "operation", "request_digest", "status", "data", "error_code", "schema_version",
+        }
+        if set(value) != expected or not isinstance(value.get("data"), Mapping):
+            raise RemoteOperatorOutboxError("inspection projection fields mismatch")
+        return cls(
+            projection_id=str(value["projection_id"]),
+            message_id=str(value["message_id"]),
+            request_id=str(value["request_id"]),
+            correlation_id=str(value["correlation_id"]),
+            project_alias=str(value["project_alias"]),
+            operation=str(value["operation"]),
+            request_digest=str(value["request_digest"]),
+            status=str(value["status"]),
+            data=dict(value["data"]),
+            error_code=str(value["error_code"]),
+            schema_version=str(value["schema_version"]),
+        )
+
+
+RemoteProjectionV1 = RemoteResultProjectionV1 | RemoteInspectionProjectionV1
+
+
+def parse_remote_projection(value: Mapping[str, Any]) -> RemoteProjectionV1:
+    schema = value.get("schema_version")
+    if schema == _RESULT_SCHEMA:
+        return RemoteResultProjectionV1.from_mapping(value)
+    if schema == _INSPECTION_RESULT_SCHEMA:
+        return RemoteInspectionProjectionV1.from_mapping(value)
+    raise RemoteOperatorOutboxError("projection schema mismatch")
+
+
 class RemoteResultOutbox:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).absolute()
@@ -124,7 +231,7 @@ class RemoteResultOutbox:
         return root / f"{_safe_id(projection_id, 'projection ID')}.json"
 
     @staticmethod
-    def _load(path: Path) -> RemoteResultProjectionV1 | None:
+    def _load(path: Path) -> RemoteProjectionV1 | None:
         previous = path.with_suffix(path.suffix + ".prev")
         if path.is_symlink() or previous.is_symlink():
             raise RemoteOperatorOutboxError("outbox state is a symlink")
@@ -134,9 +241,9 @@ class RemoteResultOutbox:
             value, _ = durable_json_load(path)
         except (DurableIOError, OSError, ValueError) as exc:
             raise RemoteOperatorOutboxError("outbox state invalid") from exc
-        return RemoteResultProjectionV1.from_mapping(value)
+        return parse_remote_projection(value)
 
-    def enqueue_projection(self, projection: RemoteResultProjectionV1) -> None:
+    def enqueue_projection(self, projection: RemoteProjectionV1) -> None:
         pending = self._path(self.pending_root, projection.projection_id)
         published = self._path(self.published_root, projection.projection_id)
         for existing_path in (published, pending):
@@ -151,8 +258,8 @@ class RemoteResultOutbox:
         except (DurableIOError, OSError, ValueError) as exc:
             raise RemoteOperatorOutboxError("outbox enqueue failed") from exc
 
-    def pending(self) -> tuple[RemoteResultProjectionV1, ...]:
-        result: list[RemoteResultProjectionV1] = []
+    def pending(self) -> tuple[RemoteProjectionV1, ...]:
+        result: list[RemoteProjectionV1] = []
         for path in sorted(self.pending_root.glob("*.json")):
             if path.name.endswith(".prev"):
                 continue
@@ -188,7 +295,7 @@ class RemoteResultOutbox:
         except (DurableIOError, OSError, ValueError) as exc:
             raise RemoteOperatorOutboxError("mark published failed") from exc
 
-    def publish_pending(self, publisher: Callable[[RemoteResultProjectionV1], Any]) -> int:
+    def publish_pending(self, publisher: Callable[[RemoteProjectionV1], Any]) -> int:
         count = 0
         for projection in self.pending():
             publisher(projection)

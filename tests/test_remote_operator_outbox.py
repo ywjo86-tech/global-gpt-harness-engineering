@@ -5,10 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from runtime.orchestrator.host_inspection_contract import HostInspectionRequestV1, HostInspectionResultV1
 from runtime.orchestrator.remote_operator_outbox import (
     RemoteOperatorOutboxError,
+    RemoteInspectionProjectionV1,
     RemoteResultOutbox,
     RemoteResultProjectionV1,
+    parse_remote_projection,
 )
 
 
@@ -108,6 +111,41 @@ class RemoteResultOutboxTests(unittest.TestCase):
             self.assertEqual(len(outbox.pending()), 1)
             outbox.mark_published("PROJ-1", projection.projection_sha256)
             self.assertEqual(outbox.pending(), ())
+
+
+class RemoteInspectionProjectionTests(unittest.TestCase):
+    @staticmethod
+    def result():
+        request = HostInspectionRequestV1.from_mapping({
+            "schema_version": "orchestration.host-inspection-request.v1",
+            "request_id": "INSP-1", "correlation_id": "CORR-1",
+            "project_alias": "demo", "operation": "git.status",
+            "arguments": {}, "state_change_required": False,
+        })
+        return HostInspectionResultV1.ok(request, {"clean": True, "branch": "main"})
+
+    def test_inspection_projection_round_trips_through_existing_outbox(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            projection = RemoteInspectionProjectionV1.from_result(self.result(), message_id="MSG-I1")
+            first = RemoteResultOutbox(root)
+            first.enqueue_projection(projection)
+            restarted = RemoteResultOutbox(root)
+            self.assertEqual(restarted.pending(), (projection,))
+            self.assertEqual(parse_remote_projection(projection.to_dict()), projection)
+
+    def test_publish_failure_retries_same_sealed_inspection_without_reexecution(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); inspect_calls = ["INSP-1"]
+            projection = RemoteInspectionProjectionV1.from_result(self.result(), message_id="MSG-I1")
+            RemoteResultOutbox(root).enqueue_projection(projection)
+            restarted = RemoteResultOutbox(root)
+            with self.assertRaises(RuntimeError):
+                restarted.publish_pending(lambda value: (_ for _ in ()).throw(RuntimeError("offline")))
+            published = []
+            self.assertEqual(restarted.publish_pending(lambda value: published.append(value)), 1)
+            self.assertEqual(published, [projection])
+            self.assertEqual(inspect_calls, ["INSP-1"])
 
 
 if __name__ == "__main__":
