@@ -1,0 +1,26 @@
+{
+  "acceptance_evidence_sha256": "ef1c2aea5c96f7fa531ee5fdd1ce1279b663976fefdf7691ae5a92f428bd1ebe",
+  "acceptance_run_id": "GPT-FP-ACT-20260923-R9",
+  "acceptance_state": "COMPLETED",
+  "acceptance_terminal_reason": "ALL_GATES_COMPLETED",
+  "activation": {
+    "full_plan": false,
+    "work": false
+  },
+  "date": "2026-09-23",
+  "harness_runtime_current": "/home/ywjo/AI-Workspace/runtime/ocpv2-r2-c591b01",
+  "known_optional_boundary": "tests/full_mcp requires external Python mcp package",
+  "live_runtime_path": "/home/ywjo/.local/share/global-gpt-harness/releases/996a8d1ccc210929ea79db8a7dfb5e3227cdfe5a",
+  "rdc_disposition": "OPTIONAL_RECOVERY",
+  "rdc_in_acceptance_window": false,
+  "regression": {
+    "comparable_passed": 2283,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 15
+  },
+  "runtime_manifest_sha256": "4017a848313a3dc640cbb57613ba743700bd2907d1581d1ed3ac441cfd72c449",
+  "runtime_source_head": "996a8d1ccc210929ea79db8a7dfb5e3227cdfe5a",
+  "schema_version": "ocpv2.rdc-independent-stable-baseline.v1",
+  "status": "STABLE_BASELINE_ACCEPTED"
+}
