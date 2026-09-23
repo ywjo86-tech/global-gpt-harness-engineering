@@ -100,6 +100,30 @@ class HostInspectionPortTests(unittest.TestCase):
         with self.assertRaisesRegex(HostInspectionError, "PROJECT_NOT_REGISTERED"):
             self.port.inspect(missing)
 
+    def test_user_service_properties_uses_only_configured_unit_and_fixed_runner(self) -> None:
+        calls = []
+        def runner(argv):
+            calls.append(tuple(argv))
+            return subprocess.CompletedProcess(argv, 0, stdout="ActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\n", stderr="")
+        port = HostInspectionPort(
+            registry_root=self.registry_root, read_scopes=(".",),
+            allowed_service_units=frozenset({"ocpv2.service"}), service_runner=runner,
+        )
+        result = port.inspect(self.request("user_service.properties", {"unit_id": "ocpv2.service"}))
+        self.assertEqual(result.status, "OK")
+        self.assertEqual(result.data["ActiveState"], "active")
+        blocked = port.inspect(self.request("user_service.properties", {"unit_id": "ssh.service"}))
+        self.assertEqual(blocked.status, "BLOCKED")
+        self.assertEqual(len(calls), 1)
+
+    def test_harness_attention_uses_server_configured_search_root(self) -> None:
+        port = HostInspectionPort(
+            registry_root=self.registry_root, read_scopes=("."), attention_search_root=self.base,
+        )
+        result = port.inspect(self.request("harness.attention"))
+        self.assertEqual(result.status, "OK")
+        self.assertEqual(result.data, {"pending": []})
+
     def test_port_source_has_no_execution_or_mutation_imports(self) -> None:
         import inspect
         import runtime.orchestrator.host_inspection_port as module

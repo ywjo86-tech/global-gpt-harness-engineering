@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from runtime.full_mcp.filesystem_service import FilesystemService, FilesystemServiceError
 from runtime.full_mcp.git_service import GitService, GitServiceError
@@ -14,6 +14,8 @@ from .host_inspection_contract import (
     HostInspectionResultV1,
 )
 from .project_onboarding import OnboardingRegistry, ProjectOnboardingError
+from .production_attention_watch import discover_pending_attention
+from .user_service_observer import UserServiceObserver, UserServiceObserverError
 
 _NO_MUTATION_SCOPE = "__HOST_INSPECTION_NO_MUTATION__"
 
@@ -23,11 +25,20 @@ class HostInspectionError(ValueError):
 
 
 class HostInspectionPort:
-    def __init__(self, *, registry_root: str | Path, read_scopes: Sequence[str] = (".",)) -> None:
+    def __init__(
+        self, *, registry_root: str | Path, read_scopes: Sequence[str] = (".",),
+        allowed_service_units: frozenset[str] | None = None,
+        service_runner: Callable[[Sequence[str]], object] | None = None,
+        attention_search_root: str | Path | None = None,
+    ) -> None:
         self.registry_root = Path(registry_root).resolve()
         self.read_scopes = tuple(read_scopes)
         if not self.read_scopes:
             raise HostInspectionError("READ_SCOPE_REQUIRED")
+        self.service_observer = None
+        if allowed_service_units:
+            self.service_observer = UserServiceObserver(allowed_units=allowed_service_units, runner=service_runner)
+        self.attention_search_root = None if attention_search_root is None else Path(attention_search_root).resolve()
 
     def _registry(self) -> OnboardingRegistry:
         return OnboardingRegistry(self.registry_root / "aliases")
@@ -64,6 +75,23 @@ class HostInspectionPort:
         )
         return FilesystemService(policy), GitService(root, policy)
 
+    def _inspect_service(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        if self.service_observer is None:
+            raise UserServiceObserverError("SERVICE_OBSERVER_UNAVAILABLE")
+        if set(arguments) != {"unit_id"}:
+            raise UserServiceObserverError("SERVICE_ARGUMENTS_INVALID")
+        return self.service_observer.read(str(arguments["unit_id"]))
+
+    def _inspect_attention(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        if arguments:
+            raise HostInspectionError("ATTENTION_ARGUMENTS_INVALID")
+        if self.attention_search_root is None:
+            raise HostInspectionError("ATTENTION_OBSERVER_UNAVAILABLE")
+        pending = discover_pending_attention(
+            self.attention_search_root, stale_after_seconds=120, user_attention_after_seconds=300,
+        )
+        return {"pending": pending}
+
     def inspect(self, request: HostInspectionRequestV1) -> HostInspectionResultV1:
         if not isinstance(request, HostInspectionRequestV1):
             raise HostInspectionError("HOST_INSPECTION_REQUEST_REQUIRED")
@@ -77,14 +105,16 @@ class HostInspectionPort:
             "git.status": lambda: git.status(arguments.get("paths", ())),
             "git.diff": lambda: git.diff(**arguments),
             "git.branch": lambda: git.branch(),
+            "user_service.properties": lambda: self._inspect_service(arguments),
+            "harness.attention": lambda: self._inspect_attention(arguments),
         }
         handler = handlers.get(request.operation)
         if handler is None:
             raise HostInspectionError("HOST_INSPECTION_OPERATION_NOT_AVAILABLE")
         try:
             data = handler()
-        except (FilesystemServiceError, GitServiceError) as exc:
-            return self._blocked(request, str(getattr(exc, "code", "INSPECTION_BLOCKED")))
+        except (FilesystemServiceError, GitServiceError, UserServiceObserverError) as exc:
+            return self._blocked(request, str(getattr(exc, "code", None) or str(exc) or "INSPECTION_BLOCKED"))
         except PathPolicyError as exc:
             return self._blocked(request, "PATH_POLICY_VIOLATION")
         if not isinstance(data, Mapping):
