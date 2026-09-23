@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from .full_plan_activation import FullPlanActivationReceiptV1
 from .host_inspection_contract import HostInspectionResultV1
 from .plan_activation import PlanActivationReceiptV1
 
@@ -14,6 +15,7 @@ from .durable_io import DurableIOError, canonical_json_bytes, durable_json_load,
 _RESULT_SCHEMA = "orchestration.remote-result-projection.v1"
 _INSPECTION_RESULT_SCHEMA = "orchestration.remote-inspection-projection.v1"
 _ACTIVATION_RESULT_SCHEMA = "orchestration.remote-activation-projection.v1"
+_FULL_PLAN_ACTIVATION_RESULT_SCHEMA = "orchestration.remote-full-plan-activation-projection.v1"
 _COMPLETED = "CANONICAL_ACTION_COMPLETED"
 
 
@@ -272,7 +274,82 @@ class RemoteActivationProjectionV1:
         return cls(**{key: str(value[key]) for key in expected})
 
 
-RemoteProjectionV1 = RemoteResultProjectionV1 | RemoteInspectionProjectionV1 | RemoteActivationProjectionV1
+@dataclass(frozen=True, slots=True)
+class RemoteFullPlanActivationProjectionV1:
+    projection_id: str
+    message_id: str
+    activation_request_id: str
+    activation_profile: str
+    binding_digest: str
+    executable_authority_bundle_digest: str
+    result_status: str
+    canonical_job_path: str
+    run_id: str
+    authority_digest: str
+    activation_digest: str
+    schema_version: str = _FULL_PLAN_ACTIVATION_RESULT_SCHEMA
+
+    def __post_init__(self) -> None:
+        for value, label in (
+            (self.projection_id, "projection ID"), (self.message_id, "message ID"),
+            (self.activation_request_id, "activation request ID"), (self.run_id, "run ID"),
+        ):
+            _safe_id(value, label)
+        for value, label in (
+            (self.binding_digest, "binding digest"),
+            (self.executable_authority_bundle_digest, "executable authority bundle digest"),
+            (self.authority_digest, "authority digest"),
+            (self.activation_digest, "activation digest"),
+        ):
+            _digest(value, label)
+        if self.schema_version != _FULL_PLAN_ACTIVATION_RESULT_SCHEMA:
+            raise RemoteOperatorOutboxError("Full Plan activation projection schema mismatch")
+        if self.activation_profile != "AUTO_RECONCILE_FULL_PLAN":
+            raise RemoteOperatorOutboxError("Full Plan activation profile invalid")
+        if self.result_status not in {"FULL_PLAN_REGISTERED", "FULL_PLAN_ALREADY_REGISTERED"}:
+            raise RemoteOperatorOutboxError("Full Plan activation projection status invalid")
+        if not self.canonical_job_path:
+            raise RemoteOperatorOutboxError("Full Plan activation canonical job path missing")
+
+    @property
+    def projection_sha256(self) -> str:
+        return sha256_bytes(canonical_json_bytes(self.to_dict()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_receipt(cls, receipt: FullPlanActivationReceiptV1, *, message_id: str) -> "RemoteFullPlanActivationProjectionV1":
+        try:
+            sealed = FullPlanActivationReceiptV1.from_mapping(receipt.to_dict())
+        except ValueError as exc:
+            raise RemoteOperatorOutboxError("Full Plan activation receipt invalid") from exc
+        material = {"message_id": message_id, "activation_digest": sealed.activation_digest}
+        projection_id = "FPA-" + sha256_bytes(canonical_json_bytes(material))[:32]
+        return cls(
+            projection_id=projection_id, message_id=message_id,
+            activation_request_id=sealed.activation_request_id,
+            activation_profile="AUTO_RECONCILE_FULL_PLAN",
+            binding_digest=sealed.bundle_digest,
+            executable_authority_bundle_digest=sealed.executable_authority_bundle_digest,
+            result_status=sealed.result_status, canonical_job_path=sealed.canonical_job_path,
+            run_id=sealed.run_id, authority_digest=sealed.authority_digest,
+            activation_digest=sealed.activation_digest,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "RemoteFullPlanActivationProjectionV1":
+        expected = {
+            "projection_id", "message_id", "activation_request_id", "activation_profile",
+            "binding_digest", "executable_authority_bundle_digest", "result_status",
+            "canonical_job_path", "run_id", "authority_digest", "activation_digest", "schema_version",
+        }
+        if set(value) != expected:
+            raise RemoteOperatorOutboxError("Full Plan activation projection fields mismatch")
+        return cls(**{key: str(value[key]) for key in expected})
+
+
+RemoteProjectionV1 = RemoteResultProjectionV1 | RemoteInspectionProjectionV1 | RemoteActivationProjectionV1 | RemoteFullPlanActivationProjectionV1
 
 
 def parse_remote_projection(value: Mapping[str, Any]) -> RemoteProjectionV1:
@@ -283,6 +360,8 @@ def parse_remote_projection(value: Mapping[str, Any]) -> RemoteProjectionV1:
         return RemoteInspectionProjectionV1.from_mapping(value)
     if schema == _ACTIVATION_RESULT_SCHEMA:
         return RemoteActivationProjectionV1.from_mapping(value)
+    if schema == _FULL_PLAN_ACTIVATION_RESULT_SCHEMA:
+        return RemoteFullPlanActivationProjectionV1.from_mapping(value)
     raise RemoteOperatorOutboxError("projection schema mismatch")
 
 
