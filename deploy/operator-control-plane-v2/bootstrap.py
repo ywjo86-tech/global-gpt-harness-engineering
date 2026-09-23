@@ -155,6 +155,8 @@ def _env_text(config: BootstrapConfig) -> str:
             f"OCP_GITHUB_TOKEN_FILE={token_file}",
             f"OCP_STATE_ROOT={state_root}",
             f"OCP_REPO_ROOT={config.repo_root}",
+            "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false",
+            "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG=",
             "",
         ]
     )
@@ -245,7 +247,11 @@ def config_from_env_file(path: str | Path) -> BootstrapConfig:
         "OCP_STATE_ROOT",
         "OCP_REPO_ROOT",
     }
-    if set(env) != required:
+    optional = {
+        "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
+        "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
+    }
+    if not required.issubset(env) or set(env) - required - optional:
         raise BootstrapError("environment file key set mismatch")
     try:
         repository_id = int(env["OCP_GITHUB_CONTROL_REPOSITORY_ID"])
