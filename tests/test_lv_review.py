@@ -19,6 +19,7 @@ from runtime.orchestrator.lv_review import (
     LVReviewError,
     _assert_canonical_binding,
     _assert_package,
+    _directory_snapshot,
     _results_root,
     _scan_owned_files,
     _safe_read_result,
@@ -85,6 +86,25 @@ class LVReviewTest(unittest.TestCase):
             effects.symlink_to(real, target_is_directory=True)
             with self.assertRaisesRegex(LVReviewError, "sealed package"):
                 _assert_package(package, RUN_ID)
+
+    def test_directory_snapshot_hashes_known_runtime_output_files_and_rejects_unsafe_children(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "package.manifest.json").write_text("manifest", encoding="utf-8")
+            ledger = root / "host-gateway-ledger"
+            ledger.mkdir()
+            evidence = ledger / "exec-1.json"
+            evidence.write_text("first", encoding="utf-8")
+
+            first = _directory_snapshot(root)
+            self.assertIn("host-gateway-ledger/exec-1.json", first)
+            evidence.write_text("second", encoding="utf-8")
+            self.assertNotEqual(first, _directory_snapshot(root))
+
+            unsafe = ledger / "nested"
+            unsafe.mkdir()
+            with self.assertRaisesRegex(LVReviewError, "unsafe entry"):
+                _directory_snapshot(root)
 
     def test_sealed_package_accepts_known_provider_action_outputs_but_rejects_unknown_directory(self) -> None:
         with TemporaryDirectory() as directory:

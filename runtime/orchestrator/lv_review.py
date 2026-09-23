@@ -244,12 +244,11 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
                           "RUN_STARTED.json", "diagnostics.json"}
     allowed |= {entry.name for entry in entries if entry.name.startswith("production.review-request-")
                 and entry.name.endswith(".json")}
-    runtime_output_dirs = {"provider-action-effects", "provider-action-response-evidence", "host-gateway-ledger"}
-    allowed |= {"provider-action-proposal.json"} | runtime_output_dirs
+    allowed |= {"provider-action-proposal.json"} | _RUNTIME_OUTPUT_DIRS
     review_dirs = {entry.name for entry in entries
                    if not entry.is_symlink() and entry.is_dir() and entry.name.startswith("review-attempt-")}
     allowed |= review_dirs
-    allowed_dirs = {"preflight"} | runtime_output_dirs | review_dirs
+    allowed_dirs = {"preflight"} | _RUNTIME_OUTPUT_DIRS | review_dirs
     if (not expected.issubset(names) or not names.issubset(allowed)
             or not all(not entry.is_symlink() and (
                 (entry.is_dir() and entry.name in allowed_dirs) or entry.is_file()
@@ -1858,6 +1857,13 @@ def _check(
     return item
 
 
+_RUNTIME_OUTPUT_DIRS = frozenset({
+    "provider-action-effects",
+    "provider-action-response-evidence",
+    "host-gateway-ledger",
+})
+
+
 def _file_snapshot(path: Path) -> tuple[int, int, int, int, str]:
     current = path.lstat()
     if not stat.S_ISREG(current.st_mode) or path.is_symlink():
@@ -1872,9 +1878,22 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     ignored = {"preflight", "worker.request.json", "manual-action.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md"}
     ignored_dirs = {path.name for path in entries if path.is_dir() and path.name.startswith("review-attempt-")}
     ignored |= ignored_dirs
-    if any(path.is_symlink() or (not path.is_file() and path.name not in ignored) for path in entries):
-        raise LVReviewError("immutable input directory contains an unsafe entry")
-    return {path.name: _file_snapshot(path) for path in entries if path.name not in ignored}
+    snapshots: dict[str, tuple[int, int, int, int, str]] = {}
+    for path in entries:
+        if path.name in ignored:
+            continue
+        if path.name in _RUNTIME_OUTPUT_DIRS:
+            if path.is_symlink() or not path.is_dir():
+                raise LVReviewError("immutable input directory contains an unsafe entry")
+            for child in path.iterdir():
+                if child.is_symlink() or not child.is_file():
+                    raise LVReviewError("immutable input directory contains an unsafe entry")
+                snapshots[f"{path.name}/{child.name}"] = _file_snapshot(child)
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise LVReviewError("immutable input directory contains an unsafe entry")
+        snapshots[path.name] = _file_snapshot(path)
+    return snapshots
 
 
 def _path_within_owned_scope(path: str, scopes: list[str]) -> bool:
