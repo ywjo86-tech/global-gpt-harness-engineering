@@ -1,10 +1,10 @@
 # READ_ONLY_HOST_DIAGNOSTIC Design Contract
 
-**Status:** APPROVED — EDP DESIGN-CONTRACT ALL PASS  
-**Protocol:** `EXHAUSTIVE_DIAGNOSIS_PROTOCOL (EDP-1.0)`  
-**Baseline:** `FA6_STABLE_BASELINE=PASS`  
-**Bound source/runtime:** `c591b01e8a1d9d9bb2dc438ca85f6c2ffcc79a03`  
-**Binding gate:** `BINDING_GATE-R01=PASS` on 2026-09-23  
+**Status:** APPROVED — EDP DESIGN-CONTRACT ALL PASS
+**Protocol:** `EXHAUSTIVE_DIAGNOSIS_PROTOCOL (EDP-1.0)`
+**Baseline:** `FA6_STABLE_BASELINE=PASS`
+**Bound source/runtime:** `c591b01e8a1d9d9bb2dc438ca85f6c2ffcc79a03`
+**Binding gate:** `BINDING_GATE-R01=PASS` on 2026-09-23
 **Implementation:** NOT STARTED
 
 ## Goal

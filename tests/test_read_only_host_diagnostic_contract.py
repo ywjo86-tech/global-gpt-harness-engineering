@@ -55,6 +55,12 @@ class DiagnosticContractTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(DiagnosticContractError):
                 ReadOnlyDiagnosticRequestV1.from_mapping({**payload, **change})
 
+    def test_file_range_rejects_absolute_and_traversal_paths(self):
+        payload = {**self.repo_request(), "operation": "project.file_range", "relative_path": "README.md", "start_line": 1, "line_count": 10}
+        for unsafe in ("/etc/passwd", "../secret.txt", "sub/../../secret.txt"):
+            with self.subTest(path=unsafe), self.assertRaisesRegex(DiagnosticContractError, "unsafe relative path"):
+                ReadOnlyDiagnosticRequestV1.from_mapping({**payload, "relative_path": unsafe})
+
     def test_feature_flag_accepts_only_explicit_true(self):
         self.assertFalse(diagnostic_feature_enabled({}))
         self.assertFalse(diagnostic_feature_enabled({"GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "false"}))

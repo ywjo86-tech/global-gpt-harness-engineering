@@ -191,6 +191,15 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         self.assertEqual(transport.projections[0]["result_class"], "OBSERVED")
         self.assertEqual(transport.acks, [env.message_id])
 
+    def test_v2_non_diagnostic_read_only_remains_read_only_accepted(self):
+        env = envelope(state_change=False)
+        service, transport, executions = self.service(env=env)
+        result = service.poll_once(mode=ControlMode.CONTROL_READ_ONLY)
+        self.assertEqual(result.executed, 0)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(executions, [])
+        self.assertEqual(transport.projections[0]["result_class"], "READ_ONLY_ACCEPTED")
+
     def test_control_read_only_rejects_state_change_required_true(self):
         env = envelope(state_change=True)
         service, transport, executions = self.service(env=env)
