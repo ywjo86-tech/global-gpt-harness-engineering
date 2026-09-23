@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .host_inspection_contract import HostInspectionResultV1
+from .plan_activation import PlanActivationReceiptV1
 
 from .durable_io import DurableIOError, canonical_json_bytes, durable_json_load, durable_json_save, sha256_bytes
 
 
 _RESULT_SCHEMA = "orchestration.remote-result-projection.v1"
 _INSPECTION_RESULT_SCHEMA = "orchestration.remote-inspection-projection.v1"
+_ACTIVATION_RESULT_SCHEMA = "orchestration.remote-activation-projection.v1"
 _COMPLETED = "CANONICAL_ACTION_COMPLETED"
 
 
@@ -203,7 +205,74 @@ class RemoteInspectionProjectionV1:
         )
 
 
-RemoteProjectionV1 = RemoteResultProjectionV1 | RemoteInspectionProjectionV1
+@dataclass(frozen=True, slots=True)
+class RemoteActivationProjectionV1:
+    projection_id: str
+    message_id: str
+    activation_request_id: str
+    binding_digest: str
+    result_status: str
+    canonical_job_path: str
+    run_id: str
+    authority_digest: str
+    activation_digest: str
+    schema_version: str = _ACTIVATION_RESULT_SCHEMA
+
+    def __post_init__(self) -> None:
+        for value, label in (
+            (self.projection_id, "projection ID"), (self.message_id, "message ID"),
+            (self.activation_request_id, "activation request ID"), (self.run_id, "run ID"),
+        ):
+            _safe_id(value, label)
+        for value, label in (
+            (self.binding_digest, "binding digest"),
+            (self.authority_digest, "authority digest"),
+            (self.activation_digest, "activation digest"),
+        ):
+            _digest(value, label)
+        if self.schema_version != _ACTIVATION_RESULT_SCHEMA:
+            raise RemoteOperatorOutboxError("activation projection schema mismatch")
+        if self.result_status not in {"REGISTERED", "ALREADY_REGISTERED"}:
+            raise RemoteOperatorOutboxError("activation projection status invalid")
+        if not self.canonical_job_path:
+            raise RemoteOperatorOutboxError("activation canonical job path missing")
+
+    @property
+    def projection_sha256(self) -> str:
+        return sha256_bytes(canonical_json_bytes(self.to_dict()))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_receipt(cls, receipt: PlanActivationReceiptV1, *, message_id: str) -> "RemoteActivationProjectionV1":
+        try:
+            sealed = PlanActivationReceiptV1.from_mapping(receipt.to_dict())
+        except ValueError as exc:
+            raise RemoteOperatorOutboxError("activation receipt invalid") from exc
+        material = {"message_id": message_id, "activation_digest": sealed.activation_digest}
+        projection_id = "ACT-" + sha256_bytes(canonical_json_bytes(material))[:32]
+        return cls(
+            projection_id=projection_id, message_id=message_id,
+            activation_request_id=sealed.activation_request_id, binding_digest=sealed.binding_digest,
+            result_status=sealed.result_status, canonical_job_path=sealed.canonical_job_path,
+            run_id=sealed.run_id, authority_digest=sealed.authority_digest,
+            activation_digest=sealed.activation_digest,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "RemoteActivationProjectionV1":
+        expected = {
+            "projection_id", "message_id", "activation_request_id", "binding_digest",
+            "result_status", "canonical_job_path", "run_id", "authority_digest",
+            "activation_digest", "schema_version",
+        }
+        if set(value) != expected:
+            raise RemoteOperatorOutboxError("activation projection fields mismatch")
+        return cls(**{key: str(value[key]) for key in expected})
+
+
+RemoteProjectionV1 = RemoteResultProjectionV1 | RemoteInspectionProjectionV1 | RemoteActivationProjectionV1
 
 
 def parse_remote_projection(value: Mapping[str, Any]) -> RemoteProjectionV1:
@@ -212,6 +281,8 @@ def parse_remote_projection(value: Mapping[str, Any]) -> RemoteProjectionV1:
         return RemoteResultProjectionV1.from_mapping(value)
     if schema == _INSPECTION_RESULT_SCHEMA:
         return RemoteInspectionProjectionV1.from_mapping(value)
+    if schema == _ACTIVATION_RESULT_SCHEMA:
+        return RemoteActivationProjectionV1.from_mapping(value)
     raise RemoteOperatorOutboxError("projection schema mismatch")
 
 

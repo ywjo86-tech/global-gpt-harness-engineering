@@ -12,7 +12,10 @@ from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .operator_control import OperatorDirectiveV1
-from .remote_control_envelope import RemoteControlEnvelopeV1
+from .remote_control_envelope import (
+    APPROVED_WORK_ACTIVATION_KIND, HOST_INSPECTION_KIND,
+    RemoteControlEnvelopeV1, RemoteWorkActivationAuthorization,
+)
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_ingress import IngressDecision
 from .remote_operator_transport import RawControlEnvelope, RemoteOperatorTransport
@@ -58,6 +61,7 @@ class ServicePollResult:
     acknowledged: int = 0
     blocked: int = 0
     inspected: int = 0
+    activated: int = 0
 
 
 class RemoteOperatorService:
@@ -74,6 +78,9 @@ class RemoteOperatorService:
         after_projection_published: Callable[[Any, Mapping[str, Any]], None] | None = None,
         inspect_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         host_inspection_enabled: bool = False,
+        activate_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        work_activation_enabled: bool = False,
+        activation_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -83,6 +90,9 @@ class RemoteOperatorService:
         self.after_projection_published = after_projection_published
         self.inspect_authorized = inspect_authorized
         self.host_inspection_enabled = bool(host_inspection_enabled)
+        self.activate_authorized = activate_authorized
+        self.work_activation_enabled = bool(work_activation_enabled)
+        self.activation_policy_ref = str(activation_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -123,6 +133,20 @@ class RemoteOperatorService:
             "result_class": str(result_class),
         }
 
+    @staticmethod
+    def _activation_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-activation-status-projection.v1",
+            "message_id": envelope.message_id,
+            "activation_request_id": payload.activation_request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "result_class": str(result_class),
+        }
+
     def _publish_and_ack(
         self,
         envelope: Any,
@@ -148,7 +172,7 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = projected = acknowledged = blocked = inspected = 0
+        received = validated = executed = projected = acknowledged = blocked = inspected = activated = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             try:
@@ -158,18 +182,44 @@ class RemoteOperatorService:
             validated += 1
 
             if isinstance(envelope, RemoteControlEnvelopeV1):
-                if not self.host_inspection_enabled or self.inspect_authorized is None:
-                    projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_DISABLED")
-                    blocked += 1
-                else:
-                    try:
-                        projection = self.inspect_authorized(envelope)
-                        if not isinstance(projection, Mapping):
-                            raise RemoteOperatorServiceError("host inspection result projection is malformed")
-                        inspected += 1
-                    except Exception:
-                        projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_ERROR")
+                if envelope.request_kind == HOST_INSPECTION_KIND:
+                    if not self.host_inspection_enabled or self.inspect_authorized is None:
+                        projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_DISABLED")
                         blocked += 1
+                    else:
+                        try:
+                            projection = self.inspect_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("host inspection result projection is malformed")
+                            inspected += 1
+                        except Exception:
+                            projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:
+                    if resolved_mode != ControlMode.ACTIVE:
+                        projection = self._activation_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.work_activation_enabled or self.activate_authorized is None:
+                        projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteWorkActivationAuthorization)
+                        or not self.activation_policy_ref
+                        or envelope.authorization.activation_policy_ref != self.activation_policy_ref
+                    ):
+                        projection = self._activation_status_projection(envelope, "ACTIVATION_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.activate_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("work activation result projection is malformed")
+                            activated += 1
+                        except Exception:
+                            projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_ERROR")
+                            blocked += 1
+                else:
+                    raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
                 projected += 1
                 acknowledged += 1
@@ -246,4 +296,5 @@ class RemoteOperatorService:
             acknowledged=acknowledged,
             blocked=blocked,
             inspected=inspected,
+            activated=activated,
         )

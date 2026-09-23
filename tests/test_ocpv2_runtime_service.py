@@ -11,6 +11,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     canary_scope_from_environment,
     execute_authorized_canonical,
     host_inspection_enabled_from_environment,
+    work_activation_enabled_from_environment,
 )
 
 
@@ -150,6 +151,18 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
     def test_user_service_defaults_host_inspection_off(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_HOST_INSPECTION_ENABLED=0", text)
+
+
+    def test_work_activation_feature_flag_is_explicit_and_fail_closed(self):
+        self.assertFalse(work_activation_enabled_from_environment({}))
+        self.assertFalse(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "0"}))
+        self.assertTrue(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "1"}))
+        self.assertFalse(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "true"}))
+        self.assertFalse(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "bogus"}))
+
+    def test_user_service_defaults_work_activation_off(self):
+        text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_WORK_ACTIVATION_ENABLED=0", text)
 
 
 if __name__ == "__main__":

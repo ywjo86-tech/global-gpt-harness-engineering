@@ -5,9 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from runtime.orchestrator.durable_io import canonical_json_bytes, sha256_bytes
 from runtime.orchestrator.host_inspection_contract import HostInspectionRequestV1, HostInspectionResultV1
+from runtime.orchestrator.plan_activation import PlanActivationReceiptV1
 from runtime.orchestrator.remote_operator_outbox import (
     RemoteOperatorOutboxError,
+    RemoteActivationProjectionV1,
     RemoteInspectionProjectionV1,
     RemoteResultOutbox,
     RemoteResultProjectionV1,
@@ -146,6 +149,38 @@ class RemoteInspectionProjectionTests(unittest.TestCase):
             self.assertEqual(restarted.publish_pending(lambda value: published.append(value)), 1)
             self.assertEqual(published, [projection])
             self.assertEqual(inspect_calls, ["INSP-1"])
+
+
+class RemoteActivationProjectionTests(unittest.TestCase):
+    @staticmethod
+    def receipt():
+        unsigned = {
+            "schema_version": "orchestration.plan-activation-receipt.v1",
+            "activation_request_id": "ACT-1", "binding_digest": "a" * 64,
+            "result_status": "REGISTERED", "canonical_job_path": "/state/job.json",
+            "run_id": "ACT-1", "authority_digest": "b" * 64,
+        }
+        return PlanActivationReceiptV1(
+            **unsigned, activation_digest=sha256_bytes(canonical_json_bytes(unsigned)),
+        )
+
+    def test_activation_projection_round_trips_through_existing_outbox(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            projection = RemoteActivationProjectionV1.from_receipt(self.receipt(), message_id="MSG-A1")
+            RemoteResultOutbox(root).enqueue_projection(projection)
+            restarted = RemoteResultOutbox(root)
+            self.assertEqual(restarted.pending(), (projection,))
+            self.assertEqual(parse_remote_projection(projection.to_dict()), projection)
+
+    def test_activation_projection_retry_does_not_require_registrar(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            projection = RemoteActivationProjectionV1.from_receipt(self.receipt(), message_id="MSG-A1")
+            RemoteResultOutbox(root).enqueue_projection(projection)
+            published = []
+            self.assertEqual(RemoteResultOutbox(root).publish_pending(lambda p: published.append(p)), 1)
+            self.assertEqual(published, [projection])
 
 
 if __name__ == "__main__":

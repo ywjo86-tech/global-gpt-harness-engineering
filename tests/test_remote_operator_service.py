@@ -120,6 +120,31 @@ def inspection_envelope():
     )
 
 
+def activation_envelope(policy_ref="ACT-POLICY-1"):
+    request = {
+        "schema_version": "orchestration.approved-work-activation-request.v1",
+        "activation_request_id": "ACT-1", "project_alias": "demo",
+        "approved_plan_path": "PLAN.md", "approved_plan_sha256": "a" * 64,
+        "approved_spec_path": "SPEC.md", "approved_spec_sha256": "b" * 64,
+        "requirement_artifact_path": "requirements.json", "requirement_artifact_sha256": "c" * 64,
+        "approval_ref": "approval:user", "expected_branch": "main", "expected_head": "d" * 40,
+        "task_ids": ["T1"], "runtime_release_digest": "e" * 64,
+    }
+    payload = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "APPROVED_WORK_ACTIVATION", "message_id": "MSG-A1", "sequence": 2,
+        "issued_at": "2026-09-21T00:00:00+00:00", "expires_at": "2026-09-21T01:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "TEST", "channel_id": "CTRL", "source_actor_id": "235775273", "source_message_id": "12"},
+        "payload": request, "payload_digest": "",
+        "authorization": {"activation_policy_ref": policy_ref}, "envelope_sha256": "",
+    }
+    return validate_remote_control_envelope(
+        seal_remote_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
+    )
+
+
 class FakeTransport:
     def __init__(self, items=()):
         self.items = tuple(items)
@@ -291,6 +316,57 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         source = inspect.getsource(remote_operator_service)
         for forbidden in ("FullMCPRuntime", "ProcessService", "register_job(", "provider_router", "shell_execute"):
             with self.subTest(forbidden=forbidden): self.assertNotIn(forbidden, source)
+
+
+    def test_work_activation_is_blocked_outside_active_mode(self):
+        for mode in (ControlMode.OBSERVE_ONLY, ControlMode.CONTROL_READ_ONLY, ControlMode.CONTROL_MUTATION_CANARY):
+            with self.subTest(mode=mode):
+                env = activation_envelope(); transport = FakeTransport((raw("RAW-A"),)); activations = []; mutations = []
+                service = RemoteOperatorService(
+                    transport=transport, decode_envelope=lambda _: env,
+                    ingress=lambda _: (_ for _ in ()).throw(AssertionError("activation must not enter V2 ingress")),
+                    execute_authorized=lambda *_: mutations.append("mutation"),
+                    activate_authorized=lambda e: activations.append(e.message_id) or {"schema_version": "activation", "result_class": "REGISTERED"},
+                    work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+                )
+                result = service.poll_once(mode=mode)
+                self.assertEqual((result.activated, result.executed, result.blocked), (0, 0, 1))
+                self.assertEqual(activations, []); self.assertEqual(mutations, [])
+                self.assertEqual(transport.projections[0]["result_class"], "MODE_BLOCKED")
+
+    def test_active_work_activation_requires_feature_and_exact_policy(self):
+        env = activation_envelope(); transport = FakeTransport((raw("RAW-A"),)); calls = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_authorized=lambda e: calls.append(e.message_id) or {"schema_version": "activation", "result_class": "REGISTERED"},
+            work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.activated, result.executed, result.blocked), (1, 0, 0))
+        self.assertEqual(calls, ["MSG-A1"]); self.assertEqual(transport.projections[0]["result_class"], "REGISTERED")
+
+        blocked_transport = FakeTransport((raw("RAW-A2"),))
+        blocked_service = RemoteOperatorService(
+            transport=blocked_transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"), activate_authorized=lambda _: calls.append("unexpected"),
+            work_activation_enabled=True, activation_policy_ref="WRONG-POLICY",
+        )
+        blocked_result = blocked_service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual(blocked_result.blocked, 1); self.assertEqual(calls, ["MSG-A1"])
+        self.assertEqual(blocked_transport.projections[0]["result_class"], "ACTIVATION_AUTHORIZATION_MISMATCH")
+
+    def test_activation_failure_never_falls_through_to_existing_run_mutation(self):
+        env = activation_envelope(); transport = FakeTransport((raw("RAW-A"),)); mutations = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: mutations.append("mutation"),
+            activate_authorized=lambda _: (_ for _ in ()).throw(ValueError("activation failed")),
+            work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.activated, result.executed, result.blocked), (0, 0, 1))
+        self.assertEqual(mutations, []); self.assertEqual(transport.projections[0]["result_class"], "WORK_ACTIVATION_ERROR")
 
 
 if __name__ == "__main__":
