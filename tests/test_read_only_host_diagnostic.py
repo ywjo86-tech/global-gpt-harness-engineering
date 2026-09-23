@@ -1,8 +1,10 @@
 from pathlib import Path
+from datetime import datetime, timezone
 import os
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from runtime.orchestrator.read_only_host_diagnostic_contract import DiagnosticPolicy, ReadOnlyDiagnosticRequestV1
 from runtime.orchestrator.read_only_host_diagnostic import (
@@ -10,6 +12,7 @@ from runtime.orchestrator.read_only_host_diagnostic import (
     DiagnosticSecurityError,
     DiagnosticUnavailableError,
     collect_repo_snapshot,
+    execute_read_only_host_diagnostic,
     read_path_metadata,
     read_user_service_properties,
     read_project_file_range,
@@ -240,6 +243,84 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
         with self.assertRaisesRegex(DiagnosticUnavailableError, "systemd user service unavailable") as ctx:
             read_user_service_properties(self.service_request(), self.policy, runner=runner)
         self.assertNotIn("do-not-return", str(ctx.exception))
+
+
+
+    def test_dispatcher_classifies_content_and_provenance(self):
+        path = self.root / "note.txt"
+        path.write_text("token=abc123\nhello\n", encoding="utf-8")
+        result = execute_read_only_host_diagnostic(
+            self.file_request("note.txt"),
+            self.policy,
+            project_id="P1",
+            correlation_id="CORR-1",
+            source_sha="a" * 40,
+            runtime_sha="b" * 40,
+            now=lambda: datetime(2026, 9, 23, tzinfo=timezone.utc),
+        )
+        self.assertEqual(result.status, "OK")
+        self.assertEqual(result.data_class, "DIAG_CONTENT")
+        self.assertEqual(result.execution_owner, "NONE")
+        self.assertTrue(result.redaction_applied)
+        self.assertNotIn("abc123", str(result.payload))
+        self.assertTrue(result.captured_at)
+        self.assertTrue(result.payload_hash)
+
+    def test_dispatcher_marks_truncated_content_partial(self):
+        path = self.root / "many-lines.txt"
+        path.write_text("\n".join(f"line-{i}" for i in range(20)) + "\n", encoding="utf-8")
+        result = execute_read_only_host_diagnostic(
+            self.file_request("many-lines.txt", line_count=20),
+            self.policy,
+            project_id="P1",
+            correlation_id="CORR-2",
+            source_sha="a" * 40,
+            runtime_sha="b" * 40,
+        )
+        self.assertEqual(result.status, "PARTIAL")
+        self.assertTrue(result.truncated)
+
+    def test_dispatcher_maps_policy_denial_to_blocked(self):
+        (self.root / ".env").write_text("token=abc123\n", encoding="utf-8")
+        result = execute_read_only_host_diagnostic(
+            self.file_request(".env"),
+            self.policy,
+            project_id="P1",
+            correlation_id="CORR-3",
+            source_sha="a" * 40,
+            runtime_sha="b" * 40,
+        )
+        self.assertEqual(result.status, "BLOCKED")
+        self.assertNotIn("abc123", str(result.payload))
+
+    def test_dispatcher_maps_service_failure_to_unavailable(self):
+        def unavailable(request, policy):
+            raise DiagnosticUnavailableError("systemd user service unavailable")
+        with patch("runtime.orchestrator.read_only_host_diagnostic.read_user_service_properties", unavailable):
+            result = execute_read_only_host_diagnostic(
+                self.service_request(),
+                self.policy,
+                project_id="P1",
+                correlation_id="CORR-4",
+                source_sha="a" * 40,
+                runtime_sha="b" * 40,
+            )
+        self.assertEqual(result.status, "UNAVAILABLE")
+
+    def test_dispatcher_never_promotes_stale_repo_snapshot_to_ok(self):
+        def stale(request, policy):
+            return {"stale": True, "truncated": False, "redaction_applied": False}
+        with patch("runtime.orchestrator.read_only_host_diagnostic.collect_repo_snapshot", stale):
+            result = execute_read_only_host_diagnostic(
+                self.repo_request(),
+                self.policy,
+                project_id="P1",
+                correlation_id="CORR-5",
+                source_sha="a" * 40,
+                runtime_sha="b" * 40,
+            )
+        self.assertEqual(result.status, "STALE")
+        self.assertEqual(result.freshness, "STALE")
 
 
 
