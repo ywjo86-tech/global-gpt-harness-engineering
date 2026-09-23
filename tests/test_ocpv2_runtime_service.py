@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from runtime.orchestrator.ocpv2_runtime_service import (
+    RuntimeConfig,
     RuntimeServiceError,
+    _compose_service,
     canary_scope_from_environment,
     execute_authorized_canonical,
     finalize_remote_control_projection,
+    full_plan_activation_enabled_from_environment,
     host_inspection_enabled_from_environment,
+    load_runtime_config,
     work_activation_enabled_from_environment,
 )
 
@@ -178,6 +185,70 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
     def test_user_service_defaults_work_activation_off(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_WORK_ACTIVATION_ENABLED=0", text)
+
+
+    def test_full_plan_activation_flag_is_exact_one_and_independent(self):
+        self.assertFalse(full_plan_activation_enabled_from_environment({}))
+        self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "0"}))
+        self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "true"}))
+        self.assertTrue(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "1"}))
+        self.assertTrue(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "1"}))
+        self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "1"}))
+
+    def test_v1_activation_flag_does_not_enable_full_plan_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=root/"repo"; repo.mkdir(); token=root/"token"; token.write_text("x"); token.chmod(0o600)
+            env=root/"ocp.env"; env.write_text("\n".join([
+                "OCP_MODE=ACTIVE", "OCP_GITHUB_CONTROL_REPOSITORY_ID=222", "OCP_GITHUB_CONTROL_PR_NUMBER=7",
+                "OCP_GITHUB_ALLOWED_ACTOR_IDS=235775273", f"OCP_GITHUB_TOKEN_FILE={token}", f"OCP_STATE_ROOT={root/'state'}",
+                f"OCP_REPO_ROOT={repo}", "OCP_WORK_ACTIVATION_ENABLED=1", "OCP_WORK_ACTIVATION_POLICY_REF=ACT-POLICY-1",
+                "OCP_FULL_PLAN_ACTIVATION_ENABLED=0",
+            ])+"\n")
+            cfg=load_runtime_config(env, process_environment={})
+            self.assertTrue(cfg.work_activation_enabled); self.assertFalse(cfg.full_plan_activation_enabled)
+            self.assertEqual(cfg.full_plan_activation_policy_ref, "")
+
+    def test_full_plan_activation_enabled_requires_dedicated_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=root/"repo"; repo.mkdir(); token=root/"token"; token.write_text("x"); token.chmod(0o600)
+            env=root/"ocp.env"; env.write_text("\n".join([
+                "OCP_MODE=ACTIVE", "OCP_GITHUB_CONTROL_REPOSITORY_ID=222", "OCP_GITHUB_CONTROL_PR_NUMBER=7",
+                "OCP_GITHUB_ALLOWED_ACTOR_IDS=235775273", f"OCP_GITHUB_TOKEN_FILE={token}", f"OCP_STATE_ROOT={root/'state'}",
+                f"OCP_REPO_ROOT={repo}", "OCP_FULL_PLAN_ACTIVATION_ENABLED=1",
+            ])+"\n")
+            with self.assertRaisesRegex(RuntimeServiceError, "Full Plan activation policy"):
+                load_runtime_config(env, process_environment={})
+
+    def test_executable_activation_uses_system_authority_root_and_never_request_mapping_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=root/"runtime"; repo.mkdir(); token=root/"token"; token.write_text("x"); token.chmod(0o600)
+            ocp_state=root/"ocp-state"; ocp_state.mkdir(); harness_state=root/"harness-state"; harness_state.mkdir()
+            authority=root/"authority"; authority.mkdir()
+            cfg=RuntimeConfig(
+                mode=__import__("runtime.orchestrator.remote_operator_service",fromlist=["ControlMode"]).ControlMode.ACTIVE,
+                repo_root=repo, control_repository_id=222, control_pr_number=7,
+                allowed_actor_ids=("235775273",), token_file=token, state_root=ocp_state,
+                environment={"GCH_STATE_ROOT":str(harness_state),"HARNESS_CONTRACT_MAPPING_ROOT":str(authority)},
+                host_inspection_enabled=False, work_activation_enabled=False, activation_policy_ref="",
+                full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+            )
+            with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient",return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter",return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.recover_pending_canonical_results"), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",return_value=Mock()) as release, \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.validate_approved_full_plan_binding",side_effect=RuntimeError("stop")) as validate:
+                service=_compose_service(cfg)
+                envelope=SimpleNamespace(payload=SimpleNamespace(mapping_root="caller-forbidden"),message_id="MSG-FP")
+                with self.assertRaisesRegex(RuntimeError,"stop"):
+                    service.activate_full_plan_authorized(envelope)
+            self.assertEqual(validate.call_args.kwargs["authority_root"],authority)
+            self.assertEqual(validate.call_args.kwargs["harness_state_root"],harness_state)
+            release.assert_called_once_with(repo)
+
+    def test_user_service_defaults_full_plan_activation_off(self):
+        text=(REPO_ROOT/"deploy/operator-control-plane-v2/ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertNotIn("OCP_FULL_PLAN_ACTIVATION_POLICY_REF=", text)
 
 
 if __name__ == "__main__":

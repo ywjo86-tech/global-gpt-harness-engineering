@@ -16,11 +16,14 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from runtime.ai_office.activation import coordinate_approved_activation
+from runtime.ai_office.full_plan_activation import coordinate_approved_full_plan_activation
 from runtime.ai_office.state_store import AIOfficeStateStore
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
+from .approved_full_plan_binding import validate_approved_full_plan_binding
 from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
+from .full_plan_activation import FullPlanActivationStore, activate_approved_full_plan
 from .host_inspection_port import HostInspectionPort
 from .plan_activation import PlanActivationStore, activate_approved_work
 from .project_onboarding import OnboardingRegistry
@@ -30,7 +33,7 @@ from .remote_control_envelope import RemoteControlEnvelopeV1, decode_remote_cont
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_ingress import validate_ingress
 from .remote_operator_outbox import (
-    RemoteActivationProjectionV1, RemoteInspectionProjectionV1, RemoteProjectionV1,
+    RemoteActivationProjectionV1, RemoteFullPlanActivationProjectionV1, RemoteInspectionProjectionV1, RemoteProjectionV1,
     RemoteResultOutbox, RemoteResultProjectionV1, parse_remote_projection,
 )
 from .remote_operator_receipt import RemoteOperatorReceiptStore
@@ -58,6 +61,8 @@ _OPTIONAL_ENV = {
     "OCP_HOST_INSPECTION_ENABLED",
     "OCP_WORK_ACTIVATION_ENABLED",
     "OCP_WORK_ACTIVATION_POLICY_REF",
+    "OCP_FULL_PLAN_ACTIVATION_ENABLED",
+    "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
     "HARNESS_CONTRACT_MAPPING_ROOT",
 }
 _PROJECTION_SECRET = re.compile(
@@ -82,6 +87,8 @@ class RuntimeConfig:
     host_inspection_enabled: bool = False
     work_activation_enabled: bool = False
     activation_policy_ref: str = ""
+    full_plan_activation_enabled: bool = False
+    full_plan_activation_policy_ref: str = ""
 
 
 def host_inspection_enabled_from_environment(environment: Mapping[str, str]) -> bool:
@@ -92,6 +99,11 @@ def host_inspection_enabled_from_environment(environment: Mapping[str, str]) -> 
 def work_activation_enabled_from_environment(environment: Mapping[str, str]) -> bool:
     """Enable only on exact `1`; all other values fail closed."""
     return str(environment.get("OCP_WORK_ACTIVATION_ENABLED") or "").strip() == "1"
+
+
+def full_plan_activation_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable executable Full Plan registration only on exact `1`."""
+    return str(environment.get("OCP_FULL_PLAN_ACTIVATION_ENABLED") or "").strip() == "1"
 
 
 def _runtime_release_for_root(root: Path) -> RuntimeReleaseManifest:
@@ -115,10 +127,11 @@ def finalize_remote_control_projection(
     if schema in {
         "orchestration.remote-inspection-status-projection.v1",
         "orchestration.remote-activation-status-projection.v1",
+        "orchestration.remote-full-plan-activation-status-projection.v1",
     }:
         return
     parsed = parse_remote_projection(projection)
-    if not isinstance(parsed, (RemoteInspectionProjectionV1, RemoteActivationProjectionV1)):
+    if not isinstance(parsed, (RemoteInspectionProjectionV1, RemoteActivationProjectionV1, RemoteFullPlanActivationProjectionV1)):
         raise RuntimeServiceError("REMOTE_CONTROL_PROJECTION_MISMATCH")
     outbox.mark_published(parsed.projection_id, parsed.projection_sha256)
 
@@ -198,9 +211,14 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     activation_policy_ref = str(environment.get("OCP_WORK_ACTIVATION_POLICY_REF") or "").strip()
     if work_activation_enabled:
         _safe_id(activation_policy_ref, "work activation policy ref")
+    full_plan_activation_enabled = full_plan_activation_enabled_from_environment(environment)
+    full_plan_activation_policy_ref = str(environment.get("OCP_FULL_PLAN_ACTIVATION_POLICY_REF") or "").strip()
+    if full_plan_activation_enabled:
+        _safe_id(full_plan_activation_policy_ref, "Full Plan activation policy ref")
     return RuntimeConfig(
         mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment,
         host_inspection_enabled_from_environment(environment), work_activation_enabled, activation_policy_ref,
+        full_plan_activation_enabled, full_plan_activation_policy_ref,
     )
 
 
@@ -329,6 +347,8 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     activation_registry: OnboardingRegistry | None = None
     activation_release: RuntimeReleaseManifest | None = None
     activation_store: PlanActivationStore | None = None
+    full_plan_authority_root: Path | None = None
+    full_plan_activation_store: FullPlanActivationStore | None = None
     if config.work_activation_enabled:
         mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
         if not mapping_root_raw:
@@ -339,6 +359,21 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         activation_registry = OnboardingRegistry(mapping_root / "aliases")
         activation_release = _runtime_release_for_root(config.repo_root)
         activation_store = PlanActivationStore(harness_state_root)
+
+    if config.full_plan_activation_enabled:
+        authority_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not authority_root_raw:
+            raise RuntimeServiceError("FULL_PLAN_ACTIVATION_REGISTRY_REQUIRED")
+        full_plan_authority_root = Path(authority_root_raw).expanduser().absolute()
+        if (
+            not full_plan_authority_root.is_dir()
+            or full_plan_authority_root.is_symlink()
+            or full_plan_authority_root.resolve() != full_plan_authority_root
+        ):
+            raise RuntimeServiceError("FULL_PLAN_ACTIVATION_REGISTRY_UNSAFE")
+        if activation_release is None:
+            activation_release = _runtime_release_for_root(config.repo_root)
+        full_plan_activation_store = FullPlanActivationStore(harness_state_root)
 
     def durable_acknowledged(message_id: str) -> bool:
         binding = binding_store.get(message_id)
@@ -446,6 +481,36 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
+    def activate_full_plan(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if (
+            full_plan_authority_root is None
+            or activation_release is None
+            or full_plan_activation_store is None
+        ):
+            raise RuntimeServiceError("FULL_PLAN_ACTIVATION_DISABLED")
+        bundle = validate_approved_full_plan_binding(
+            envelope.payload,
+            authority_root=full_plan_authority_root,
+            runtime_release=activation_release,
+            harness_state_root=harness_state_root,
+        )
+        office_store = AIOfficeStateStore(
+            harness_state_root, project_id=bundle.project_id, run_id=bundle.activation_request_id,
+        )
+        ai_context = coordinate_approved_full_plan_activation(bundle, office_store=office_store)
+        receipt = full_plan_activation_store.record_or_load(
+            request_id=bundle.activation_request_id,
+            bundle=bundle,
+            registrar=lambda: activate_approved_full_plan(
+                bundle, ai_context=ai_context, harness_state_root=harness_state_root,
+            ),
+        )
+        projection = RemoteFullPlanActivationProjectionV1.from_receipt(
+            receipt, message_id=envelope.message_id,
+        )
+        outbox.enqueue_projection(projection)
+        return projection.to_dict()
+
     def after_projection_published(envelope, projection):
         if isinstance(envelope, RemoteControlEnvelopeV1):
             finalize_remote_control_projection(outbox, projection)
@@ -466,13 +531,17 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         activate_authorized=activate,
         work_activation_enabled=config.work_activation_enabled,
         activation_policy_ref=config.activation_policy_ref,
+        activate_full_plan_authorized=activate_full_plan,
+        full_plan_activation_enabled=config.full_plan_activation_enabled,
+        full_plan_activation_policy_ref=config.full_plan_activation_policy_ref,
     )
 
 
 def run_once(config: RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         return {"mode": "DISABLED", "received": 0, "validated": 0, "executed": 0,
-                "projected": 0, "acknowledged": 0, "blocked": 0, "inspected": 0, "activated": 0}
+                "projected": 0, "acknowledged": 0, "blocked": 0, "inspected": 0, "activated": 0,
+                "full_plan_activated": 0}
     service = _compose_service(config)
     result = service.poll_once(mode=config.mode)
     return {
@@ -485,6 +554,7 @@ def run_once(config: RuntimeConfig) -> dict[str, Any]:
         "blocked": result.blocked,
         "inspected": result.inspected,
         "activated": result.activated,
+        "full_plan_activated": result.full_plan_activated,
     }
 
 

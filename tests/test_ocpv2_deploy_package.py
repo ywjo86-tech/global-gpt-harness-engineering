@@ -141,5 +141,11 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("outbox", source)
 
 
+    def test_user_service_keeps_executable_activation_off_without_policy(self):
+        text=(DEPLOY_ROOT/"ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertNotIn("OCP_FULL_PLAN_ACTIVATION_POLICY_REF=", text)
+
+
 if __name__ == "__main__":
     unittest.main()
