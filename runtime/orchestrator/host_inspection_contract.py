@@ -21,7 +21,7 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SAFE_ALIAS = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _FORBIDDEN_ARGUMENT_KEYS = frozenset({
-    "root", "project_root", "workspace_root", "cwd", "executable", "argv",
+    "project_root", "workspace_root", "cwd", "executable", "argv",
     "env", "environment", "provider", "provider_id", "provider_ref",
     "model", "model_id", "model_ref", "backend", "shell", "command",
 })
@@ -58,7 +58,7 @@ def _validate_arguments(value: object, *, key: str = "arguments") -> None:
         for nested in value:
             _validate_arguments(nested, key=key)
         return
-    if isinstance(value, str) and key in {"path", "directory"}:
+    if isinstance(value, str) and key in {"path", "directory", "root"}:
         if value.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:[\\/]", value):
             raise HostInspectionContractError("absolute caller path is forbidden in arguments")
 

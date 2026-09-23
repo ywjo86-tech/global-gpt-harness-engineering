@@ -59,6 +59,16 @@ class HostInspectionContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(HostInspectionContractError, "arguments"):
                     HostInspectionRequestV1.from_mapping(self.payload(arguments=arguments))
 
+    def test_relative_search_root_is_allowed_but_absolute_root_is_blocked(self):
+        request = HostInspectionRequestV1.from_mapping(
+            self.payload(operation="filesystem.search", arguments={"root": ".", "query": "x"})
+        )
+        self.assertEqual(request.arguments["root"], ".")
+        with self.assertRaisesRegex(HostInspectionContractError, "absolute"):
+            HostInspectionRequestV1.from_mapping(
+                self.payload(operation="filesystem.search", arguments={"root": "/tmp", "query": "x"})
+            )
+
     def test_result_binds_exact_request_and_is_mapping_only(self):
         request = HostInspectionRequestV1.from_mapping(self.payload(operation="git.branch"))
         result = HostInspectionResultV1.ok(request, {"branch": "main"})
