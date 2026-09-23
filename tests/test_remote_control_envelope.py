@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
+from runtime.orchestrator.approved_work_binding import ApprovedWorkActivationRequestV1
 from runtime.orchestrator.host_inspection_contract import HostInspectionRequestV1
 from runtime.orchestrator.remote_control_envelope import (
     REMOTE_CONTROL_ENVELOPE_SCHEMA,
@@ -46,6 +47,29 @@ def inspection_payload(**changes):
     return seal_remote_control_envelope(value)
 
 
+def activation_payload(**changes):
+    request = ApprovedWorkActivationRequestV1.from_mapping({
+        "schema_version": "orchestration.approved-work-activation-request.v1",
+        "activation_request_id": "ACT-1", "project_alias": "global-gpt-harness-engineering",
+        "approved_plan_path": "docs/PLAN.md", "approved_plan_sha256": "a" * 64,
+        "approved_spec_path": "docs/SPEC.md", "approved_spec_sha256": "b" * 64,
+        "requirement_artifact_path": "docs/requirements.json", "requirement_artifact_sha256": "c" * 64,
+        "approval_ref": "approval:user", "expected_branch": "main", "expected_head": "d" * 40,
+        "task_ids": ["T1", "T2"], "runtime_release_digest": "e" * 64,
+    })
+    value = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA, "request_kind": "APPROVED_WORK_ACTIVATION",
+        "message_id": "MSG-A1", "sequence": 3,
+        "issued_at": "2026-09-23T00:00:00+00:00", "expires_at": "2026-09-23T00:10:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "GITHUB_CONTROL_V1", "channel_id": "PR:7", "source_actor_id": "235775273", "source_message_id": "203"},
+        "payload": request.to_dict(), "payload_digest": "",
+        "authorization": {"activation_policy_ref": "ACTIVATION-POLICY-1"}, "envelope_sha256": "",
+    }
+    value.update(changes)
+    return seal_remote_control_envelope(value)
+
+
 class RemoteControlEnvelopeTests(unittest.TestCase):
     def test_host_inspection_envelope_round_trips(self):
         value = inspection_payload()
@@ -54,6 +78,27 @@ class RemoteControlEnvelopeTests(unittest.TestCase):
         self.assertEqual(envelope.payload.operation, "git.status")
         self.assertEqual(envelope.payload_digest, envelope.payload.request_digest)
         self.assertEqual(decode_remote_control_payload(value, now=NOW), envelope)
+
+
+    def test_approved_work_activation_envelope_round_trips(self):
+        value = activation_payload()
+        envelope = validate_remote_control_envelope(value, now=NOW)
+        self.assertEqual(envelope.request_kind, "APPROVED_WORK_ACTIVATION")
+        self.assertEqual(envelope.payload.activation_request_id, "ACT-1")
+        self.assertEqual(envelope.payload_digest, envelope.payload.request_digest)
+        self.assertEqual(decode_remote_control_payload(value, now=NOW), envelope)
+
+    def test_activation_rejects_ambiguous_or_authority_bearing_payload(self):
+        for field in ("provider", "model", "backend", "state_change_required"):
+            with self.subTest(field=field):
+                raw = activation_payload()
+                raw["payload"][field] = True if field == "state_change_required" else "forbidden"
+                with self.assertRaises(RemoteControlEnvelopeError):
+                    seal_remote_control_envelope(raw)
+        raw = activation_payload()
+        raw["payload"]["approval_ref"] = ""
+        with self.assertRaises(RemoteControlEnvelopeError):
+            seal_remote_control_envelope(raw)
 
     def test_unknown_kind_and_extra_authority_fields_are_rejected(self):
         with self.assertRaisesRegex(RemoteControlEnvelopeError, "request kind"):

@@ -9,6 +9,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from .approved_work_binding import (
+    ApprovedWorkActivationRequestV1,
+    ApprovedWorkBindingError,
+)
 from .host_inspection_contract import (
     HostInspectionContractError,
     HostInspectionRequestV1,
@@ -22,6 +26,7 @@ from .remote_operator_envelope import (
 
 REMOTE_CONTROL_ENVELOPE_SCHEMA = "orchestration.remote-control-envelope.v1"
 HOST_INSPECTION_KIND = "HOST_INSPECTION"
+APPROVED_WORK_ACTIVATION_KIND = "APPROVED_WORK_ACTIVATION"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TOP_FIELDS = {
@@ -29,7 +34,8 @@ _TOP_FIELDS = {
     "actor", "transport", "payload", "payload_digest", "authorization", "envelope_sha256",
 }
 _TRANSPORT_FIELDS = {"adapter_id", "channel_id", "source_actor_id", "source_message_id"}
-_AUTH_FIELDS = {"inspection_policy_ref"}
+_INSPECTION_AUTH_FIELDS = {"inspection_policy_ref"}
+_ACTIVATION_AUTH_FIELDS = {"activation_policy_ref"}
 
 
 class RemoteControlEnvelopeError(ValueError):
@@ -89,6 +95,14 @@ class RemoteControlAuthorization:
 
 
 @dataclass(frozen=True, slots=True)
+class RemoteWorkActivationAuthorization:
+    activation_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.activation_policy_ref, "activation policy ref")
+
+
+@dataclass(frozen=True, slots=True)
 class RemoteControlEnvelopeV1:
     schema_version: str
     request_kind: str
@@ -98,9 +112,9 @@ class RemoteControlEnvelopeV1:
     expires_at: str
     actor: str
     transport: TransportBinding
-    payload: HostInspectionRequestV1
+    payload: HostInspectionRequestV1 | ApprovedWorkActivationRequestV1
     payload_digest: str
-    authorization: RemoteControlAuthorization
+    authorization: RemoteControlAuthorization | RemoteWorkActivationAuthorization
     envelope_sha256: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -129,6 +143,23 @@ def _validated_inspection_payload(raw: object) -> HostInspectionRequestV1:
         raise RemoteControlEnvelopeError(f"invalid host inspection payload: {exc}") from exc
 
 
+def _validated_activation_payload(raw: object) -> ApprovedWorkActivationRequestV1:
+    if not isinstance(raw, Mapping):
+        raise RemoteControlEnvelopeError("approved work activation payload must be an object")
+    try:
+        return ApprovedWorkActivationRequestV1.from_mapping(raw)
+    except ApprovedWorkBindingError as exc:
+        raise RemoteControlEnvelopeError(f"invalid approved work activation payload: {exc}") from exc
+
+
+def _validated_payload(kind: object, raw: object) -> HostInspectionRequestV1 | ApprovedWorkActivationRequestV1:
+    if kind == HOST_INSPECTION_KIND:
+        return _validated_inspection_payload(raw)
+    if kind == APPROVED_WORK_ACTIVATION_KIND:
+        return _validated_activation_payload(raw)
+    raise RemoteControlEnvelopeError("unsupported request kind")
+
+
 def seal_remote_control_envelope(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise RemoteControlEnvelopeError("remote control envelope must be an object")
@@ -137,9 +168,7 @@ def seal_remote_control_envelope(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise RemoteControlEnvelopeError("remote control envelope fields mismatch")
     if value.get("schema_version") != REMOTE_CONTROL_ENVELOPE_SCHEMA:
         raise RemoteControlEnvelopeError("unsupported remote control schema")
-    if value.get("request_kind") != HOST_INSPECTION_KIND:
-        raise RemoteControlEnvelopeError("unsupported request kind")
-    request = _validated_inspection_payload(value.get("payload"))
+    request = _validated_payload(value.get("request_kind"), value.get("payload"))
     value["payload_digest"] = request.request_digest
     value["envelope_sha256"] = _sha(_unsigned(value))
     return value
@@ -165,7 +194,8 @@ def validate_remote_control_envelope(
     _exact_fields(payload, _TOP_FIELDS, "remote control envelope")
     if payload.get("schema_version") != REMOTE_CONTROL_ENVELOPE_SCHEMA:
         raise RemoteControlEnvelopeError("unsupported remote control schema")
-    if payload.get("request_kind") != HOST_INSPECTION_KIND:
+    request_kind = str(payload.get("request_kind") or "")
+    if request_kind not in {HOST_INSPECTION_KIND, APPROVED_WORK_ACTIVATION_KIND}:
         raise RemoteControlEnvelopeError("unsupported request kind")
     message_id = _safe_id(payload["message_id"], "message ID")
     try:
@@ -184,23 +214,29 @@ def validate_remote_control_envelope(
     if str(payload["actor"]) != "GPT_OPERATOR":
         raise RemoteControlEnvelopeError("actor not allowed")
     transport = _validate_transport(payload["transport"])
-    request = _validated_inspection_payload(payload["payload"])
+    request = _validated_payload(request_kind, payload["payload"])
     payload_digest = _digest(payload["payload_digest"], "payload digest")
     if payload_digest != request.request_digest:
         raise RemoteControlEnvelopeError("payload digest mismatch")
     auth_raw = payload["authorization"]
     if not isinstance(auth_raw, Mapping):
         raise RemoteControlEnvelopeError("authorization must be an object")
-    _exact_fields(auth_raw, _AUTH_FIELDS, "authorization")
-    authorization = RemoteControlAuthorization(
-        inspection_policy_ref=str(auth_raw["inspection_policy_ref"]),
-    )
+    if request_kind == HOST_INSPECTION_KIND:
+        _exact_fields(auth_raw, _INSPECTION_AUTH_FIELDS, "authorization")
+        authorization: RemoteControlAuthorization | RemoteWorkActivationAuthorization = RemoteControlAuthorization(
+            inspection_policy_ref=str(auth_raw["inspection_policy_ref"]),
+        )
+    else:
+        _exact_fields(auth_raw, _ACTIVATION_AUTH_FIELDS, "authorization")
+        authorization = RemoteWorkActivationAuthorization(
+            activation_policy_ref=str(auth_raw["activation_policy_ref"]),
+        )
     envelope_digest = _digest(payload["envelope_sha256"], "envelope digest")
     if envelope_digest != _sha(_unsigned(payload)):
         raise RemoteControlEnvelopeError("envelope digest mismatch")
     return RemoteControlEnvelopeV1(
         schema_version=REMOTE_CONTROL_ENVELOPE_SCHEMA,
-        request_kind=HOST_INSPECTION_KIND,
+        request_kind=request_kind,
         message_id=message_id,
         sequence=sequence,
         issued_at=str(payload["issued_at"]),
