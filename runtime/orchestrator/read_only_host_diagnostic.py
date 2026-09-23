@@ -7,9 +7,14 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
-from .read_only_host_diagnostic_contract import DiagnosticPolicy, ReadOnlyDiagnosticRequestV1
+from .read_only_host_diagnostic_contract import (
+    DiagnosticPolicy,
+    ReadOnlyDiagnosticRequestV1,
+    ReadOnlyDiagnosticResultV1,
+)
 
 _SENSITIVE_EXACT = frozenset({".env", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials.json"})
 _SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
@@ -380,3 +385,73 @@ def read_user_service_properties(
             raise DiagnosticError("duplicate systemd property output")
         parsed[key] = value
     return parsed
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+_OPERATION_HANDLERS = {
+    "repo.snapshot": lambda request, policy: collect_repo_snapshot(request, policy),
+    "project.file_range": lambda request, policy: read_project_file_range(request, policy),
+    "path.metadata": lambda request, policy: read_path_metadata(request, policy),
+    "user_service.properties": lambda request, policy: read_user_service_properties(request, policy),
+}
+
+
+def execute_read_only_host_diagnostic(
+    request: ReadOnlyDiagnosticRequestV1,
+    policy: DiagnosticPolicy,
+    *,
+    project_id: str,
+    correlation_id: str,
+    source_sha: str,
+    runtime_sha: str,
+    authorization_decision: str = "ALLOW",
+    now: Callable[[], datetime] = _utc_now,
+) -> ReadOnlyDiagnosticResultV1:
+    """Execute one registered observation and seal its non-authoritative result."""
+    data_class = "DIAG_CONTENT" if request.operation == "project.file_range" else "DIAG_SUMMARY"
+    status = "OK"
+    freshness = "CURRENT"
+    error_class = ""
+    payload: Mapping[str, Any] = {}
+    redaction_applied = False
+    truncated = False
+    try:
+        payload = _OPERATION_HANDLERS[request.operation](request, policy)
+        redaction_applied = bool(payload.get("redaction_applied", False))
+        truncated = bool(payload.get("truncated", False))
+        if bool(payload.get("stale", False)):
+            status = "STALE"
+            freshness = "STALE"
+        elif truncated:
+            status = "PARTIAL"
+    except DiagnosticSecurityError as exc:
+        status = "BLOCKED"
+        error_class = type(exc).__name__
+        payload = {"reason": "diagnostic policy denied the request"}
+    except DiagnosticUnavailableError as exc:
+        status = "UNAVAILABLE"
+        error_class = type(exc).__name__
+        payload = {"reason": str(exc)[:256]}
+    except DiagnosticError as exc:
+        status = "ERROR"
+        error_class = type(exc).__name__
+        payload = {"reason": str(exc)[:256]}
+    except Exception as exc:
+        status = "ERROR"
+        error_class = type(exc).__name__[:128]
+        payload = {"reason": "unexpected diagnostic failure"}
+
+    captured = now()
+    if captured.tzinfo is None:
+        captured = captured.replace(tzinfo=timezone.utc)
+    return ReadOnlyDiagnosticResultV1.build(
+        request_id=request.request_id, correlation_id=correlation_id, project_id=project_id,
+        root_id=request.root_id, operation_id=request.operation,
+        authorization_decision=authorization_decision, captured_at=captured.isoformat(),
+        freshness=freshness, source_sha=source_sha, runtime_sha=runtime_sha,
+        data_class=data_class, redaction_applied=redaction_applied, truncated=truncated,
+        status=status, error_class=error_class, payload=payload,
+    )
