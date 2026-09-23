@@ -20,7 +20,14 @@ from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITO
 from .harness_state_root import resolve_harness_state_root
 from .ocpv2_canonical_recovery import recover_pending_canonical_results, resolve_registered_full_plan_completion
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2, validate_remote_envelope
+from .read_only_host_diagnostic import execute_read_only_host_diagnostic
+from .read_only_host_diagnostic_contract import DiagnosticContractError, DiagnosticPolicy, diagnostic_feature_enabled
+from .remote_diagnostic_outbox import RemoteDiagnosticOutbox, RemoteDiagnosticProjectionV1
+from .remote_operator_envelope import (
+    RemoteControlEnvelope,
+    RemoteOperatorEnvelopeV3,
+    validate_remote_control_envelope,
+)
 from .remote_operator_ingress import validate_ingress
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import RemoteOperatorReceiptStore
@@ -44,6 +51,8 @@ _OPTIONAL_ENV = {
     "OCP_CANARY_TASK_ID",
     "OCP_CANARY_GATE_ID",
     "OCP_CANARY_DIRECTIVE_ID",
+    "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
+    "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
 }
 _PROJECTION_SECRET = re.compile(
     rb"(?i)(api[_-]?key|authorization|bearer|password|token|credential|secret)\s*[:=]\s*([^\s,;}]+)"
@@ -64,6 +73,8 @@ class RuntimeConfig:
     token_file: Path | None
     state_root: Path | None
     environment: Mapping[str, str]
+    diagnostic_enabled: bool = False
+    diagnostic_policy: DiagnosticPolicy | None = None
 
 
 def _projection_secret_findings(payload: bytes) -> dict[str, int]:
@@ -113,11 +124,27 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
         mode = ControlMode(file_env["OCP_MODE"])
     except ValueError as exc:
         raise RuntimeServiceError("UNKNOWN_MODE") from exc
+    try:
+        diagnostic_enabled = diagnostic_feature_enabled(environment)
+    except DiagnosticContractError as exc:
+        raise RuntimeServiceError("invalid diagnostic feature flag") from exc
+    diagnostic_policy: DiagnosticPolicy | None = None
+    if diagnostic_enabled:
+        raw_config = str(environment.get("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG", "")).strip()
+        if not raw_config:
+            raise RuntimeServiceError("diagnostic config is required when feature is enabled")
+        try:
+            diagnostic_policy = DiagnosticPolicy.load(Path(raw_config).expanduser())
+        except DiagnosticContractError as exc:
+            raise RuntimeServiceError("diagnostic config is invalid") from exc
     repo_root = Path(file_env["OCP_REPO_ROOT"]).expanduser().absolute()
     if repo_root.is_symlink() or not repo_root.is_dir():
         raise RuntimeServiceError("repo root must be an existing non-symlink directory")
     if mode == ControlMode.DISABLED:
-        return RuntimeConfig(mode, repo_root, 0, 0, (), None, None, environment)
+        return RuntimeConfig(
+            mode, repo_root, 0, 0, (), None, None, environment,
+            diagnostic_enabled=diagnostic_enabled, diagnostic_policy=diagnostic_policy,
+        )
     try:
         repository_id = int(file_env["OCP_GITHUB_CONTROL_REPOSITORY_ID"])
         pr_number = int(file_env["OCP_GITHUB_CONTROL_PR_NUMBER"])
@@ -137,7 +164,10 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     state_root.mkdir(parents=True, exist_ok=True)
     if state_root.is_symlink():
         raise RuntimeServiceError("OCP state root is unsafe")
-    return RuntimeConfig(mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment)
+    return RuntimeConfig(
+        mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment,
+        diagnostic_enabled=diagnostic_enabled, diagnostic_policy=diagnostic_policy,
+    )
 
 
 def canary_scope_from_environment(mode: ControlMode | str, environment: Mapping[str, str]) -> CanaryScope | None:
@@ -161,7 +191,7 @@ def canary_scope_from_environment(mode: ControlMode | str, environment: Mapping[
 
 
 def execute_authorized_canonical(
-    envelope: RemoteOperatorEnvelopeV2 | Any,
+    envelope: RemoteControlEnvelope | Any,
     directive: Any,
     *,
     harness_state_root: str | Path,
@@ -242,6 +272,10 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     )
     receipts = RemoteOperatorReceiptStore(config.state_root / "receipts")
     outbox = RemoteResultOutbox(config.state_root / "outbox")
+    diagnostic_outbox = (
+        RemoteDiagnosticOutbox(config.state_root / "diagnostic-outbox")
+        if config.diagnostic_enabled else None
+    )
     binding_store = RemoteExecutionBindingStore(config.state_root / "execution-bindings")
     harness_state_root = resolve_harness_state_root(
         project_root=config.repo_root,
@@ -282,12 +316,18 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         durable_acknowledged=durable_acknowledged,
     )
 
+    if diagnostic_outbox is not None:
+        def publish_pending_diagnostic(projection: RemoteDiagnosticProjectionV1) -> None:
+            adapter.publish_projection(projection.to_dict())
+            adapter.acknowledge_delivery(projection.message_id)
+        diagnostic_outbox.publish_pending(publish_pending_diagnostic)
+
     def decode(raw):
         try:
             value = json.loads(raw.content.decode("utf-8"))
         except Exception as exc:
             raise RuntimeServiceError("remote control payload is not valid JSON") from exc
-        envelope = validate_remote_envelope(value)
+        envelope = validate_remote_control_envelope(value)
         if (
             envelope.transport.adapter_id != "GITHUB_CONTROL_V1"
             or envelope.transport.channel_id != f"PR:{config.control_pr_number}"
@@ -325,8 +365,47 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             harness_state_root=harness_state_root,
         )
 
+    def execute_read_only(envelope, directive, request):
+        if (
+            not config.diagnostic_enabled
+            or config.diagnostic_policy is None
+            or diagnostic_outbox is None
+            or not isinstance(envelope, RemoteOperatorEnvelopeV3)
+            or request.request_digest != envelope.read_only_request_digest
+            or directive.state_change_required
+        ):
+            raise RuntimeServiceError("READ_ONLY_DIAGNOSTIC_NOT_AUTHORIZED")
+        result = execute_read_only_host_diagnostic(
+            request,
+            config.diagnostic_policy,
+            project_id=envelope.project_id,
+            correlation_id=envelope.message_id,
+            source_sha=str(envelope.expected.source_head or ""),
+            runtime_sha=str(envelope.expected.runtime_release_digest or ""),
+        )
+        projection = RemoteDiagnosticProjectionV1(
+            projection_id=f"DIAG-{envelope.message_id}",
+            message_id=envelope.message_id,
+            directive_digest=envelope.directive_digest,
+            project_id=envelope.project_id,
+            run_id=envelope.run_id,
+            gate_id=envelope.gate_id,
+            task_id=envelope.task_id,
+            request_digest=envelope.read_only_request_digest,
+            diagnostic_result=result,
+            projected_at=result.captured_at,
+        )
+        diagnostic_outbox.enqueue(projection)
+        return result.to_dict()
+
     def after_projection_published(envelope, projection):
         del projection
+        if isinstance(envelope, RemoteOperatorEnvelopeV3) and diagnostic_outbox is not None:
+            projection_id = f"DIAG-{envelope.message_id}"
+            for pending in diagnostic_outbox.pending():
+                if pending.projection_id == projection_id:
+                    diagnostic_outbox.mark_published(projection_id, pending.projection_sha256)
+                    break
         binding = binding_store.get(envelope.message_id)
         if binding is not None and binding.status != "PROJECTED":
             binding_store.mark_projected(envelope.message_id, binding.projection_id or None)
@@ -336,6 +415,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         decode_envelope=decode,
         ingress=ingress,
         execute_authorized=execute,
+        execute_read_only=execute_read_only if config.diagnostic_enabled else None,
         canary_scope=canary_scope_from_environment(config.mode, config.environment),
         after_projection_published=after_projection_published,
     )
@@ -344,7 +424,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
 def run_once(config: RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         return {"mode": "DISABLED", "received": 0, "validated": 0, "executed": 0,
-                "projected": 0, "acknowledged": 0, "blocked": 0}
+                "diagnosed": 0, "projected": 0, "acknowledged": 0, "blocked": 0}
     service = _compose_service(config)
     result = service.poll_once(mode=config.mode)
     return {
@@ -352,6 +432,7 @@ def run_once(config: RuntimeConfig) -> dict[str, Any]:
         "received": result.received,
         "validated": result.validated,
         "executed": result.executed,
+        "diagnosed": result.diagnosed,
         "projected": result.projected,
         "acknowledged": result.acknowledged,
         "blocked": result.blocked,
