@@ -221,6 +221,18 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             self.assertFalse(config.diagnostic_enabled)
             self.assertIsNone(config.diagnostic_policy)
 
+    def test_old_env_cannot_be_implicitly_enabled_by_process_environment(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, repo, _ = _write_runtime_env(root)
+            policy = _write_policy(root / "policy.json", repo)
+            config = load_runtime_config(env_path, process_environment={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(policy),
+            })
+            self.assertFalse(config.diagnostic_enabled)
+            self.assertIsNone(config.diagnostic_policy)
+
     def test_diagnostic_feature_true_requires_secure_absolute_policy(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -283,7 +295,7 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             executions = []
 
             def fake_execute(request, policy, **kwargs):
-                executions.append(request.request_id)
+                executions.append((request.request_id, kwargs["source_sha"], kwargs["runtime_sha"]))
                 return ReadOnlyDiagnosticResultV1.build(
                     request_id=request.request_id, correlation_id=kwargs["correlation_id"], project_id=kwargs["project_id"],
                     root_id=request.root_id, operation_id=request.operation, authorization_decision="ALLOW",
@@ -296,14 +308,17 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
                  patch.object(module, "GitHubControlAdapter", side_effect=lambda **kwargs: next(adapters)), \
                  patch.object(module, "recover_pending_canonical_results", return_value=None), \
                  patch.object(module, "resolve_harness_state_root", return_value=repo), \
+                 patch.object(module, "executor_runtime_identity", return_value={
+                     "head": "1" * 40, "runtime_source_sha256": "2" * 64,
+                 }, create=True), \
                  patch.object(module, "execute_read_only_host_diagnostic", side_effect=fake_execute, create=True):
                 first = _compose_service(config)
                 with self.assertRaisesRegex(RuntimeError, "offline"):
                     first.poll_once(mode=config.mode)
-                self.assertEqual(executions, ["REQ-1"])
+                self.assertEqual(executions, [("REQ-1", "1" * 40, "2" * 64)])
 
                 _compose_service(config)
-                self.assertEqual(executions, ["REQ-1"])
+                self.assertEqual(executions, [("REQ-1", "1" * 40, "2" * 64)])
                 self.assertEqual(len(second_adapter.projections), 1)
                 recovered = second_adapter.projections[0]
                 self.assertEqual(recovered["schema_version"], "orchestration.remote-diagnostic-projection.v1")

@@ -32,6 +32,7 @@ from .remote_operator_ingress import validate_ingress
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import RemoteOperatorReceiptStore
 from .remote_operator_recovery_binding import RemoteExecutionBindingStore
+from .production_run_authority import executor_runtime_identity
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
 
 
@@ -125,12 +126,12 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     except ValueError as exc:
         raise RuntimeServiceError("UNKNOWN_MODE") from exc
     try:
-        diagnostic_enabled = diagnostic_feature_enabled(environment)
+        diagnostic_enabled = diagnostic_feature_enabled(file_env)
     except DiagnosticContractError as exc:
         raise RuntimeServiceError("invalid diagnostic feature flag") from exc
     diagnostic_policy: DiagnosticPolicy | None = None
     if diagnostic_enabled:
-        raw_config = str(environment.get("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG", "")).strip()
+        raw_config = str(file_env.get("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG", "")).strip()
         if not raw_config:
             raise RuntimeServiceError("diagnostic config is required when feature is enabled")
         try:
@@ -375,13 +376,14 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             or directive.state_change_required
         ):
             raise RuntimeServiceError("READ_ONLY_DIAGNOSTIC_NOT_AUTHORIZED")
+        provenance = executor_runtime_identity(config.repo_root)
         result = execute_read_only_host_diagnostic(
             request,
             config.diagnostic_policy,
             project_id=envelope.project_id,
             correlation_id=envelope.message_id,
-            source_sha=str(envelope.expected.source_head or ""),
-            runtime_sha=str(envelope.expected.runtime_release_digest or ""),
+            source_sha=str(provenance.get("head") or ""),
+            runtime_sha=str(provenance.get("runtime_source_sha256") or ""),
         )
         projection = RemoteDiagnosticProjectionV1(
             projection_id=f"DIAG-{envelope.message_id}",
