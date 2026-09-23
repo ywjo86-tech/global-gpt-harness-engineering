@@ -1,16 +1,47 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 from .approval_handler import read_pending_approvals, submit_approval as _submit_approval
 from .command_dispatcher import dispatch_command
 from .event_stream import read_recent_events
-from .state_reader import read_dashboard_state, render_dashboard_markdown
+from .state_reader import read_dashboard_state, read_dashboard_state_projection_only, render_dashboard_markdown
+
+
+def _console_atom(value: object, fallback: str) -> str:
+    text = str(value or "").strip()
+    normalized = re.sub(r"[^A-Za-z0-9._:-]+", "_", text).strip("_")
+    return (normalized or fallback)[:200]
 
 
 def refresh_dashboard_snapshot(project_root: str | Path, run_id: str | None = None) -> dict[str, Any]:
     return read_dashboard_state(project_root, run_id=run_id)
+
+
+def refresh_operations_projection(project_root: str | Path, run_id: str | None = None) -> dict[str, object]:
+    from runtime.orchestrator.operator_console_projection import build_operator_console_projection
+    from runtime.orchestrator.operations_read_model import build_operations_read_model_from_console_snapshot
+
+    snapshot = read_dashboard_state_projection_only(project_root, run_id=run_id)
+    stage_gate = snapshot.get("stage_gate_result") if isinstance(snapshot.get("stage_gate_result"), dict) else {}
+    console = build_operator_console_projection(
+        {
+            "project_id": _console_atom(snapshot.get("project_name"), "UNKNOWN_PROJECT"),
+            "run_id": _console_atom(snapshot.get("run_id"), "UNKNOWN_RUN"),
+            "task_id": "",
+            "gate_id": _console_atom(stage_gate.get("gate_id"), "UNKNOWN_GATE"),
+            "stage": _console_atom(snapshot.get("current_phase"), "UNKNOWN"),
+            "execution_readiness": "WAITING_APPROVAL" if snapshot.get("approval_required") else "READY",
+            "operator_authority_label": "GPT_OPERATOR",
+            "checkpoint_refs": tuple(),
+            "evidence_refs": tuple(),
+        },
+        transport_state="OBSERVE_ONLY",
+        status_flags=tuple(),
+    )
+    return build_operations_read_model_from_console_snapshot(console, snapshot).to_dict()
 
 
 def get_status(project_root: str | Path, run_id: str | None = None) -> dict[str, Any]:
