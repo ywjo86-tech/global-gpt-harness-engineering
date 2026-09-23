@@ -12,11 +12,12 @@ from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .operator_control import OperatorDirectiveV1
+from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
 from .remote_control_envelope import (
     APPROVED_WORK_ACTIVATION_KIND, HOST_INSPECTION_KIND,
     RemoteControlEnvelopeV1, RemoteWorkActivationAuthorization,
 )
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2
+from .remote_operator_envelope import RemoteControlEnvelope, RemoteOperatorEnvelopeV3
 from .remote_operator_ingress import IngressDecision
 from .remote_operator_transport import RawControlEnvelope, RemoteOperatorTransport
 
@@ -41,7 +42,7 @@ class CanaryScope:
     gate_id: str
     directive_id: str
 
-    def matches(self, envelope: RemoteOperatorEnvelopeV2, directive: OperatorDirectiveV1) -> bool:
+    def matches(self, envelope: RemoteControlEnvelope, directive: OperatorDirectiveV1) -> bool:
         return (
             envelope.project_id == self.project_id
             and envelope.run_id == self.run_id
@@ -57,6 +58,7 @@ class ServicePollResult:
     received: int = 0
     validated: int = 0
     executed: int = 0
+    diagnosed: int = 0
     projected: int = 0
     acknowledged: int = 0
     blocked: int = 0
@@ -69,11 +71,14 @@ class RemoteOperatorService:
         self,
         *,
         transport: RemoteOperatorTransport,
-        decode_envelope: Callable[[RawControlEnvelope], RemoteOperatorEnvelopeV2],
-        ingress: Callable[[RemoteOperatorEnvelopeV2], IngressDecision],
+        decode_envelope: Callable[[RawControlEnvelope], Any],
+        ingress: Callable[[RemoteControlEnvelope], IngressDecision],
         execute_authorized: Callable[
-            [RemoteOperatorEnvelopeV2, OperatorDirectiveV1], Mapping[str, Any]
+            [RemoteControlEnvelope, OperatorDirectiveV1], Mapping[str, Any]
         ],
+        execute_read_only: Callable[
+            [RemoteControlEnvelope, OperatorDirectiveV1, ReadOnlyDiagnosticRequestV1], Mapping[str, Any]
+        ] | None = None,
         canary_scope: CanaryScope | None = None,
         after_projection_published: Callable[[Any, Mapping[str, Any]], None] | None = None,
         inspect_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
@@ -86,6 +91,7 @@ class RemoteOperatorService:
         self.decode_envelope = decode_envelope
         self.ingress = ingress
         self.execute_authorized = execute_authorized
+        self.execute_read_only = execute_read_only
         self.canary_scope = canary_scope
         self.after_projection_published = after_projection_published
         self.inspect_authorized = inspect_authorized
@@ -96,7 +102,7 @@ class RemoteOperatorService:
 
     @staticmethod
     def _projection(
-        envelope: RemoteOperatorEnvelopeV2,
+        envelope: RemoteControlEnvelope,
         result_class: str,
         *,
         detail: Mapping[str, Any] | None = None,
@@ -172,7 +178,7 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = projected = acknowledged = blocked = inspected = activated = 0
+        received = validated = executed = diagnosed = projected = acknowledged = blocked = inspected = activated = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             try:
@@ -242,12 +248,24 @@ class RemoteOperatorService:
             if directive is None:
                 raise RemoteOperatorServiceError("accepted ingress omitted directive")
 
+            is_diagnostic = isinstance(envelope, RemoteOperatorEnvelopeV3)
+
             if resolved_mode == ControlMode.OBSERVE_ONLY:
                 projection = self._projection(envelope, "OBSERVED")
             elif resolved_mode == ControlMode.CONTROL_READ_ONLY:
                 if directive.state_change_required:
                     projection = self._projection(envelope, "MODE_BLOCKED")
                     blocked += 1
+                elif is_diagnostic:
+                    if self.execute_read_only is None:
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_UNAVAILABLE")
+                        blocked += 1
+                    else:
+                        result = self.execute_read_only(envelope, directive, envelope.read_only_request)
+                        if not isinstance(result, Mapping):
+                            raise RemoteOperatorServiceError("diagnostic execution result is malformed")
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_COMPLETED", detail=result)
+                        diagnosed += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
             elif resolved_mode == ControlMode.CONTROL_MUTATION_CANARY:
@@ -265,6 +283,9 @@ class RemoteOperatorService:
                             detail=result,
                         )
                         executed += 1
+                elif is_diagnostic:
+                    projection = self._projection(envelope, "MODE_BLOCKED")
+                    blocked += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
             elif resolved_mode == ControlMode.ACTIVE:
@@ -278,6 +299,16 @@ class RemoteOperatorService:
                         detail=result,
                     )
                     executed += 1
+                elif is_diagnostic:
+                    if self.execute_read_only is None:
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_UNAVAILABLE")
+                        blocked += 1
+                    else:
+                        result = self.execute_read_only(envelope, directive, envelope.read_only_request)
+                        if not isinstance(result, Mapping):
+                            raise RemoteOperatorServiceError("diagnostic execution result is malformed")
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_COMPLETED", detail=result)
+                        diagnosed += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
             else:  # pragma: no cover - enum exhaustiveness guard
@@ -292,6 +323,7 @@ class RemoteOperatorService:
             received=received,
             validated=validated,
             executed=executed,
+            diagnosed=diagnosed,
             projected=projected,
             acknowledged=acknowledged,
             blocked=blocked,
