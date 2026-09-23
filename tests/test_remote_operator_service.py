@@ -7,8 +7,11 @@ from datetime import datetime, timezone
 from runtime.orchestrator import remote_operator_service
 from runtime.orchestrator.operator_control import OPERATOR_DIRECTIVE_SCHEMA
 from runtime.orchestrator.remote_operator_envelope import (
+    REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA,
     REMOTE_OPERATOR_ENVELOPE_SCHEMA,
+    seal_remote_control_envelope,
     seal_remote_envelope,
+    validate_remote_control_envelope,
     validate_remote_envelope,
 )
 from runtime.orchestrator.remote_operator_ingress import IngressDecision
@@ -77,6 +80,28 @@ def envelope(*, state_change=True, task_id="T1", directive_id="D1"):
     }
     return validate_remote_envelope(
         seal_remote_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
+    )
+
+
+def diagnostic_envelope():
+    payload = envelope(state_change=False).to_dict()
+    payload["schema_version"] = REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA
+    payload["operator_directive"].update({
+        "current_stage": "PREPARE",
+        "requested_next_stage": "VERIFY",
+        "required_capabilities": ["read_only_host_diagnostic"],
+        "state_change_required": False,
+        "input_artifact_digests": [],
+    })
+    payload["read_only_request"] = {
+        "schema_version": "orchestration.read-only-host-diagnostic-request.v1",
+        "request_id": "REQ-1", "operation": "repo.snapshot", "root_id": "project",
+        "relative_path": "", "start_line": 0, "line_count": 0, "service_id": "",
+    }
+    payload["read_only_request_digest"] = ""
+    return validate_remote_control_envelope(
+        seal_remote_control_envelope(payload),
         now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
     )
 
@@ -200,6 +225,70 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         self.assertEqual(executions, [])
         self.assertEqual(transport.projections[0]["result_class"], "STALE_DIRECTIVE")
 
+    def diagnostic_service(self, *, with_executor=True):
+        env = diagnostic_envelope()
+        transport = FakeTransport((raw(),))
+        mutations = []
+        diagnostics = []
+
+        def execute_authorized(envelope_value, directive):
+            mutations.append((envelope_value.message_id, directive.directive_id))
+            return {"result_class": "CANONICAL_ACTION_COMPLETED"}
+
+        def execute_read_only(envelope_value, directive, request):
+            diagnostics.append((envelope_value.message_id, directive.directive_id, request.request_id))
+            return {
+                "schema_version": "orchestration.read-only-host-diagnostic-result.v1",
+                "request_id": request.request_id, "status": "OK", "payload_hash": "a" * 64,
+                "payload": {"head": "b" * 40},
+            }
+
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda raw_value: env,
+            ingress=lambda envelope_value: accepted(envelope_value),
+            execute_authorized=execute_authorized,
+            execute_read_only=execute_read_only if with_executor else None,
+        )
+        return env, service, transport, mutations, diagnostics
+
+    def test_observe_only_diagnostic_is_observed_without_execution(self):
+        env, service, transport, mutations, diagnostics = self.diagnostic_service()
+        result = service.poll_once(mode=ControlMode.OBSERVE_ONLY)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "OBSERVED")
+
+    def test_control_read_only_and_active_execute_typed_diagnostic_once(self):
+        for mode in (ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE):
+            with self.subTest(mode=mode.value):
+                env, service, transport, mutations, diagnostics = self.diagnostic_service()
+                result = service.poll_once(mode=mode)
+                self.assertEqual(result.diagnosed, 1)
+                self.assertEqual(result.executed, 0)
+                self.assertEqual(diagnostics, [(env.message_id, "D1", "REQ-1")])
+                self.assertEqual(mutations, [])
+                self.assertEqual(transport.projections[0]["result_class"], "READ_ONLY_DIAGNOSTIC_COMPLETED")
+                self.assertEqual(transport.projections[0]["status"], "OK")
+
+    def test_mutation_canary_does_not_open_diagnostic_execution_authority(self):
+        env, service, transport, mutations, diagnostics = self.diagnostic_service()
+        result = service.poll_once(mode=ControlMode.CONTROL_MUTATION_CANARY)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "MODE_BLOCKED")
+
+    def test_missing_diagnostic_executor_fails_closed_without_mutation_callback(self):
+        env, service, transport, mutations, diagnostics = self.diagnostic_service(with_executor=False)
+        result = service.poll_once(mode=ControlMode.CONTROL_READ_ONLY)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "READ_ONLY_DIAGNOSTIC_UNAVAILABLE")
+
     def test_unknown_mode_fails_closed(self):
         env = envelope()
         service, transport, executions = self.service(env=env)
@@ -210,7 +299,10 @@ class RemoteOperatorServiceTests(unittest.TestCase):
 
     def test_import_has_no_systemd_git_or_package_side_effect(self):
         source = inspect.getsource(remote_operator_service)
-        for forbidden in ("systemctl", "subprocess", "os.system", "pip install", "apt ", "git config"):
+        for forbidden in (
+            "systemctl", "subprocess", "os.system", "pip install", "apt ", "git config",
+            "read_project_file_range(", "collect_repo_snapshot(", "systemctl --user",
+        ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
 
