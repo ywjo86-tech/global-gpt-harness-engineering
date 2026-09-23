@@ -6,6 +6,7 @@ from pathlib import Path
 from .capability_lifecycle import (
     CapabilityLifecycleError,
     CapabilityLifecycleRecordV1,
+    transition_capability_lifecycle,
 )
 from .durable_io import DurableIOError, atomic_write_json, durable_json_load
 
@@ -61,6 +62,34 @@ class CapabilityLifecycleStore:
         if not record.valid():
             raise CapabilityLifecycleStoreError("lifecycle record digest mismatch")
         return record
+
+    def acquire_dependency(self, contract_id: str, task_execution_id: str) -> CapabilityLifecycleRecordV1:
+        record = self.get(contract_id)
+        if record.state in {"DISABLE_NEW_ASSIGNMENT", "DRAINING", "SUPERSEDED", "DEPRECATED", "RETIRED"}:
+            raise CapabilityLifecycleStoreError("new assignment disabled")
+        ids = tuple(sorted(set(record.active_dependency_ids) | {str(task_execution_id)}))
+        updated = record.with_dependencies(ids)
+        self.put(updated)
+        return updated
+
+    def release_dependency(self, contract_id: str, task_execution_id: str) -> CapabilityLifecycleRecordV1:
+        record = self.get(contract_id)
+        ids = tuple(item for item in record.active_dependency_ids if item != str(task_execution_id))
+        updated = record.with_dependencies(ids)
+        self.put(updated)
+        return updated
+
+    def begin_drain(self, contract_id: str, *, evidence_ref: str) -> CapabilityLifecycleRecordV1:
+        record = self.get(contract_id)
+        if record.state not in {"ACTIVE", "DEGRADED", "QUARANTINED"}:
+            raise CapabilityLifecycleStoreError("capability cannot enter drain from current state")
+        try:
+            disabled = transition_capability_lifecycle(record, "DISABLE_NEW_ASSIGNMENT", (evidence_ref,))
+            draining = transition_capability_lifecycle(disabled, "DRAINING", (evidence_ref,))
+        except CapabilityLifecycleError as exc:
+            raise CapabilityLifecycleStoreError(str(exc)) from exc
+        self.put(draining)
+        return draining
 
     def list_records(self) -> tuple[CapabilityLifecycleRecordV1, ...]:
         records: list[CapabilityLifecycleRecordV1] = []

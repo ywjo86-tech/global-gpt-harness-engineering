@@ -141,6 +141,17 @@ class CapabilityLifecycleRecordV1:
     def valid(self) -> bool:
         return self.record_digest == self.expected_digest()
 
+    def with_dependencies(self, dependency_ids: tuple[str, ...]) -> "CapabilityLifecycleRecordV1":
+        if not self.valid():
+            raise CapabilityLifecycleError("lifecycle record digest mismatch")
+        return CapabilityLifecycleRecordV1.create(
+            contract=self.contract,
+            state=self.state,
+            health=self.health,
+            active_dependency_ids=tuple(dependency_ids),
+            evidence_refs=self.evidence_refs,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "contract": self.contract.to_dict(),
