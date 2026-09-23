@@ -8,6 +8,19 @@ Status: V1 TRACKING/MANUAL COMPATIBILITY ONLY — NOT EXECUTABLE PRIMARY-PATH AU
 
 This runbook promotes an already-approved Full Plan into the existing Harness job registry without requiring RDC or an interactive terminal. OCP remains transport/control only. AI Office remains workflow/governance. Full Plan remains planning and Gate authority. Product/source effects remain downstream of the existing execution gateway and Full MCP.
 
+
+## Activation class separation
+
+The live control contract has three distinct request classes and they MUST NOT be treated as interchangeable:
+
+```text
+APPROVED_WORK_ACTIVATION       = V1 tracking/manual receipt only
+APPROVED_FULL_PLAN_ACTIVATION = executable generic AUTO_RECONCILE registration
+EXISTING_RUN_CONTROL           = OCPV2-owned continuation only
+```
+
+`OCP_FULL_PLAN_ACTIVATION_ENABLED=0` is the required normal state after successor deployment. A live executable policy ref is absent while this flag is OFF. Switching the OCP service to a successor runtime is a separate live operational action and requires explicit approval even when executable activation remains OFF.
+
 ## Safety invariants
 
 - `OCP_WORK_ACTIVATION_ENABLED` defaults to `0`.

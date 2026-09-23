@@ -1,6 +1,6 @@
 # OCPv2 RDC-Independent Primary Path Acceptance Runbook
 
-Status: BLOCKED / APPROVED-WORK EXECUTION-LINK REMEDIATION REQUIRED
+Status: OFFLINE IMPLEMENTATION QUALIFIED / SUCCESSOR FEATURE-OFF DEPLOYMENT PENDING
 
 > The prior V1 activation canary is preserved as failure evidence only. Phases C-D must not resume from that run. A fresh acceptance window is required after implementation and qualification of `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md`.
 
@@ -13,9 +13,20 @@ Prove normal GPT operations work through OCP + Harness without RDC participating
 - Successor candidate HEAD: `ac5347bad16c4e594f2e93cec90767177e169329`.
 - Current live OCP WorkingDirectory at preflight: `/home/ywjo/AI-Workspace/runtime/ocpv2-r2-c591b01`.
 - Preflight timer state: active/waiting; one-shot service polls completed with `status=OK`.
-- `OCP_HOST_INSPECTION_ENABLED`, `OCP_WORK_ACTIVATION_ENABLED`, and activation policy ref were unset at preflight, therefore fail-closed.
+- `OCP_HOST_INSPECTION_ENABLED`, `OCP_WORK_ACTIVATION_ENABLED`, and activation policy ref were unset at preflight, therefore fail-closed. The successor additionally requires `OCP_FULL_PLAN_ACTIVATION_ENABLED=0` with no executable activation policy ref.
 
 The current-state observations above were collected with RDC before the acceptance window. They are preparation only and MUST NOT be counted as RDC-independent acceptance evidence.
+
+
+## Control request class separation
+
+```text
+APPROVED_WORK_ACTIVATION       = V1 tracking/manual receipt only
+APPROVED_FULL_PLAN_ACTIVATION = executable generic AUTO_RECONCILE registration
+EXISTING_RUN_CONTROL           = OCPV2-owned continuation only
+```
+
+The successor MUST be deployed with `OCP_FULL_PLAN_ACTIVATION_ENABLED=0` and without `OCP_FULL_PLAN_ACTIVATION_POLICY_REF`. The successor runtime switch itself is a separate live operational approval; feature-OFF packaging and review do not authorize service installation, reload, start, restart, or a live control request.
 
 ## Approval boundary
 
@@ -35,12 +46,12 @@ After the successor is deployed feature-OFF and health is confirmed, record the 
 
 ## Phase A — Successor feature-OFF qualification
 
-1. Deploy the exact qualified successor generation with both feature flags `0`.
+1. Deploy the exact qualified successor generation with Host Inspection and V1 settings preserved from the predecessor, and with `OCP_FULL_PLAN_ACTIVATION_ENABLED=0`.
 2. Keep existing control repository, PR, actor allowlist, token binding, OCP mode, and Full Plan ownership unchanged.
 3. Verify timer/service polling, legacy V2 existing-run control, result publication, Full Plan boot reconciliation, and attention/recovery.
 4. Record successor runtime identity and exact source HEAD.
 
-Expected: no new inspection or activation authority is reachable while both flags are OFF.
+Expected: executable Full Plan registration is unreachable while `OCP_FULL_PLAN_ACTIVATION_ENABLED=0`; no executable policy ref is configured, and all pre-existing Host Inspection/V1 settings remain unchanged.
 
 ## Phase B — Host Inspection only
 
@@ -56,14 +67,14 @@ Expected: no new inspection or activation authority is reachable while both flag
 
 Expected: all reads return typed bounded results; no mutation callback or new job registration occurs.
 
-## Phase C — Approved Work Activation canary
+## Phase C — Executable Approved Full Plan Activation canary
 
-1. Use one disposable committed canary spec/plan/requirement artifact with explicit user approval binding.
-2. Enable `OCP_WORK_ACTIVATION_ENABLED=1` and one exact activation policy ref while Host Inspection remains independently controlled.
-3. Submit exactly one typed activation request.
-4. Verify one and only one canonical Full Plan job and one create-once activation receipt.
+1. Use one disposable committed canary spec/plan/requirement artifact plus Harness-sealed Gate approval/engine evidence with explicit user approval binding.
+2. Enable `OCP_FULL_PLAN_ACTIVATION_ENABLED=1` and one exact executable activation policy ref while Host Inspection and V1 activation remain independently controlled.
+3. Submit exactly one typed `APPROVED_FULL_PLAN_ACTIVATION` request.
+4. Verify one and only one generic `AUTO_RECONCILE` Full Plan job and one create-once executable activation receipt.
 5. Replay the identical sealed request and verify no second job is registered.
-6. Verify existing Full Plan boot/reconcile discovers the job; OCP must not launch it directly.
+6. Verify existing Full Plan boot/reconcile discovers the job; OCP must not launch it directly and OCP existing-run continuation must reject AUTO_RECONCILE ownership.
 
 ## Phase D — Governed mutation proof
 
@@ -79,7 +90,7 @@ Expected: exactly one execution owner performs the mutation; OCP itself has no d
 1. During the acceptance window, verify audit/history contains no RDC invocation for normal-path work.
 2. If explicitly approved and operationally safe, stop only the RDC remote bridge after OCP/Harness health is established; do not stop OCP, Full Plan, or Harness services.
 3. Repeat one bounded Host Inspection and confirm control/results still flow through OCP.
-4. Roll back Work Activation to `0`, then Host Inspection to `0`, preserving registered Full Plan state, activation receipts, outbox evidence, and logs.
+4. Roll back executable Full Plan activation to `0`, then restore any separately changed Host Inspection/V1 settings to their approved baseline, preserving registered Full Plan state, activation receipts, outbox evidence, and logs.
 5. Confirm legacy V2 control and OCP polling remain healthy after rollback.
 
 Any use of RDC for recovery terminates the current acceptance window; recover first, then start a fresh window.
