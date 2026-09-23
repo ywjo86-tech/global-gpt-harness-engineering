@@ -5,7 +5,7 @@
 **Protocol:** `standards/EXHAUSTIVE_DIAGNOSIS_PROTOCOL.md` / EDP-1.0
 **Pre-remediation diagnosis:** `docs/history/upgrades/2026-09-23-OCP-APPROVED-WORK-EXECUTION-LINK/EDP_PRE_REMEDIATION_DIAGNOSIS.md`
 **Parent architecture:** `docs/superpowers/specs/2026-09-23-ocp-observation-gateway-design.md`
-**Status:** DESIGN CANDIDATE — implementation not authorized by this document
+**Status:** DESIGN CANDIDATE — authority-artifact boundary amended after Task 3 implementation finding; implementation of the amended boundary requires renewed written-spec review
 
 ## 1. Goal and Scope
 
@@ -127,9 +127,11 @@ Minimum fields:
 Each `gate_binding` contains only authority references and digests, never derived execution scope:
 
 - `gate_id`
-- Gate approval evidence project-relative path + SHA-256
-- engine requirement evidence project-relative path + SHA-256 when required
-- project requirement artifact refs by LV + SHA-256 when required
+- `approval_evidence = {relative_path, sha256}` where `relative_path` is resolved only under the system-derived Harness `approval` namespace
+- `engine_requirement_evidence = {relative_path, sha256} | null` resolved only under the system-derived Harness `artifact` namespace
+- `project_requirement_evidence_by_lv = [{lv_id, path, sha256}, ...]` where `path` remains a committed project-relative file
+
+The request schema therefore distinguishes Harness authority references from project artifact references. Harness authority refs never accept an absolute path or caller-supplied namespace/root.
 
 The caller cannot provide LV order, owned paths, validation commands, capabilities, provider/model, backend, or mapping root. Those are derived from canonical Harness sources.
 
@@ -144,12 +146,12 @@ The new `ApprovedFullPlanBindingValidator` is pure/read-only. It performs:
 3. Resolve the system-configured safe mapping root; caller cannot override it.
 4. Load `load_project_mapping(project_root, mapping_root=<root>)`.
 5. Require alias and mapping to agree on project ID/root and canonical plan path/SHA.
-6. Require plan/spec and all authority artifacts to be committed regular project files with exact digests.
+6. Require plan/spec and per-LV project requirement contracts to be committed regular project files with exact digests. Require mapping-bound TASK-to-LV projection source/digest through the existing mapping contract.
 7. Verify branch/HEAD.
 8. For each requested Gate, call `load_gate_plan()` under the exact mapping root.
 9. For TASK/STAGE-GATE plans, require mapping-bound `task_lv_authority_projection`; its existing validator derives LV authority.
-10. Load Gate approval evidence and call `validate_global_gate_bindings()` using the canonical plan, Gate, source and derived LV scope.
-11. Validate engine/project requirement artifacts with the existing explicit schema dispatch/readers.
+10. Resolve Gate approval evidence only from the system-derived `namespace_root(harness_state_root, project_id, "approval")`; require a safe namespace-relative path, regular non-symlink file, exact digest, `gate-approval.v1` schema, and exact current source/Gate/LV binding via `validate_global_gate_bindings()`. Activation never creates or relocates this evidence.
+11. Resolve engine R01-R25 conformance evidence, when supplied, only from the system-derived `namespace_root(harness_state_root, project_id, "artifact")`; require a safe namespace-relative path, regular non-symlink file, exact digest and existing engine evidence schema. Per-LV project requirement contracts remain committed project files and are validated with the existing project requirement reader.
 12. Verify runtime release manifest/root identity.
 13. Produce an immutable in-memory `ExecutableAuthorityBundle` and its digest.
 
@@ -194,14 +196,14 @@ No OCP-specific parser, editable-scope list or duplicate projection registry is 
 
 ## 10. Requirement Evidence
 
-The executable authority bundle classifies requirement artifacts by existing schema:
+The executable authority bundle classifies requirement artifacts by existing schema **and authority domain**:
 
-- `orchestration.requirement-evidence.v1` → engine/Harness R01-R25 conformance evidence;
-- `orchestration.project-requirement-contract.v1` → project/Gate/LV requirement contract.
+- `orchestration.requirement-evidence.v1` → engine/Harness R01-R25 conformance evidence, resolved from the system-derived Harness `artifact` namespace;
+- `orchestration.project-requirement-contract.v1` → project/Gate/LV requirement contract, resolved as a committed project-relative file.
 
-For every Gate/LV that requires project requirements, the request supplies only the artifact reference/digest. The validator derives expected requirement IDs and scope from the canonical plan/projection and validates with the existing dispatcher/reader.
+For every Gate/LV that requires project requirements, the request supplies only the project-relative artifact reference/digest. The validator derives expected requirement IDs and scope from the canonical plan/projection and validates with the existing reader. Engine conformance evidence is never required to be committed into the product repository.
 
-Unknown schemas, missing LV coverage, digest drift or scope mismatch block activation. No requirement artifact is synthesized.
+Unknown schemas, wrong authority domain, missing LV coverage, digest drift or scope mismatch block activation. No requirement or approval artifact is synthesized.
 
 ## 11. AI Office Boundary
 
@@ -239,7 +241,7 @@ expected_branch    = validated branch
 Each Gate entry is constructed from validated canonical evidence:
 
 - `gate_id`
-- exact Gate approval evidence path
+- exact absolute Gate approval evidence path resolved from the system-derived Harness approval namespace
 - `requirements_sha256` derived from validated approval/requirement binding
 - exact branch/head
 - `full_plan_opt_in=true`
@@ -363,6 +365,27 @@ At minimum distinguish:
 
 Every error is terminal for that request generation. There is no fallback to GPT_OPERATOR_PLAN, Manual Action, shell, auto-bootstrap or RDC.
 
+## 18A. Authority Artifact Boundary Amendment
+
+Task 3 implementation exposed an impossible self-reference in the earlier wording that required Gate approval evidence to be committed in the same product Git repository whose exact HEAD the approval seals. Committing such an approval changes the HEAD it contains. The canonical `gate-approval.v1` validator intentionally compares the sealed `head` to the execution head, so weakening that check is prohibited.
+
+The corrected authority boundary is:
+
+```text
+product repository (Git-committed)
+  -> approved plan/spec
+  -> TASK-to-LV projection source referenced by mapping
+  -> per-LV project requirement contracts
+
+Harness authority state (system-derived, outside product Git)
+  -> global-gate/<project_id>/approval/<relative>   # gate-approval.v1
+  -> global-gate/<project_id>/artifact/<relative>   # engine R01-R25 evidence
+```
+
+Remote callers never supply either namespace root or an absolute host path. The request may supply only a safe relative name plus digest inside the field-implied namespace. The validator derives the roots from `harness_state_root` with the existing `namespace_root()` contract, rejects symlink traversal and missing/non-regular files, verifies the exact digest, then applies the existing schema/scope/HEAD validators. Activation is read-only over these namespaces and SHALL NOT create approval or engine evidence.
+
+This amendment supersedes only prior statements that all authority artifacts are project-committed. It does not relax committed plan/spec/project-requirement evidence, Gate approval HEAD/scope/expiry validation, mapping/projection validation, or the prohibition on caller-supplied absolute paths.
+
 ## 19. Old Canary Disposition
 
 `GPT-ACT-20260923-02` remains historical failure evidence:
@@ -385,8 +408,8 @@ Its job/receipt/state/evidence must not be edited or rebound. A repaired accepta
 | AWEL-AC-003 | Alias without executable mapping blocks before job registration. |
 | AWEL-AC-004 | TASK/STAGE-GATE plan without approved projection blocks before job registration. |
 | AWEL-AC-005 | Mapping/projection/plan/source digest drift blocks before job registration. |
-| AWEL-AC-006 | Missing/expired/wrong-scope Gate approval blocks before job registration. |
-| AWEL-AC-007 | Missing/wrong-profile requirement evidence blocks before job registration. |
+| AWEL-AC-006 | Missing/expired/wrong-scope Gate approval or approval path outside the system-derived Harness approval namespace blocks before job registration. |
+| AWEL-AC-007 | Missing/wrong-profile/wrong-authority-domain requirement evidence blocks before job registration. |
 | AWEL-AC-008 | Valid executable binding builds one generic `AUTO_RECONCILE` job with exact mapping/runtime/source/Gate authority. |
 | AWEL-AC-009 | Replay registers no second job; conflicting request reuse blocks. |
 | AWEL-AC-010 | Boot reconciler accepts the valid AUTO_RECONCILE job while OCP canonical resume rejects ownership. |
@@ -405,8 +428,8 @@ Implementation planning must include TDD for:
 2. alias↔mapping↔plan identity mismatch;
 3. missing/symlinked/drifted mapping and projection;
 4. Gate ID/order and derived LV authority mismatch;
-5. approval missing/expired/head/scope drift;
-6. engine vs project requirement schema/coverage drift;
+5. approval missing/expired/head/scope drift and approval namespace traversal/symlink/wrong-root;
+6. engine vs project requirement schema/coverage/authority-domain drift;
 7. mapping-root binding surviving transient launch;
 8. AUTO_RECONCILE vs OCPV2 ownership separation;
 9. crash after `register_job()` but before projection publication;
@@ -424,7 +447,7 @@ Rollout sequence:
 2. qualify focused and full regression;
 3. deploy successor with V1/Host Inspection policy unchanged and executable feature OFF;
 4. qualify OFF behavior;
-5. create a fresh disposable project with pre-existing executable mapping/projection/Gate authority through the normal approved onboarding/governance process;
+5. create a fresh disposable project with pre-existing executable mapping/projection/project requirement contracts plus sealed Harness Gate approval/engine evidence through the normal approved onboarding/governance process;
 6. explicitly authorize bounded executable canary;
 7. enable only executable canary flag/policy;
 8. submit one request, observe one normal Full Plan effect and canonical validation;
@@ -469,9 +492,9 @@ This design introduces none of the following:
 | AWEL-MUST-007 | §§7,9 | mapping/canonical-plan path+SHA cross-check tests |
 | AWEL-MUST-008 | §§7,9 | missing/drifted TASK-to-LV projection tests |
 | AWEL-MUST-009 | §§7,9 | GatePlan-derived LV/scope/capability tests |
-| AWEL-MUST-010 | §8 | Gate approval/global binding/current-state tests |
+| AWEL-MUST-010 | §§7-8 | system-derived Harness approval namespace + Gate approval/global binding/current-state tests |
 | AWEL-MUST-011 | §8 | opaque approval-ref and cross-schema translation negative tests |
-| AWEL-MUST-012 | §10 | engine/project requirement dispatch and coverage tests |
+| AWEL-MUST-012 | §§7,10 | Harness-artifact engine evidence vs committed-project requirement dispatch/domain/coverage tests |
 | AWEL-MUST-013 | §§7,12 | source HEAD/runtime release drift tests |
 | AWEL-MUST-014 | §§7,12 | mapping-root durable launch/preflight tests |
 | AWEL-MUST-015 | §12 | generic job shape + AUTO_RECONCILE owner tests |

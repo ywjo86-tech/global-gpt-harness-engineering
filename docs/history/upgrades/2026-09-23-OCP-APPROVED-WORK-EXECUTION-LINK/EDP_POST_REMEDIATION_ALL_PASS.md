@@ -8,6 +8,8 @@
 **Source code baseline examined:** `14656be825714177615400380b35510ad56a3e47`
 **Decision:** `AWEL_DESIGN_EDP_ALL_PASS`
 
+> Historical scope note (2026-09-23): this ALL PASS applies only to target SHA-256 `6b5f2a1e...42f00`. Task 3 later exposed the Gate-approval/project-HEAD self-reference described in `AUTHORITY_ARTIFACT_BOUNDARY_AMENDMENT.md`. The current spec revision supersedes the affected authority-artifact location statements; this historical PASS must not be cited as closure for the amended boundary.
+
 ## Decision Boundary
 
 This PASS applies to the **Approved Work Execution Link remediation design contract and its cross-document design state**.
