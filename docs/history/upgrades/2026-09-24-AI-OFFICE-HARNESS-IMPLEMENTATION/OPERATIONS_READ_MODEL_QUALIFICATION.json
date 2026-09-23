@@ -1,0 +1,11 @@
+{
+  "authority_change": false,
+  "head_before_qualification_commit": "5f01829bba533bcc825eb79f90bd97669cf887c4",
+  "projection_only_bridge": true,
+  "public_schema": "orchestration.operations-read-model.v1",
+  "schema_version": "gch.operations-read-model-qualification.v1",
+  "self_diagnosis_projection": "READ_ONLY",
+  "status": "PASS",
+  "test_count": 20,
+  "track": "A"
+}
