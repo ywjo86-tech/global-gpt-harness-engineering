@@ -15,8 +15,14 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from .operator_control import OperatorControlError, OperatorDirectiveV1
+from .read_only_host_diagnostic_contract import (
+    DiagnosticContractError,
+    READ_ONLY_DIAGNOSTIC_CAPABILITY,
+    ReadOnlyDiagnosticRequestV1,
+)
 
 REMOTE_OPERATOR_ENVELOPE_SCHEMA = "orchestration.remote-operator-envelope.v2"
+REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA = "orchestration.remote-operator-envelope.v3"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SHA40_64 = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -38,6 +44,7 @@ _EXPECTED_FIELDS = {
     "qualification_evidence_sha256", "source_head", "runtime_release_digest",
 }
 _AUTH_FIELDS = {"risk_envelope_ref", "risk_envelope_digest", "manual_action_authorization_digest"}
+_TOP_FIELDS_V3 = _TOP_FIELDS | {"read_only_request", "read_only_request_digest"}
 
 
 class RemoteOperatorEnvelopeError(ValueError):
@@ -147,6 +154,38 @@ class RemoteOperatorEnvelopeV2:
         value = asdict(self)
         value["operator_directive"] = self.operator_directive.to_dict()
         return value
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteOperatorEnvelopeV3:
+    schema_version: str
+    message_id: str
+    sequence: int
+    issued_at: str
+    expires_at: str
+    actor: str
+    transport: TransportBinding
+    project_id: str
+    run_id: str
+    task_id: str
+    task_execution_id: str
+    gate_id: str
+    operator_directive: OperatorDirectiveV1
+    directive_digest: str
+    expected: ExpectedBindings
+    authorization: AuthorizationBindings
+    envelope_sha256: str
+    read_only_request: ReadOnlyDiagnosticRequestV1
+    read_only_request_digest: str
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["operator_directive"] = self.operator_directive.to_dict()
+        value["read_only_request"] = self.read_only_request.to_dict()
+        return value
+
+
+RemoteControlEnvelope = RemoteOperatorEnvelopeV2 | RemoteOperatorEnvelopeV3
 
 
 def _unsigned_envelope(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -301,4 +340,90 @@ def validate_remote_envelope(
         expected=expected,
         authorization=authorization,
         envelope_sha256=envelope_digest,
+    )
+
+
+def _parse_diagnostic_request(payload: object) -> ReadOnlyDiagnosticRequestV1:
+    if not isinstance(payload, Mapping):
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: diagnostic request must be an object")
+    try:
+        return ReadOnlyDiagnosticRequestV1.from_mapping(payload)
+    except DiagnosticContractError as exc:
+        raise RemoteOperatorEnvelopeError(f"SCHEMA_REJECTED: invalid diagnostic request: {exc}") from exc
+
+
+def _validate_diagnostic_directive(payload: object) -> OperatorDirectiveV1:
+    if not isinstance(payload, Mapping):
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: operator_directive must be an object")
+    try:
+        directive = OperatorDirectiveV1.from_mapping(payload)
+    except OperatorControlError as exc:
+        raise RemoteOperatorEnvelopeError(f"OPERATOR_DIRECTIVE_BLOCKED: {exc}") from exc
+    _exact_fields(payload, _DIRECTIVE_FIELDS, "operator directive")
+    if directive.state_change_required:
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: diagnostic state change is forbidden")
+    if directive.required_capabilities != (READ_ONLY_DIAGNOSTIC_CAPABILITY,):
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: diagnostic capability must be exact")
+    return directive
+
+
+def seal_remote_control_envelope(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Seal V2 unchanged or the additive typed diagnostic V3 envelope."""
+    if not isinstance(payload, Mapping):
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: envelope must be an object")
+    schema = payload.get("schema_version")
+    if schema == REMOTE_OPERATOR_ENVELOPE_SCHEMA:
+        return seal_remote_envelope(payload)
+    if schema != REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA:
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: unsupported remote envelope schema")
+    value = copy.deepcopy(dict(payload))
+    _exact_fields(value, _TOP_FIELDS_V3, "envelope")
+    directive = _validate_diagnostic_directive(value.get("operator_directive"))
+    request = _parse_diagnostic_request(value.get("read_only_request"))
+    value["directive_digest"] = directive.directive_digest
+    value["read_only_request_digest"] = request.request_digest
+    value["envelope_sha256"] = _sha(_unsigned_envelope(value))
+    return value
+
+
+def validate_remote_control_envelope(
+    payload: Mapping[str, Any], *, now: datetime | None = None
+) -> RemoteControlEnvelope:
+    """Validate V2 without semantic changes or validate the typed diagnostic V3 extension."""
+    if not isinstance(payload, Mapping):
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: envelope must be an object")
+    schema = payload.get("schema_version")
+    if schema == REMOTE_OPERATOR_ENVELOPE_SCHEMA:
+        return validate_remote_envelope(payload, now=now)
+    if schema != REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA:
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: unsupported remote envelope schema")
+    _exact_fields(payload, _TOP_FIELDS_V3, "envelope")
+    directive = _validate_diagnostic_directive(payload.get("operator_directive"))
+    request = _parse_diagnostic_request(payload.get("read_only_request"))
+    request_digest = _digest(payload.get("read_only_request_digest"), "diagnostic request digest")
+    if request_digest != request.request_digest:
+        raise RemoteOperatorEnvelopeError("DIGEST_MISMATCH: diagnostic request digest")
+    envelope_digest = _digest(payload.get("envelope_sha256"), "envelope digest")
+    if envelope_digest != _sha(_unsigned_envelope(payload)):
+        raise RemoteOperatorEnvelopeError("DIGEST_MISMATCH: envelope digest")
+
+    # Reuse the exact V2 common-field validator on a synthesized V2 envelope.
+    common = copy.deepcopy(dict(payload))
+    common.pop("read_only_request", None)
+    common.pop("read_only_request_digest", None)
+    common["schema_version"] = REMOTE_OPERATOR_ENVELOPE_SCHEMA
+    common["envelope_sha256"] = _sha(_unsigned_envelope(common))
+    base = validate_remote_envelope(common, now=now)
+    if base.operator_directive.directive_digest != directive.directive_digest:
+        raise RemoteOperatorEnvelopeError("DIGEST_MISMATCH: directive digest")
+
+    return RemoteOperatorEnvelopeV3(
+        schema_version=REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA,
+        message_id=base.message_id, sequence=base.sequence, issued_at=base.issued_at,
+        expires_at=base.expires_at, actor=base.actor, transport=base.transport,
+        project_id=base.project_id, run_id=base.run_id, task_id=base.task_id,
+        task_execution_id=base.task_execution_id, gate_id=base.gate_id,
+        operator_directive=base.operator_directive, directive_digest=base.directive_digest,
+        expected=base.expected, authorization=base.authorization, envelope_sha256=envelope_digest,
+        read_only_request=request, read_only_request_digest=request_digest,
     )
