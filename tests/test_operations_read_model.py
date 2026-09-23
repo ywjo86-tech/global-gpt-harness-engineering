@@ -14,6 +14,9 @@ from runtime.orchestrator.operations_read_model import (
     OPERATIONS_READ_MODEL_SCHEMA_V1,
     SourceIdentityV1,
     build_operations_read_model,
+    normalize_operations_state,
+    normalize_progress,
+    resolve_freshness,
 )
 
 
@@ -75,6 +78,25 @@ class OperationsReadModelContractTests(unittest.TestCase):
         serialized = repr(payload).lower()
         for forbidden in ("credential", "token", "raw_effect_payload", "final_assignee"):
             self.assertNotIn(forbidden, serialized)
+
+    def test_state_normalization_and_progress_do_not_invent_percent(self):
+        normalized, human = normalize_operations_state("WAITING_APPROVAL")
+        self.assertEqual(normalized, "WAITING_APPROVAL")
+        self.assertEqual(human, "사용자 승인 대기")
+        self.assertEqual(normalize_progress(None, ""), (None, ""))
+
+    def test_old_source_is_stale(self):
+        source = SourceIdentityV1(
+            "HARNESS", "v1", "a" * 40, "2026-09-23T23:00:00+00:00"
+        )
+        self.assertEqual(
+            resolve_freshness(
+                (source,),
+                datetime(2026, 9, 24, 0, 0, tzinfo=timezone.utc),
+                300,
+            ),
+            "STALE",
+        )
 
 
 if __name__ == "__main__":
