@@ -18,7 +18,10 @@ from .read_only_host_diagnostic_contract import (
 
 _SENSITIVE_EXACT = frozenset({".env", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "credentials.json"})
 _SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
-_SECRET_VALUE = re.compile(r"(?i)(api[_-]?key|authorization|bearer|password|token|credential|secret)\s*[:=]\s*([^\s,;}]+)")
+_SECRET_VALUE = re.compile(
+    r"(?im)\b(api[_-]?key|authorization|password|token|credential|secret)\s*[:=]\s*[^\r\n]*"
+)
+_BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[^\s,;}]+")
 
 
 class DiagnosticError(ValueError):
@@ -50,9 +53,10 @@ def _path_parts(relative: str) -> tuple[str, ...]:
 
 
 def _reject_sensitive(relative: str) -> None:
-    name = PurePosixPath(relative).name.lower()
-    if name in _SENSITIVE_EXACT or name.endswith(_SENSITIVE_SUFFIXES):
-        raise DiagnosticSecurityError("sensitive path is blocked")
+    for component in PurePosixPath(relative).parts:
+        name = component.lower()
+        if name in _SENSITIVE_EXACT or name.endswith(_SENSITIVE_SUFFIXES):
+            raise DiagnosticSecurityError("sensitive path is blocked")
 
 
 def _open_regular_beneath(root: Path, relative: str) -> int:
@@ -93,8 +97,9 @@ def _open_regular_beneath(root: Path, relative: str) -> int:
 
 
 def _redact_text(text: str) -> tuple[str, bool]:
-    redacted, count = _SECRET_VALUE.subn(lambda m: f"{m.group(1)}=[REDACTED]", text)
-    return redacted, bool(count)
+    redacted, key_count = _SECRET_VALUE.subn(lambda m: f"{m.group(1)}=[REDACTED]", text)
+    redacted, bearer_count = _BEARER_VALUE.subn("Bearer [REDACTED]", redacted)
+    return redacted, bool(key_count or bearer_count)
 
 
 def read_project_file_range(request: ReadOnlyDiagnosticRequestV1, policy: DiagnosticPolicy) -> dict[str, Any]:

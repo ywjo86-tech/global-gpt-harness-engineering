@@ -355,6 +355,13 @@ def _parse_diagnostic_request(payload: object) -> ReadOnlyDiagnosticRequestV1:
 def _validate_diagnostic_directive(payload: object) -> OperatorDirectiveV1:
     if not isinstance(payload, Mapping):
         raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: operator_directive must be an object")
+    if payload.get("state_change_required") is not False:
+        raise RemoteOperatorEnvelopeError(
+            "SCHEMA_REJECTED: diagnostic state change requires state_change_required literal false"
+        )
+    capabilities = payload.get("required_capabilities")
+    if not isinstance(capabilities, (list, tuple)) or tuple(capabilities) != (READ_ONLY_DIAGNOSTIC_CAPABILITY,):
+        raise RemoteOperatorEnvelopeError("SCHEMA_REJECTED: diagnostic capability list must be exact")
     try:
         directive = OperatorDirectiveV1.from_mapping(payload)
     except OperatorControlError as exc:

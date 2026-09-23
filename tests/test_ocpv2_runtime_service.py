@@ -224,6 +224,18 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             self.assertFalse(config.diagnostic_enabled)
             self.assertIsNone(config.diagnostic_policy)
 
+    def test_old_env_cannot_be_implicitly_enabled_by_process_environment(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, repo, _ = _write_runtime_env(root)
+            policy = _write_policy(root / "policy.json", repo)
+            config = load_runtime_config(env_path, process_environment={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(policy),
+            })
+            self.assertFalse(config.diagnostic_enabled)
+            self.assertIsNone(config.diagnostic_policy)
+
     def test_diagnostic_feature_true_requires_secure_absolute_policy(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -286,7 +298,7 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             executions = []
 
             def fake_execute(request, policy, **kwargs):
-                executions.append(request.request_id)
+                executions.append((request.request_id, kwargs["source_sha"], kwargs["runtime_sha"]))
                 return ReadOnlyDiagnosticResultV1.build(
                     request_id=request.request_id, correlation_id=kwargs["correlation_id"], project_id=kwargs["project_id"],
                     root_id=request.root_id, operation_id=request.operation, authorization_decision="ALLOW",
@@ -304,10 +316,10 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
                 first = _compose_service(config)
                 with self.assertRaisesRegex(RuntimeError, "offline"):
                     first.poll_once(mode=config.mode)
-                self.assertEqual(executions, ["REQ-1"])
+                self.assertEqual(executions, [("REQ-1", "1" * 40, "2" * 64)])
 
                 _compose_service(config)
-                self.assertEqual(executions, ["REQ-1"])
+                self.assertEqual(executions, [("REQ-1", "1" * 40, "2" * 64)])
                 self.assertEqual(len(second_adapter.projections), 1)
                 recovered = second_adapter.projections[0]
                 self.assertEqual(recovered["schema_version"], "orchestration.remote-diagnostic-projection.v1")

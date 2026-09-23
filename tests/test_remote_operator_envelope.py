@@ -202,6 +202,22 @@ class RemoteOperatorEnvelopeTests(unittest.TestCase):
         with self.assertRaisesRegex(RemoteOperatorEnvelopeError, "state change"):
             seal_remote_control_envelope(payload)
 
+    def test_v3_requires_literal_false_and_exact_capability_list(self):
+        for value in (0, "", None):
+            payload = _diagnostic_payload()
+            payload["operator_directive"]["state_change_required"] = value
+            payload["envelope_sha256"] = ""
+            with self.subTest(state_change_required=value), self.assertRaisesRegex(RemoteOperatorEnvelopeError, "literal false"):
+                seal_remote_control_envelope(payload)
+
+        payload = _diagnostic_payload()
+        payload["operator_directive"]["required_capabilities"] = [
+            "read_only_host_diagnostic", "read_only_host_diagnostic"
+        ]
+        payload["envelope_sha256"] = ""
+        with self.assertRaisesRegex(RemoteOperatorEnvelopeError, "capability.*exact"):
+            seal_remote_control_envelope(payload)
+
     def test_v3_rejects_provider_fields_and_absolute_root_id(self):
         payload = _diagnostic_payload()
         payload["operator_directive"]["provider"] = "forbidden"

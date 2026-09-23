@@ -95,6 +95,24 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
         self.assertNotIn("swordfish", joined)
         self.assertTrue(payload["redaction_applied"])
 
+    def test_file_range_redacts_entire_secret_bearing_value_even_with_spaces(self):
+        (self.root / "headers.txt").write_text(
+            'Authorization: Bearer very-secret-token\npassword: "two word secret"\napi_key=alpha beta gamma\n',
+            encoding="utf-8",
+        )
+        payload = read_project_file_range(self.file_request("headers.txt"), self.policy)
+        joined = "\n".join(payload["lines"])
+        self.assertTrue(payload["redaction_applied"])
+        for secret in ("very-secret-token", "two word secret", "alpha beta gamma"):
+            self.assertNotIn(secret, joined)
+
+    def test_file_range_blocks_sensitive_intermediate_path_component(self):
+        sensitive = self.root / ".env"
+        sensitive.mkdir()
+        (sensitive / "visible.txt").write_text("token=must-not-read\n", encoding="utf-8")
+        with self.assertRaisesRegex(DiagnosticSecurityError, "sensitive"):
+            read_project_file_range(self.file_request(".env/visible.txt"), self.policy)
+
     def test_file_range_bounds_lines_and_bytes(self):
         (self.root / "many.txt").write_text("\n".join(f"line-{i}-" + "x" * 30 for i in range(1, 10)) + "\n", encoding="utf-8")
         payload = read_project_file_range(self.file_request("many.txt", line_count=20), self.policy)

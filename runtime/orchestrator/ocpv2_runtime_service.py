@@ -41,6 +41,7 @@ from .remote_operator_outbox import (
 )
 from .remote_operator_receipt import RemoteOperatorReceiptStore
 from .remote_operator_recovery_binding import RemoteExecutionBindingStore
+from .production_run_authority import executor_runtime_identity
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
 from .production_run_authority import executor_runtime_identity
 from .runtime_release import RuntimeReleaseError, RuntimeReleaseManifest, verify_runtime_release
