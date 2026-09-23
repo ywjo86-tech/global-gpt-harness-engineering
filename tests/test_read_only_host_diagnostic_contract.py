@@ -128,6 +128,16 @@ class DiagnosticContractTests(unittest.TestCase):
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         self.assertEqual(result.payload_hash, hashlib.sha256(canonical).hexdigest())
         self.assertEqual(result.execution_owner, "NONE")
+        for source_sha, runtime_sha in (("", "b" * 40), ("a" * 40, "")):
+            with self.subTest(source_sha=source_sha, runtime_sha=runtime_sha), self.assertRaises(DiagnosticContractError):
+                ReadOnlyDiagnosticResultV1.build(
+                    request_id="REQ-1", correlation_id="CORR-1", project_id="P1",
+                    root_id="jarvis-assistant", operation_id="repo.snapshot",
+                    authorization_decision="ALLOW", captured_at="2026-09-23T00:00:00+00:00",
+                    freshness="CURRENT", source_sha=source_sha, runtime_sha=runtime_sha,
+                    data_class="DIAG_SUMMARY", redaction_applied=False, truncated=False,
+                    status="OK", error_class="", payload=payload,
+                )
         with self.assertRaises(DiagnosticContractError):
             ReadOnlyDiagnosticResultV1.build(
                 request_id="REQ-1", correlation_id="CORR-1", project_id="P1",

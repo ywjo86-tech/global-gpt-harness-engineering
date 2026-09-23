@@ -12,6 +12,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     RuntimeConfig,
     RuntimeServiceError,
     _compose_service,
+    _diagnostic_provenance,
     canary_scope_from_environment,
     execute_authorized_canonical,
     finalize_remote_control_projection,
@@ -235,6 +236,19 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             })
             self.assertFalse(config.diagnostic_enabled)
             self.assertIsNone(config.diagnostic_policy)
+
+    def test_diagnostic_provenance_falls_back_to_verified_runtime_release_manifest(self):
+        with tempfile.TemporaryDirectory() as td:
+            release = Path(td)
+            (release / "RUNTIME_RELEASE_MANIFEST.json").write_text(
+                json.dumps({"source_head": "1" * 40}), encoding="utf-8"
+            )
+            with patch("runtime.orchestrator.ocpv2_runtime_service.executor_runtime_identity",
+                       return_value={"head": "", "runtime_source_sha256": "2" * 64}), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.verify_runtime_release",
+                       return_value=SimpleNamespace(source_head="1" * 40)) as verify:
+                self.assertEqual(_diagnostic_provenance(release), ("1" * 40, "2" * 64))
+                verify.assert_called_once_with(release, "1" * 40)
 
     def test_diagnostic_feature_true_requires_secure_absolute_policy(self):
         with tempfile.TemporaryDirectory() as td:
