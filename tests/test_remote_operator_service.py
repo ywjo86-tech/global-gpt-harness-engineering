@@ -145,6 +145,36 @@ def activation_envelope(policy_ref="ACT-POLICY-1"):
     )
 
 
+def full_plan_activation_envelope(policy_ref="FP-POLICY-1"):
+    request = {
+        "schema_version": "orchestration.approved-full-plan-activation-request.v1",
+        "activation_request_id": "FP-ACT-1", "project_alias": "demo",
+        "approved_plan": {"path": "docs/PLAN.md", "sha256": "1" * 64},
+        "approved_spec": {"path": "docs/SPEC.md", "sha256": "2" * 64},
+        "expected_branch": "main", "expected_head": "3" * 40,
+        "runtime_release_digest": "4" * 64, "approval_ref": "approval:user:full-plan",
+        "gate_bindings": [{
+            "gate_id": "GATE-001",
+            "approval_evidence": {"path": "gate.json", "sha256": "5" * 64},
+            "engine_requirement_evidence": {"path": "engine.json", "sha256": "6" * 64},
+            "project_requirement_evidence_by_lv": [{"lv_id": "TASK-001", "path": "docs/req.json", "sha256": "7" * 64}],
+        }],
+    }
+    payload = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "APPROVED_FULL_PLAN_ACTIVATION", "message_id": "MSG-FP1", "sequence": 3,
+        "issued_at": "2026-09-21T00:00:00+00:00", "expires_at": "2026-09-21T01:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "TEST", "channel_id": "CTRL", "source_actor_id": "235775273", "source_message_id": "13"},
+        "payload": request, "payload_digest": "",
+        "authorization": {"full_plan_activation_policy_ref": policy_ref}, "envelope_sha256": "",
+    }
+    return validate_remote_control_envelope(
+        seal_remote_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
+    )
+
+
 class FakeTransport:
     def __init__(self, items=()):
         self.items = tuple(items)
@@ -367,6 +397,60 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         result = service.poll_once(mode=ControlMode.ACTIVE)
         self.assertEqual((result.activated, result.executed, result.blocked), (0, 0, 1))
         self.assertEqual(mutations, []); self.assertEqual(transport.projections[0]["result_class"], "WORK_ACTIVATION_ERROR")
+
+
+    def test_v1_enable_does_not_enable_executable_activation(self):
+        env = full_plan_activation_envelope(); transport = FakeTransport((raw("RAW-FP"),)); calls=[]
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_authorized=lambda _: calls.append("v1"), work_activation_enabled=True,
+            activation_policy_ref="ACT-POLICY-1",
+            activate_full_plan_authorized=lambda _: calls.append("full-plan"),
+            full_plan_activation_enabled=False, full_plan_activation_policy_ref="FP-POLICY-1",
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.full_plan_activated, result.activated, result.executed, result.blocked), (0, 0, 0, 1))
+        self.assertEqual(calls, [])
+        self.assertEqual(transport.projections[0]["result_class"], "FULL_PLAN_ACTIVATION_DISABLED")
+
+    def test_executable_activation_requires_active_mode_and_exact_dedicated_policy(self):
+        for mode in (ControlMode.OBSERVE_ONLY, ControlMode.CONTROL_READ_ONLY, ControlMode.CONTROL_MUTATION_CANARY):
+            with self.subTest(mode=mode):
+                env=full_plan_activation_envelope(); transport=FakeTransport((raw("RAW-FP"),)); calls=[]
+                service=RemoteOperatorService(
+                    transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+                    execute_authorized=lambda *_: calls.append("mutation"),
+                    activate_full_plan_authorized=lambda _: calls.append("full-plan"),
+                    full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+                )
+                result=service.poll_once(mode=mode)
+                self.assertEqual((result.full_plan_activated,result.blocked),(0,1)); self.assertEqual(calls,[])
+                self.assertEqual(transport.projections[0]["result_class"],"MODE_BLOCKED")
+        env=full_plan_activation_envelope(policy_ref="FP-POLICY-1"); transport=FakeTransport((raw("RAW-FP2"),)); calls=[]
+        service=RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_full_plan_authorized=lambda _: calls.append("full-plan"),
+            full_plan_activation_enabled=True, full_plan_activation_policy_ref="OTHER",
+        )
+        result=service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.full_plan_activated,result.blocked),(0,1)); self.assertEqual(calls,[])
+        self.assertEqual(transport.projections[0]["result_class"],"FULL_PLAN_ACTIVATION_AUTHORIZATION_MISMATCH")
+
+    def test_active_executable_activation_uses_only_dedicated_callback(self):
+        env=full_plan_activation_envelope(); transport=FakeTransport((raw("RAW-FP"),)); calls=[]
+        service=RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env,
+            ingress=lambda _: (_ for _ in ()).throw(AssertionError("must not enter V2 ingress")),
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_authorized=lambda _: calls.append("v1"), work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+            activate_full_plan_authorized=lambda e: calls.append(("full-plan",e.message_id)) or {"schema_version":"full-plan","result_class":"FULL_PLAN_REGISTERED"},
+            full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+        )
+        result=service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.full_plan_activated,result.activated,result.executed,result.blocked),(1,0,0,0))
+        self.assertEqual(calls,[("full-plan","MSG-FP1")]); self.assertEqual(transport.projections[0]["result_class"],"FULL_PLAN_REGISTERED")
 
 
 if __name__ == "__main__":

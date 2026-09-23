@@ -13,8 +13,8 @@ from typing import Any, Callable, Mapping
 
 from .operator_control import OperatorDirectiveV1
 from .remote_control_envelope import (
-    APPROVED_WORK_ACTIVATION_KIND, HOST_INSPECTION_KIND,
-    RemoteControlEnvelopeV1, RemoteWorkActivationAuthorization,
+    APPROVED_FULL_PLAN_ACTIVATION_KIND, APPROVED_WORK_ACTIVATION_KIND, HOST_INSPECTION_KIND,
+    RemoteControlEnvelopeV1, RemoteFullPlanActivationAuthorization, RemoteWorkActivationAuthorization,
 )
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_ingress import IngressDecision
@@ -62,6 +62,7 @@ class ServicePollResult:
     blocked: int = 0
     inspected: int = 0
     activated: int = 0
+    full_plan_activated: int = 0
 
 
 class RemoteOperatorService:
@@ -81,6 +82,9 @@ class RemoteOperatorService:
         activate_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         work_activation_enabled: bool = False,
         activation_policy_ref: str = "",
+        activate_full_plan_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        full_plan_activation_enabled: bool = False,
+        full_plan_activation_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -93,6 +97,9 @@ class RemoteOperatorService:
         self.activate_authorized = activate_authorized
         self.work_activation_enabled = bool(work_activation_enabled)
         self.activation_policy_ref = str(activation_policy_ref or "")
+        self.activate_full_plan_authorized = activate_full_plan_authorized
+        self.full_plan_activation_enabled = bool(full_plan_activation_enabled)
+        self.full_plan_activation_policy_ref = str(full_plan_activation_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -147,6 +154,20 @@ class RemoteOperatorService:
             "result_class": str(result_class),
         }
 
+    @staticmethod
+    def _full_plan_activation_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-full-plan-activation-status-projection.v1",
+            "message_id": envelope.message_id,
+            "activation_request_id": payload.activation_request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "result_class": str(result_class),
+        }
+
     def _publish_and_ack(
         self,
         envelope: Any,
@@ -172,7 +193,7 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = projected = acknowledged = blocked = inspected = activated = 0
+        received = validated = executed = projected = acknowledged = blocked = inspected = activated = full_plan_activated = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             try:
@@ -194,6 +215,29 @@ class RemoteOperatorService:
                             inspected += 1
                         except Exception:
                             projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
+                    if resolved_mode != ControlMode.ACTIVE:
+                        projection = self._full_plan_activation_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.full_plan_activation_enabled or self.activate_full_plan_authorized is None:
+                        projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteFullPlanActivationAuthorization)
+                        or not self.full_plan_activation_policy_ref
+                        or envelope.authorization.full_plan_activation_policy_ref != self.full_plan_activation_policy_ref
+                    ):
+                        projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.activate_full_plan_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("Full Plan activation result projection is malformed")
+                            full_plan_activated += 1
+                        except Exception:
+                            projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_ERROR")
                             blocked += 1
                 elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:
                     if resolved_mode != ControlMode.ACTIVE:
@@ -297,4 +341,5 @@ class RemoteOperatorService:
             blocked=blocked,
             inspected=inspected,
             activated=activated,
+            full_plan_activated=full_plan_activated,
         )
