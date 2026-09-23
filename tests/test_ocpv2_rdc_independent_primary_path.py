@@ -24,6 +24,7 @@ from tests.test_remote_operator_service import (
     FakeTransport,
     accepted,
     activation_envelope,
+    full_plan_activation_envelope,
     envelope as existing_run_envelope,
     inspection_envelope,
     raw,
@@ -44,6 +45,7 @@ class RDCIndependentPrimaryPathTests(unittest.TestCase):
         self.outbox_root = self.root / "outbox"
         self.events: list[tuple[str, str]] = []
         self.registration_calls = 0
+        self.full_plan_registration_calls = 0
         self.inspection_calls = 0
         self.resume_calls = 0
         self.binding = ApprovedWorkBindingV1(
@@ -105,6 +107,18 @@ class RDCIndependentPrimaryPathTests(unittest.TestCase):
         RemoteResultOutbox(self.outbox_root).enqueue_projection(projection)
         return projection.to_dict()
 
+    def _activate_full_plan(self, env):
+        self.full_plan_registration_calls += 1
+        self.events.append(("register_executable_full_plan", env.payload.activation_request_id))
+        return {
+            "schema_version": "orchestration.remote-full-plan-activation-status-projection.v1",
+            "message_id": env.message_id,
+            "activation_request_id": env.payload.activation_request_id,
+            "project_alias": env.payload.project_alias,
+            "request_digest": env.payload.request_digest,
+            "result_class": "FULL_PLAN_REGISTERED",
+        }
+
     def _resume(self, env, directive):
         self.resume_calls += 1
         self.events.append(("resume_existing_run", env.run_id))
@@ -125,10 +139,13 @@ class RDCIndependentPrimaryPathTests(unittest.TestCase):
             activate_authorized=self._activate,
             work_activation_enabled=True,
             activation_policy_ref="ACT-POLICY-1",
+            activate_full_plan_authorized=self._activate_full_plan,
+            full_plan_activation_enabled=True,
+            full_plan_activation_policy_ref="FP-POLICY-1",
         )
         return service, transport
 
-    def test_three_request_classes_do_not_cross_authority_boundaries(self) -> None:
+    def test_four_request_classes_do_not_cross_authority_boundaries(self) -> None:
         inspect_env = inspection_envelope()
         service, transport = self._service(inspect_env)
         inspected = service.poll_once(mode=ControlMode.ACTIVE)
@@ -143,6 +160,16 @@ class RDCIndependentPrimaryPathTests(unittest.TestCase):
         self.assertEqual(self.registration_calls, 1)
         self.assertEqual(transport.projections[0]["result_status"], "REGISTERED")
 
+        full_plan_env = full_plan_activation_envelope()
+        service, transport = self._service(full_plan_env)
+        full_plan = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual(
+            (full_plan.inspected, full_plan.activated, full_plan.full_plan_activated, full_plan.executed),
+            (0, 0, 1, 0),
+        )
+        self.assertEqual(self.full_plan_registration_calls, 1)
+        self.assertEqual(transport.projections[0]["result_class"], "FULL_PLAN_REGISTERED")
+
         resume_env = existing_run_envelope(state_change=True, task_id="T1", directive_id="D1")
         service, transport = self._service(resume_env)
         resumed = service.poll_once(mode=ControlMode.ACTIVE)
@@ -155,6 +182,7 @@ class RDCIndependentPrimaryPathTests(unittest.TestCase):
             [
                 ("inspect", inspect_env.message_id),
                 ("register_new_job", "ACT-1"),
+                ("register_executable_full_plan", "FP-ACT-1"),
                 ("resume_existing_run", "R1"),
             ],
         )
