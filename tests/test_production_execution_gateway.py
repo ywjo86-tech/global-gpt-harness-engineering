@@ -7,7 +7,7 @@ from pathlib import Path
 
 from runtime.orchestrator.production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, GatewayError, HostExecutionGateway,
-    UnixSocketGatewayTransport, UnixSocketHostRunner,
+    ManagedHostRunner, UnixSocketGatewayTransport, UnixSocketHostRunner,
     build_gateway_request, build_gateway_result, validate_gateway_request,
     validate_gateway_result, resolve_gateway_socket_path, _workspace_artifact_binding,
     _digest, _safe_broker_block,
@@ -169,6 +169,18 @@ class GatewayContractTests(unittest.TestCase):
                                                             cancel_path=__import__("pathlib").Path("/tmp/cancel"))
         self.assertEqual(execution.stdout, b"safe")
         self.assertEqual(execution.gateway_request["execution_backend"], HOST_GATEWAY)
+
+    def test_managed_host_runner_exposes_one_shot_socket_without_background_daemon(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); sock = root / "runtime" / "managed.sock"; ledger = root / "ledger"
+            manager = ManagedHostRunner(sock, ledger, workspace_root=root, timeout=2)
+            with manager as transport:
+                self.assertIsInstance(transport, UnixSocketGatewayTransport)
+                self.assertTrue(sock.is_socket())
+                self.assertIsNotNone(manager.process)
+                self.assertIsNone(manager.process.poll())
+            self.assertFalse(sock.exists())
+            self.assertIsNotNone(manager.process.poll())
 
     def test_authenticated_uds_runner_round_trip_and_durable_ledger(self):
         with tempfile.TemporaryDirectory() as d:

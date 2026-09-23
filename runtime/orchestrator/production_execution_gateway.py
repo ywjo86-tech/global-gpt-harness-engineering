@@ -13,7 +13,10 @@ import json
 import os
 import socket
 import struct
+import subprocess
+import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -599,6 +602,69 @@ class UnixSocketGatewayTransport:
                     "adopted": bool(result.get("adopted", False))}
         except (KeyError, ValueError, TypeError) as exc:
             raise GatewayError("host runner response payload is invalid") from exc
+
+
+class ManagedHostRunner:
+    """Per-request broker-native HOST_GATEWAY lifecycle; never a persistent daemon."""
+
+    def __init__(self, socket_path: str | Path, ledger_root: str | Path, *,
+                 workspace_root: str | Path, timeout: int) -> None:
+        self.socket_path = Path(socket_path).absolute()
+        self.ledger_root = Path(ledger_root).absolute()
+        self.workspace_root = Path(workspace_root).resolve()
+        self.timeout = max(1, int(timeout))
+        self.process: subprocess.Popen[bytes] | None = None
+
+    def __enter__(self) -> UnixSocketGatewayTransport:
+        if self.socket_path.exists() or self.socket_path.is_symlink():
+            raise GatewayError("host runner socket already exists")
+        runtime_root = Path(__file__).resolve().parents[2]
+        argv = [
+            sys.executable, "-m", "runtime.orchestrator.host_runner_entry",
+            "--socket", str(self.socket_path),
+            "--ledger", str(self.ledger_root),
+            "--timeout", str(self.timeout),
+        ]
+        self.process = subprocess.Popen(
+            argv, cwd=str(runtime_root), stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + min(5.0, float(self.timeout))
+        while time.monotonic() < deadline:
+            if self.socket_path.is_socket() and not self.socket_path.is_symlink():
+                return UnixSocketGatewayTransport(
+                    self.socket_path, workspace_root=self.workspace_root,
+                )
+            if self.process.poll() is not None:
+                self.close()
+                raise GatewayError("host runner exited before socket ready")
+            time.sleep(0.01)
+        self.close()
+        raise GatewayError("host runner socket startup timed out")
+
+    def close(self) -> None:
+        process = self.process
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+        for _ in range(50):
+            if not self.socket_path.exists():
+                break
+            time.sleep(0.01)
+        if self.socket_path.exists():
+            if self.socket_path.is_symlink() or not self.socket_path.is_socket():
+                raise GatewayError("host runner left unsafe socket path")
+            stat = self.socket_path.stat()
+            if stat.st_uid != os.getuid() or stat.st_mode & 0o077:
+                raise GatewayError("host runner left unsafe socket ownership or mode")
+            self.socket_path.unlink()
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
 
 class UnixSocketHostRunner:

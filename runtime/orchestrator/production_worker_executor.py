@@ -41,7 +41,7 @@ from .provider_execution_registry import (
 )
 from .production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, LOCAL_CHILD, GatewayError,
-    HostExecutionGateway, UnixSocketGatewayTransport, build_gateway_request,
+    HostExecutionGateway, ManagedHostRunner, UnixSocketGatewayTransport, build_gateway_request,
     resolve_gateway_socket_path, validate_gateway_request,
 )
 
@@ -3191,11 +3191,19 @@ def execute_production_worker(request: WorkerRequest, *,
                         endpoint_path = resolve_gateway_socket_path(root, str(endpoint))
                     except GatewayError as exc:
                         raise ProductionWorkerError("unsafe HOST_GATEWAY socket endpoint") from exc
-                    gateway_transport = UnixSocketGatewayTransport(endpoint_path, workspace_root=root)
-                execution = _production_host_execution_gateway(gateway_transport).execute(
-                    gateway_request, prompt=prompt_bytes, last_message=execution_last,
-                    timeout=timeout, cancel_path=cancel_path,
-                )
+                    ledger_root = output / "host-gateway-ledger"
+                    with ManagedHostRunner(
+                        endpoint_path, ledger_root, workspace_root=root, timeout=timeout,
+                    ) as managed_transport:
+                        execution = _production_host_execution_gateway(managed_transport).execute(
+                            gateway_request, prompt=prompt_bytes, last_message=execution_last,
+                            timeout=timeout, cancel_path=cancel_path,
+                        )
+                else:
+                    execution = _production_host_execution_gateway(gateway_transport).execute(
+                        gateway_request, prompt=prompt_bytes, last_message=execution_last,
+                        timeout=timeout, cancel_path=cancel_path,
+                    )
             except GatewayError as exc:
                 raise ProductionWorkerError(str(exc)) from exc
             stdout, stderr = execution.stdout, execution.stderr
