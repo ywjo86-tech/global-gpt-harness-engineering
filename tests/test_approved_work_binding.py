@@ -9,6 +9,7 @@ from pathlib import Path
 
 from runtime.orchestrator.approved_work_binding import (
     ApprovedWorkBindingError,
+    resolve_committed_project_file,
     validate_approved_work_binding,
 )
 from runtime.orchestrator.gate_orchestrator import REQUIREMENT_IDS
@@ -74,6 +75,14 @@ class ApprovedWorkBindingTests(unittest.TestCase):
 
     def validate(self, request=None):
         return validate_approved_work_binding(request or self.request(), registry=self.registry, runtime_release=self.release)
+
+    def test_public_committed_file_helper_preserves_v1_rejections(self):
+        resolved, relative = resolve_committed_project_file(self.root, "IMPLEMENTATION_PLAN.md", "approved plan")
+        self.assertEqual(resolved, self.plan.resolve())
+        self.assertEqual(relative, "IMPLEMENTATION_PLAN.md")
+        untracked = self.root / "untracked.md"; untracked.write_text("x", encoding="utf-8")
+        with self.assertRaisesRegex(ApprovedWorkBindingError, "COMMITTED_EVIDENCE_REQUIRED"):
+            resolve_committed_project_file(self.root, "untracked.md", "untracked")
 
     def test_valid_binding_derives_project_and_exact_committed_evidence(self):
         binding = self.validate()

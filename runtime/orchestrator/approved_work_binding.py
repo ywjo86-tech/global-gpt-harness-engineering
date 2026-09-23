@@ -67,7 +67,7 @@ def _git(root: Path, *args: str, allow_nonzero: bool = False) -> subprocess.Comp
     return result
 
 
-def _relative_committed_file(root: Path, raw: object, label: str) -> tuple[Path, str]:
+def resolve_committed_project_file(root: Path, raw: object, label: str) -> tuple[Path, str]:
     text = str(raw or "")
     relative = Path(text)
     if not text or relative.is_absolute() or ".." in relative.parts or "\\" in text:
@@ -261,10 +261,10 @@ def validate_approved_work_binding(
     if branch != req.expected_branch or head != req.expected_head:
         raise ApprovedWorkBindingError("SOURCE_BINDING_MISMATCH")
 
-    plan, plan_relative = _relative_committed_file(root, req.approved_plan_path, "approved plan")
-    spec, spec_relative = _relative_committed_file(root, req.approved_spec_path, "approved spec")
+    plan, plan_relative = resolve_committed_project_file(root, req.approved_plan_path, "approved plan")
+    spec, spec_relative = resolve_committed_project_file(root, req.approved_spec_path, "approved spec")
     try:
-        requirement, requirement_relative = _relative_committed_file(
+        requirement, requirement_relative = resolve_committed_project_file(
             root, req.requirement_artifact_path, "requirement artifact",
         )
     except ApprovedWorkBindingError as exc:

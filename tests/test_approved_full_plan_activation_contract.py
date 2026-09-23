@@ -29,6 +29,14 @@ def executable_request():
 
 
 class ApprovedFullPlanActivationContractTests(unittest.TestCase):
+    def test_authority_refs_are_domain_neutral_safe_relative_names(self):
+        value = executable_request()
+        value["gate_bindings"][0]["approval_evidence"]["path"] = "approval-g1.json"
+        value["gate_bindings"][0]["engine_requirement_evidence"]["path"] = "engine-g1.json"
+        parsed = ApprovedFullPlanActivationRequestV1.from_mapping(value)
+        self.assertEqual(parsed.gate_bindings[0].approval_evidence.path, "approval-g1.json")
+        self.assertEqual(parsed.gate_bindings[0].engine_requirement_evidence.path, "engine-g1.json")
+
     def test_request_is_closed_and_digest_stable(self):
         request = ApprovedFullPlanActivationRequestV1.from_mapping(executable_request())
         self.assertEqual(request.to_dict(), executable_request())
