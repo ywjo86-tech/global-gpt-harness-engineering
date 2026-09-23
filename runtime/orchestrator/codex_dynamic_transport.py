@@ -8,10 +8,11 @@ can therefore be requested only through the closed dynamic-tool registry.
 from __future__ import annotations
 
 import json
+import queue
 import re
-import select
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -221,6 +222,23 @@ class CodexAppServerAdapter:
         deadline = time.monotonic() + timeout
         next_id = 1
         pending: dict[int, Mapping[str, Any]] = {}
+        stdout_lines: queue.Queue[tuple[str, Any]] = queue.Queue()
+
+        def read_stdout() -> None:
+            while True:
+                try:
+                    line = process.stdout.readline()
+                except Exception as exc:
+                    stdout_lines.put(("ERROR", exc))
+                    return
+                stdout_lines.put(("LINE", line))
+                if not line:
+                    return
+
+        stdout_reader = threading.Thread(
+            target=read_stdout, name="codex-app-server-stdout", daemon=True,
+        )
+        stdout_reader.start()
 
         def send(value: Mapping[str, Any]) -> None:
             process.stdin.write(json.dumps(dict(value), separators=(",", ":")) + "\n")
@@ -244,13 +262,12 @@ class CodexAppServerAdapter:
                 if remaining <= 0:
                     raise TransportError("TRANSPORT_TIMEOUT")
                 try:
-                    ready, _, _ = select.select([process.stdout], [], [], remaining)
-                except (TypeError, ValueError, OSError):
-                    # Deterministic in-memory protocol fixtures have no fd.
-                    ready = [process.stdout]
-                if not ready:
-                    raise TransportError("TRANSPORT_TIMEOUT")
-                line = process.stdout.readline()
+                    line_kind, line_value = stdout_lines.get(timeout=remaining)
+                except queue.Empty as exc:
+                    raise TransportError("TRANSPORT_TIMEOUT") from exc
+                if line_kind == "ERROR":
+                    raise TransportError("app-server protocol read failed") from line_value
+                line = str(line_value)
                 if not line:
                     raise TransportError("app-server protocol ended before completion")
                 try:
