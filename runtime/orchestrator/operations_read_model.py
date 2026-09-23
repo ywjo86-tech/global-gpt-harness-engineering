@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from runtime.ai_office.reporting import OfficeReportV1
+from .operations_diagnostic_projection import DiagnosticHealthProjectionV1
 from .operator_console_projection import OperatorConsoleProjectionV1
 
 
@@ -101,6 +102,7 @@ class OperationsReadModelV1:
     evidence_refs: tuple[str, ...]
     sources: tuple[SourceIdentityV1, ...]
     freshness: str
+    diagnostic_health: DiagnosticHealthProjectionV1 | None = None
 
     def to_dict(self) -> dict[str, object]:
         value = asdict(self)
