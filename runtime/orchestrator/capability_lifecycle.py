@@ -99,6 +99,23 @@ class CapabilityContractRefV1:
         object.__setattr__(self, "blocked_capabilities", blocked)
         object.__setattr__(self, "evidence_refs", _tuple(self.evidence_refs, "contract evidence ref"))
 
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["allowed_capabilities"] = list(self.allowed_capabilities)
+        value["blocked_capabilities"] = list(self.blocked_capabilities)
+        value["evidence_refs"] = list(self.evidence_refs)
+        return value
+
+    @classmethod
+    def from_mapping(cls, value: dict[str, Any]) -> "CapabilityContractRefV1":
+        raw = dict(value)
+        for key in ("allowed_capabilities", "blocked_capabilities", "evidence_refs"):
+            raw[key] = tuple(raw.get(key, ()))
+        try:
+            return cls(**raw)
+        except TypeError as exc:
+            raise CapabilityLifecycleError("capability contract shape mismatch") from exc
+
 
 @dataclass(frozen=True, slots=True)
 class CapabilityLifecycleRecordV1:
@@ -123,6 +140,35 @@ class CapabilityLifecycleRecordV1:
 
     def valid(self) -> bool:
         return self.record_digest == self.expected_digest()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "contract": self.contract.to_dict(),
+            "state": self.state,
+            "health": self.health,
+            "active_dependency_ids": list(self.active_dependency_ids),
+            "evidence_refs": list(self.evidence_refs),
+            "record_digest": self.record_digest,
+        }
+
+    @classmethod
+    def from_mapping(cls, value: dict[str, Any]) -> "CapabilityLifecycleRecordV1":
+        try:
+            record = cls(
+                contract=CapabilityContractRefV1.from_mapping(dict(value["contract"])),
+                state=str(value["state"]),
+                health=str(value["health"]),
+                active_dependency_ids=tuple(value.get("active_dependency_ids", ())),
+                evidence_refs=tuple(value.get("evidence_refs", ())),
+                record_digest=str(value["record_digest"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CapabilityLifecycleError("lifecycle record shape mismatch") from exc
+        if record.state not in LIFECYCLE_STATES or record.health not in HEALTH_STATES:
+            raise CapabilityLifecycleError("lifecycle record state is invalid")
+        _tuple(record.active_dependency_ids, "dependency ID")
+        _tuple(record.evidence_refs, "lifecycle evidence ref")
+        return record
 
     @classmethod
     def create(cls, *, contract: CapabilityContractRefV1, state: str, health: str,
