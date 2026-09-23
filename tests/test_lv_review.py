@@ -182,6 +182,46 @@ class LVReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(LVReviewError, "verification-only provenance"):
             _validate_production_provenance(payload)
 
+    def test_provider_action_provenance_requires_governed_write_receipt(self) -> None:
+        payload = {
+            "completion_mode": "CODE_CHANGE",
+            "executor": {"identity": "provider-action-production", "version": "1"},
+            "owned_files": ["canary.txt"],
+            "changed_files": ["canary.txt"],
+            "commands": {
+                "worker": {
+                    "command": ["provider-action", "nvidia", "nvidia/nemotron-3-super-120b-a12b"],
+                    "exit_code": 0, "timeout": False,
+                },
+            },
+            "governed_effect_evidence": [{
+                "authorized": True,
+                "effect_id": "TE-fixture",
+                "evidence_refs": ["tool-effect://fixture/intent", "tool-effect://fixture/receipt"],
+                "intent_digest": "a" * 64,
+                "mutation_performed": True,
+                "operation": "PROJECT_OWNED_FILE_WRITE",
+                "receipt_digest": "b" * 64,
+                "receipt_intent_digest": "a" * 64,
+                "scope_ref": "canary.txt",
+                "security_passed": True,
+            }],
+        }
+        _validate_production_provenance(payload)
+
+        valid_effect = dict(payload["governed_effect_evidence"][0])
+        payload["governed_effect_evidence"] = []
+        with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
+            _validate_production_provenance(payload)
+
+        payload["governed_effect_evidence"] = [{**valid_effect, "receipt_intent_digest": "c" * 64}]
+        with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
+            _validate_production_provenance(payload)
+
+        payload["governed_effect_evidence"] = [{**valid_effect, "scope_ref": "outside.txt"}]
+        with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
+            _validate_production_provenance(payload)
+
     def test_verification_only_test_scope_runs_without_product_import_target(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1483,6 +1483,49 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
             raise LVReviewError("manual production worker authorization binding is invalid")
         return
     executor = payload.get("executor")
+    if isinstance(executor, Mapping) and executor.get("identity") == "provider-action-production":
+        commands = payload.get("commands")
+        worker = commands.get("worker") if isinstance(commands, Mapping) else None
+        command = worker.get("command") if isinstance(worker, Mapping) else None
+        owned = payload.get("owned_files")
+        changed = payload.get("changed_files")
+        effects = payload.get("governed_effect_evidence")
+        if (
+            payload.get("completion_mode") != "CODE_CHANGE"
+            or not isinstance(command, list) or len(command) < 3 or command[0] != "provider-action"
+            or not isinstance(owned, list) or not owned
+            or not isinstance(changed, list) or not changed
+            or any(not isinstance(path, str) or not _path_within_owned_scope(path, owned) for path in changed)
+            or not isinstance(effects, list) or not effects
+        ):
+            raise LVReviewError("provider action provenance is invalid")
+        effect_scopes: list[str] = []
+        for effect in effects:
+            if not isinstance(effect, Mapping):
+                raise LVReviewError("provider action provenance is invalid")
+            scope = effect.get("scope_ref")
+            intent = effect.get("intent_digest")
+            receipt = effect.get("receipt_digest")
+            receipt_intent = effect.get("receipt_intent_digest")
+            refs = effect.get("evidence_refs")
+            if (
+                effect.get("authorized") is not True
+                or effect.get("mutation_performed") is not True
+                or effect.get("security_passed") is not True
+                or effect.get("operation") != "PROJECT_OWNED_FILE_WRITE"
+                or not isinstance(effect.get("effect_id"), str) or not effect["effect_id"]
+                or not isinstance(scope, str) or not _path_within_owned_scope(scope, owned)
+                or not isinstance(intent, str) or not re.fullmatch(r"[0-9a-f]{64}", intent)
+                or not isinstance(receipt, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt)
+                or receipt_intent != intent
+                or not isinstance(refs, list) or len(refs) < 2
+                or any(not isinstance(ref, str) or not ref for ref in refs)
+            ):
+                raise LVReviewError("provider action provenance is invalid")
+            effect_scopes.append(scope)
+        if any(not any(_path_within_owned_scope(path, [scope]) for scope in effect_scopes) for path in changed):
+            raise LVReviewError("provider action provenance is invalid")
+        return
     if not isinstance(executor, Mapping) or executor.get("identity") != "codex-cli-production":
         raise LVReviewError("production worker executor identity is invalid")
 
