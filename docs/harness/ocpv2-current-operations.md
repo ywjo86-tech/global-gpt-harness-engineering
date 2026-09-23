@@ -46,3 +46,8 @@ Comparable regression on the integrated canonical tree: `2283 tests PASS / 15 sk
 ## Rollback / recovery
 
 Live OCP successor rollbacks are stored under `~/.local/state/gch/ocpv2/successor-rollbacks/`. Runtime worktrees referenced by `runtime-current` or retained as rollback evidence are operational artifacts, not disposable development worktrees.
+## Git / worktree hygiene
+
+The canonical OCP development worktree is `worktrees/ocp-observation-gateway-design-20260923`. Historical feature and integration worktrees are removed after integration. Non-merged historical tips live only under `archive/*`; they are evidence, not active implementation branches.
+
+Do not delete `/home/ywjo/AI-Workspace/runtime/*` merely because it is a Git worktree. Runtime worktrees are governed operational artifacts; at minimum the target of `~/.local/share/global-gpt-harness/runtime-current` must remain intact.
