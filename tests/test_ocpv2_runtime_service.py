@@ -10,6 +10,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     RuntimeServiceError,
     canary_scope_from_environment,
     execute_authorized_canonical,
+    host_inspection_enabled_from_environment,
 )
 
 
@@ -128,6 +129,27 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("-m runtime.orchestrator.ocpv2_runtime_service", text)
         self.assertNotIn("bootstrap.py run-once", text)
+
+
+    def test_host_inspection_feature_flag_is_explicit_and_fail_closed(self):
+        self.assertFalse(host_inspection_enabled_from_environment({}))
+        self.assertFalse(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "0"}))
+        self.assertTrue(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "1"}))
+        self.assertFalse(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "true"}))
+        self.assertFalse(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "bogus"}))
+
+    def test_runtime_composes_host_inspection_without_direct_effect_authority(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        source = inspect.getsource(module)
+        self.assertIn("HostInspectionPort", source)
+        self.assertIn("RemoteInspectionProjectionV1", source)
+        self.assertIn("OCP_HOST_INSPECTION_ENABLED", source)
+        for forbidden in ("FullMCPRuntime", "ProcessService", "shell_execute", "register_job(", "provider_router"):
+            with self.subTest(forbidden=forbidden): self.assertNotIn(forbidden, source)
+
+    def test_user_service_defaults_host_inspection_off(self):
+        text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_HOST_INSPECTION_ENABLED=0", text)
 
 
 if __name__ == "__main__":

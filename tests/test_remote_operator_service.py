@@ -12,6 +12,12 @@ from runtime.orchestrator.remote_operator_envelope import (
     validate_remote_envelope,
 )
 from runtime.orchestrator.remote_operator_ingress import IngressDecision
+from runtime.orchestrator.host_inspection_contract import HostInspectionResultV1
+from runtime.orchestrator.remote_control_envelope import (
+    REMOTE_CONTROL_ENVELOPE_SCHEMA, RemoteControlEnvelopeV1,
+    seal_remote_control_envelope, validate_remote_control_envelope,
+)
+from runtime.orchestrator.remote_operator_outbox import RemoteInspectionProjectionV1
 from runtime.orchestrator.remote_operator_service import (
     CanaryScope,
     ControlMode,
@@ -89,6 +95,28 @@ def raw(message_id="RAW-1"):
         source_message_id=message_id,
         content=b"{}",
         received_at="2026-09-21T00:05:00+00:00",
+    )
+
+
+def inspection_envelope():
+    request = {
+        "schema_version": "orchestration.host-inspection-request.v1",
+        "request_id": "INSP-1", "correlation_id": "CORR-1",
+        "project_alias": "demo", "operation": "git.status",
+        "arguments": {}, "state_change_required": False,
+    }
+    payload = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "HOST_INSPECTION", "message_id": "MSG-I1", "sequence": 1,
+        "issued_at": "2026-09-21T00:00:00+00:00", "expires_at": "2026-09-21T01:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "TEST", "channel_id": "CTRL", "source_actor_id": "235775273", "source_message_id": "11"},
+        "payload": request, "payload_digest": "",
+        "authorization": {"inspection_policy_ref": "POLICY-1"}, "envelope_sha256": "",
+    }
+    return validate_remote_control_envelope(
+        seal_remote_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
     )
 
 
@@ -213,6 +241,56 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         for forbidden in ("systemctl", "subprocess", "os.system", "pip install", "apt ", "git config"):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+
+
+    def test_host_inspection_runs_in_observe_read_only_canary_and_active_without_mutation(self):
+        for mode in (ControlMode.OBSERVE_ONLY, ControlMode.CONTROL_READ_ONLY, ControlMode.CONTROL_MUTATION_CANARY, ControlMode.ACTIVE):
+            with self.subTest(mode=mode):
+                env = inspection_envelope(); transport = FakeTransport((raw("RAW-I"),)); inspections = []; mutations = []
+                def inspect_authorized(envelope_value: RemoteControlEnvelopeV1):
+                    inspections.append(envelope_value.message_id)
+                    result = HostInspectionResultV1.ok(envelope_value.payload, {"clean": True})
+                    return RemoteInspectionProjectionV1.from_result(result, message_id=envelope_value.message_id).to_dict()
+                service = RemoteOperatorService(
+                    transport=transport, decode_envelope=lambda _: env,
+                    ingress=lambda _: (_ for _ in ()).throw(AssertionError("inspection must not enter mutation ingress")),
+                    execute_authorized=lambda *_: mutations.append("mutation"),
+                    inspect_authorized=inspect_authorized, host_inspection_enabled=True,
+                )
+                result = service.poll_once(mode=mode)
+                self.assertEqual(result.inspected, 1); self.assertEqual(result.executed, 0)
+                self.assertEqual(inspections, ["MSG-I1"]); self.assertEqual(mutations, [])
+                self.assertEqual(transport.projections[0]["schema_version"], "orchestration.remote-inspection-projection.v1")
+
+    def test_host_inspection_feature_off_fails_closed_without_callback(self):
+        env = inspection_envelope(); transport = FakeTransport((raw("RAW-I"),)); calls = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            inspect_authorized=lambda _: calls.append("inspection"), host_inspection_enabled=False,
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.inspected, result.executed, result.blocked), (0, 0, 1))
+        self.assertEqual(calls, [])
+        self.assertEqual(transport.projections[0]["result_class"], "HOST_INSPECTION_DISABLED")
+
+    def test_host_inspection_failure_does_not_fall_through_to_mutation(self):
+        env = inspection_envelope(); transport = FakeTransport((raw("RAW-I"),)); mutations = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: mutations.append("mutation"),
+            inspect_authorized=lambda _: (_ for _ in ()).throw(ValueError("inspection failed")),
+            host_inspection_enabled=True,
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.inspected, result.executed, result.blocked), (0, 0, 1))
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "HOST_INSPECTION_ERROR")
+
+    def test_host_inspection_branch_has_no_execution_authority_imports(self):
+        source = inspect.getsource(remote_operator_service)
+        for forbidden in ("FullMCPRuntime", "ProcessService", "register_job(", "provider_router", "shell_execute"):
+            with self.subTest(forbidden=forbidden): self.assertNotIn(forbidden, source)
 
 
 if __name__ == "__main__":

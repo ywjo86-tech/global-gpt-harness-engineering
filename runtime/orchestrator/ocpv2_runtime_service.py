@@ -18,12 +18,15 @@ from typing import Any, Callable, Mapping
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
 from .harness_state_root import resolve_harness_state_root
+from .host_inspection_port import HostInspectionPort
 from .ocpv2_canonical_recovery import recover_pending_canonical_results, resolve_registered_full_plan_completion
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
-from .remote_control_envelope import decode_remote_control_payload
+from .remote_control_envelope import RemoteControlEnvelopeV1, decode_remote_control_payload
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_ingress import validate_ingress
-from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
+from .remote_operator_outbox import (
+    RemoteInspectionProjectionV1, RemoteResultOutbox, RemoteResultProjectionV1, parse_remote_projection,
+)
 from .remote_operator_receipt import RemoteOperatorReceiptStore
 from .remote_operator_recovery_binding import RemoteExecutionBindingStore
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
@@ -45,6 +48,8 @@ _OPTIONAL_ENV = {
     "OCP_CANARY_TASK_ID",
     "OCP_CANARY_GATE_ID",
     "OCP_CANARY_DIRECTIVE_ID",
+    "OCP_HOST_INSPECTION_ENABLED",
+    "HARNESS_CONTRACT_MAPPING_ROOT",
 }
 _PROJECTION_SECRET = re.compile(
     rb"(?i)(api[_-]?key|authorization|bearer|password|token|credential|secret)\s*[:=]\s*([^\s,;}]+)"
@@ -65,6 +70,12 @@ class RuntimeConfig:
     token_file: Path | None
     state_root: Path | None
     environment: Mapping[str, str]
+    host_inspection_enabled: bool = False
+
+
+def host_inspection_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable only on the exact explicit value `1`; absent/invalid stays fail-closed."""
+    return str(environment.get("OCP_HOST_INSPECTION_ENABLED") or "").strip() == "1"
 
 
 def _projection_secret_findings(payload: bytes) -> dict[str, int]:
@@ -118,7 +129,7 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     if repo_root.is_symlink() or not repo_root.is_dir():
         raise RuntimeServiceError("repo root must be an existing non-symlink directory")
     if mode == ControlMode.DISABLED:
-        return RuntimeConfig(mode, repo_root, 0, 0, (), None, None, environment)
+        return RuntimeConfig(mode, repo_root, 0, 0, (), None, None, environment, False)
     try:
         repository_id = int(file_env["OCP_GITHUB_CONTROL_REPOSITORY_ID"])
         pr_number = int(file_env["OCP_GITHUB_CONTROL_PR_NUMBER"])
@@ -138,7 +149,10 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     state_root.mkdir(parents=True, exist_ok=True)
     if state_root.is_symlink():
         raise RuntimeServiceError("OCP state root is unsafe")
-    return RuntimeConfig(mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment)
+    return RuntimeConfig(
+        mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment,
+        host_inspection_enabled_from_environment(environment),
+    )
 
 
 def canary_scope_from_environment(mode: ControlMode | str, environment: Mapping[str, str]) -> CanaryScope | None:
@@ -248,6 +262,20 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         project_root=config.repo_root,
         environ=config.environment,
     )
+    inspection_port: HostInspectionPort | None = None
+    if config.host_inspection_enabled:
+        mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not mapping_root_raw:
+            raise RuntimeServiceError("HOST_INSPECTION_REGISTRY_REQUIRED")
+        mapping_root = Path(mapping_root_raw).expanduser().absolute()
+        if not mapping_root.is_dir() or mapping_root.is_symlink() or mapping_root.resolve() != mapping_root:
+            raise RuntimeServiceError("HOST_INSPECTION_REGISTRY_UNSAFE")
+        inspection_port = HostInspectionPort(
+            registry_root=mapping_root,
+            read_scopes=(".",),
+            allowed_service_units=frozenset({"ocpv2.service"}),
+            attention_search_root=harness_state_root,
+        )
 
     def durable_acknowledged(message_id: str) -> bool:
         binding = binding_store.get(message_id)
@@ -326,8 +354,21 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             harness_state_root=harness_state_root,
         )
 
+    def inspect(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if inspection_port is None:
+            raise RuntimeServiceError("HOST_INSPECTION_DISABLED")
+        result = inspection_port.inspect(envelope.payload)
+        projection = RemoteInspectionProjectionV1.from_result(result, message_id=envelope.message_id)
+        outbox.enqueue_projection(projection)
+        return projection.to_dict()
+
     def after_projection_published(envelope, projection):
-        del projection
+        if isinstance(envelope, RemoteControlEnvelopeV1):
+            parsed = parse_remote_projection(projection)
+            if not isinstance(parsed, RemoteInspectionProjectionV1):
+                raise RuntimeServiceError("HOST_INSPECTION_PROJECTION_MISMATCH")
+            outbox.mark_published(parsed.projection_id, parsed.projection_sha256)
+            return
         binding = binding_store.get(envelope.message_id)
         if binding is not None and binding.status != "PROJECTED":
             binding_store.mark_projected(envelope.message_id, binding.projection_id or None)
@@ -339,13 +380,15 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         execute_authorized=execute,
         canary_scope=canary_scope_from_environment(config.mode, config.environment),
         after_projection_published=after_projection_published,
+        inspect_authorized=inspect,
+        host_inspection_enabled=config.host_inspection_enabled,
     )
 
 
 def run_once(config: RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         return {"mode": "DISABLED", "received": 0, "validated": 0, "executed": 0,
-                "projected": 0, "acknowledged": 0, "blocked": 0}
+                "projected": 0, "acknowledged": 0, "blocked": 0, "inspected": 0}
     service = _compose_service(config)
     result = service.poll_once(mode=config.mode)
     return {
@@ -356,6 +399,7 @@ def run_once(config: RuntimeConfig) -> dict[str, Any]:
         "projected": result.projected,
         "acknowledged": result.acknowledged,
         "blocked": result.blocked,
+        "inspected": result.inspected,
     }
 
 

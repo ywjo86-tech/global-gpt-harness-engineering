@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .operator_control import OperatorDirectiveV1
+from .remote_control_envelope import RemoteControlEnvelopeV1
 from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_ingress import IngressDecision
 from .remote_operator_transport import RawControlEnvelope, RemoteOperatorTransport
@@ -56,6 +57,7 @@ class ServicePollResult:
     projected: int = 0
     acknowledged: int = 0
     blocked: int = 0
+    inspected: int = 0
 
 
 class RemoteOperatorService:
@@ -69,9 +71,9 @@ class RemoteOperatorService:
             [RemoteOperatorEnvelopeV2, OperatorDirectiveV1], Mapping[str, Any]
         ],
         canary_scope: CanaryScope | None = None,
-        after_projection_published: Callable[
-            [RemoteOperatorEnvelopeV2, Mapping[str, Any]], None
-        ] | None = None,
+        after_projection_published: Callable[[Any, Mapping[str, Any]], None] | None = None,
+        inspect_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        host_inspection_enabled: bool = False,
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -79,6 +81,8 @@ class RemoteOperatorService:
         self.execute_authorized = execute_authorized
         self.canary_scope = canary_scope
         self.after_projection_published = after_projection_published
+        self.inspect_authorized = inspect_authorized
+        self.host_inspection_enabled = bool(host_inspection_enabled)
 
     @staticmethod
     def _projection(
@@ -104,9 +108,24 @@ class RemoteOperatorService:
                 projection[str(key)] = value
         return projection
 
+    @staticmethod
+    def _inspection_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "orchestration.remote-inspection-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": envelope.payload.request_id,
+            "correlation_id": envelope.payload.correlation_id,
+            "project_alias": envelope.payload.project_alias,
+            "operation": envelope.payload.operation,
+            "request_digest": envelope.payload.request_digest,
+            "result_class": str(result_class),
+        }
+
     def _publish_and_ack(
         self,
-        envelope: RemoteOperatorEnvelopeV2,
+        envelope: Any,
         projection: Mapping[str, Any],
     ) -> None:
         self.transport.publish_projection(projection)
@@ -129,15 +148,37 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = projected = acknowledged = blocked = 0
+        received = validated = executed = projected = acknowledged = blocked = inspected = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             try:
                 envelope = self.decode_envelope(raw)
-                decision = self.ingress(envelope)
             except Exception as exc:
                 raise RemoteOperatorServiceError("INGRESS_FAILED") from exc
             validated += 1
+
+            if isinstance(envelope, RemoteControlEnvelopeV1):
+                if not self.host_inspection_enabled or self.inspect_authorized is None:
+                    projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_DISABLED")
+                    blocked += 1
+                else:
+                    try:
+                        projection = self.inspect_authorized(envelope)
+                        if not isinstance(projection, Mapping):
+                            raise RemoteOperatorServiceError("host inspection result projection is malformed")
+                        inspected += 1
+                    except Exception:
+                        projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_ERROR")
+                        blocked += 1
+                self._publish_and_ack(envelope, projection)
+                projected += 1
+                acknowledged += 1
+                continue
+
+            try:
+                decision = self.ingress(envelope)
+            except Exception as exc:
+                raise RemoteOperatorServiceError("INGRESS_FAILED") from exc
 
             if not decision.accepted:
                 projection = self._projection(envelope, decision.result_class)
@@ -204,4 +245,5 @@ class RemoteOperatorService:
             projected=projected,
             acknowledged=acknowledged,
             blocked=blocked,
+            inspected=inspected,
         )
