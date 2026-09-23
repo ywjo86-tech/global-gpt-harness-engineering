@@ -682,3 +682,63 @@ This design does not authorize or require:
 This spec is the reconciled architectural design only. It does not authorize product-code implementation, deployment, runtime activation, service restart, merge, push, or production cleanup.
 
 Next permitted step after user review/approval of this written spec is a separate implementation plan using the established Full Plan / Harness workflow.
+
+
+## 34. Resume Reconciliation Clarifications
+
+This section restores requirements already established in the approved Top-down discussion; it is not a new authority layer.
+
+### 34.1 Dual human entry surfaces
+
+The human entry model is explicitly:
+
+```text
+User
+ ├─ JARVIS
+ └─ Harness Dashboard
+        ↓
+Shared governed request/control boundary
+        ↓
+Existing Harness authorities
+```
+
+JARVIS and Harness Dashboard may share a hosting process or WebApp server for operational simplicity, but they remain separate logical entry surfaces. Neither surface becomes a new operator, planner, provider router, or effect authority.
+
+### 34.2 External Agent binding is MCP/Adapter-first
+
+`ABSORB LAST` is normative. External Agents/Skills are not copied into Harness Core by default. The preferred binding order is:
+
+`MCP endpoint → bounded Adapter → project-local Skill only when no qualified contract endpoint exists`.
+
+The contract may expose only the safe subset of an external system. Conflicting, duplicate, privileged, destructive, deployment, credential, or unrelated capabilities are excluded from the active contract or routed through existing approval/effect authority. Local code installation remains a fallback path governed by the existing supply-chain/install/use-authorization pipeline.
+
+### 34.3 Continuous capability watch without a resident Agent
+
+External capability improvement is implemented as a lightweight periodic/on-demand watch workflow, not a new autonomous resident Agent. It reuses existing inventory/discovery/evaluation evidence and lifecycle records to identify gaps, degraded capabilities, overlap, stale versions, replacement candidates, and retirement candidates.
+
+The watch may produce `SEARCH`, `REASSESS`, `REPLACEMENT_REVIEW`, `RETIREMENT_REVIEW`, or `NO_ACTION` recommendations. It cannot auto-install, auto-activate, silently rebind running work, or retire an active dependency. Scheduling cadence is configuration, not a planner/provider hardcode.
+
+### 34.4 External design capability intake
+
+List Operations UI, 3D Office, and later JARVIS visual/HCI upgrade work use the same External Capability policy. Design Agents/Skills may be researched and qualified through MCP/Adapter contracts, and their design artifacts may be absorbed. Their runtime implementation code is not absorbed into Harness Core merely because the design was accepted.
+
+A qualified external design capability is optional: if no candidate passes governance/quality gates, the disposition may be `BUILD` using the approved visual requirements and existing WebApp assets.
+
+### 34.5 Existing self-diagnosis is projected, not rebuilt
+
+The enhancement reuses the existing `runtime/diagnostics/*`, attention/stall evidence, recovery evidence, source-binding facts, and runtime health facts. A bounded read-only Self-Diagnosis projection summarizes current health for Dashboard consumers. It does not add a second RCA/diagnostic framework and cannot kill processes, restart services, mutate Gate state, or perform recovery effects.
+
+Additional acceptance criteria:
+
+- O-AC09: `User -> JARVIS / Harness Dashboard` is preserved as two governed human entry surfaces.
+- O-AC10: Self-Diagnosis view reuses existing diagnostic evidence and remains read-only.
+- C-AC08: External Agent default binding is MCP/Adapter; local code absorption is fallback-only.
+- C-AC09: Capability watch is lightweight and recommendation-only until existing governance authorizes lifecycle changes.
+- C-AC10: List/3D design capability intake follows the same external lifecycle and effect boundaries.
+- X-AC06: Failure or removal of an external capability cannot become a new Harness Core authority failure.
+
+Additional invariants:
+
+- INV-16: External capability implementation ownership stays outside Harness Core by default; Harness owns contracts and evidence.
+- INV-17: Capability watch does not create a hidden autonomous Agent or parallel scheduler authority.
+- INV-18: Design assistance may influence UI artifacts but never gains execution/control authority.
