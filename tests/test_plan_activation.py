@@ -9,7 +9,7 @@ from pathlib import Path
 
 from runtime.ai_office.activation import AIActivationContextV1
 from runtime.orchestrator.approved_work_binding import ApprovedWorkBindingV1
-from runtime.orchestrator.plan_activation import PlanActivationError, activate_approved_work
+from runtime.orchestrator.plan_activation import PlanActivationError, PlanActivationStore, activate_approved_work
 
 
 def git(root: Path, *args: str) -> str:
@@ -108,6 +108,37 @@ class PlanActivationTests(unittest.TestCase):
         for forbidden in ("systemd-run", "subprocess", "provider_router", "FullMCPRuntime", "run_job("):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+
+
+class PlanActivationReplayTests(PlanActivationTests):
+    def test_restart_replays_durable_receipt_without_second_registration(self):
+        calls = []
+        def registrar():
+            calls.append('register')
+            return activate_approved_work(
+                self.binding(), ai_context=self.context(), harness_state_root=self.state,
+                runtime_code_root=self.runtime,
+            )
+        store = PlanActivationStore(self.state)
+        first = store.record_or_load(request_id="ACT-1", binding=self.binding(), registrar=registrar)
+        restarted = PlanActivationStore(self.state)
+        second = restarted.record_or_load(request_id="ACT-1", binding=self.binding(), registrar=registrar)
+        self.assertEqual(first.activation_digest, second.activation_digest)
+        self.assertEqual(calls, ['register'])
+        self.assertEqual(second.result_status, 'REGISTERED')
+
+    def test_same_request_id_with_changed_binding_is_rejected(self):
+        store = PlanActivationStore(self.state)
+        store.record_or_load(
+            request_id="ACT-1", binding=self.binding(),
+            registrar=lambda: activate_approved_work(
+                self.binding(), ai_context=self.context(), harness_state_root=self.state,
+                runtime_code_root=self.runtime,
+            ),
+        )
+        changed = self.binding(request_digest='9' * 64)
+        with self.assertRaisesRegex(PlanActivationError, 'ACTIVATION_REPLAY_CONFLICT'):
+            store.record_or_load(request_id="ACT-1", binding=changed, registrar=lambda: None)
 
 
 if __name__ == "__main__":
