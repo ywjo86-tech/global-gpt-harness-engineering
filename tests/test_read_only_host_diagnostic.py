@@ -167,6 +167,43 @@ class ReadOnlyHostDiagnosticTests(unittest.TestCase):
             for key, value in required.items():
                 self.assertEqual(kwargs["env"][key], value)
 
+    def test_repo_snapshot_allows_large_internal_index_without_projecting_it(self):
+        large_index = "100644 " + "a" * 40 + " 0\ttracked.txt\n"
+        large_index *= 2000
+        def runner(argv, **kwargs):
+            if "status" in argv:
+                out = "# branch.oid " + "a" * 40 + "\n# branch.head main\n"
+            elif "rev-parse" in argv and "--verify" in argv:
+                out = "a" * 40 + "\n"
+            elif "rev-parse" in argv:
+                out = ".git\n"
+            elif "ls-files" in argv:
+                out = large_index
+            else:
+                out = ""
+            return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        payload = collect_repo_snapshot(self.repo_request(), self.policy, runner=runner)
+        self.assertEqual(payload["submodule_paths"], [])
+        self.assertNotIn("index", payload)
+        self.assertNotIn("tracked.txt", repr(payload))
+
+    def test_repo_snapshot_internal_index_still_has_hard_safety_cap(self):
+        def runner(argv, **kwargs):
+            if "status" in argv:
+                out = "# branch.oid " + "a" * 40 + "\n# branch.head main\n"
+            elif "rev-parse" in argv and "--verify" in argv:
+                out = "a" * 40 + "\n"
+            elif "rev-parse" in argv:
+                out = ".git\n"
+            elif "ls-files" in argv:
+                out = "x" * 101
+            else:
+                out = ""
+            return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        with patch("runtime.orchestrator.read_only_host_diagnostic._INTERNAL_GIT_INDEX_MAX_BYTES", 100):
+            with self.assertRaisesRegex(DiagnosticUnavailableError, "internal safety cap"):
+                collect_repo_snapshot(self.repo_request(), self.policy, runner=runner)
+
     def test_repo_snapshot_does_not_execute_malicious_diff_driver(self):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
         subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.invalid"], check=True)

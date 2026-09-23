@@ -22,6 +22,7 @@ _SECRET_VALUE = re.compile(
     r"(?im)\b(api[_-]?key|authorization|password|token|credential|secret)\s*[:=]\s*[^\r\n]*"
 )
 _BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[^\s,;}]+")
+_INTERNAL_GIT_INDEX_MAX_BYTES = 1024 * 1024
 
 
 class DiagnosticError(ValueError):
@@ -240,6 +241,20 @@ def _bounded_completed(
     return stdout
 
 
+def _internal_git_index_output(
+    result: subprocess.CompletedProcess[str], policy: DiagnosticPolicy,
+) -> str:
+    stdout = str(result.stdout or "")
+    stderr = str(result.stderr or "")
+    if len(stderr.encode("utf-8")) > policy.max_bytes:
+        raise DiagnosticUnavailableError("git index stderr exceeds configured cap")
+    if len(stdout.encode("utf-8")) > _INTERNAL_GIT_INDEX_MAX_BYTES:
+        raise DiagnosticUnavailableError("git index exceeds internal safety cap")
+    if result.returncode != 0:
+        raise DiagnosticUnavailableError("git index failed")
+    return stdout
+
+
 def collect_repo_snapshot(
     request: ReadOnlyDiagnosticRequestV1,
     policy: DiagnosticPolicy,
@@ -301,8 +316,8 @@ def collect_repo_snapshot(
     )
     diff_check_result = run(("diff", "--check", "--"), "git diff check", allow_nonzero=True)
     diff_check = _bounded_completed(diff_check_result, policy, "git diff check")
-    index = _bounded_completed(
-        run(("ls-files", "--stage"), "git index"), policy, "git index"
+    index = _internal_git_index_output(
+        _run_git(root, ("ls-files", "--stage"), policy.timeout_seconds, runner), policy
     )
     status_after = _bounded_completed(
         run(("status", "--porcelain=v2", "--branch", "--untracked-files=all"), "git status"),
