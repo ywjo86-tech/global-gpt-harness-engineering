@@ -31,6 +31,8 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("OCP_GITHUB_TOKEN_FILE=", text)
         self.assertIn("OCP_STATE_ROOT=", text)
         self.assertIn("OCP_REPO_ROOT=/path/to/global-gpt-harness-engineering", text)
+        self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false"), 1)
+        self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG="), 1)
         lowered = text.lower()
         self.assertNotIn("ghp_", lowered)
         self.assertNotIn("github_pat_", lowered)
@@ -77,6 +79,19 @@ class OCPv2DeployPackageTests(unittest.TestCase):
             self.assertIn("--env-file %h/.config/gch/ocpv2.env", service)
             self.assertNotIn("bootstrap.py run-once", service)
             self.assertNotIn("@REPO_ROOT@", service)
+
+    def test_rendered_env_keeps_host_diagnostics_explicitly_off(self):
+        bootstrap = load_bootstrap()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            rendered = bootstrap.render_package(bootstrap.BootstrapConfig.disabled(repo_root=repo), output_dir=root / "rendered")
+            text = rendered.env_path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false"), 1)
+            self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG="), 1)
+            parsed = bootstrap.config_from_env_file(rendered.env_path)
+            self.assertEqual(parsed.mode, "DISABLED")
 
     def test_timer_runs_one_shot_service_every_30_seconds(self):
         timer = (DEPLOY_ROOT / "ocpv2.user.timer").read_text(encoding="utf-8")

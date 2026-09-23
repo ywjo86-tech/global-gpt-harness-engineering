@@ -1,0 +1,17 @@
+{
+  "schema_version": "orchestration.read-only-host-diagnostic-config.v1",
+  "roots": {
+    "example-project": "/absolute/path/to/approved/project"
+  },
+  "user_services": [
+    "ocpv2.service",
+    "ocpv2.timer",
+    "global-gpt-harness-full-plan-reconcile.service",
+    "global-gpt-harness-full-plan-reconcile.timer"
+  ],
+  "limits": {
+    "max_bytes": 32768,
+    "max_lines": 400,
+    "timeout_seconds": 10
+  }
+}

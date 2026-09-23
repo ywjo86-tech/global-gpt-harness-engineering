@@ -8,7 +8,7 @@ from .operator_control import OperatorDirectiveV1
 from .production_execution_gateway import GatewayError, HOST_GATEWAY, validate_gateway_request
 from .production_full_plan_runner import ContinuationOwnerToken, DurableFullPlanSupervisor, ProductionFullPlanError
 from .production_worker_executor import ProductionWorkerError, execute_production_worker
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2
+from .remote_operator_envelope import RemoteControlEnvelope
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import ReceiptStatus, RemoteOperatorReceiptStore
 from .runtime_migration_handoff import MigrationHandoffError, MigrationPhase, MigrationStore, RuntimeMigrationTransaction
@@ -56,12 +56,12 @@ class CanonicalCompletionEvidence:
     completed_at: str
 
 
-def prepare_existing_operator_directive(envelope: RemoteOperatorEnvelopeV2) -> OperatorDirectiveV1:
+def prepare_existing_operator_directive(envelope: RemoteControlEnvelope) -> OperatorDirectiveV1:
     """Re-enter the existing operator contract; no OCP-specific stage authority is created."""
     return OperatorDirectiveV1.from_mapping(envelope.operator_directive.to_dict())
 
 
-def _blocked(envelope: RemoteOperatorEnvelopeV2, result_class: str) -> IngressDecision:
+def _blocked(envelope: RemoteControlEnvelope, result_class: str) -> IngressDecision:
     return IngressDecision(
         accepted=False,
         result_class=result_class,
@@ -72,14 +72,14 @@ def _blocked(envelope: RemoteOperatorEnvelopeV2, result_class: str) -> IngressDe
 
 
 def validate_ingress(
-    envelope: RemoteOperatorEnvelopeV2,
+    envelope: RemoteControlEnvelope,
     *,
     receipt_store: RemoteOperatorReceiptStore,
     allowed_adapter_id: str,
     allowed_channel_id: str,
     allowed_source_actor_ids: Iterable[str],
     expected_risk_envelope_digest: str | None,
-    before_receipt_commit: Callable[[RemoteOperatorEnvelopeV2, OperatorDirectiveV1], None] | None = None,
+    before_receipt_commit: Callable[[RemoteControlEnvelope, OperatorDirectiveV1], None] | None = None,
 ) -> IngressDecision:
     """Validate transport/authorization/replay identity before any canonical dispatch.
 
@@ -165,7 +165,7 @@ def _assert_optional_runtime_binding(expected: str, current: Callable[[], str], 
 def _validate_canonical_worker_request(
     request: WorkerRequest,
     directive: OperatorDirectiveV1,
-    envelope: RemoteOperatorEnvelopeV2,
+    envelope: RemoteControlEnvelope,
 ) -> WorkerRequest:
     if not isinstance(request, WorkerRequest):
         raise RemoteExecutionGatewayError("WORKER_REQUEST_BINDING_MISMATCH: canonical resolver returned invalid type")
@@ -201,7 +201,7 @@ def _validate_canonical_worker_request(
 
 
 def execute_remote_action_through_canonical_full_plan(
-    envelope: RemoteOperatorEnvelopeV2,
+    envelope: RemoteControlEnvelope,
     directive: OperatorDirectiveV1,
     *,
     supervisor: DurableFullPlanSupervisor,
@@ -211,7 +211,7 @@ def execute_remote_action_through_canonical_full_plan(
     current_source_head: Callable[[], str],
     current_runtime_release_digest: Callable[[], str],
     worker_request_resolver: Callable[
-        [ContinuationOwnerToken, RemoteOperatorEnvelopeV2, OperatorDirectiveV1], WorkerRequest
+        [ContinuationOwnerToken, RemoteControlEnvelope, OperatorDirectiveV1], WorkerRequest
     ],
 ) -> Mapping[str, Any]:
     """Execute a remote ACTION only through canonical Full Plan worker authority.
@@ -370,7 +370,7 @@ def advance_migration_if_current(
 
 
 def reconcile_committed_delivery(
-    envelope: RemoteOperatorEnvelopeV2,
+    envelope: RemoteControlEnvelope,
     *,
     receipt_store: RemoteOperatorReceiptStore,
     outbox: RemoteResultOutbox,
@@ -423,7 +423,7 @@ def reconcile_committed_delivery(
 
 
 def reconcile_canonical_completion(
-    envelope: RemoteOperatorEnvelopeV2,
+    envelope: RemoteControlEnvelope,
     *,
     receipt_store: RemoteOperatorReceiptStore,
     outbox: RemoteResultOutbox,
