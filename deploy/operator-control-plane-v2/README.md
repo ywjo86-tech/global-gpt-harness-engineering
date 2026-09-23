@@ -29,3 +29,8 @@ systemctl --user stop ocpv2.service
 ```
 
 Restore the last reviewed `ocpv2.env` only if configuration rollback is also required. Rollback must not edit canonical Harness task, Gate, checkpoint, migration, provider, completion, or recovery state. OCP transport receipts/outbox remain non-authoritative bookkeeping.
+## Read-only host diagnostics
+
+The typed host-diagnostic extension is deployed **OFF by default**. Rendered and example environments always contain `GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false` and an empty `GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG=`. `install-user-service` has no switch that enables this feature; activation is a separate reviewed operational decision.
+
+Use `read-only-host-diagnostic.example.json` only as a policy template. Replace its placeholder root with an explicitly approved absolute path and keep the resulting local policy owner-only (`0600`). Do not commit JARVIS-SERVER paths, credentials, or tokens. The reviewable qualification, activation and rollback sequence is documented in `docs/operations/read-only-host-diagnostic-rollout.md`.
