@@ -1,5 +1,7 @@
 # RDC-Independent Primary Path Acceptance Plan
 
+> **BLOCKED AMENDMENT (2026-09-23):** Task 2's activation→mutation portion is superseded pending implementation of `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md`. Existing V1 activation/canary evidence proves tracking registration/replay only. Do not resume governed mutation or promote RDC status from the old canary. After remediation, restart the executable-activation live window with a fresh activation/run identity.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prove that normal GPT operation can inspect JARVIS-SERVER, start approved new work, resume existing work, and perform governed mutations without RDC participating in the tested path.

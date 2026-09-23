@@ -1,6 +1,8 @@
 # OCPv2 Approved Work Activation Runbook
 
-Status: qualification-only; no live activation is authorized by this document.
+Status: V1 TRACKING/MANUAL COMPATIBILITY ONLY — NOT EXECUTABLE PRIMARY-PATH AUTHORITY
+
+> Post-canary diagnosis proved that this V1 flow registers `GPT_OPERATOR_PLAN` and can stop at `OPERATOR_TASK_RECEIPT_PENDING`. Preserve this runbook for V1 registration/replay compatibility only. Executable new-work qualification is governed by `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md` after implementation.
 
 ## Purpose
 

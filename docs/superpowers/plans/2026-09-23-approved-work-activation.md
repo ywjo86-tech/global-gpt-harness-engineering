@@ -1,4 +1,6 @@
-# Approved Work Activation Implementation Plan
+# Approved Work Activation
+
+> **Historical implementation scope notice (2026-09-23):** This completed plan implements `APPROVED_WORK_ACTIVATION` V1 as `GPT_OPERATOR_PLAN` tracking/manual receipt registration. It is **not** executable new-work authority and must not be used as RDC-independent mutation proof. Executable primary-path activation is governed by `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md` and requires a new implementation plan after written-spec approval. Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -6,6 +6,8 @@ Superseded implementation candidate: `impl/read-only-host-diagnostic-20260923` a
 Revision: TOP-DOWN ARCHITECTURE RECHECK
 Status: DESIGN CANDIDATE — implementation not authorized by this document
 
+> **Execution-link amendment (2026-09-23):** `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md` is authoritative for executable new-work activation. It supersedes only this document's §§8-9, §18B-C, acceptance Gates 5/8, and migration Phases E/F where they assumed `build_operator_plan_job()` / `GPT_OPERATOR_PLAN` was an executable RDC-independent primary-path job. V1 remains tracking/manual compatibility; Host Inspection, existing-run control and all other authority boundaries remain unchanged.
+
 ## 1. Goal
 
 Make OCPv2 + AI Office Harness the normal GPT-to-JARVIS-SERVER operating path and reduce Remote Desktop Commander (RDC) to an optional break-glass, bootstrap, interactive-terminal, and recovery tool.
@@ -101,7 +103,7 @@ Full MCP already contains `filesystem_read`, `filesystem_search`, `filesystem_me
 
 AI Office already contains requirement intake, context assembly, workflow/governance, capability-owner routing, execution coordination and public observability consumption, but there is no OCP→AI Office general work-intake adapter.
 
-`operator_plan_execution.build_operator_plan_job()` and `production_full_plan_entry.register_job()` already define how an approved committed plan/spec becomes a durable Full Plan job. There is no OCP-safe activation adapter around that boundary.
+`operator_plan_execution.build_operator_plan_job()` plus `register_job()` defines the durable `GPT_OPERATOR_PLAN` tracking/manual-receipt profile, not executable new-work authority. The executable primary-path boundary is corrected by the AWEL remediation spec and must use validated canonical Full Plan mapping/Gate authority before generic `AUTO_RECONCILE` registration.
 
 The existing `Jarvis Bridge` can call `OrchestrationEngine` directly and its dashboard read currently writes snapshots/queue/audit artifacts. It must not become a second canonical control or pure-read path.
 
@@ -120,11 +122,12 @@ Every OCP request must belong to exactly one semantic class before lower-layer d
 |---|---|---|---|
 | `HOST_INSPECTION` | file/Git/service/Harness state observation | OCP → Harness Host Inspection Port | NO |
 | `EXISTING_RUN_CONTROL` | resume/control an already registered exact run | OCP → existing canonical OCP resume/control | control-state only, bounded |
-| `APPROVED_WORK_ACTIVATION` | start a new already-approved spec/plan without terminal access | OCP → AI Office/work governance refs → Harness Plan Activation Adapter → registered Full Plan | Harness control-state only |
+| `APPROVED_WORK_ACTIVATION` | preserve V1 tracking/manual receipt registration | OCP → AI Office refs → GPT_OPERATOR_PLAN registration | Harness control-state only; non-executable primary path |
+| `APPROVED_FULL_PLAN_ACTIVATION` | start already-approved executable work without terminal access | OCP → executable binding validation → AI Office refs → generic AUTO_RECONCILE Full Plan registration | Harness control-state only |
 | `WORK_EXECUTION` | perform approved source/test/Git mutations | registered Full Plan → Router/MPRF → Production Gateway → Full MCP | YES |
 | `BREAK_GLASS` | recover when governed path is unavailable | RDC/manual operator | exceptional |
 
-A free-form natural-language request is not itself `APPROVED_WORK_ACTIVATION`. It must first become approved plan/spec evidence under the normal user/design/plan approval process.
+A free-form natural-language request is neither activation kind. It must first become approved plan/spec and the execution-specific canonical authority evidence required by the selected path.
 
 This classification closes the prior design gap: host inspection alone cannot make RDC optional if starting an approved new Full Plan job still needs a local terminal.
 
@@ -145,17 +148,19 @@ OCPv2  ────────────────────────�
   │                         └─ fixed UserServiceObserver   │  │                                                        │
   ├─ EXISTING_RUN_CONTROL ──> registered Full Plan resume  │
   │                                                        │
-  └─ APPROVED_WORK_ACTIVATION                              │
+  ├─ APPROVED_WORK_ACTIVATION V1 ──> GPT_OPERATOR_PLAN tracking/manual receipt only
+  │
+  └─ APPROVED_FULL_PLAN_ACTIVATION                         │
          ↓                                                 │
-     Approved Work Binding Validator                    │
+     Executable Full Plan Binding Validator                │
          ↓                                                 │
      AI Office governance / workflow refs                  │
          ↓                                                 │
-     Harness Plan Activation Adapter                       │
+     Executable Full Plan Activation Adapter               │
          ↓                                                 │
-     build_operator_plan_job / register_job                │
+     generic AUTO_RECONCILE job / register_job             │
          ↓                                                 │
-     Registered Full Plan <────────────────────────────────┘
+     Registered executable Full Plan <─────────────────────┘
          ↓
      Multi-Provider Router
          ↓
@@ -226,34 +231,15 @@ The Host Inspection Port may compose the same safe read implementations behind i
 
 Do not extract a new shared primitives package in this project unless implementation proves direct reuse impossible; Stable Core Protection favors the additive adapter first.
 
-## 8. Approved Work Activation — missing RDC-independence link
+## 8. Approved Work Activation — corrected execution-link split
 
-A new approved plan currently can be built into a production job with `build_operator_plan_job()` and registered with `register_job()`, but OCP has no safe remote adapter for this boundary.
+The live canary proved that `APPROVED_WORK_ACTIVATION` V1 registers `GPT_OPERATOR_PLAN`, whose normal behavior is to wait for an external operator PASS receipt. V1 is therefore preserved as tracking/manual compatibility and is not executable RDC-independent primary-path authority.
 
-The top-down audit found a second gap: AI Office `intake_requirement()` currently requires an injected `approved_register`, and production code has no canonical persistent approved-register implementation or runtime callsite. Tests provide the register directly. The activation design must not invent a second mutable requirement database merely to close OCP transport.
+Executable new work uses the additive `APPROVED_FULL_PLAN_ACTIVATION` contract defined by `2026-09-23-approved-work-execution-link-remediation-design.md`. Its validator must require alias↔declarative-mapping agreement, canonical plan/source identity, TASK-to-LV projection when the plan shape requires it, exact Gate approval/state authority, requirement evidence, and runtime release identity. It then registers only a generic `AUTO_RECONCILE` `production-full-plan-job.v1` through existing `register_job()`.
 
-Use a two-step activation boundary:
+Neither activation kind may invent a plan, Gate/LV scope, requirement decision, approval, provider/model, editable scope, mapping or execution owner. Missing executable authority returns a typed fail-closed result; no V1 downgrade, auto-bootstrap, Manual Action, shell or RDC fallback is allowed.
 
-1. **Approved Work Binding Validator** — pure validation. It derives an immutable, request-local approved binding from existing committed plan/spec/requirement artifacts plus the explicit user approval reference. Where a canonical Full Plan requirement artifact exists, validate it with the existing requirement-artifact dispatcher/contracts rather than defining duplicate requirement semantics. The validator may construct the in-memory approved binding needed by AI Office intake, but it stores no independent source of truth.
-2. **Plan Activation Adapter** — bounded Harness control-state mutation. It consumes the validated binding and calls the existing job-build/register contracts.
-
-The activation request accepts only committed, already-approved evidence:
-
-- project ID resolved through the existing project registry;
-- approved spec path + SHA-256;
-- approved implementation plan path + SHA-256;
-- canonical requirement artifact/ref + digest when the approved plan contract requires one;
-- explicit user approval reference;
-- expected branch/HEAD;
-- requested task/Gate IDs;
-- runtime release identity;
-- unique activation request ID/digest.
-
-Neither step invents a plan, requirement decision, approval, task, provider, model, or editable scope. If required canonical requirement/approval evidence is absent, activation returns `APPROVED_BINDING_REQUIRED`/`PLAN_REQUIRED` and stops.
-
-Activation changes Harness control state, so it requires an explicit activation authorization and create-once replay protection. It is not classified as product/source mutation and it never calls Full MCP directly.
-
-A raw GPT instruction without approved plan/spec evidence cannot be promoted by OCP itself.
+The AI Office `approved_register` remains request-local derived context only; no second mutable requirement database is introduced.
 
 ## 9. Existing-run control
 
@@ -265,17 +251,18 @@ Do not generalize this path into new-job creation, arbitrary commands, or host i
 The semantic separation is:
 
 ```text
-new approved work  -> Plan Activation Adapter -> register Full Plan job
-existing work      -> current OCP canonical resume
-host read          -> Host Inspection Port
-product mutation   -> Full Plan -> Gateway -> Full MCP
+tracking V1       -> GPT_OPERATOR_PLAN receipt-tracking registration
+new executable work -> validated generic AUTO_RECONCILE Full Plan registration
+existing work       -> current OCPV2-owned canonical resume
+host read           -> Host Inspection Port
+product mutation    -> Full Plan -> Router/MPRF -> Gateway -> Full MCP
 ```
 
 ## 10. AI Office boundary
 
 AI Office remains the operating/governance layer for normal new work. OCP transport must not bypass it to create a new business/workflow execution intent.
 
-For `APPROVED_WORK_ACTIVATION`, the Approved Work Binding Validator first anchors the request to canonical committed evidence and explicit user approval. AI Office then consumes only those immutable refs/digests for requirement/workflow/governance coordination; it does not own a second approved-requirement source of truth. The Harness activation adapter handles only mechanical durable Full Plan registration.
+For `APPROVED_WORK_ACTIVATION` V1, AI Office continues to consume immutable tracking-context refs only. For `APPROVED_FULL_PLAN_ACTIVATION`, the AWEL executable validator additionally binds the executable authority-bundle digest and ordered Gate IDs. AI Office consumes those refs for governance coordination but does not choose scope, create approvals/requirements, register jobs, launch workers or own effects.
 
 For `HOST_INSPECTION`, AI Office workflow creation is not required. A host inspection is a control-plane observation, not an Office business task or Full Plan completion event.
 `public_observability_contract` remains dedicated to canonical action/provider runtime event references. Host inspection results must not be inserted into that source-of-truth domain.
@@ -326,21 +313,23 @@ Minimum shared transport bindings:
 
 `HOST_INSPECTION` carries one closed inspection operation and closed arguments.
 `EXISTING_RUN_CONTROL` preserves current V2 continuation/CAS semantics.
-`APPROVED_WORK_ACTIVATION` carries only approved plan/spec/approval/source/runtime bindings.
+`APPROVED_WORK_ACTIVATION` V1 preserves its current tracking payload semantics.
+`APPROVED_FULL_PLAN_ACTIVATION` is additive and carries only approved plan/spec/source/runtime bindings plus Gate authority artifact references/digests; executable scope is derived from canonical Harness mapping/projection, never caller-supplied.
 
 A request kind cannot be converted into another kind by changing `state_change_required` or another caller boolean.
 
 ## 14. OCP modes
 
-| OCP mode | Host inspection | Existing-run mutation/control | Work activation |
-|---|---|---|---|
-| `DISABLED` | blocked | blocked | blocked |
-| `OBSERVE_ONLY` | allowed when inspection feature enabled | blocked | blocked |
-| `CONTROL_READ_ONLY` | allowed when inspection feature enabled | blocked | blocked |
-| `CONTROL_MUTATION_CANARY` | allowed | existing canary only | blocked unless separately qualified activation canary exists |
-| `ACTIVE` | allowed | existing canonical rules | allowed only with activation feature + exact authorization |
+| OCP mode | Host inspection | Existing-run control | Tracking Activation V1 | Executable Full Plan Activation |
+|---|---|---|---|---|
+| `DISABLED` | blocked | blocked | blocked | blocked |
+| `OBSERVE_ONLY` | allowed when enabled | blocked | blocked | blocked |
+| `CONTROL_READ_ONLY` | allowed when enabled | blocked | blocked | blocked |
+| `CONTROL_MUTATION_CANARY` | allowed | existing canary only | existing policy only | blocked unless separately qualified executable canary policy exists |
+| `ACTIVE` | allowed | existing canonical rules | existing V1 rule | allowed only with independent executable feature + exact policy + complete authority bundle |
 
-Legacy V2 read-only messages keep their current `READ_ONLY_ACCEPTED` behavior. New host inspection behavior is additive and typed.
+Legacy V2 read-only messages keep `READ_ONLY_ACCEPTED`. V1 tracking semantics remain backward-compatible. Executable activation is additive and cannot be enabled by another feature flag.
+
 ## 15. Duplicate / conflict / gap audit
 
 | Area | Finding | Decision |
@@ -353,7 +342,7 @@ Legacy V2 read-only messages keep their current `READ_ONLY_ACCEPTED` behavior. N
 | Host Inspection named “Observability Gateway” | collides conceptually with AI Office runtime observability domain | RENAME to Host Inspection Port |
 | OCP direct `FullMCPRuntime.call()` | would require synthetic production authority | PROHIBIT |
 | OCP arbitrary shell | bypasses Harness action policy | PROHIBIT |
-| OCP new-job creation by extending resume | conflates existing-run CAS with activation | PROHIBIT; add Plan Activation Adapter |
+| OCP new-job creation by extending resume | conflates existing-run CAS with activation | PROHIBIT; executable activation registers a separate generic AUTO_RECONCILE Full Plan job |
 | Jarvis Bridge direct `OrchestrationEngine` control | parallel long-term control path | FOLLOW-UP MIGRATION to common contracts |
 | Jarvis status read writing snapshots/queues/audit | violates intuitive pure-read semantics | FOLLOW-UP separation of read model from projection persistence |
 | AI Office public observability used for host files | wrong source domain | KEEP SEPARATE |
@@ -413,12 +402,13 @@ GPT
 ### B. Start a new approved work package
 
 ```text
-User-approved spec/plan
- -> GPT/OCP APPROVED_WORK_ACTIVATION
+User-approved executable spec/plan + canonical Gate authority
+ -> GPT/OCP APPROVED_FULL_PLAN_ACTIVATION
+ -> Executable Full Plan Binding Validator
  -> AI Office governance/workflow reference validation
- -> Plan Activation Adapter
- -> existing build_operator_plan_job / register_job
- -> durable Full Plan run
+ -> Executable Full Plan Activation Adapter
+ -> generic AUTO_RECONCILE job / existing register_job
+ -> durable executable Full Plan run
 ```
 
 No terminal/RDC step is required in the target state.
@@ -460,7 +450,7 @@ RDC is optional only after all of the following are proven without RDC participa
 2. OCP returns real `git.branch`, `git.status` and bounded `git.diff` results.
 3. OCP returns canonical Harness run/status and pending-attention information without mutating product state.
 4. OCP returns allowlisted user-service health.
-5. An already approved spec/plan/required requirement evidence is validated through the Approved Work Binding Validator and activated into a registered Full Plan job without local terminal commands.
+5. An already approved executable spec/plan plus required mapping/projection/Gate approval/requirement evidence is validated through the AWEL executable binding and activated into a generic `AUTO_RECONCILE` Full Plan job without local terminal commands.
 6. A fresh unapproved/free-form work request cannot activate execution and returns a plan/approval-required disposition.
 7. An existing registered run can be resumed through current OCP CAS/single-owner controls.
 8. A controlled state-changing canary performs an actual bounded file/source effect through Full Plan -> Gateway -> Full MCP only.
@@ -483,9 +473,9 @@ Phase C — add typed remote request/result support and unify with existing OCP 
 
 Phase D — qualify host inspection end-to-end with no mutation and no RDC evidence.
 
-Phase E — implement the pure Approved Work Binding Validator and the Plan Activation Adapter around existing canonical requirement-evidence and approved-plan job build/register contracts, feature OFF.
+Phase E — preserve V1 tracking activation and implement the AWEL additive executable binding/activation adapter around existing mapping/projection/Gate approval/requirement and generic job registration contracts, executable feature OFF.
 
-Phase F — qualify new approved-work activation, existing-run control and state-changing Full Plan execution as separate paths.
+Phase F — qualify V1 tracking activation, executable full-plan activation, existing-run OCPV2 control and state-changing normal Full Plan execution as distinct paths.
 
 Phase G — run broad authority/security/recovery regressions and successor-runtime qualification.
 
@@ -499,7 +489,7 @@ Phase J — later Jarvis Upgrade aligns legacy direct-engine UI/control paths wi
 
 Rollback is feature-OFF first.
 Retain stable OCP runtime `c591b01` and the existing rollback runtime during migration.
-Host Inspection and Plan Activation have separate feature flags so one can be disabled without changing the canonical existing-run mutation path.
+Host Inspection, V1 tracking activation and executable Full Plan activation have independent feature gates so disabling one cannot change another path or the canonical existing-run mutation path.
 
 No rollback step may make RDC a required steady-state dependency; RDC may be used only to perform the recovery itself when the governed path is unavailable.
 ## 22. Non-goals

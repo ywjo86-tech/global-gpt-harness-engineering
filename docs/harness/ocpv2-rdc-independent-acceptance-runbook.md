@@ -1,6 +1,8 @@
 # OCPv2 RDC-Independent Primary Path Acceptance Runbook
 
-Status: PREPARED / LIVE CANARY NOT YET AUTHORIZED
+Status: BLOCKED / APPROVED-WORK EXECUTION-LINK REMEDIATION REQUIRED
+
+> The prior V1 activation canary is preserved as failure evidence only. Phases C-D must not resume from that run. A fresh acceptance window is required after implementation and qualification of `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md`.
 
 ## Goal
 
