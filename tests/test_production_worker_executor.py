@@ -1,4 +1,5 @@
 import os, json, hashlib, subprocess, tempfile, unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,7 +21,7 @@ from runtime.orchestrator.production_worker_executor import (
     _search_provenance, _search_record_matches,
     _independent_verification_steps,
     _independent_verification_provenance, _independent_verification_failure,
-    _focused_execution_metadata,
+    _focused_execution_metadata, _sealed_external_validation_python,
     _test_runner_metadata, _bounded_validation_feedback,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
@@ -42,6 +43,19 @@ def _usage() -> dict[str, int]:
 
 
 class ProductionWorkerExecutorTests(unittest.TestCase):
+    def test_external_interpreter_policy_does_not_force_python_for_non_python_toolchain(self):
+        request = SimpleNamespace(extra_context={
+            "interpreter_policy_id": "IMMUTABLE_EXTERNAL_INTERPRETER",
+            "validation_toolchain": {
+                "profile_ids": ["NODE_NPM"],
+                "focused": [["npm", "--prefix", "backend", "test"]],
+                "full": [["npm", "--prefix", "backend", "test"]],
+                "compile": [["npm", "--prefix", "backend", "run", "build"]],
+                "deferred": False,
+            },
+        })
+        self.assertIsNone(_sealed_external_validation_python(request))
+
     def test_provider_action_security_scan_normalizes_structured_broker_results(self):
         self.assertTrue(_provider_action_security_scan({"status": "COMPLETED"}))
         self.assertTrue(_provider_action_security_scan(b"safe"))

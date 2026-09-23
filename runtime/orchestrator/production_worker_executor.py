@@ -2502,7 +2502,14 @@ def _sealed_external_validation_python(request: WorkerRequest) -> str | None:
     policy = request.extra_context.get("interpreter_policy_id")
     if policy != "IMMUTABLE_EXTERNAL_INTERPRETER":
         return None
-    if not isinstance(toolchain, Mapping) or toolchain.get("profile_ids") != ["PYTHON_UNITTEST_EXTERNAL"]:
+    if not isinstance(toolchain, Mapping):
+        raise ProductionWorkerError("external Python validation contract is missing or mismatched")
+    profiles = toolchain.get("profile_ids")
+    if not isinstance(profiles, list):
+        raise ProductionWorkerError("external Python validation contract is missing or mismatched")
+    if "PYTHON_UNITTEST_EXTERNAL" not in profiles:
+        return None
+    if profiles != ["PYTHON_UNITTEST_EXTERNAL"]:
         raise ProductionWorkerError("external Python validation contract is missing or mismatched")
     executables: set[str] = set()
     for field in ("focused", "full", "compile"):
