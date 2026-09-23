@@ -100,6 +100,31 @@ class GateOrchestratorTests(unittest.TestCase):
         self.auth = create_gate_authorization(self.plan, "AUTH-G1")
 
 
+    def test_load_gate_plan_uses_explicit_mapping_root_without_environment_patch(self) -> None:
+        mapping_root = self.root.parent / "mappings"
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping) as loader:
+            plan = load_gate_plan(self.root, "GATE-1", mapping_root=mapping_root)
+        self.assertEqual(plan.gate_id, "GATE-1")
+        loader.assert_called_once_with(self.root.resolve(), mapping_root=mapping_root)
+
+    def test_validate_global_gate_bindings_threads_explicit_mapping_root(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import validate_global_gate_bindings
+        mapping_root = self.root.parent / "mappings"
+        approval_path = self.root / "approval.json"
+        approval_path.write_text("{}", encoding="utf-8")
+        harness_root = self.root.parent / "harness"
+        harness_root.mkdir()
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan", return_value=self.plan) as loader, \
+             patch("runtime.orchestrator.gate_orchestrator.load_approval_evidence", return_value={}), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_approval_evidence", return_value={"approval_id": "A"}):
+            result = validate_global_gate_bindings(
+                self.root, "GATE-1", requirements_sha256="a" * 64,
+                approval_evidence=approval_path, branch="main", head="b" * 40,
+                harness_root=harness_root, mapping_root=mapping_root,
+            )
+        self.assertEqual(result["status"], "VALIDATED")
+        loader.assert_called_once_with(self.root.resolve(), "GATE-1", mapping_root=mapping_root)
+
     def test_manual_action_request_is_create_once_and_preserves_provider_request(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _persist_manual_action_request
         from runtime.orchestrator.gate_controller import GateControllerError

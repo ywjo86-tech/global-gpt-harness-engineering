@@ -211,8 +211,11 @@ class TaskContractCompatibilityTests(unittest.TestCase):
                 task_lv_projection_path=projection_path,
                 task_lv_projection_sha256=hashlib.sha256(projection_path.read_bytes()).hexdigest(),
             )
-            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=mapping):
-                plan_value = load_gate_plan(root, "GATE-001")
+            mapping_root = Path(directory) / "mappings"
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=mapping) as loader:
+                plan_value = load_gate_plan(root, "GATE-001", mapping_root=mapping_root)
+                loader.assert_called_once_with(root.resolve(), mapping_root=mapping_root)
+                loader.reset_mock()
                 result = compatibility_dry_run(root, "GATE-001")
         self.assertEqual([item.lv_id for item in plan_value.lvs], ["TASK-001", "TASK-002"])
         self.assertEqual(plan_value.lvs[0].required_capabilities[0], "reasoning")

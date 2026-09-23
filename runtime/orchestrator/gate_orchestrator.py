@@ -287,11 +287,11 @@ def _owned_from_rows(summary: dict[str, str], detail: dict[str, str]) -> list[st
         return [_safe_relative(item) for item in dict.fromkeys(raw) if "/" in item or item.endswith((".py", ".md", ".json", ".txt"))]
 
 
-def load_gate_plan(project_root: str | Path, gate_id: str) -> GatePlan:
+def load_gate_plan(project_root: str | Path, gate_id: str, *, mapping_root: str | Path | None = None) -> GatePlan:
     root, root_project_id = _safe_project(project_root)
     match = _GATE_ID.fullmatch(gate_id)
     if not match: raise GateOrchestrationError("invalid Gate ID")
-    mapping = load_project_mapping(root)
+    mapping = load_project_mapping(root, mapping_root=mapping_root)
     if mapping is None: raise GateOrchestrationError("project declarative mapping is required")
     project_id = getattr(mapping, "project_id", root_project_id)
     plan = mapping.canonical_source
@@ -695,10 +695,11 @@ def onboarding_dry_run(project_root: str | Path, alias: str) -> dict[str, Any]:
 
 def validate_global_gate_bindings(project_root: str | Path, gate_id: str, *, requirements_sha256: str,
                                   approval_evidence: str | Path, branch: str, head: str,
-                                  harness_root: str | Path) -> dict[str, Any]:
+                                  harness_root: str | Path,
+                                  mapping_root: str | Path | None = None) -> dict[str, Any]:
     """Validate the W0-W6 boundary without executing a lifecycle or mutating the project."""
     root, root_project_id = _safe_project(project_root)
-    plan = load_gate_plan(root, gate_id)
+    plan = load_gate_plan(root, gate_id, mapping_root=mapping_root)
     project_id = plan.project_id
     order = [item.lv_id for item in plan.lvs]
     owned = {item.lv_id: item.owned_files for item in plan.lvs}
