@@ -67,7 +67,9 @@ The validator returns a frozen dataclass/digest and performs no job registration
 Run: `python -m unittest tests.test_approved_work_binding tests.test_project_onboarding tests.test_operator_plan_execution -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**```bash
+- [ ] **Step 5: Commit**
+
+```bash
 git add runtime/orchestrator/approved_work_binding.py tests/test_approved_work_binding.py
 git commit -m "feat(harness): validate approved work bindings"
 ```

@@ -62,7 +62,9 @@ with self.assertRaises(HostInspectionContractError):
 Run: `python -m unittest tests.test_host_inspection_contract -v`
 Expected: import/module failure because the contract does not exist.
 
-- [ ] **Step 3: Implement the closed request/result dataclasses**```python
+- [ ] **Step 3: Implement the closed request/result dataclasses**
+
+```python
 HOST_INSPECTION_OPERATIONS = frozenset({
     "filesystem.read", "filesystem.search", "filesystem.metadata",
     "git.status", "git.diff", "git.branch",
@@ -128,7 +130,9 @@ Also test sensitive paths, symlink traversal, max byte bounds, `git.diff`, `file
 Run: `python -m unittest tests.test_host_inspection_port -v`
 Expected: module/class missing.
 
-- [ ] **Step 3: Implement minimal port composition**```python
+- [ ] **Step 3: Implement minimal port composition**
+
+```python
 class HostInspectionPort:
     def inspect(self, request: HostInspectionRequestV1) -> HostInspectionResultV1:
         root = self._resolve_registered_project(request.project_alias)
