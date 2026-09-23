@@ -1,0 +1,64 @@
+{
+  "activation_request_id": "GPT-FP-ACT-20260923-01",
+  "attempt": 1,
+  "canonical_outcome": {
+    "canonical_completion": false,
+    "failure_class": "EXECUTION_FAILURE",
+    "reason": "registered worker failed (production): project-native validation toolchain is unavailable: external Python validation contract is missing or mismatched",
+    "state": "BLOCKED",
+    "state_sha256": "79be60fa964afa53fa570ecfcf37dc341bcb18da890cc439fad8e6c4aabe777f",
+    "terminal_reason": "RETRY_BUDGET_EXHAUSTED"
+  },
+  "control_comments": {
+    "activation": 5794137948,
+    "attention": 5794198032,
+    "read2": 5794143405,
+    "read3": 5794245426,
+    "replay": 5794142060,
+    "status2": 5794247177
+  },
+  "execution_owner": "AUTO_RECONCILE",
+  "historical_isolation": {
+    "old_activation_id": "GPT-ACT-20260923-02",
+    "old_canary_mutated": false,
+    "old_project_head": "17c964182029466aa19f5a9289819e0751a66210"
+  },
+  "project_expected_head": "e809a33d08f28f7f769648e44fe2ac78eaa1ac8e",
+  "project_id": "OCP-RDC-EXEC-CANARY-20260923",
+  "registration": {
+    "bundle_digest": "c930ea0bff8fa84481a208ada6b9866a5eda67755af2b11f221660bf846e0749",
+    "canonical_job_path": "/home/ywjo/.local/state/global-gpt-harness/_workspace/production-full-plan-jobs/OCP-RDC-EXEC-CANARY-20260923/GPT-FP-ACT-20260923-01.job.json",
+    "job_count": 1,
+    "receipt_count": 1
+  },
+  "rollback": {
+    "feature_final_state": "OFF",
+    "ocp_mode": "ACTIVE",
+    "rollback_backup": "/home/ywjo/.local/state/gch/ocpv2/full-plan-canary-rollbacks/GPT-FP-ACT-20260923-01-20260923-204043",
+    "service_result": "success",
+    "timer_active": true
+  },
+  "root_cause": {
+    "classification": "CANARY_FIXTURE_VALIDATION_CONTRACT_MISSING",
+    "finding": "Owned scope contained only canary.txt and the disposable project had no project-native validation manifest/test profile. The immutable external interpreter policy therefore could not match a sealed Python validation profile.",
+    "production_code_defect": false,
+    "remediation": "Use a fresh disposable project and activation ID with a project-native backend/package.json declaring deterministic npm test/build scripts that validate canary.txt."
+  },
+  "runtime_source_head": "62405fb6f006a92ef311bb475a2a39d3033bb03a",
+  "schema_version": "gch.ocpv2-executable-full-plan-live-canary-attempt.v1",
+  "status": "FAIL_CLOSED_VALIDATION_TOOLCHAIN",
+  "tested_path": {
+    "bounded_effect_completed": true,
+    "effect_path": "canary.txt",
+    "effect_sha256": "6aa6a22ba212a82e270f50fd1da1b7e34cc244cbe9ebb484d2fd63df96c77f66",
+    "post_replay_effect_sha256": "6aa6a22ba212a82e270f50fd1da1b7e34cc244cbe9ebb484d2fd63df96c77f66",
+    "post_replay_git_entries": [
+      {
+        "path": "canary.txt",
+        "xy": " M"
+      }
+    ],
+    "rdc_used_in_tested_path": false,
+    "transport": "GitHub private control -> OCP -> AUTO_RECONCILE Full Plan"
+  }
+}
