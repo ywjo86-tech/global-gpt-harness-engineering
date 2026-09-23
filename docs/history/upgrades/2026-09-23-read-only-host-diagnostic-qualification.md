@@ -1,7 +1,7 @@
 # OCPv2 Read-only Host Diagnostic Qualification
 
 Date: 2026-09-23
-Qualification target SHA: `1bf66c8bb2166a8f4fb71c1f0b0a2d8fdfc67de2`
+Qualification target SHA: `37b23dd` (post-review implementation commit)
 Bound base SHA: `c591b01e8a1d9d9bb2dc438ca85f6c2ffcc79a03`
 
 ## Result
@@ -48,13 +48,24 @@ python3 -m unittest -v \
   tests.test_ocpv2_runtime_service
 ```
 
-Result: exit `0`; `Ran 82 tests`; `OK`.
+Result: exit `0`; `Ran 86 tests`; `OK`.
 
 ## Adversarial qualification
 
 Explicit named tests covered absolute and `../` path rejection, intermediate/final symlink blocking, special/binary/sensitive file blocking, secret redaction, truncation semantics, malicious Git diff-helper suppression, fixed non-interactive Git environment, non-allowlisted systemd unit blocking, exact `systemctl --user show` argv with no lifecycle verb, V3 state-change denial, feature-OFF behavior, V2 `READ_ONLY_ACCEPTED` preservation, crash recovery without diagnostic re-execution, canonical mutation delegation, and authority negative-space.
 
-Result: exit `0`; `Ran 17 tests`; `OK`.
+Result: exit `0`; `Ran 21 tests`; `OK`.
+
+## Review-gate fixes
+
+Task 12 review found and fixed four important issues before qualification was finalized:
+
+- provenance now records the current executor source HEAD/runtime digest rather than trusting expected values supplied by the remote envelope;
+- V3 diagnostics require literal JSON `false` for `state_change_required` and exactly one `read_only_host_diagnostic` capability, while V2 compatibility is unchanged;
+- inherited process environment can no longer implicitly enable host diagnostics when the env file omits the feature keys;
+- secret redaction consumes complete secret-bearing line values and sensitive path rules apply to every path component before open.
+
+Each finding was reproduced by a failing regression test before the minimal fix, then included in the final focused/adversarial rerun.
 
 ## Repository regression
 
@@ -64,7 +75,7 @@ The literal complete discovery command was run:
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Result: exit `1`; `Ran 2148 tests`; four import errors; `15 skipped`. All four errors are the same pre-existing test-environment deficiency recorded at baseline: `tests/full_mcp` imports fail because the current shell does not have the external Python package `mcp`. The failing modules are `test_adapter_contract`, `test_e2e_regression`, `test_gate_evidence`, and `test_runtime_server`. No source/test failure outside that dependency boundary was reported.
+Result: exit `1`; `Ran 2154 tests`; four import errors; `15 skipped`. All four errors are the same pre-existing test-environment deficiency recorded at baseline: `tests/full_mcp` imports fail because the current shell does not have the external Python package `mcp`. The failing modules are `test_adapter_contract`, `test_e2e_regression`, `test_gate_evidence`, and `test_runtime_server`. No source/test failure outside that dependency boundary was reported.
 
 The comparable repository regression excluding only the same SDK-dependent `tests/full_mcp` directory was then run:
 
@@ -73,7 +84,7 @@ mods=$(find tests -type f -name 'test_*.py' ! -path 'tests/full_mcp/*' -print | 
 python3 -m unittest $mods
 ```
 
-Result: exit `0`; `Ran 2124 tests`; `OK (skipped=15)`.
+Result: exit `0`; `Ran 2128 tests`; `OK (skipped=15)`.
 
 No package installation or environment mutation was performed to conceal or alter the baseline dependency deficiency.
 
