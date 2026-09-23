@@ -15,8 +15,9 @@ from typing import Any, Mapping
 from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
 from .operator_exit_guard import assess_operator_turn_exit
 from .durable_io import atomic_write_json
-from .contract_adapter import MAPPING_ROOT_ENV
+from .contract_adapter import MAPPING_ROOT_ENV, sha256_file
 from .harness_state_root import job_state_root
+from .runtime_release import RuntimeReleaseError, verify_runtime_release
 from .production_run_authority import (
     AUTO_RECONCILE_OWNER, RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
     merge_runtime_bindings, resolve_execution_owner, seal_authority_core, validate_authority_core,
@@ -24,6 +25,8 @@ from .production_run_authority import (
 )
 
 JOB_SCHEMA = "orchestration.production-full-plan-job.v1"
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_HEAD = re.compile(r"[0-9a-f]{40,64}\Z")
 
 
 class FullPlanJobError(ValueError):
@@ -80,8 +83,37 @@ def load_job(path: str | Path) -> dict[str, Any]:
                     or any(not isinstance(k, str) or not k or not isinstance(v, str) or not v
                            for k, v in evidence_paths_by_lv.items())):
                 raise FullPlanJobError("Gate job requirement_evidence_paths_by_lv is invalid")
+        approval_digest = gate.get("approval_evidence_sha256")
+        if approval_digest is not None and (not isinstance(approval_digest, str) or not _SHA256.fullmatch(approval_digest)):
+            raise FullPlanJobError("Gate job approval evidence digest is invalid")
+        engine_digest = gate.get("requirement_evidence_sha256")
+        if engine_digest is not None:
+            if not gate.get("requirement_evidence_path") or not isinstance(engine_digest, str) or not _SHA256.fullmatch(engine_digest):
+                raise FullPlanJobError("Gate job engine requirement evidence digest is invalid")
+        evidence_digests_by_lv = gate.get("requirement_evidence_sha256_by_lv")
+        if evidence_digests_by_lv is not None:
+            if (not isinstance(evidence_digests_by_lv, dict) or evidence_paths_by_lv is None
+                    or set(evidence_digests_by_lv) != set(evidence_paths_by_lv)
+                    or any(not isinstance(k, str) or not k or not isinstance(v, str) or not _SHA256.fullmatch(v)
+                           for k, v in evidence_digests_by_lv.items())):
+                raise FullPlanJobError("Gate job requirement evidence digest coverage mismatch")
     if len(set(ids)) != len(ids):
         raise FullPlanJobError("Full Plan job contains duplicate Gates")
+    expected_head = job.get("expected_head")
+    if expected_head is not None and (not isinstance(expected_head, str) or not _HEAD.fullmatch(expected_head)):
+        raise FullPlanJobError("Full Plan job expected HEAD is invalid")
+    release_digest = job.get("runtime_release_digest")
+    release_head = job.get("runtime_release_source_head")
+    if (release_digest is None) != (release_head is None):
+        raise FullPlanJobError("Full Plan job runtime release binding is incomplete")
+    if release_digest is not None:
+        if (not isinstance(release_digest, str) or not _SHA256.fullmatch(release_digest)
+                or not isinstance(release_head, str) or not _HEAD.fullmatch(release_head)):
+            raise FullPlanJobError("Full Plan job runtime release binding is invalid")
+    for field in ("activation_binding_digest", "executable_authority_bundle_digest", "ai_office_context_digest"):
+        value = job.get(field)
+        if value is not None and (not isinstance(value, str) or not _SHA256.fullmatch(value)):
+            raise FullPlanJobError(f"Full Plan job {field} is invalid")
     if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
         from .operator_plan_execution import validate_operator_plan_job
         validate_operator_plan_job(job)
@@ -268,6 +300,48 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
                                capture_output=True, text=True, check=False, timeout=10)
         if probe.returncode != 0 or probe.stdout.strip() != expected_branch:
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "GIT_BRANCH_MISMATCH"}
+    expected_head = job.get("expected_head")
+    if expected_head:
+        probe = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"],
+                               capture_output=True, text=True, check=False, timeout=10)
+        if probe.returncode != 0 or probe.stdout.strip() != expected_head:
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "SOURCE_HEAD_MISMATCH"}
+    release_digest = str(job.get("runtime_release_digest") or "")
+    release_head = str(job.get("runtime_release_source_head") or "")
+    if release_digest or release_head:
+        if not (_SHA256.fullmatch(release_digest) and _HEAD.fullmatch(release_head)):
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "RUNTIME_RELEASE_BINDING_INVALID"}
+        runtime = Path(str(job.get("runtime_code_root") or job["harness_root"])).resolve()
+        try:
+            release = verify_runtime_release(runtime, release_head)
+        except (RuntimeReleaseError, OSError, ValueError):
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "RUNTIME_RELEASE_DRIFT"}
+        if release.manifest_sha256 != release_digest:
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "RUNTIME_RELEASE_DRIFT"}
+    for gate in job.get("gates", []):
+        checks: list[tuple[object, object, str]] = []
+        if "approval_evidence_sha256" in gate:
+            checks.append((gate.get("approval_evidence"), gate.get("approval_evidence_sha256"), "approval"))
+        if "requirement_evidence_sha256" in gate:
+            checks.append((gate.get("requirement_evidence_path"), gate.get("requirement_evidence_sha256"), "engine_requirement"))
+        if "requirement_evidence_sha256_by_lv" in gate:
+            for lv_id, path in dict(gate.get("requirement_evidence_paths_by_lv") or {}).items():
+                expected = dict(gate.get("requirement_evidence_sha256_by_lv") or {}).get(lv_id)
+                checks.append((path, expected, f"project_requirement:{lv_id}"))
+        for path, expected, label in checks:
+            source = Path(str(path or ""))
+            if (not isinstance(expected, str) or not _SHA256.fullmatch(expected)
+                    or source.is_symlink() or not source.is_file()):
+                return {"status": "BLOCK", "state": "BLOCKED",
+                        "reason": f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"}
+            try:
+                actual = sha256_file(source)
+            except OSError:
+                return {"status": "BLOCK", "state": "BLOCKED",
+                        "reason": f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"}
+            if actual != expected:
+                return {"status": "BLOCK", "state": "BLOCKED",
+                        "reason": f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"}
     if job.get("authority_core_sha256"):
         try:
             validate_authority_core(job)

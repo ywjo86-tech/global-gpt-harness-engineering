@@ -48,6 +48,22 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             with self.assertRaises(FullPlanJobError): load_job(path)
 
 
+    def test_load_job_rejects_partial_runtime_release_binding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); path=self.make_job(root,("G1",)); payload=json.loads(path.read_text())
+            payload["runtime_release_digest"]="a"*64; path.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(FullPlanJobError,"runtime release"):
+                load_job(path)
+
+    def test_load_job_rejects_requirement_digest_coverage_mismatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); path=self.make_job(root,("G1",)); payload=json.loads(path.read_text())
+            payload["gates"][0]["requirement_evidence_paths_by_lv"]={"TASK-001":str(root/"r.json")}
+            payload["gates"][0]["requirement_evidence_sha256_by_lv"]={"TASK-002":"a"*64}
+            path.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(FullPlanJobError,"digest coverage"):
+                load_job(path)
+
     def test_load_job_rejects_missing_full_plan_opt_in(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); path = self.make_job(root, ("G1",))
