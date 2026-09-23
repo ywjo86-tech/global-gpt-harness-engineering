@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .durable_io import DurableIOError, durable_json_load, durable_json_save
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2
+from .remote_operator_envelope import RemoteControlEnvelope
 
 
 _RECEIPT_SCHEMA = "orchestration.remote-operator-receipt.v1"
@@ -52,7 +52,7 @@ class RemoteOperatorReceiptStore:
         if self.root.is_symlink():
             raise RemoteOperatorReceiptError("unsafe receipt root")
 
-    def _channel_dir(self, envelope: RemoteOperatorEnvelopeV2) -> Path:
+    def _channel_dir(self, envelope: RemoteControlEnvelope) -> Path:
         adapter = _safe_component(envelope.transport.adapter_id, "adapter ID")
         channel = _safe_component(envelope.transport.channel_id, "channel ID")
         path = self.root / adapter / channel
@@ -64,10 +64,10 @@ class RemoteOperatorReceiptStore:
             raise RemoteOperatorReceiptError("unsafe receipt channel")
         return path
 
-    def _receipt_path(self, envelope: RemoteOperatorEnvelopeV2) -> Path:
+    def _receipt_path(self, envelope: RemoteControlEnvelope) -> Path:
         return self._channel_dir(envelope) / f"{_safe_component(envelope.message_id, 'message ID')}.json"
 
-    def _sequence_path(self, envelope: RemoteOperatorEnvelopeV2) -> Path:
+    def _sequence_path(self, envelope: RemoteControlEnvelope) -> Path:
         return self._channel_dir(envelope) / ".sequence.json"
 
     @staticmethod
@@ -82,7 +82,7 @@ class RemoteOperatorReceiptStore:
         except (DurableIOError, OSError, ValueError) as exc:
             raise RemoteOperatorReceiptError(f"receipt state is invalid: {path.name}") from exc
 
-    def _sequence_state(self, envelope: RemoteOperatorEnvelopeV2) -> dict[str, Any]:
+    def _sequence_state(self, envelope: RemoteControlEnvelope) -> dict[str, Any]:
         loaded = self._load_object(self._sequence_path(envelope))
         if loaded is None:
             return {
@@ -100,7 +100,7 @@ class RemoteOperatorReceiptStore:
             raise RemoteOperatorReceiptError("sequence state invalid")
         return value
 
-    def _highest_durable_receipt_sequence(self, envelope: RemoteOperatorEnvelopeV2) -> int:
+    def _highest_durable_receipt_sequence(self, envelope: RemoteControlEnvelope) -> int:
         highest = 0
         for path in self._channel_dir(envelope).glob("*.json"):
             if path.name == ".sequence.json":
@@ -117,7 +117,7 @@ class RemoteOperatorReceiptStore:
             highest = max(highest, receipt_sequence)
         return highest
 
-    def _repair_sequence_watermark(self, envelope: RemoteOperatorEnvelopeV2) -> None:
+    def _repair_sequence_watermark(self, envelope: RemoteControlEnvelope) -> None:
         sequence = self._sequence_state(envelope)
         highest = int(sequence["highest_sequence"])
         if envelope.sequence < highest:
@@ -137,7 +137,7 @@ class RemoteOperatorReceiptStore:
         except (DurableIOError, OSError, ValueError) as exc:
             raise RemoteOperatorReceiptError("durable sequence watermark repair failed") from exc
 
-    def classify_delivery(self, envelope: RemoteOperatorEnvelopeV2) -> ReceiptStatus:
+    def classify_delivery(self, envelope: RemoteControlEnvelope) -> ReceiptStatus:
         receipt_path = self._receipt_path(envelope)
         loaded = self._load_object(receipt_path)
         if loaded is not None:
@@ -161,7 +161,7 @@ class RemoteOperatorReceiptStore:
             return ReceiptStatus.REPLAY_REJECTED
         return ReceiptStatus.NEW
 
-    def record_received(self, envelope: RemoteOperatorEnvelopeV2) -> dict[str, Any]:
+    def record_received(self, envelope: RemoteControlEnvelope) -> dict[str, Any]:
         status = self.classify_delivery(envelope)
         if status == ReceiptStatus.IDEMPOTENT_REPLAY:
             loaded = self._load_object(self._receipt_path(envelope))
