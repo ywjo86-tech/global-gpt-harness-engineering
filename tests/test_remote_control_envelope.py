@@ -3,10 +3,14 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
+from runtime.orchestrator.approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
 from runtime.orchestrator.approved_work_binding import ApprovedWorkActivationRequestV1
 from runtime.orchestrator.host_inspection_contract import HostInspectionRequestV1
 from runtime.orchestrator.remote_control_envelope import (
+    APPROVED_FULL_PLAN_ACTIVATION_KIND,
     REMOTE_CONTROL_ENVELOPE_SCHEMA,
+    RemoteFullPlanActivationAuthorization,
+    RemoteWorkActivationAuthorization,
     RemoteControlEnvelopeError,
     decode_remote_control_payload,
     seal_remote_control_envelope,
@@ -70,7 +74,52 @@ def activation_payload(**changes):
     return seal_remote_control_envelope(value)
 
 
+def full_plan_activation_payload(**changes):
+    request = ApprovedFullPlanActivationRequestV1.from_mapping({
+        "schema_version": "orchestration.approved-full-plan-activation-request.v1",
+        "activation_request_id": "FP-ACT-1", "project_alias": "global-gpt-harness-engineering",
+        "approved_plan": {"path": "docs/PLAN.md", "sha256": "1" * 64},
+        "approved_spec": {"path": "docs/SPEC.md", "sha256": "2" * 64},
+        "expected_branch": "main", "expected_head": "3" * 40,
+        "runtime_release_digest": "4" * 64, "approval_ref": "approval:user:full-plan",
+        "gate_bindings": [{
+            "gate_id": "GATE-001",
+            "approval_evidence": {"path": "gate-001.json", "sha256": "5" * 64},
+            "engine_requirement_evidence": {"path": "engine-001.json", "sha256": "6" * 64},
+            "project_requirement_evidence_by_lv": [{
+                "lv_id": "TASK-001", "path": "docs/task-001.requirements.json", "sha256": "7" * 64,
+            }],
+        }],
+    })
+    value = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "APPROVED_FULL_PLAN_ACTIVATION",
+        "message_id": "MSG-FP1", "sequence": 4,
+        "issued_at": "2026-09-23T00:00:00+00:00", "expires_at": "2026-09-23T00:10:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "GITHUB_CONTROL_V1", "channel_id": "PR:7", "source_actor_id": "235775273", "source_message_id": "204"},
+        "payload": request.to_dict(), "payload_digest": "",
+        "authorization": {"full_plan_activation_policy_ref": "FP-POLICY-1"}, "envelope_sha256": "",
+    }
+    value.update(changes)
+    return seal_remote_control_envelope(value)
+
+
 class RemoteControlEnvelopeTests(unittest.TestCase):
+    def test_executable_full_plan_activation_has_distinct_kind_and_policy_ref(self):
+        sealed = full_plan_activation_payload()
+        value = validate_remote_control_envelope(sealed, now=NOW)
+        self.assertEqual(value.request_kind, APPROVED_FULL_PLAN_ACTIVATION_KIND)
+        self.assertIsInstance(value.authorization, RemoteFullPlanActivationAuthorization)
+        self.assertEqual(value.authorization.full_plan_activation_policy_ref, "FP-POLICY-1")
+        self.assertEqual(value.payload.activation_request_id, "FP-ACT-1")
+
+    def test_v1_activation_authorization_class_remains_unchanged(self):
+        value = validate_remote_control_envelope(activation_payload(), now=NOW)
+        self.assertEqual(value.request_kind, "APPROVED_WORK_ACTIVATION")
+        self.assertIsInstance(value.authorization, RemoteWorkActivationAuthorization)
+        self.assertEqual(value.authorization.activation_policy_ref, "ACTIVATION-POLICY-1")
+
     def test_host_inspection_envelope_round_trips(self):
         value = inspection_payload()
         envelope = validate_remote_control_envelope(value, now=NOW)

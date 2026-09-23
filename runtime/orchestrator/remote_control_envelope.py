@@ -9,6 +9,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from .approved_full_plan_activation_contract import (
+    ApprovedFullPlanActivationContractError,
+    ApprovedFullPlanActivationRequestV1,
+)
 from .approved_work_binding import (
     ApprovedWorkActivationRequestV1,
     ApprovedWorkBindingError,
@@ -27,6 +31,7 @@ from .remote_operator_envelope import (
 REMOTE_CONTROL_ENVELOPE_SCHEMA = "orchestration.remote-control-envelope.v1"
 HOST_INSPECTION_KIND = "HOST_INSPECTION"
 APPROVED_WORK_ACTIVATION_KIND = "APPROVED_WORK_ACTIVATION"
+APPROVED_FULL_PLAN_ACTIVATION_KIND = "APPROVED_FULL_PLAN_ACTIVATION"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TOP_FIELDS = {
@@ -36,6 +41,7 @@ _TOP_FIELDS = {
 _TRANSPORT_FIELDS = {"adapter_id", "channel_id", "source_actor_id", "source_message_id"}
 _INSPECTION_AUTH_FIELDS = {"inspection_policy_ref"}
 _ACTIVATION_AUTH_FIELDS = {"activation_policy_ref"}
+_FULL_PLAN_ACTIVATION_AUTH_FIELDS = {"full_plan_activation_policy_ref"}
 
 
 class RemoteControlEnvelopeError(ValueError):
@@ -103,6 +109,14 @@ class RemoteWorkActivationAuthorization:
 
 
 @dataclass(frozen=True, slots=True)
+class RemoteFullPlanActivationAuthorization:
+    full_plan_activation_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.full_plan_activation_policy_ref, "Full Plan activation policy ref")
+
+
+@dataclass(frozen=True, slots=True)
 class RemoteControlEnvelopeV1:
     schema_version: str
     request_kind: str
@@ -112,9 +126,9 @@ class RemoteControlEnvelopeV1:
     expires_at: str
     actor: str
     transport: TransportBinding
-    payload: HostInspectionRequestV1 | ApprovedWorkActivationRequestV1
+    payload: HostInspectionRequestV1 | ApprovedWorkActivationRequestV1 | ApprovedFullPlanActivationRequestV1
     payload_digest: str
-    authorization: RemoteControlAuthorization | RemoteWorkActivationAuthorization
+    authorization: RemoteControlAuthorization | RemoteWorkActivationAuthorization | RemoteFullPlanActivationAuthorization
     envelope_sha256: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,11 +166,22 @@ def _validated_activation_payload(raw: object) -> ApprovedWorkActivationRequestV
         raise RemoteControlEnvelopeError(f"invalid approved work activation payload: {exc}") from exc
 
 
-def _validated_payload(kind: object, raw: object) -> HostInspectionRequestV1 | ApprovedWorkActivationRequestV1:
+def _validated_full_plan_activation_payload(raw: object) -> ApprovedFullPlanActivationRequestV1:
+    if not isinstance(raw, Mapping):
+        raise RemoteControlEnvelopeError("approved Full Plan activation payload must be an object")
+    try:
+        return ApprovedFullPlanActivationRequestV1.from_mapping(raw)
+    except ApprovedFullPlanActivationContractError as exc:
+        raise RemoteControlEnvelopeError(f"invalid approved Full Plan activation payload: {exc}") from exc
+
+
+def _validated_payload(kind: object, raw: object) -> HostInspectionRequestV1 | ApprovedWorkActivationRequestV1 | ApprovedFullPlanActivationRequestV1:
     if kind == HOST_INSPECTION_KIND:
         return _validated_inspection_payload(raw)
     if kind == APPROVED_WORK_ACTIVATION_KIND:
         return _validated_activation_payload(raw)
+    if kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
+        return _validated_full_plan_activation_payload(raw)
     raise RemoteControlEnvelopeError("unsupported request kind")
 
 
@@ -195,7 +220,7 @@ def validate_remote_control_envelope(
     if payload.get("schema_version") != REMOTE_CONTROL_ENVELOPE_SCHEMA:
         raise RemoteControlEnvelopeError("unsupported remote control schema")
     request_kind = str(payload.get("request_kind") or "")
-    if request_kind not in {HOST_INSPECTION_KIND, APPROVED_WORK_ACTIVATION_KIND}:
+    if request_kind not in {HOST_INSPECTION_KIND, APPROVED_WORK_ACTIVATION_KIND, APPROVED_FULL_PLAN_ACTIVATION_KIND}:
         raise RemoteControlEnvelopeError("unsupported request kind")
     message_id = _safe_id(payload["message_id"], "message ID")
     try:
@@ -223,13 +248,18 @@ def validate_remote_control_envelope(
         raise RemoteControlEnvelopeError("authorization must be an object")
     if request_kind == HOST_INSPECTION_KIND:
         _exact_fields(auth_raw, _INSPECTION_AUTH_FIELDS, "authorization")
-        authorization: RemoteControlAuthorization | RemoteWorkActivationAuthorization = RemoteControlAuthorization(
+        authorization: RemoteControlAuthorization | RemoteWorkActivationAuthorization | RemoteFullPlanActivationAuthorization = RemoteControlAuthorization(
             inspection_policy_ref=str(auth_raw["inspection_policy_ref"]),
         )
-    else:
+    elif request_kind == APPROVED_WORK_ACTIVATION_KIND:
         _exact_fields(auth_raw, _ACTIVATION_AUTH_FIELDS, "authorization")
         authorization = RemoteWorkActivationAuthorization(
             activation_policy_ref=str(auth_raw["activation_policy_ref"]),
+        )
+    else:
+        _exact_fields(auth_raw, _FULL_PLAN_ACTIVATION_AUTH_FIELDS, "authorization")
+        authorization = RemoteFullPlanActivationAuthorization(
+            full_plan_activation_policy_ref=str(auth_raw["full_plan_activation_policy_ref"]),
         )
     envelope_digest = _digest(payload["envelope_sha256"], "envelope digest")
     if envelope_digest != _sha(_unsigned(payload)):
