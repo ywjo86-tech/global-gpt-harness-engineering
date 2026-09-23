@@ -108,6 +108,21 @@ def _runtime_release_for_root(root: Path) -> RuntimeReleaseManifest:
         raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_INVALID") from exc
 
 
+def finalize_remote_control_projection(
+    outbox: RemoteResultOutbox, projection: Mapping[str, Any],
+) -> None:
+    schema = str(projection.get("schema_version") or "")
+    if schema in {
+        "orchestration.remote-inspection-status-projection.v1",
+        "orchestration.remote-activation-status-projection.v1",
+    }:
+        return
+    parsed = parse_remote_projection(projection)
+    if not isinstance(parsed, (RemoteInspectionProjectionV1, RemoteActivationProjectionV1)):
+        raise RuntimeServiceError("REMOTE_CONTROL_PROJECTION_MISMATCH")
+    outbox.mark_published(parsed.projection_id, parsed.projection_sha256)
+
+
 def _projection_secret_findings(payload: bytes) -> dict[str, int]:
     findings: dict[str, int] = {}
     for match in _PROJECTION_SECRET.finditer(payload):
@@ -433,10 +448,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
 
     def after_projection_published(envelope, projection):
         if isinstance(envelope, RemoteControlEnvelopeV1):
-            parsed = parse_remote_projection(projection)
-            if not isinstance(parsed, (RemoteInspectionProjectionV1, RemoteActivationProjectionV1)):
-                raise RuntimeServiceError("REMOTE_CONTROL_PROJECTION_MISMATCH")
-            outbox.mark_published(parsed.projection_id, parsed.projection_sha256)
+            finalize_remote_control_projection(outbox, projection)
             return
         binding = binding_store.get(envelope.message_id)
         if binding is not None and binding.status != "PROJECTED":

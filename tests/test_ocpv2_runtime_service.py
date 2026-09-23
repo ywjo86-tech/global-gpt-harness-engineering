@@ -10,6 +10,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     RuntimeServiceError,
     canary_scope_from_environment,
     execute_authorized_canonical,
+    finalize_remote_control_projection,
     host_inspection_enabled_from_environment,
     work_activation_enabled_from_environment,
 )
@@ -125,6 +126,20 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         source = inspect.getsource(module)
         self.assertIn("decode_remote_control_payload(value)", source)
         self.assertNotIn("envelope = validate_remote_envelope(value)", source)
+
+
+    def test_remote_control_status_projection_does_not_touch_durable_outbox(self):
+        outbox = Mock()
+        finalize_remote_control_projection(
+            outbox,
+            {
+                "schema_version": "orchestration.remote-activation-status-projection.v1",
+                "message_id": "MSG-A1", "activation_request_id": "ACT-1",
+                "project_alias": "demo", "request_digest": "a" * 64,
+                "result_class": "WORK_ACTIVATION_ERROR",
+            },
+        )
+        outbox.mark_published.assert_not_called()
 
     def test_user_service_invokes_runtime_module_not_bootstrap_poll_loop(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
