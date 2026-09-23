@@ -33,6 +33,7 @@ from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import RemoteOperatorReceiptStore
 from .remote_operator_recovery_binding import RemoteExecutionBindingStore
 from .production_run_authority import executor_runtime_identity
+from .runtime_release import RuntimeReleaseError, verify_runtime_release
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
 
 
@@ -189,6 +190,32 @@ def canary_scope_from_environment(mode: ControlMode | str, environment: Mapping[
         _safe_id(value, key) for value, key in zip(values, fields, strict=True)
     )
     return CanaryScope(project_id, run_id, task_id, gate_id, directive_id)
+
+
+def _diagnostic_provenance(repo_root: str | Path) -> tuple[str, str]:
+    root = Path(repo_root).expanduser().absolute()
+    identity = executor_runtime_identity(root)
+    source_sha = str(identity.get("head") or "")
+    runtime_sha = str(identity.get("runtime_source_sha256") or "")
+    if not source_sha:
+        manifest_path = root / "RUNTIME_RELEASE_MANIFEST.json"
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise RuntimeServiceError("diagnostic provenance source is unavailable")
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            expected_head = str(payload.get("source_head") or "") if isinstance(payload, Mapping) else ""
+            manifest = verify_runtime_release(root, expected_head)
+        except (OSError, UnicodeError, json.JSONDecodeError, RuntimeReleaseError, ValueError) as exc:
+            raise RuntimeServiceError("diagnostic provenance release verification failed") from exc
+        source_sha = str(manifest.source_head or "")
+    if (
+        len(source_sha) not in {40, 64}
+        or any(ch not in "0123456789abcdef" for ch in source_sha)
+        or len(runtime_sha) != 64
+        or any(ch not in "0123456789abcdef" for ch in runtime_sha)
+    ):
+        raise RuntimeServiceError("diagnostic provenance is incomplete")
+    return source_sha, runtime_sha
 
 
 def execute_authorized_canonical(
@@ -376,14 +403,14 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             or directive.state_change_required
         ):
             raise RuntimeServiceError("READ_ONLY_DIAGNOSTIC_NOT_AUTHORIZED")
-        provenance = executor_runtime_identity(config.repo_root)
+        source_sha, runtime_sha = _diagnostic_provenance(config.repo_root)
         result = execute_read_only_host_diagnostic(
             request,
             config.diagnostic_policy,
             project_id=envelope.project_id,
             correlation_id=envelope.message_id,
-            source_sha=str(provenance.get("head") or ""),
-            runtime_sha=str(provenance.get("runtime_source_sha256") or ""),
+            source_sha=source_sha,
+            runtime_sha=runtime_sha,
         )
         projection = RemoteDiagnosticProjectionV1(
             projection_id=f"DIAG-{envelope.message_id}",

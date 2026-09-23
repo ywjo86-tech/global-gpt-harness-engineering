@@ -165,9 +165,9 @@ class ReadOnlyDiagnosticResultV1:
             raise DiagnosticContractError("unknown diagnostic data class")
         if status not in STATUSES:
             raise DiagnosticContractError("unknown diagnostic status")
-        if source_sha and not _SHA.fullmatch(source_sha):
+        if not _SHA.fullmatch(source_sha):
             raise DiagnosticContractError("invalid source SHA")
-        if runtime_sha and not _SHA.fullmatch(runtime_sha):
+        if not _SHA.fullmatch(runtime_sha):
             raise DiagnosticContractError("invalid runtime SHA")
         if not captured_at or not freshness or not authorization_decision:
             raise DiagnosticContractError("diagnostic result provenance is incomplete")
