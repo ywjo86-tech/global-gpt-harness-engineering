@@ -244,9 +244,16 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
                           "RUN_STARTED.json", "diagnostics.json"}
     allowed |= {entry.name for entry in entries if entry.name.startswith("production.review-request-")
                 and entry.name.endswith(".json")}
-    review_dirs = {entry.name for entry in entries if entry.is_dir() and entry.name.startswith("review-attempt-")}
+    runtime_output_dirs = {"provider-action-effects", "provider-action-response-evidence", "host-gateway-ledger"}
+    allowed |= {"provider-action-proposal.json"} | runtime_output_dirs
+    review_dirs = {entry.name for entry in entries
+                   if not entry.is_symlink() and entry.is_dir() and entry.name.startswith("review-attempt-")}
     allowed |= review_dirs
-    if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and (entry.name == "preflight" or entry.name.startswith("review-attempt-"))) or (entry.is_file() and not entry.is_symlink()) for entry in entries):
+    allowed_dirs = {"preflight"} | runtime_output_dirs | review_dirs
+    if (not expected.issubset(names) or not names.issubset(allowed)
+            or not all(not entry.is_symlink() and (
+                (entry.is_dir() and entry.name in allowed_dirs) or entry.is_file()
+            ) for entry in entries)):
         raise LVReviewError(f"sealed package must contain exactly six regular files: {sorted(names)}")
     manifest_path = package_root / "package.manifest.json"
     manifest_bytes = manifest_path.read_bytes()

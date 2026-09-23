@@ -18,6 +18,7 @@ from runtime.orchestrator.lv_review import (
     REVIEW_STATUS_FIELDS,
     LVReviewError,
     _assert_canonical_binding,
+    _assert_package,
     _results_root,
     _scan_owned_files,
     _safe_read_result,
@@ -46,6 +47,80 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_assert_package_allows_exact_provider_action_runtime_artifacts_but_rejects_symlink_dirs(self) -> None:
+        with TemporaryDirectory() as directory:
+            package = Path(directory) / "package"
+            package.mkdir()
+            package_input = {
+                "run_id": RUN_ID, "project_id": "P", "gate_id": "G1", "lv_id": "T1",
+                "execution_mode": "manual", "execution_authorization_required": True,
+            }
+            source = {}
+            prompt = b"worker prompt\n"
+            (package / "package.input.json").write_bytes(canonical_json_bytes(package_input))
+            (package / "source_snapshot.json").write_bytes(canonical_json_bytes(source))
+            (package / "worker_prompt.md").write_bytes(prompt)
+            manifest = {
+                **package_input, "package_status": "sealed",
+                "package_input_sha256": _sha256((package / "package.input.json").read_bytes()),
+                "source_snapshot_sha256": _sha256((package / "source_snapshot.json").read_bytes()),
+                "worker_prompt_sha256": _sha256(prompt),
+            }
+            manifest_bytes = canonical_json_bytes(manifest)
+            (package / "package.manifest.json").write_bytes(manifest_bytes)
+            manifest_sha = _sha256(manifest_bytes)
+            (package / "package.manifest.sha256").write_text(manifest_sha, encoding="ascii")
+            (package / "package.status").write_bytes(canonical_json_bytes({
+                "manifest_sha256": manifest_sha, "package_status": "sealed",
+            }))
+            (package / "provider-action-proposal.json").write_text("{}\n", encoding="utf-8")
+            (package / "provider-action-effects").mkdir()
+            (package / "provider-action-response-evidence").mkdir()
+            _assert_package(package, RUN_ID)
+
+            effects = package / "provider-action-effects"
+            effects.rmdir()
+            real = Path(directory) / "external-effects"
+            real.mkdir()
+            effects.symlink_to(real, target_is_directory=True)
+            with self.assertRaisesRegex(LVReviewError, "sealed package"):
+                _assert_package(package, RUN_ID)
+
+    def test_sealed_package_accepts_known_provider_action_outputs_but_rejects_unknown_directory(self) -> None:
+        with TemporaryDirectory() as directory:
+            package = Path(directory) / "package"
+            package.mkdir()
+            package_input = {
+                "run_id": RUN_ID, "project_id": "p", "gate_id": "g", "lv_id": "lv",
+                "execution_mode": "manual", "execution_authorization_required": True,
+            }
+            prompt = b"worker prompt\n"
+            snapshot = canonical_json_bytes({"head": "a" * 40})
+            (package / "package.input.json").write_bytes(canonical_json_bytes(package_input))
+            (package / "worker_prompt.md").write_bytes(prompt)
+            (package / "source_snapshot.json").write_bytes(snapshot)
+            manifest = {
+                "run_id": RUN_ID, "package_status": "sealed",
+                "package_input_sha256": _sha256((package / "package.input.json").read_bytes()),
+                "worker_prompt_sha256": _sha256(prompt),
+                "source_snapshot_sha256": _sha256(snapshot),
+            }
+            manifest_bytes = canonical_json_bytes(manifest)
+            (package / "package.manifest.json").write_bytes(manifest_bytes)
+            manifest_sha = _sha256(manifest_bytes)
+            (package / "package.manifest.sha256").write_text(manifest_sha, encoding="ascii")
+            (package / "package.status").write_bytes(canonical_json_bytes({"manifest_sha256": manifest_sha, "package_status": "sealed"}))
+            (package / "provider-action-proposal.json").write_text("{}", encoding="utf-8")
+            (package / "provider-action-effects").mkdir()
+            (package / "provider-action-response-evidence").mkdir()
+            (package / "host-gateway-ledger").mkdir()
+
+            _assert_package(package, RUN_ID)
+
+            (package / "unexpected-runtime-output").mkdir()
+            with self.assertRaisesRegex(LVReviewError, "exactly six regular files"):
+                _assert_package(package, RUN_ID)
+
     def test_checkpoint_adoption_uses_sealed_provenance_without_worker_executor(self) -> None:
         payload = {
             "completion_mode": "VERIFIED_CHECKPOINT_ADOPTION", "checkpoint_commit": "a" * 40,
