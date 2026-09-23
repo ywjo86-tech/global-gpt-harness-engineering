@@ -9,8 +9,12 @@
 **Tech Stack:** Python 3.12, `unittest`, existing OCPv2 GitHub control transport, AI Office state store/workflow, Full Plan durable supervisor, project onboarding/contract mapping, TASK-to-LV projection, Gate approval v1, production worker/Gateway/Full MCP, systemd --user for existing Full Plan boot/reconcile.
 
 **Spec:** `docs/superpowers/specs/2026-09-23-approved-work-execution-link-remediation-design.md`
+**Authority-boundary amendment:** Spec SHA `10d1c94cc391b770d124f68fb8c4af8776ccca30bd119c3c5d863da17b76f8ab`; Gate approval and engine conformance evidence are Harness-sealed namespace artifacts, not project-committed files.
 
 ## Global Constraints
+
+- Gate approval evidence MUST resolve only under `namespace_root(harness_state_root, project_id, "approval")`; engine R01-R25 evidence MUST resolve only under `namespace_root(harness_state_root, project_id, "artifact")`; neither authority root is caller-supplied.
+- Plan/spec/project requirement contracts remain committed project evidence; activation never creates, relocates, or translates approval/requirement authority.
 
 - OCP SHALL remain transport/control only and SHALL NOT gain shell, filesystem-write, provider/model, planner, worker, Gateway or Full MCP effect authority.
 - Existing `APPROVED_WORK_ACTIVATION` V1 SHALL retain its current tracking/manual semantics and durable replay meaning.
@@ -32,6 +36,13 @@
 - Missing mapping, projection, Gate approval, requirement evidence, source/runtime binding or executable qualification SHALL fail closed with no auto-bootstrap, V1 downgrade, Manual Action, shell or RDC fallback.
 - `GPT-ACT-20260923-02` is immutable failure evidence and SHALL NOT be rebound or reused.
 - No live executable canary, runtime switch or feature enable occurs before a separate explicit user approval gate.
+
+## Resume State After Authority-Boundary Amendment
+
+- Task 1 is already implemented at `dd4e548`; `ArtifactRefV1` remains intentionally domain-neutral, while Task 3 supplies the field-implied Harness/project authority-domain resolution.
+- Task 2 is already implemented at `98a82f2` and remains valid unchanged.
+- Task 3 previously stopped before commit when the project-committed Gate approval self-reference was discovered. Resume at Task 3 after this amended plan is approved; do not repeat Tasks 1-2.
+- The failed historical canary `GPT-ACT-20260923-02` remains immutable evidence and is never reused.
 
 ## File Structure
 
@@ -59,8 +70,8 @@ Protected execution owners remain unchanged unless a focused regression proves a
 
 ## Review Focus
 
-- **Authority-root layout:** the configured onboarding authority root may contain aliases without executable mappings; executable activation must block without creating `AUTHORITY_ROOT/mappings` or falling back to code-owned mappings.
-- **Approval-domain collision:** `gate-approval.v1`, canonical Gate state and production-approval-v2 are distinct authority domains; executable activation must accept only the existing Full Plan Gate authority expected by `validate_global_gate_bindings()` / `execute_gate()` and never translate schemas.
+- **Authority-root / namespace confinement:** aliases may exist without executable mappings, and Gate approval / engine R01-R25 evidence must resolve only below their field-implied system-derived Harness namespaces; missing mappings, traversal, symlink components, wrong-namespace placement, absolute caller paths, project-Git substitutes, and code-owned mapping fallback all fail closed without creating authority state.
+- **Approval-domain collision:** `gate-approval.v1`, canonical Gate state and production-approval-v2 are distinct authority domains; executable activation accepts only the existing Full Plan Gate authority and never translates schemas.
 - **Registration/publication crash:** a crash after `register_job()` but before projection publication must replay the same receipt/projection without registering a second job or creating a second effect path.
 - **Binding-to-execution drift:** branch/HEAD, mapping/projection and runtime release may change after activation validation; existing preflight/runtime checks must block execution rather than allowing the activation bundle to override current canonical checks.
 - **Owner/path coexistence:** V1 tracking activation, OCPV2-owned continuation and the new `AUTO_RECONCILE` executable run must remain mutually non-convertible even when they reference the same project.
@@ -78,9 +89,9 @@ Protected execution owners remain unchanged unless a focused regression proves a
 | AWEL-MUST-007 | 2, 3 | explicit mapping-root loading and source SHA cross-check |
 | AWEL-MUST-008 | 3, 10 | missing/drifted projection fail-closed tests |
 | AWEL-MUST-009 | 3 | canonical `GatePlan`-derived LV order/scope/capability tests |
-| AWEL-MUST-010 | 3, 10 | `validate_global_gate_bindings()` and approval failure matrix |
+| AWEL-MUST-010 | 3, 10 | Harness approval-namespace confinement + `validate_global_gate_bindings()` failure matrix |
 | AWEL-MUST-011 | 3, 10 | production-approval-v2 rejection and opaque `approval_ref` tests |
-| AWEL-MUST-012 | 3, 10 | engine/project requirement schema and LV coverage tests |
+| AWEL-MUST-012 | 3, 10 | Harness artifact-domain engine evidence vs committed project requirement schema/LV coverage tests |
 | AWEL-MUST-013 | 3, 5, 10 | source/runtime binding and preflight drift tests |
 | AWEL-MUST-014 | 3, 5, 10 | sealed `job["mapping_root"]` and boot/preflight tests |
 | AWEL-MUST-015 | 5, 10 | generic job shape and `AUTO_RECONCILE` owner tests |
@@ -99,8 +110,8 @@ Protected execution owners remain unchanged unless a focused regression proves a
 | AWEL-AC-003 | 3, 10 | aliases-only authority root registers zero jobs |
 | AWEL-AC-004 | 3, 10 | TASK plan without projection registers zero jobs |
 | AWEL-AC-005 | 3, 10 | mapping/projection/plan/source drift matrix |
-| AWEL-AC-006 | 3, 10 | missing/expired/wrong-scope Gate approval matrix |
-| AWEL-AC-007 | 3, 10 | missing/wrong-profile requirement matrix |
+| AWEL-AC-006 | 3, 10 | missing/expired/wrong-scope/wrong-namespace Gate approval matrix |
+| AWEL-AC-007 | 3, 10 | missing/wrong-profile/wrong-authority-domain requirement matrix |
 | AWEL-AC-008 | 5, 10 | exact one generic `AUTO_RECONCILE` job |
 | AWEL-AC-009 | 5, 10 | idempotent replay and conflict rejection |
 | AWEL-AC-010 | 10 | boot accepts AUTO owner; OCP resume rejects it |
@@ -145,8 +156,8 @@ def executable_request():
         "approval_ref": "USER-APPROVAL-1",
         "gate_bindings": [{
             "gate_id": "GATE-001",
-            "approval_evidence": {"path": "docs/approval-g1.json", "sha256": "e" * 64},
-            "engine_requirement_evidence": {"path": "docs/engine-g1.json", "sha256": "f" * 64},
+            "approval_evidence": {"path": "approval-g1.json", "sha256": "e" * 64},
+            "engine_requirement_evidence": {"path": "engine-g1.json", "sha256": "f" * 64},
             "project_requirement_evidence_by_lv": [{
                 "lv_id": "TASK-001", "path": "docs/req-task-001.json", "sha256": "1" * 64,
             }],
@@ -218,7 +229,7 @@ class ApprovedFullPlanActivationRequestV1:
     gate_bindings: tuple[GateBindingRefV1, ...]
 ```
 
-Validation rules in this task are exact field sets, safe project-relative artifact paths, lowercase SHA-256 digests, attached branch syntax, 40/64-hex HEAD, unique ordered Gate IDs, unique LV refs per Gate, non-empty approval provenance, and canonical `request_digest = sha256(canonical_json(to_dict()))`. No mapping/root lookup belongs in this module.
+Validation rules in this task are exact field sets, safe **relative** artifact references, lowercase SHA-256 digests, attached branch syntax, 40/64-hex HEAD, unique ordered Gate IDs, unique LV refs per Gate, non-empty approval provenance, and canonical `request_digest = sha256(canonical_json(to_dict()))`. The contract stays domain-neutral: `approval_evidence.path` is interpreted by Task 3 under the Harness approval namespace, `engine_requirement_evidence.path` under the Harness artifact namespace, while plan/spec/project-requirement refs are interpreted under the project root. No host root lookup belongs in this module.
 
 - [ ] **Step 4: Run focused contract tests and existing V1 contract tests**
 
@@ -332,9 +343,10 @@ git commit -m "refactor(harness): thread explicit Gate mapping root"
 - Modify: `runtime/orchestrator/approved_work_binding.py`
 - Create: `tests/test_approved_full_plan_binding.py`
 - Modify: `tests/test_approved_work_binding.py`
+- Modify: `tests/test_approved_full_plan_activation_contract.py`
 
 **Interfaces:**
-- Consumes: `ApprovedFullPlanActivationRequestV1`, `OnboardingRegistry`, `load_project_mapping`, `validate_mapping_sources`, `load_gate_plan(project_root, gate_id, mapping_root=mappings_root)`, the existing `validate_global_gate_bindings()` extended to receive `mapping_root=mappings_root`, `load_approval_evidence`, `load_requirement_evidence`, `load_project_requirement_contract`, `resolve_task_project_requirement_contract`, `RuntimeReleaseManifest`.
+- Consumes: `ApprovedFullPlanActivationRequestV1`, `OnboardingRegistry`, `load_project_mapping`, `validate_mapping_sources`, `load_gate_plan(project_root, gate_id, mapping_root=mappings_root)`, the existing `validate_global_gate_bindings()` extended to receive `mapping_root=mappings_root`, `namespace_root`, `load_approval_evidence`, `load_requirement_evidence`, `load_project_requirement_contract`, `resolve_task_project_requirement_contract`, `RuntimeReleaseManifest`.
 - Produces: `ValidatedGateAuthorityV1`, `ExecutableAuthorityBundleV1`, `resolve_executable_authority_roots(configured_root)`, and `validate_approved_full_plan_binding(request, authority_root=authority_root, runtime_release=runtime_release, harness_state_root=harness_state_root)`.
 
 - [ ] **Step 1: Expose the existing committed-file helper without changing V1 semantics**
@@ -394,13 +406,29 @@ Tests must cover all of these independently:
 with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_FULL_PLAN_REQUIRED"):
     self.validate_without_projection()
 
-# Expired or wrong-scope gate-approval.v1.
+# Expired or wrong-scope gate-approval.v1 from the Harness approval namespace.
 with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_APPROVAL_REQUIRED"):
     self.validate_with_expired_gate_approval()
 
-# production-approval.v2 presented in the gate-approval slot.
+# Approval ref traversal / absolute path / symlink / wrong namespace are rejected before schema validation.
+for fixture in (self.approval_traversal, self.approval_absolute, self.approval_symlink, self.approval_in_artifact_namespace):
+    with self.subTest(fixture=fixture):
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_APPROVAL_REQUIRED"):
+            fixture()
+
+# A project-committed gate-approval.v1 is not accepted as a substitute for Harness authority state.
+with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_APPROVAL_REQUIRED"):
+    self.validate_with_project_git_approval_substitute()
+
+# production-approval.v2 presented in the Harness gate-approval slot.
 with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_APPROVAL_REQUIRED"):
     self.validate_with_production_approval_v2()
+
+# Engine evidence must come from the Harness artifact namespace, not project Git or approval namespace.
+for fixture in (self.engine_evidence_in_project, self.engine_evidence_in_approval_namespace):
+    with self.subTest(fixture=fixture):
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_REQUIREMENT_BINDING_MISMATCH"):
+            fixture()
 
 # Engine evidence supplied where a project requirement contract is required.
 with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_REQUIREMENT_BINDING_MISMATCH"):
@@ -433,6 +461,39 @@ def resolve_executable_authority_roots(configured_root: str | Path) -> tuple[Pat
 ```
 
 This function never creates directories and never falls back to `runtime/orchestrator/contract_mappings`.
+
+Add one read-only namespace resolver; it reuses `namespace_root()` and never creates authority artifacts:
+
+```python
+def resolve_harness_authority_file(*, harness_state_root: str | Path, project_id: str,
+                                   kind: str, raw: object, label: str) -> tuple[Path, str]:
+    if kind not in {"approval", "artifact"}:
+        raise ApprovedFullPlanBindingError(f"{label}: invalid authority namespace")
+    text = str(raw or "")
+    relative = Path(text)
+    if not text or relative.is_absolute() or ".." in relative.parts or "\\" in text:
+        raise ApprovedFullPlanBindingError(f"{label}: unsafe namespace-relative path")
+    base = namespace_root(harness_state_root, project_id, kind)
+    root = Path(harness_state_root).expanduser().absolute()
+    if root.is_symlink() or not root.is_dir() or root.resolve() != root:
+        raise ApprovedFullPlanBindingError(f"{label}: Harness state root unsafe")
+    target = base.joinpath(*relative.parts)
+    cursor = root
+    for part in target.relative_to(root).parts:
+        cursor = cursor / part
+        if cursor.exists() and cursor.is_symlink():
+            raise ApprovedFullPlanBindingError(f"{label}: symlinked authority path")
+    if not target.is_file() or target.is_symlink():
+        raise ApprovedFullPlanBindingError(f"{label}: authority artifact missing")
+    resolved = target.resolve(strict=True)
+    try:
+        resolved.relative_to(base)
+    except ValueError as exc:
+        raise ApprovedFullPlanBindingError(f"{label}: authority namespace escape") from exc
+    return resolved, relative.as_posix()
+```
+
+`approval_evidence.path` is always resolved with `kind="approval"`; `engine_requirement_evidence.path` is always resolved with `kind="artifact"`. A field can never select its own namespace.
 
 - [ ] **Step 6: Implement the immutable bundle types**
 
@@ -517,6 +578,13 @@ if (
     or req.approved_spec.sha256 != spec_sha
 ):
     raise ApprovedFullPlanBindingError("EXECUTABLE_MAPPING_MISMATCH")
+if mapping.task_lv_projection_path is not None:
+    projection_relative = mapping.task_lv_projection_path.relative_to(project_root).as_posix()
+    projection_path, _ = resolve_committed_project_file(
+        project_root, projection_relative, "TASK-to-LV authority projection",
+    )
+    if sha256_file(projection_path) != mapping.task_lv_projection_sha256:
+        raise ApprovedFullPlanBindingError("EXECUTABLE_MAPPING_MISMATCH")
 branch = _git(project_root, "branch", "--show-current").stdout.strip()
 head = _git(project_root, "rev-parse", "HEAD").stdout.strip()
 if (branch, head) != (req.expected_branch, req.expected_head):
@@ -535,7 +603,10 @@ validated_gates = []
 project_requirements_required = mapping.task_lv_projection_path is not None
 for gate_ref in req.gate_bindings:
     plan = load_gate_plan(project_root, gate_ref.gate_id, mapping_root=mappings_root)
-    approval_path, _ = resolve_committed_project_file(project_root, gate_ref.approval_evidence.path, "Gate approval")
+    approval_path, _ = resolve_harness_authority_file(
+        harness_state_root=harness_state_root, project_id=str(mapping.project_id),
+        kind="approval", raw=gate_ref.approval_evidence.path, label="EXECUTABLE_APPROVAL_REQUIRED",
+    )
     approval_sha = sha256_file(approval_path)
     if approval_sha != gate_ref.approval_evidence.sha256:
         raise ApprovedFullPlanBindingError("EXECUTABLE_APPROVAL_REQUIRED")
@@ -550,7 +621,8 @@ for gate_ref in req.gate_bindings:
     except (GateApprovalError, GateOrchestrationError, OSError, ValueError) as exc:
         raise ApprovedFullPlanBindingError("EXECUTABLE_APPROVAL_REQUIRED") from exc
     validated_gates.append(_validate_gate_requirement_artifacts(
-        project_root=project_root, plan=plan, gate_ref=gate_ref,
+        project_root=project_root, harness_state_root=Path(harness_state_root),
+        project_id=str(mapping.project_id), plan=plan, gate_ref=gate_ref,
         approval_path=approval_path, approval_sha256=approval_sha,
         requirements_sha256=requirements_sha256,
         project_requirements_required=project_requirements_required,
@@ -574,7 +646,8 @@ For project requirement validation, derive expected IDs with `resolve_task_proje
 Define the helper used above in the same module with this exact interface:
 
 ```python
-def _validate_gate_requirement_artifacts(*, project_root: Path, plan: GatePlan,
+def _validate_gate_requirement_artifacts(*, project_root: Path, harness_state_root: Path,
+                                         project_id: str, plan: GatePlan,
                                          gate_ref: GateBindingRefV1, approval_path: Path,
                                          approval_sha256: str, requirements_sha256: str,
                                          project_requirements_required: bool) -> ValidatedGateAuthorityV1:
@@ -582,7 +655,10 @@ def _validate_gate_requirement_artifacts(*, project_root: Path, plan: GatePlan,
     engine_sha256 = ""
     engine_ref = gate_ref.engine_requirement_evidence
     if engine_ref is not None:
-        resolved, _ = resolve_committed_project_file(project_root, engine_ref.path, "engine requirement evidence")
+        resolved, _ = resolve_harness_authority_file(
+            harness_state_root=harness_state_root, project_id=project_id, kind="artifact",
+            raw=engine_ref.path, label="EXECUTABLE_REQUIREMENT_BINDING_MISMATCH",
+        )
         engine_sha256 = sha256_file(resolved)
         if engine_sha256 != engine_ref.sha256:
             raise ApprovedFullPlanBindingError("EXECUTABLE_REQUIREMENT_BINDING_MISMATCH")
@@ -833,7 +909,7 @@ def test_activation_requires_preflight_pass_before_register_job():
 def test_preflight_revalidates_expected_head_and_authority_artifact_digests():
     job = build_executable_full_plan_job(bundle, ai_context=context, harness_state_root=state_root)
     self.assertEqual(preflight_job(job)["status"], "PASS")
-    mutate_worktree_without_commit(project_root, "docs/approval-g1.json")
+    mutate_file(Path(bundle.gates[0].approval_evidence_path))
     result = preflight_job(job)
     self.assertEqual(result["status"], "BLOCK")
     self.assertIn("GATE_AUTHORITY_EVIDENCE_DRIFT", result["reason"])
@@ -1378,19 +1454,28 @@ git commit -m "feat(ocpv2): compose executable activation feature gate"
 
 - [ ] **Step 1: Build a real temporary executable project fixture**
 
-The fixture must create and commit:
+The fixture MUST keep product Git evidence and Harness authority evidence in separate roots. Do not commit `gate-approval.v1` into the product repository because it seals the exact product HEAD.
+
+First create and commit only the product-repository evidence, then freeze its exact HEAD:
 
 ```text
 project/docs/DEVELOPMENT_PLAN.txt        # TASK/STAGE-GATE plan with one TASK and one Gate
 project/docs/spec.md
-project/docs/approval-g1.json            # sealed gate-approval.v1 bound to exact project/Gate/plan/head/LV scope
-project/docs/engine-g1.json              # orchestration.requirement-evidence.v1 when used
 project/docs/req-task-001.json           # orchestration.project-requirement-contract.v1
 project/docs/harness/task-lv-authority-projection.json
+```
+
+After that commit exists, create the external authority/runtime fixture roots without changing the product HEAD:
+
+```text
 authority/aliases/demo.json
 authority/mappings/project.json
+harness/_workspace/global-gate/<project_id>/approval/approval-g1.json   # gate-approval.v1 seals the frozen product HEAD
+harness/_workspace/global-gate/<project_id>/artifact/engine-g1.json     # orchestration.requirement-evidence.v1 when used
 runtime-release/RUNTIME_RELEASE_MANIFEST.json
 ```
+
+The request uses `approval-g1.json` and `engine-g1.json` as namespace-relative refs. It never carries the `harness/...` absolute/host-relative location.
 
 Use existing helpers `seal_approval_evidence`, `resolve_task_project_requirement_contract`, and `RuntimeReleaseManifest` rather than hand-inventing alternate schemas.
 
@@ -1541,6 +1626,7 @@ def test_no_new_executor_owner_or_outbox_class_is_created():
 ```
 
 Also assert the new request contract has no fields named `provider`, `model`, `backend`, `command`, `argv`, `environment`, `owned_scope`, `editable_scope`, or `mapping_root`.
+Also assert `approved_full_plan_binding.py` never resolves Gate approval with `resolve_committed_project_file()` and never resolves engine conformance evidence under the project root; those two fields must pass through the fixed `approval` / `artifact` namespace resolver.
 
 - [ ] **Step 2: Run the authority-focused matrix**
 
@@ -1844,14 +1930,17 @@ The package names the exact disposable project, expected one-file effect, valida
 
 - [ ] **Step 2: Verify the disposable project is fully qualified before feature enable**
 
+Qualification must resolve Gate approval/engine evidence from the deployed Harness namespace roots; the remote request carries only safe namespace-relative refs plus digests, never absolute host paths.
+
 Read-only checks must prove:
 
 ```text
 alias entry exists and matches project root/plan SHA
 mappings/project.json exists and validates
 TASK-to-LV projection exists and matches its configured SHA
-Gate approval is active, unexpired and exact-scope
-engine/project requirement evidence validates
+Gate approval exists only in the system-derived Harness approval namespace and is active, unexpired and exact-scope
+engine conformance evidence, when required, exists only in the system-derived Harness artifact namespace
+project requirement contracts remain committed project-relative evidence and validate
 project worktree is on expected branch/HEAD and clean
 runtime release manifest matches deployed successor
 no prior job/receipt exists for the fresh activation ID
@@ -2007,9 +2096,9 @@ git commit -m "docs(ocpv2): close executable activation runtime EDP"
 - **Type consistency:** `ApprovedFullPlanActivationRequestV1` → `ExecutableAuthorityBundleV1` → `AIFullPlanActivationContextV1` → `FullPlanActivationReceiptV1` → `RemoteFullPlanActivationProjectionV1` is the only new-work executable type chain.
 - **Mapping-root consistency:** remote payload contains no mapping root; runtime resolves one system authority root, validator derives `AUTHORITY_ROOT/aliases` and `AUTHORITY_ROOT/mappings`, and the sealed job persists only the exact validated mappings directory in `job["mapping_root"]`.
 - **Execution-owner consistency:** the new job sets `AUTO_RECONCILE`; generic boot/run executes it; OCPV2 resume rejects it; no rebind occurs.
-- **Review Focus coverage:** authority-root absence is tested in Tasks 3/10; approval-domain collision in Tasks 3/10; registration/publication crash in Tasks 7/10; binding-to-execution drift in Tasks 5/10/11; V1/OCPV2/AUTO_RECONCILE coexistence in Tasks 6/8/10/11.
+- **Review Focus coverage:** authority-root absence is tested in Tasks 3/10; approval-domain and Harness namespace confinement in Tasks 3/10/11; registration/publication crash in Tasks 7/10; binding-to-execution drift in Tasks 5/10/11; V1/OCPV2/AUTO_RECONCILE coexistence in Tasks 6/8/10/11.
 - **Live safety:** Tasks 1-12 contain no live feature enable or runtime switch. Task 13 has an explicit human approval hard stop before any live state change.
 
 ## Execution Handoff
 
-Implementation must start from this plan and the approved AWEL spec together. The stopped V1 implementation history remains evidence and compatibility surface; it is not to be merged wholesale or reinterpreted as executable authority.
+Implementation must resume from Task 3 of this plan and the approved amended AWEL spec together. Tasks 1-2 are already implemented at `dd4e548` and `98a82f2` and are not to be repeated. The stopped V1 implementation history remains evidence and compatibility surface; it is not to be merged wholesale or reinterpreted as executable authority.
