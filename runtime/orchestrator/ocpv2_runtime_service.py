@@ -20,7 +20,8 @@ from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITO
 from .harness_state_root import resolve_harness_state_root
 from .ocpv2_canonical_recovery import recover_pending_canonical_results, resolve_registered_full_plan_completion
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2, validate_remote_envelope
+from .remote_control_envelope import decode_remote_control_payload
+from .remote_operator_envelope import RemoteOperatorEnvelopeV2
 from .remote_operator_ingress import validate_ingress
 from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
 from .remote_operator_receipt import RemoteOperatorReceiptStore
@@ -287,7 +288,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             value = json.loads(raw.content.decode("utf-8"))
         except Exception as exc:
             raise RuntimeServiceError("remote control payload is not valid JSON") from exc
-        envelope = validate_remote_envelope(value)
+        envelope = decode_remote_control_payload(value)
         if (
             envelope.transport.adapter_id != "GITHUB_CONTROL_V1"
             or envelope.transport.channel_id != f"PR:{config.control_pr_number}"

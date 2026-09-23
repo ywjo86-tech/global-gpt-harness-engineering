@@ -118,6 +118,12 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         self.assertNotIn("os.system", source)
         self.assertNotIn("provider_router", source)
 
+    def test_runtime_decode_uses_additive_remote_control_dispatch(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        source = inspect.getsource(module)
+        self.assertIn("decode_remote_control_payload(value)", source)
+        self.assertNotIn("envelope = validate_remote_envelope(value)", source)
+
     def test_user_service_invokes_runtime_module_not_bootstrap_poll_loop(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("-m runtime.orchestrator.ocpv2_runtime_service", text)
