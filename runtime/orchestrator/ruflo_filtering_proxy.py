@@ -196,9 +196,10 @@ class RufloFilteringProxy:
         raw_result = self._runtime_invoker(tool.tool_id, dict(arguments))
         if not isinstance(raw_result, Mapping):
             raise ExternalCapabilityContractError("Ruflo tool output must be a mapping")
-        _validate_closed_payload(tool.output_schema, raw_result, "output")
-        return ExternalCapabilityResultV1.from_external_payload(
+        normalized_result = ExternalCapabilityResultV1.from_external_payload(
             request=request,
             external_payload=dict(raw_result),
             evidence_ref=evidence_ref,
         )
+        _validate_closed_payload(tool.output_schema, raw_result, "output")
+        return normalized_result
