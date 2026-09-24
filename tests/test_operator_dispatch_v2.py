@@ -7,6 +7,7 @@ from runtime.orchestrator.execution_lifecycle_v2 import build_v2_operator_plan_j
 from runtime.orchestrator.operator_dispatch_v2 import (
     OperatorDispatchError,
     OperatorDispatchStore,
+    build_v2_operator_plan_executor,
     ensure_v2_dispatch,
 )
 from runtime.orchestrator.operator_plan_execution import (
@@ -81,7 +82,7 @@ class OperatorDispatchV2Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             job = self.build_v2_job(root)
-            execute = build_operator_plan_executor(job)
+            execute = build_v2_operator_plan_executor(job)
 
             first = execute("TASK-001", "gate-run-1", False)
             self.assertEqual(first, {
