@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed OCPv2 successor release-source authority helpers.
 
-The repository default branch is not an OCP deployment authority.  A successor release
+The repository default branch is not an OCP deployment authority. A successor release
 may only be derived from a merged pull request whose base branch matches the canonical
 branch declared by ``docs/harness/ocpv2-current-operations.md``.
 """
