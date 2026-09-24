@@ -114,6 +114,7 @@ class RufloJevAuthorityNegativeSpaceTest(unittest.TestCase):
             "jev_adapter",
             "shadow",
             "runtime_policy",
+            "activation",
             "authority_negative_space",
             "provider_registry",
             "production_tool_transport",
@@ -128,6 +129,7 @@ class RufloJevAuthorityNegativeSpaceTest(unittest.TestCase):
 
     def test_external_advisory_modules_do_not_create_routes_or_action_effect_paths(self) -> None:
         from runtime.orchestrator import (
+            external_advisory_activation,
             external_advisory_contract,
             external_advisory_runtime,
             external_advisory_shadow,
@@ -136,6 +138,7 @@ class RufloJevAuthorityNegativeSpaceTest(unittest.TestCase):
         )
 
         modules = (
+            external_advisory_activation,
             external_advisory_contract,
             external_advisory_runtime,
             external_advisory_shadow,
@@ -163,6 +166,7 @@ class RufloJevAuthorityNegativeSpaceTest(unittest.TestCase):
             REPO_ROOT / "runtime" / "orchestrator",
         )
         excluded_names = {
+            "external_advisory_activation.py",
             "external_advisory_contract.py",
             "external_advisory_runtime.py",
             "external_advisory_shadow.py",
@@ -185,8 +189,8 @@ class RufloJevAuthorityNegativeSpaceTest(unittest.TestCase):
                 if path.name.startswith("test_"):
                     continue
                 source = path.read_text(encoding="utf-8")
-                # The generic runtime policy/registry may know capability IDs, but OCP
-                # transport code must never call the concrete advisor adapters directly.
+                # Concrete advisory boundary modules are inspected separately above;
+                # OCP and non-advisory orchestrator code must never call them directly.
                 for token in direct_tokens:
                     with self.subTest(path=str(path.relative_to(REPO_ROOT)), token=token):
                         self.assertNotIn(token, source)
