@@ -80,6 +80,21 @@ jobs:
           python-version: "3.12"
       - name: Install canonical Full MCP dependency lock
         run: python3 -m pip install -r requirements/full-mcp.txt
+      - name: Full repository unittest discovery
+        run: python3 scripts/ocpv2_full_regression.py
+
+  rji-full-edp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install canonical Full MCP dependency lock
+        run: python3 -m pip install -r requirements/full-mcp.txt
       - name: Ruflo Jev full runtime EDP
         run: python3 scripts/rji_runtime_edp.py
 
