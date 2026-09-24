@@ -12,7 +12,7 @@ from runtime.orchestrator.remote_control_envelope import (
     REMOTE_CONTROL_ENVELOPE_SCHEMA,
     seal_remote_control_envelope,
 )
-from runtime.orchestrator.remote_operator_service import ControlMode
+from runtime.orchestrator.remote_operator_service import ControlMode, RemoteOperatorServiceError
 from runtime.orchestrator.remote_operator_transport import RawControlEnvelope
 
 
@@ -78,13 +78,15 @@ def _expired_inspection_raw() -> RawControlEnvelope:
 
 
 class OCPv2ExpiredRemoteControlRecoveryTests(unittest.TestCase):
-    def test_expired_host_inspection_is_projected_and_acked_without_stalling_poll(self):
+    def test_current_runtime_reproduces_expired_control_as_ingress_failed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             repo = root / "repo"
             repo.mkdir()
             state = root / "state"
             state.mkdir()
+            mapping = root / "mapping"
+            mapping.mkdir()
             token = root / "token"
             token.write_text("x\n", encoding="utf-8")
             token.chmod(0o600)
@@ -98,7 +100,44 @@ class OCPv2ExpiredRemoteControlRecoveryTests(unittest.TestCase):
                 allowed_actor_ids=("235775273",),
                 token_file=token,
                 state_root=state,
-                environment={},
+                environment={"HARNESS_CONTRACT_MAPPING_ROOT": str(mapping)},
+                host_inspection_enabled=True,
+            )
+
+            with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient", return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter", return_value=adapter), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.resolve_harness_state_root", return_value=repo), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.HostInspectionPort"):
+                service = _compose_service(config)
+                with self.assertRaisesRegex(RemoteOperatorServiceError, "INGRESS_FAILED"):
+                    service.poll_once(mode=config.mode)
+
+            self.assertEqual(adapter.projections, [])
+            self.assertEqual(adapter.acks, [])
+
+    def test_expired_host_inspection_is_projected_and_acked_without_stalling_poll(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            state = root / "state"
+            state.mkdir()
+            mapping = root / "mapping"
+            mapping.mkdir()
+            token = root / "token"
+            token.write_text("x\n", encoding="utf-8")
+            token.chmod(0o600)
+
+            adapter = _ExpiredControlAdapter(_expired_inspection_raw())
+            config = RuntimeConfig(
+                mode=ControlMode.ACTIVE,
+                repo_root=repo,
+                control_repository_id=987654,
+                control_pr_number=1,
+                allowed_actor_ids=("235775273",),
+                token_file=token,
+                state_root=state,
+                environment={"HARNESS_CONTRACT_MAPPING_ROOT": str(mapping)},
                 host_inspection_enabled=True,
             )
 
