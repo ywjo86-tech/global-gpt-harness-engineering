@@ -108,7 +108,7 @@ def _diagnostic_raw():
     payload = {
         "schema_version": REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA,
         "message_id": "MSG-DIAG-1", "sequence": 1,
-        "issued_at": "2026-09-23T00:00:00+00:00", "expires_at": "2026-09-24T00:00:00+00:00",
+        "issued_at": "2026-09-23T00:00:00+00:00", "expires_at": "2099-09-24T00:00:00+00:00",
         "actor": "GPT_OPERATOR",
         "transport": {"adapter_id": "GITHUB_CONTROL_V1", "channel_id": "PR:7", "source_actor_id": "123", "source_message_id": "9"},
         "project_id": "P1", "run_id": "R1", "task_id": "T1", "task_execution_id": "E1", "gate_id": "G1",
