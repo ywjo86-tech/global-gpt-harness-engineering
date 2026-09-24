@@ -6,6 +6,7 @@ from runtime.orchestrator.external_advisory_activation import (
     ACTIVATION_STATUS_ACTIVE,
     ACTIVATION_STATUS_BLOCKED,
     ACTIVATION_STATUS_QUARANTINED,
+    ACTIVATION_STATUS_READY,
     ActivationEvidenceV1,
     activation_decision,
     rollback_to_disabled,
@@ -129,6 +130,37 @@ class ExternalAdvisoryActivationTest(unittest.TestCase):
         )
         self.assertEqual(decision.status, ACTIVATION_STATUS_BLOCKED)
         self.assertEqual(decision.reason_code, "SAFETY_APPROVAL_MISSING")
+
+    def test_receipt_identity_mismatch_is_quarantined(self) -> None:
+        descriptor = self.descriptor(RUFLO_CAPABILITY_ID)
+        for overrides in (
+            {"rji7_receipt_ref": "rji7:other"},
+            {"safety_approval_receipt_ref": "user:other"},
+        ):
+            with self.subTest(overrides=overrides):
+                decision = activation_decision(
+                    policy=self.active_policy(RUFLO_CAPABILITY_ID),
+                    descriptor=descriptor,
+                    runtime_evidence=self.runtime_evidence(descriptor),
+                    activation_evidence=self.activation_evidence(descriptor, **overrides),
+                    target_state="ACTIVE",
+                )
+                self.assertEqual(decision.status, ACTIVATION_STATUS_QUARANTINED)
+                self.assertEqual(decision.reason_code, "ACTIVATION_RECEIPT_MISMATCH")
+
+    def test_ready_decision_precedes_ocp_deployment(self) -> None:
+        descriptor = self.descriptor(RUFLO_CAPABILITY_ID)
+        decision = activation_decision(
+            policy=self.active_policy(RUFLO_CAPABILITY_ID),
+            descriptor=descriptor,
+            runtime_evidence=self.runtime_evidence(descriptor),
+            activation_evidence=self.activation_evidence(
+                descriptor, ocp_deployment_evidence_ref=""
+            ),
+            target_state="READY",
+        )
+        self.assertEqual(decision.status, ACTIVATION_STATUS_READY)
+        self.assertEqual(decision.reason_code, "QUALIFIED_FOR_OCP_DEPLOYMENT")
 
     def test_missing_ocp_deployment_evidence_is_blocked_without_rdc_fallback(self) -> None:
         descriptor = self.descriptor(RUFLO_CAPABILITY_ID)
