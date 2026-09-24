@@ -77,36 +77,53 @@ def _expired_inspection_raw() -> RawControlEnvelope:
     )
 
 
+def _tampered_expired_inspection_raw() -> RawControlEnvelope:
+    raw = _expired_inspection_raw()
+    value = json.loads(raw.content.decode("utf-8"))
+    value["authorization"]["inspection_policy_ref"] = "TAMPERED-POLICY"
+    return RawControlEnvelope(
+        source_repository_id=raw.source_repository_id,
+        source_channel_id=raw.source_channel_id,
+        source_actor_id=raw.source_actor_id,
+        source_message_id=raw.source_message_id,
+        content=json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        received_at=raw.received_at,
+    )
+
+
+def _config(root: Path) -> RuntimeConfig:
+    repo = root / "repo"
+    repo.mkdir()
+    state = root / "state"
+    state.mkdir()
+    mapping = root / "mapping"
+    mapping.mkdir()
+    token = root / "token"
+    token.write_text("x\n", encoding="utf-8")
+    token.chmod(0o600)
+    return RuntimeConfig(
+        mode=ControlMode.ACTIVE,
+        repo_root=repo,
+        control_repository_id=987654,
+        control_pr_number=1,
+        allowed_actor_ids=("235775273",),
+        token_file=token,
+        state_root=state,
+        environment={"HARNESS_CONTRACT_MAPPING_ROOT": str(mapping)},
+        host_inspection_enabled=True,
+    )
+
+
 class OCPv2ExpiredRemoteControlRecoveryTests(unittest.TestCase):
-    def test_current_runtime_reproduces_expired_control_as_ingress_failed(self):
+    def test_tampered_expired_control_remains_ingress_failed(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            repo = root / "repo"
-            repo.mkdir()
-            state = root / "state"
-            state.mkdir()
-            mapping = root / "mapping"
-            mapping.mkdir()
-            token = root / "token"
-            token.write_text("x\n", encoding="utf-8")
-            token.chmod(0o600)
-
-            adapter = _ExpiredControlAdapter(_expired_inspection_raw())
-            config = RuntimeConfig(
-                mode=ControlMode.ACTIVE,
-                repo_root=repo,
-                control_repository_id=987654,
-                control_pr_number=1,
-                allowed_actor_ids=("235775273",),
-                token_file=token,
-                state_root=state,
-                environment={"HARNESS_CONTRACT_MAPPING_ROOT": str(mapping)},
-                host_inspection_enabled=True,
-            )
+            adapter = _ExpiredControlAdapter(_tampered_expired_inspection_raw())
+            config = _config(root)
 
             with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient", return_value=Mock()), \
                  patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter", return_value=adapter), \
-                 patch("runtime.orchestrator.ocpv2_runtime_service.resolve_harness_state_root", return_value=repo), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.resolve_harness_state_root", return_value=config.repo_root), \
                  patch("runtime.orchestrator.ocpv2_runtime_service.HostInspectionPort"):
                 service = _compose_service(config)
                 with self.assertRaisesRegex(RemoteOperatorServiceError, "INGRESS_FAILED"):
@@ -118,40 +135,22 @@ class OCPv2ExpiredRemoteControlRecoveryTests(unittest.TestCase):
     def test_expired_host_inspection_is_projected_and_acked_without_stalling_poll(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            repo = root / "repo"
-            repo.mkdir()
-            state = root / "state"
-            state.mkdir()
-            mapping = root / "mapping"
-            mapping.mkdir()
-            token = root / "token"
-            token.write_text("x\n", encoding="utf-8")
-            token.chmod(0o600)
-
             adapter = _ExpiredControlAdapter(_expired_inspection_raw())
-            config = RuntimeConfig(
-                mode=ControlMode.ACTIVE,
-                repo_root=repo,
-                control_repository_id=987654,
-                control_pr_number=1,
-                allowed_actor_ids=("235775273",),
-                token_file=token,
-                state_root=state,
-                environment={"HARNESS_CONTRACT_MAPPING_ROOT": str(mapping)},
-                host_inspection_enabled=True,
-            )
+            config = _config(root)
 
             with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient", return_value=Mock()), \
                  patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter", return_value=adapter), \
-                 patch("runtime.orchestrator.ocpv2_runtime_service.resolve_harness_state_root", return_value=repo), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.resolve_harness_state_root", return_value=config.repo_root), \
                  patch("runtime.orchestrator.ocpv2_runtime_service.HostInspectionPort") as inspection_port:
                 service = _compose_service(config)
                 result = service.poll_once(mode=config.mode)
 
             self.assertEqual(result.received, 1)
+            self.assertEqual(result.validated, 1)
             self.assertEqual(result.blocked, 1)
             self.assertEqual(result.projected, 1)
             self.assertEqual(result.acknowledged, 1)
+            self.assertEqual(result.inspected, 0)
             self.assertEqual(adapter.acks, ["MSG-EXPIRED-1"])
             self.assertEqual(len(adapter.projections), 1)
             self.assertEqual(adapter.projections[0]["result_class"], "HOST_INSPECTION_EXPIRED")
