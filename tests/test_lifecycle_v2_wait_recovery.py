@@ -2,15 +2,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+from runtime.orchestrator.lifecycle_v2_supervisor import LifecycleV2FullPlanSupervisor
 from runtime.orchestrator.wait_recovery import classify_wait_recovery
 
 
 class LifecycleV2WaitRecoveryTests(unittest.TestCase):
-    def test_ack_pending_wait_reason_is_preserved_by_full_plan(self) -> None:
+    def test_ack_pending_wait_reason_is_preserved_by_v2_full_plan(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            supervisor = DurableFullPlanSupervisor(
+            supervisor = LifecycleV2FullPlanSupervisor(
                 root,
                 project_id="v2-wait-proj",
                 run_id="v2-wait-run",
