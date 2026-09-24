@@ -1,6 +1,7 @@
 """Durable downstream-only result projection outbox for OCPv2."""
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -17,6 +18,9 @@ _INSPECTION_RESULT_SCHEMA = "orchestration.remote-inspection-projection.v1"
 _ACTIVATION_RESULT_SCHEMA = "orchestration.remote-activation-projection.v1"
 _FULL_PLAN_ACTIVATION_RESULT_SCHEMA = "orchestration.remote-full-plan-activation-projection.v1"
 _COMPLETED = "CANONICAL_ACTION_COMPLETED"
+_INSPECTION_SECRET = re.compile(
+    rb"(?i)(api[_-]?key|authorization|bearer|password|token|credential|secret)\s*[:=]\s*([^\s,;}]+)"
+)
 
 
 class RemoteOperatorOutboxError(ValueError):
@@ -365,6 +369,12 @@ def parse_remote_projection(value: Mapping[str, Any]) -> RemoteProjectionV1:
     raise RemoteOperatorOutboxError("projection schema mismatch")
 
 
+def _secret_like_inspection(projection: RemoteProjectionV1) -> bool:
+    return isinstance(projection, RemoteInspectionProjectionV1) and bool(
+        _INSPECTION_SECRET.search(canonical_json_bytes(projection.to_dict()))
+    )
+
+
 class RemoteResultOutbox:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).absolute()
@@ -372,7 +382,8 @@ class RemoteResultOutbox:
             raise RemoteOperatorOutboxError("unsafe outbox root")
         self.pending_root = self.root / "pending"
         self.published_root = self.root / "published"
-        for path in (self.root, self.pending_root, self.published_root):
+        self.quarantined_root = self.root / "quarantined"
+        for path in (self.root, self.pending_root, self.published_root, self.quarantined_root):
             if path.is_symlink() or (path.exists() and not path.is_dir()):
                 raise RemoteOperatorOutboxError("unsafe outbox path")
             path.mkdir(parents=True, exist_ok=True)
@@ -393,7 +404,27 @@ class RemoteResultOutbox:
             raise RemoteOperatorOutboxError("outbox state invalid") from exc
         return parse_remote_projection(value)
 
+    def _quarantine(self, projection: RemoteInspectionProjectionV1, *, pending_path: Path | None = None) -> None:
+        quarantine_path = self._path(self.quarantined_root, projection.projection_id)
+        existing = self._load(quarantine_path)
+        if existing is not None and existing.projection_sha256 != projection.projection_sha256:
+            raise RemoteOperatorOutboxError("conflicting quarantined projection ID")
+        try:
+            if existing is None:
+                durable_json_save(quarantine_path, projection.to_dict())
+            if pending_path is not None and pending_path.exists():
+                pending_path.unlink()
+            if pending_path is not None:
+                previous = pending_path.with_suffix(pending_path.suffix + ".prev")
+                if previous.exists():
+                    previous.unlink()
+        except (DurableIOError, OSError, ValueError) as exc:
+            raise RemoteOperatorOutboxError("projection quarantine failed") from exc
+
     def enqueue_projection(self, projection: RemoteProjectionV1) -> None:
+        if _secret_like_inspection(projection):
+            self._quarantine(projection)
+            raise RemoteOperatorOutboxError("SECRET_LIKE_PROJECTION")
         pending = self._path(self.pending_root, projection.projection_id)
         published = self._path(self.published_root, projection.projection_id)
         for existing_path in (published, pending):
@@ -417,6 +448,9 @@ class RemoteResultOutbox:
             if projection is None:
                 continue
             if self._load(self._path(self.published_root, projection.projection_id)) is not None:
+                continue
+            if _secret_like_inspection(projection):
+                self._quarantine(projection, pending_path=path)
                 continue
             result.append(projection)
         return tuple(result)
