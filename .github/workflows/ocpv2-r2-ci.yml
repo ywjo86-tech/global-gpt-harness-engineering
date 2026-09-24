@@ -80,8 +80,8 @@ jobs:
           python-version: "3.12"
       - name: Install canonical Full MCP dependency lock
         run: python3 -m pip install -r requirements/full-mcp.txt
-      - name: Full repository unittest discovery
-        run: python3 scripts/ocpv2_full_regression.py
+      - name: Ruflo Jev full runtime EDP
+        run: python3 scripts/rji_runtime_edp.py
 
   regression-delta:
     runs-on: ubuntu-latest
