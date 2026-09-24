@@ -133,3 +133,47 @@
   "supersedes": null
 }
 ```
+
+## Ruflo / Jev v0.4 Design Approval — RJI-DESIGN-APPROVAL-20260924
+
+```json
+{
+  "approval_id": "RJI-DESIGN-APPROVAL-20260924",
+  "approval_type": "DESIGN_AND_IMPLEMENTATION_PLAN_AUTHORIZATION",
+  "approved_by": "USER",
+  "approved_date": "2026-09-24",
+  "authorization_source": "USER_EXPLICIT_APPROVAL",
+  "user_decision": "승인",
+  "scope": [
+    "RUFLO_JEV_INTEGRATION_V0_4",
+    "RJI_1_THROUGH_RJI_7_IMPLEMENTATION_AND_QUALIFICATION"
+  ],
+  "design_ref": "docs/superpowers/specs/2026-09-24-ruflo-jev-mcp-integration-v0.4-approved.md",
+  "implementation_plan_ref": "docs/superpowers/plans/2026-09-24-ruflo-jev-mcp-integration.md",
+  "live_activation_authorized_by_this_record": false
+}
+```
+
+## Ruflo / Jev RJI-8 Dangerous-Work Approval — RJI-SAFETY-APPROVAL-20260924
+
+```json
+{
+  "approval_id": "RJI-SAFETY-APPROVAL-20260924",
+  "approval_type": "DANGEROUS_WORK_LIVE_ACTIVATION_AUTHORIZATION",
+  "approved_by": "USER",
+  "approved_date": "2026-09-24",
+  "authorization_source": "USER_EXPLICIT_DANGEROUS_WORK_APPROVAL",
+  "user_decision": "위험 확인 후 승인",
+  "scope": [
+    "RJI_8_QUALIFIED_SLICE_ACTIVATION"
+  ],
+  "preconditions": [
+    "RJI_7_RUNTIME_EDP_PASS",
+    "EXACT_CAPABILITY_RUNTIME_QUALIFICATION",
+    "OCP_CONTROLLED_DEPLOYMENT_EVIDENCE",
+    "CAPABILITY_SPECIFIC_ENDPOINT_CREDENTIAL_PRIVACY_SECURITY_EVIDENCE"
+  ],
+  "approval_is_technical_evidence_override": false,
+  "rdc_fallback_authorized": false
+}
+```
