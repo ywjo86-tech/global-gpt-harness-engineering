@@ -46,6 +46,10 @@ _FOCUSED_GROUPS: tuple[QualificationGroup, ...] = (
         (sys.executable, "-m", "unittest", "-v", "tests.test_external_advisory_runtime"),
     ),
     QualificationGroup(
+        "activation",
+        (sys.executable, "-m", "unittest", "-v", "tests.test_external_advisory_activation"),
+    ),
+    QualificationGroup(
         "authority_negative_space",
         (sys.executable, "-m", "unittest", "-v", "tests.test_ruflo_jev_authority_negative_space"),
     ),
