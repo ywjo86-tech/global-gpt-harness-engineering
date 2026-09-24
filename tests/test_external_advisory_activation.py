@@ -131,22 +131,50 @@ class ExternalAdvisoryActivationTest(unittest.TestCase):
         self.assertEqual(decision.status, ACTIVATION_STATUS_BLOCKED)
         self.assertEqual(decision.reason_code, "SAFETY_APPROVAL_MISSING")
 
-    def test_receipt_identity_mismatch_is_quarantined(self) -> None:
-        descriptor = self.descriptor(RUFLO_CAPABILITY_ID)
-        for overrides in (
-            {"rji7_receipt_ref": "rji7:other"},
-            {"safety_approval_receipt_ref": "user:other"},
-        ):
-            with self.subTest(overrides=overrides):
+    def test_canary_also_requires_rji7_and_safety_approval_receipts(self) -> None:
+        descriptor = self.descriptor(JEV_CAPABILITY_ID, lifecycle="CANARY")
+        cases = (
+            (
+                self.active_policy(JEV_CAPABILITY_ID, rji7_pass_receipt=""),
+                self.activation_evidence(descriptor, rji7_receipt_ref=""),
+                "RJI7_RECEIPT_MISSING",
+            ),
+            (
+                self.active_policy(JEV_CAPABILITY_ID, safety_approval_receipt=""),
+                self.activation_evidence(descriptor, safety_approval_receipt_ref=""),
+                "SAFETY_APPROVAL_MISSING",
+            ),
+        )
+        for policy, evidence, reason in cases:
+            with self.subTest(reason=reason):
                 decision = activation_decision(
-                    policy=self.active_policy(RUFLO_CAPABILITY_ID),
+                    policy=policy,
                     descriptor=descriptor,
                     runtime_evidence=self.runtime_evidence(descriptor),
-                    activation_evidence=self.activation_evidence(descriptor, **overrides),
-                    target_state="ACTIVE",
+                    activation_evidence=evidence,
+                    target_state="CANARY",
                 )
-                self.assertEqual(decision.status, ACTIVATION_STATUS_QUARANTINED)
-                self.assertEqual(decision.reason_code, "ACTIVATION_RECEIPT_MISMATCH")
+                self.assertEqual(decision.status, ACTIVATION_STATUS_BLOCKED)
+                self.assertEqual(decision.reason_code, reason)
+
+    def test_receipt_identity_mismatch_is_quarantined_for_active_and_canary(self) -> None:
+        for target_state, lifecycle in (("ACTIVE", "READY_FOR_ACTIVATION"), ("CANARY", "CANARY")):
+            descriptor = self.descriptor(RUFLO_CAPABILITY_ID if target_state == "ACTIVE" else JEV_CAPABILITY_ID, lifecycle=lifecycle)
+            for overrides in (
+                {"rji7_receipt_ref": "rji7:other"},
+                {"safety_approval_receipt_ref": "user:other"},
+            ):
+                with self.subTest(target_state=target_state, overrides=overrides):
+                    capability_id = descriptor.capability_id
+                    decision = activation_decision(
+                        policy=self.active_policy(capability_id),
+                        descriptor=descriptor,
+                        runtime_evidence=self.runtime_evidence(descriptor),
+                        activation_evidence=self.activation_evidence(descriptor, **overrides),
+                        target_state=target_state,
+                    )
+                    self.assertEqual(decision.status, ACTIVATION_STATUS_QUARANTINED)
+                    self.assertEqual(decision.reason_code, "ACTIVATION_RECEIPT_MISMATCH")
 
     def test_ready_decision_precedes_ocp_deployment(self) -> None:
         descriptor = self.descriptor(RUFLO_CAPABILITY_ID)
@@ -268,7 +296,7 @@ class ExternalAdvisoryActivationTest(unittest.TestCase):
     def test_jev_private_scope_remains_blocked_before_privacy_qualification(self) -> None:
         descriptor = self.descriptor(JEV_CAPABILITY_ID, lifecycle="CANARY")
         decision = activation_decision(
-            policy=ExternalAdvisoryRuntimePolicyV1(jev_enabled=True),
+            policy=self.active_policy(JEV_CAPABILITY_ID),
             descriptor=descriptor,
             runtime_evidence=self.runtime_evidence(
                 descriptor, private_data_scope=True, privacy_qualified=False
@@ -281,7 +309,7 @@ class ExternalAdvisoryActivationTest(unittest.TestCase):
 
     def test_synthetic_jev_canary_requires_exact_provider_model_binding(self) -> None:
         descriptor = self.descriptor(JEV_CAPABILITY_ID, lifecycle="CANARY")
-        policy = ExternalAdvisoryRuntimePolicyV1(jev_enabled=True)
+        policy = self.active_policy(JEV_CAPABILITY_ID)
         ready = activation_decision(
             policy=policy,
             descriptor=descriptor,
