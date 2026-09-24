@@ -74,6 +74,7 @@ class ExternalAdvisoryContractTest(unittest.TestCase):
             "deadline_ms": 5000,
             "attempt": 1,
             "payload_digest": "sha256:" + "e" * 64,
+            "provider_binding_required": descriptor.provider_binding_required,
             "provider_decision_ref": "router-decision-1" if descriptor.model_backed else "",
             "provider_id": "nvidia" if descriptor.model_backed else "",
             "model_id": "nvidia/model-1" if descriptor.model_backed else "",
