@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from runtime.tool_implementation.cli_anything_adapter import run_preflight
 from runtime.tool_implementation.manifest import ToolImplementationError, ToolImplementationManifest, validate_manifest
@@ -85,18 +85,56 @@ def _contract(value: Mapping[str, Any]) -> ToolAuthorizationContract:
     return ToolAuthorizationContract(**normalized)
 
 
+def _validated_external_read_only_extension(
+    operations: tuple[RegisteredOperation, ...],
+    launchers: Mapping[str, Callable[[Mapping[str, Any]], Mapping[str, Any]]],
+) -> tuple[tuple[RegisteredOperation, ...], dict[str, Callable[[Mapping[str, Any]], Mapping[str, Any]]]]:
+    """Validate additive external operations without granting write/effect authority."""
+    builtins = production_operations()
+    builtin_class_ids = {item.operation_class_id for item in builtins}
+    builtin_registration_ids = {item.operation_registration_id for item in builtins}
+    seen_class_ids: set[str] = set()
+    seen_registration_ids: set[str] = set()
+    normalized_launchers = dict(launchers)
+    for operation in operations:
+        operation.validate()
+        if operation.operation_intent != "READ" or operation.effect_class != "READ_ONLY":
+            raise ToolAuthorizationError("external operation must be read-only")
+        if operation.operation_class_id in builtin_class_ids or operation.operation_class_id in seen_class_ids:
+            raise ToolAuthorizationError("external read-only operation class is duplicate")
+        if (operation.operation_registration_id in builtin_registration_ids
+                or operation.operation_registration_id in seen_registration_ids):
+            raise ToolAuthorizationError("external read-only operation registration is duplicate")
+        if operation.operation_class_id not in normalized_launchers:
+            raise ToolAuthorizationError("external read-only operation launcher is missing")
+        seen_class_ids.add(operation.operation_class_id)
+        seen_registration_ids.add(operation.operation_registration_id)
+    if set(normalized_launchers) != seen_class_ids:
+        raise ToolAuthorizationError("external read-only launcher set does not match operations")
+    if any(not callable(launcher) for launcher in normalized_launchers.values()):
+        raise ToolAuthorizationError("external read-only launcher is not callable")
+    return operations, normalized_launchers
+
+
 class ProductionToolTransport:
     """The governed production tool-effect path shared by approved provider execution flows."""
 
     def __init__(self, *, request: Mapping[str, Any], workspace_root: Path,
                  journal_root: Path, security_scan,
-                 operation_callsite_id: str = "CODEX_DYNAMIC_TOOL_CALL_V1") -> None:
+                 operation_callsite_id: str = "CODEX_DYNAMIC_TOOL_CALL_V1",
+                 external_read_only_operations: tuple[RegisteredOperation, ...] = (),
+                 external_read_only_launchers: Mapping[
+                     str, Callable[[Mapping[str, Any]], Mapping[str, Any]]
+                 ] | None = None) -> None:
         self.request = dict(request)
         self.operation_callsite_id = str(operation_callsite_id).strip()
         if not self.operation_callsite_id:
             raise ToolAuthorizationError("operation callsite identity is required")
         self.workspace_root = Path(workspace_root).resolve()
-        self.registry = ClosedOperationRegistry(production_operations())
+        external_operations, external_launchers = _validated_external_read_only_extension(
+            tuple(external_read_only_operations), external_read_only_launchers or {}
+        )
+        self.registry = ClosedOperationRegistry(production_operations() + external_operations)
         owned = list(request.get("owned_files", []))
         directory_flags = [_validate_owned_scope(relative) for relative in owned]
         self.file_bindings = {f"OWNED_{index:04d}": relative for index, relative in enumerate(owned, 1)}
@@ -110,9 +148,13 @@ class ProductionToolTransport:
         self._security_scan = security_scan
         self.contracts = contracts
         self.journal_root = Path(journal_root)
+        launchers: dict[str, Callable[[Mapping[str, Any]], Any]] = {
+            _READ: self._read, _WRITE: self._write, _LIST: self._list,
+        }
+        launchers.update(external_launchers)
         self.broker = SingleToolBroker(
             registry=self.registry, contracts=contracts, journal=ToolEffectJournal(journal_root),
-            launchers={_READ: self._read, _WRITE: self._write, _LIST: self._list},
+            launchers=launchers,
             security_scan=security_scan,
         )
 
