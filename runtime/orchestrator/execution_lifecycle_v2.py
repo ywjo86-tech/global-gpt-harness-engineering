@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .operator_plan_execution import build_operator_plan_job
+from .task_contract_compat import TaskContractProjectionError, resolve_task_lv_projection
 
 LIFECYCLE_BINDING_SCHEMA = "orchestration.lifecycle-binding.v1"
 EXECUTION_AUTHORITY_BUNDLE_SCHEMA = "orchestration.execution-authority-bundle.v1"
@@ -98,6 +99,62 @@ def resolve_lifecycle_binding(job: Mapping[str, Any]) -> dict[str, Any]:
         "migration_allowed": False,
         "runtime_release_digest": release,
     }
+
+
+def adapt_legacy_task_lv_authority(
+    *,
+    canonical_plan_text: str,
+    canonical_plan_sha256: str,
+    projection_text: str,
+    projection_sha256: str,
+    project_id: str,
+    gate_id: str,
+    authority_ref: str,
+) -> dict[str, str]:
+    """Validate a legacy TASK/LV projection and expose only its authority reference.
+
+    This adapter is deliberately read-only.  It parses and validates supplied
+    evidence in memory; it never rewrites the legacy projection, canonical plan,
+    mapping, run, or checkpoint.
+    """
+    plan_sha = _require_sha256(canonical_plan_sha256, "canonical plan digest")
+    expected_projection_sha = _require_sha256(projection_sha256, "legacy projection digest")
+    actual_projection_sha = hashlib.sha256(projection_text.encode("utf-8")).hexdigest()
+    if actual_projection_sha != expected_projection_sha:
+        raise ExecutionLifecycleV2Error("legacy task/LV projection digest mismatch")
+    if hashlib.sha256(canonical_plan_text.encode("utf-8")).hexdigest() != plan_sha:
+        raise ExecutionLifecycleV2Error("legacy canonical plan digest mismatch")
+    project = str(project_id or "").strip()
+    gate = str(gate_id or "").strip()
+    reference = str(authority_ref or "").strip()
+    if not project or not gate or not reference:
+        raise ExecutionLifecycleV2Error("legacy authority identity is incomplete")
+    try:
+        projection = json.loads(projection_text)
+    except json.JSONDecodeError as exc:
+        raise ExecutionLifecycleV2Error("legacy task/LV projection is invalid JSON") from exc
+    if not isinstance(projection, Mapping):
+        raise ExecutionLifecycleV2Error("legacy task/LV projection is malformed")
+    try:
+        resolved = resolve_task_lv_projection(
+            canonical_plan_text,
+            projection,
+            project_id=project,
+            canonical_plan_sha256=plan_sha,
+            gate_id=gate,
+        )
+    except TaskContractProjectionError as exc:
+        raise ExecutionLifecycleV2Error(str(exc)) from exc
+    if not resolved:
+        raise ExecutionLifecycleV2Error("legacy task/LV projection resolves no executable authority")
+    authority = {
+        "gate_id": gate,
+        "authority_kind": "TASK_LV_PROJECTION",
+        "authority_ref": reference,
+        "authority_sha256": expected_projection_sha,
+    }
+    _reject_forbidden_fields(authority, path="legacy_authority")
+    return authority
 
 
 def _full_plan_gate_authority(gate: Mapping[str, Any]) -> dict[str, str]:
