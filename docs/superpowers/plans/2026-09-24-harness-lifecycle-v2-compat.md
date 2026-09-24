@@ -43,9 +43,9 @@
 
 - [x] **Step 1: Write failing contract tests**
 - [x] **Step 2: Verify RED in PR CI** — expected missing V2 module/API.
-- [ ] **Step 3: Implement minimal V2 data-contract module**
-- [ ] **Step 4: Run full repository regression and confirm zero current-only regression**
-- [ ] **Step 5: Commit GREEN**
+- [x] **Step 3: Implement minimal V2 data-contract module**
+- [x] **Step 4: Run full repository regression and confirm zero current-only regression** — CI #325: focused PASS, full-regression PASS, regression-delta PASS; `current_only=0`.
+- [x] **Step 5: Commit GREEN** — `b8dc40ed0043fd391953e5820328395dfbd37f77`.
 
 ### Task 2: LegacyAuthorityAdapter
 
