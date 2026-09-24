@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_SOURCE_PATH = REPO_ROOT / "deploy" / "operator-control-plane-v2" / "release_source.py"
+WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ocpv2-r2-ci.yml"
 
 
 def load_release_source():
@@ -84,6 +85,16 @@ class OCPv2ReleaseSourceAuthorityTests(unittest.TestCase):
                 operations_text=self.OPERATIONS,
                 tree_sha=self.TREE_SHA,
             )
+
+    def test_workflow_runs_release_authority_guard_on_canonical_branch_pushes(self):
+        release_source = load_release_source()
+        canonical_branch = release_source.parse_canonical_branch(self.OPERATIONS)
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn(f"      - {canonical_branch}", workflow)
+        self.assertIn(
+            "python3 -m unittest -v tests.test_ocpv2_release_source_authority",
+            workflow,
+        )
 
 
 if __name__ == "__main__":
