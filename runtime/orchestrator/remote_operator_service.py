@@ -7,7 +7,9 @@ permits it.  The callback remains responsible for the existing Full Plan / gatew
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Mapping
 
@@ -16,6 +18,7 @@ from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
 from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND, APPROVED_WORK_ACTIVATION_KIND, HOST_INSPECTION_KIND,
     RemoteControlEnvelopeV1, RemoteFullPlanActivationAuthorization, RemoteWorkActivationAuthorization,
+    validate_remote_control_envelope,
 )
 from .remote_operator_envelope import RemoteControlEnvelope, RemoteOperatorEnvelopeV3
 from .remote_operator_ingress import IngressDecision
@@ -174,6 +177,35 @@ class RemoteOperatorService:
             "result_class": str(result_class),
         }
 
+    @staticmethod
+    def _recover_expired_remote_control(
+        raw: RawControlEnvelope,
+        exc: Exception,
+    ) -> RemoteControlEnvelopeV1 | None:
+        """Recover only a fully authenticated expired v1 request, never malformed input."""
+        if str(exc) != "remote control request expired":
+            return None
+        try:
+            value = json.loads(raw.content.decode("utf-8"))
+            if not isinstance(value, Mapping):
+                return None
+            issued_raw = str(value.get("issued_at") or "")
+            issued_at = datetime.fromisoformat(issued_raw.replace("Z", "+00:00"))
+            envelope = validate_remote_control_envelope(value, now=issued_at)
+        except Exception:
+            return None
+        # The configured transport already scopes the repository. Re-check every signed
+        # transport binding that is present in RawControlEnvelope before consuming the
+        # expired request. Any mismatch remains a hard ingress failure.
+        if (
+            envelope.transport.adapter_id != "GITHUB_CONTROL_V1"
+            or envelope.transport.channel_id != raw.source_channel_id
+            or envelope.transport.source_actor_id != raw.source_actor_id
+            or envelope.transport.source_message_id != raw.source_message_id
+        ):
+            return None
+        return envelope
+
     def _publish_and_ack(
         self,
         envelope: Any,
@@ -202,11 +234,30 @@ class RemoteOperatorService:
         received = validated = executed = diagnosed = projected = acknowledged = blocked = inspected = activated = full_plan_activated = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
+            expired_remote_control = False
             try:
                 envelope = self.decode_envelope(raw)
             except Exception as exc:
-                raise RemoteOperatorServiceError("INGRESS_FAILED") from exc
+                envelope = self._recover_expired_remote_control(raw, exc)
+                if envelope is None:
+                    raise RemoteOperatorServiceError("INGRESS_FAILED") from exc
+                expired_remote_control = True
             validated += 1
+
+            if expired_remote_control:
+                if envelope.request_kind == HOST_INSPECTION_KIND:
+                    projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_EXPIRED")
+                elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:
+                    projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_EXPIRED")
+                elif envelope.request_kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
+                    projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_EXPIRED")
+                else:  # validator already rejects unknown kinds; keep a fail-closed guard.
+                    raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
+                self._publish_and_ack(envelope, projection)
+                projected += 1
+                acknowledged += 1
+                blocked += 1
+                continue
 
             if isinstance(envelope, RemoteControlEnvelopeV1):
                 if envelope.request_kind == HOST_INSPECTION_KIND:
