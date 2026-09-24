@@ -119,13 +119,28 @@ class ExternalAdvisoryContractTest(unittest.TestCase):
                 with self.assertRaisesRegex(ExternalCapabilityContractError, "provider binding"):
                     self.request(**{field: ""})
 
+    def test_model_backed_request_rejects_completely_missing_provider_binding(self) -> None:
+        with self.assertRaisesRegex(ExternalCapabilityContractError, "provider binding"):
+            self.request(
+                provider_decision_ref="",
+                provider_id="",
+                model_id="",
+                route_ref="",
+            )
+
     def test_non_model_request_rejects_provider_binding(self) -> None:
         descriptor = self.descriptor(
             capability_id="external.ruflo.coordination_advisory.v1",
             model_backed=False,
         )
         with self.assertRaisesRegex(ExternalCapabilityContractError, "unexpected provider binding"):
-            self.request(descriptor, provider_decision_ref="router-decision-1", provider_id="nvidia")
+            self.request(
+                descriptor,
+                provider_decision_ref="router-decision-1",
+                provider_id="nvidia",
+                model_id="nvidia/model-1",
+                route_ref="route:nvidia:model-1",
+            )
 
     def test_result_forces_non_authoritative_true(self) -> None:
         request = self.request()
