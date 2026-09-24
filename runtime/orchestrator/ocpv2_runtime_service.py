@@ -467,6 +467,17 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         durable_acknowledged=durable_acknowledged,
     )
 
+    # Read-only inspection and activation projections share the durable outbox with
+    # canonical REC-* results, but they intentionally have no mutation execution
+    # binding. Recover them through their normal transport lifecycle without invoking
+    # canonical prepare_recovery_delivery or any execution callback.
+    for projection in tuple(outbox.pending()):
+        if isinstance(projection, RemoteResultProjectionV1):
+            continue
+        adapter.publish_projection(projection.to_dict())
+        adapter.acknowledge_delivery(projection.message_id)
+        outbox.mark_published(projection.projection_id, projection.projection_sha256)
+
     if diagnostic_outbox is not None:
         def publish_pending_diagnostic(projection: RemoteDiagnosticProjectionV1) -> None:
             adapter.publish_projection(projection.to_dict())
