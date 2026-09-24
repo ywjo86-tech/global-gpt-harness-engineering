@@ -2,49 +2,58 @@
 
 - Date: 2026-09-24
 - Gate: RJI-8
-- Implementation head: `f029ee3c68f3b1aae8d8e74b6055240bfa07f838`
+- Qualified code evidence head: `6b75943cbbc3405040b278f729ed041f74fa34a4`
 - PR: #12 `RJI: implement Ruflo/Jev advisory integration`
-- CI workflow: `OCPv2 R2 CI` run #310 (`35990116503`)
+- CI workflow: `OCPv2 R2 CI` run #318 (`35994673260`)
 - Approved regression baseline: `e2ce97a3741c070e538f817113a1b90845cc53c3`
+- Design approval: `RJI-DESIGN-APPROVAL-20260924`
+- Dangerous-work approval: `RJI-SAFETY-APPROVAL-20260924`
 - Activation policy implementation: **QUALIFIED**
 - Live external activation: **NOT PERFORMED**
-- Fallback to RDC: **NOT PERFORMED / NOT ALLOWED**
+- Fallback to RDC: **NOT PERFORMED / NOT AUTHORIZED**
 
 ## 1. Purpose
 
-Record the exact state of RJI-8 after activation-policy implementation and qualification. This receipt deliberately distinguishes policy readiness from actual runtime activation. No capability is declared ACTIVE without real OCP deployment evidence and all capability-specific external qualification evidence.
+Record the exact RJI-8 state after implementation, whole-branch correction, and qualification. User approval and technical deployment evidence are deliberately separated: the user has authorized dangerous work, but no capability is declared ACTIVE without real OCP deployment/runtime evidence and all capability-specific external qualification evidence.
 
-## 2. Qualification Evidence
+## 2. Latest Qualification Evidence
 
-CI #310 results:
+CI #318 results:
 
 ```text
 focused:          success
 full-regression:  success
+rji-full-edp:      success
 regression-delta: success
 ```
 
-Full repository regression:
+Canonical full repository regression:
 
 ```text
-FULL_REGRESSION_SUMMARY run=2187 failures=0 errors=0 skipped=14
+FULL_REGRESSION_SUMMARY run=2189 failures=0 errors=0 skipped=14
+```
+
+RJI full EDP:
+
+```text
+RJI_RUNTIME_EDP status=PASS blocker=0 unresolved_major=0 current_only_regressions=0
 ```
 
 Baseline/current comparison:
 
 ```text
-REGRESSION_DELTA_SUMMARY baseline_run=1976 current_run=2187 baseline_bad=13 current_bad=1 current_only=0 baseline_only=12
+REGRESSION_DELTA_SUMMARY baseline_run=1976 current_run=2189 baseline_bad=12 current_bad=1 current_only=0 baseline_only=11
 ```
 
-The single current bad identity in delta mode is inherited from the approved baseline:
+The single bad identity observed only in delta-mode current execution is inherited from the approved baseline identity set:
 
 ```text
 FAIL:tests.test_contract_loader.ContractLoaderTest.test_cli_passes_explicit_engine_host_role_to_read_only_inspector
 ```
 
-It is not an RJI-introduced regression. The independent full-regression job on the same PR merge state completed with zero failures and zero errors.
+It is not an RJI-introduced regression. The independent canonical `full-regression` job on the same PR merge state completed with zero failures and zero errors.
 
-Focused runtime EDP includes and passes the dedicated `activation` group, plus contract, Ruflo proxy, Jev adapter, shadow, runtime policy, authority negative-space, provider registry, production tool transport, AI Office authority negative-space, compile, and diff checks.
+The RJI EDP includes contract, Ruflo proxy, Jev adapter, SHADOW, runtime policy, activation, authority negative-space, provider registry, production tool transport, AI Office authority negative-space, full repository regression, compile, and diff checks.
 
 ## 3. Activation Decision Boundary
 
@@ -56,12 +65,12 @@ It does **not**:
 - invoke OCP or RDC;
 - open network sockets;
 - read secret values;
-- select a provider/model;
+- select or reselect a provider/model;
 - invoke Full MCP or Production Execution Gateway;
 - create approval, completion, or effect state;
 - perform retry, fallback, or reroute.
 
-It may only project immutable qualified evidence to one of:
+It may only project qualified immutable evidence to one of:
 
 ```text
 READY
@@ -72,11 +81,31 @@ QUARANTINED
 
 Actual deployment remains outside this module and must use the existing OCP-controlled path.
 
-## 4. Current Capability Slice Status
+## 4. Approval State
 
-### 4.1 Ruflo zero-tool profile
+### 4.1 Design / implementation approval
 
-Qualified implementation state:
+```text
+approval_id = RJI-DESIGN-APPROVAL-20260924
+user_decision = 승인
+status = RECORDED
+```
+
+### 4.2 Dangerous-work / live activation approval
+
+```text
+approval_id = RJI-SAFETY-APPROVAL-20260924
+user_decision = 위험 확인 후 승인
+status = RECORDED
+```
+
+This approval authorizes proceeding with a technically qualified RJI-8 slice; it does **not** override missing runtime, OCP, credential, endpoint, privacy, retention, security, provider/model-identity, or tool-qualification evidence.
+
+Both approvals are recorded in `docs/APPROVAL_LOG.md`.
+
+## 5. Current Capability Slice Status
+
+### 5.1 Ruflo zero-tool profile
 
 ```text
 capability_id: external.ruflo.coordination_advisory.v1
@@ -84,55 +113,52 @@ qualified_version: 3.44.0
 qualified_commit: 0a96fb8857dabd343d71d76c3ca703100a2923bc
 surface: ZERO_TOOL
 usable_tool_ids: []
-policy_state: QUALIFIED
+implementation_state: QUALIFIED
 live_state: BLOCKED
 reason: BLOCKED_EXTERNAL_RUNTIME_EVIDENCE_MISSING
 ```
 
-Reason for BLOCKED:
+Blocking evidence still missing:
 
-- no real OCP deployment evidence for this RJI-8 slice has been produced in the current execution context;
-- no real live runtime identity attestation has been attached to this receipt;
-- synthetic test values such as `ocp:qualified-runtime` are test fixtures and are not production evidence.
+- real OCP deployment evidence for the exact RJI-8 slice;
+- real live runtime identity attestation bound to the approved Ruflo pin.
 
-No RDC fallback was attempted.
+A zero-tool runtime may later be activated only as a no-op profile. It is not evidence that any Ruflo tool is usable.
 
-### 4.2 Ruflo non-zero read-only tools
+### 5.2 Ruflo non-zero read-only tools
 
 ```text
-policy_state: IMPLEMENTED
+implementation_state: IMPLEMENTED
 live_state: BLOCKED
 reason: RUFLO_TOOL_QUALIFICATION_MISSING
 ```
 
-Each non-zero tool requires its own exact read-only operation identity and tool-specific qualification evidence before CANARY/ACTIVE use. No WRITE/SHELL/GIT/provider-call/delegation tool becomes usable from zero-tool qualification.
+Each non-zero tool requires exact tool identity, schema digest, transitive read-only behavior proof, deny-by-default egress, and tool-specific qualification. WRITE/SHELL/GIT/provider-call/model-call/delegation/daemon/memory surfaces remain prohibited.
 
-### 4.3 Jev synthetic/non-sensitive canary
+### 5.3 Jev synthetic/non-sensitive canary
 
 ```text
 capability_id: external.jev.typed_judgment.v1
 qualified_adapter_version: typesafe-api-0.2.0
-policy_state: IMPLEMENTED
+implementation_state: QUALIFIED
 live_state: BLOCKED
 reason: BLOCKED_EXTERNAL_RUNTIME_EVIDENCE_MISSING
 ```
 
-Required real evidence not present in this execution context:
+Required real evidence not yet present:
 
-- non-secret credential reference backed by an actually configured credential;
+- configured non-secret credential reference backed by an actual credential;
 - endpoint/account qualification;
-- privacy qualification as applicable;
+- applicable privacy qualification;
 - retention qualification;
 - security qualification;
 - actual endpoint/provider/model identity evidence;
 - exact expected-vs-actual provider/model binding proof;
 - OCP deployment evidence for the canary slice.
 
-The synthetic values used in unit tests are not activation evidence.
+Synthetic test values are not activation evidence. No direct external network call was used to substitute for missing qualification.
 
-No direct external network call was made to substitute for missing qualification.
-
-### 4.4 Jev private/business/user payload scope
+### 5.4 Jev private/business/user payload scope
 
 ```text
 state: DISABLED
@@ -141,22 +167,14 @@ reason: JEV_PRIVATE_SCOPE_UNQUALIFIED
 
 Private/business/user payloads remain disabled until separate privacy, retention, security, and endpoint/account qualification passes.
 
-## 5. Safety Approval State
+## 6. READY / CANARY / ACTIVE Ordering
 
-The RJI-8 test suite contains synthetic strings such as `user:rji8-approved` only to validate contract behavior. They are **not** treated as a real user approval receipt.
-
-Therefore this receipt does not claim dangerous-work/live-activation approval has been produced or consumed.
-
-Any later live activation must bind a real approval receipt to the exact capability slice and exact runtime evidence then being activated.
-
-## 6. READY / ACTIVE Ordering
-
-The qualified contract enforces:
+The qualified contract now enforces the same receipt requirements for bounded CANARY and ACTIVE deployment-bearing transitions:
 
 ```text
-RJI-7 PASS evidence
+RJI-7 PASS receipt
   ↓
-real safety approval receipt
+RJI-SAFETY-APPROVAL-20260924
   ↓
 exact capability/runtime qualification
   ↓
@@ -164,12 +182,23 @@ READY
   ↓
 OCP-controlled deployment / runtime attestation
   ↓
-ACTIVE or CANARY
+CANARY or ACTIVE
 ```
 
-Missing OCP deployment evidence cannot be replaced by RDC, hidden manual configuration, hard-coded secrets, or direct network calls.
+Receipt identity mismatch causes quarantine. Missing OCP deployment evidence cannot be replaced by RDC, hidden manual configuration, hard-coded secrets, or an unqualified direct network call.
 
-## 7. Rollback / Disable Proof
+## 7. Provider-Binding Closure
+
+The common `ExternalCapabilityRequestV1` now carries an explicit `provider_binding_required` contract:
+
+- `true`: Router decision/provider/model/route bindings are all mandatory;
+- `false`: provider bindings are forbidden;
+- partial binding is rejected;
+- Jev adapter still independently re-validates the immutable Router decision and actual transport identity.
+
+This closes the Task 8 review gap where a fully empty provider binding could previously pass common request construction and be rejected only later by the Jev adapter.
+
+## 8. Rollback / Disable Proof
 
 Rollback class:
 
@@ -177,26 +206,27 @@ Rollback class:
 FEATURE_DISABLE_TO_BASELINE
 ```
 
-The rollback projection:
+Rollback projection:
 
-- sets `ruflo_enabled = false`;
-- sets `jev_enabled = false`;
-- preserves Provider Router, MPRF, Production Execution Gateway, and Full MCP stable core;
-- returns unrelated requests to the existing pre-integration baseline path;
-- requires no stable-core rollback.
+- `ruflo_enabled = false`;
+- `jev_enabled = false`;
+- Provider Router, MPRF, Production Execution Gateway, Full MCP, OCPv2, approval and completion authority remain unchanged;
+- unrelated requests return to the pre-integration baseline path;
+- no stable-core rollback or canonical-state migration is required.
 
-## 8. RJI-8 Final Status
+## 9. RJI-8 Final Qualification Status
 
 ```text
-RJI-8 activation policy implementation = PASS
-RJI-8 focused EDP coverage            = PASS
-full repository regression             = PASS (2187 / 0 failures / 0 errors)
-current-only regressions                = 0
-Ruflo zero-tool live activation         = BLOCKED_EXTERNAL_RUNTIME_EVIDENCE_MISSING
-Ruflo non-zero tool activation          = BLOCKED_TOOL_QUALIFICATION_MISSING
-Jev synthetic canary                    = BLOCKED_EXTERNAL_RUNTIME_EVIDENCE_MISSING
-Jev private/business/user payload       = DISABLED
-RDC fallback                            = NOT USED
+RJI-8 activation policy implementation  = PASS
+RJI-8 approval receipt                  = RECORDED
+RJI full EDP                            = PASS
+canonical full regression               = PASS (2189 / 0 failures / 0 errors)
+current-only regressions                 = 0
+Ruflo zero-tool live activation          = BLOCKED_EXTERNAL_RUNTIME_EVIDENCE_MISSING
+Ruflo non-zero tool activation           = BLOCKED_TOOL_QUALIFICATION_MISSING
+Jev synthetic/non-sensitive canary       = BLOCKED_EXTERNAL_RUNTIME_EVIDENCE_MISSING
+Jev private/business/user payload        = DISABLED
+RDC fallback                             = NOT USED / NOT AUTHORIZED
 ```
 
-Next allowed work: Task 8 whole-branch verification, EDP closure, and handoff. Live activation remains a separate OCP-controlled action only after real runtime evidence and exact approval are available.
+Next allowed external-runtime work is OCP-controlled qualification/deployment evidence collection for an exact capability slice. Until that evidence exists, the integration remains implementation-qualified but live-external-inactive.
