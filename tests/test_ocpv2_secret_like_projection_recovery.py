@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapterError
+from runtime.orchestrator.durable_io import durable_json_load, durable_json_save
 from runtime.orchestrator.ocpv2_runtime_service import (
     RuntimeConfig,
     _compose_service,
@@ -14,6 +15,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
 )
 from runtime.orchestrator.remote_operator_outbox import (
     RemoteInspectionProjectionV1,
+    RemoteOperatorOutboxError,
     RemoteResultOutbox,
 )
 from runtime.orchestrator.remote_operator_service import ControlMode
@@ -42,8 +44,22 @@ class _SecretBlockingAdapter:
         return None
 
 
+def _poison_projection() -> RemoteInspectionProjectionV1:
+    return RemoteInspectionProjectionV1(
+        projection_id="INSP-POISON",
+        message_id="MSG-POISON",
+        request_id="REQ-POISON",
+        correlation_id="CORR-POISON",
+        project_alias="demo",
+        operation="filesystem.read",
+        request_digest="a" * 64,
+        status="OK",
+        data={"text": "authorization: bearer-value"},
+    )
+
+
 class OCPv2SecretLikeProjectionRecoveryTests(unittest.TestCase):
-    def test_pending_secret_like_inspection_is_quarantined_and_status_acknowledged(self):
+    def test_legacy_pending_secret_like_inspection_is_quarantined_before_replay(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             repo = root / "repo"
@@ -54,18 +70,11 @@ class OCPv2SecretLikeProjectionRecoveryTests(unittest.TestCase):
             token.chmod(0o600)
 
             outbox = RemoteResultOutbox(state / "outbox")
-            poison = RemoteInspectionProjectionV1(
-                projection_id="INSP-POISON",
-                message_id="MSG-POISON",
-                request_id="REQ-POISON",
-                correlation_id="CORR-POISON",
-                project_alias="demo",
-                operation="filesystem.read",
-                request_digest="a" * 64,
-                status="OK",
-                data={"text": "authorization: bearer-value"},
+            poison = _poison_projection()
+            durable_json_save(
+                state / "outbox" / "pending" / "INSP-POISON.json",
+                poison.to_dict(),
             )
-            outbox.enqueue_projection(poison)
 
             config = RuntimeConfig(
                 mode=ControlMode.CONTROL_READ_ONLY,
@@ -97,16 +106,23 @@ class OCPv2SecretLikeProjectionRecoveryTests(unittest.TestCase):
             self.assertEqual(RemoteResultOutbox(state / "outbox").pending(), ())
             quarantine = state / "outbox" / "quarantined" / "INSP-POISON.json"
             self.assertTrue(quarantine.is_file())
-            self.assertEqual(len(adapter.projections), 1)
-            status = adapter.projections[0]
-            self.assertEqual(
-                status["schema_version"],
-                "orchestration.remote-inspection-status-projection.v1",
-            )
-            self.assertEqual(status["result_class"], "HOST_INSPECTION_PROJECTION_BLOCKED")
-            self.assertEqual(status["message_id"], "MSG-POISON")
-            self.assertNotIn("bearer-value", repr(status))
-            self.assertEqual(adapter.acks, ["MSG-POISON"])
+            payload, _ = durable_json_load(quarantine)
+            self.assertEqual(payload["data"]["text"], "authorization: bearer-value")
+            self.assertEqual(adapter.projections, [])
+            self.assertEqual(adapter.acks, [])
+
+    def test_new_secret_like_inspection_is_quarantined_and_fails_closed_before_pending(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            outbox = RemoteResultOutbox(state / "outbox")
+            with self.assertRaisesRegex(RemoteOperatorOutboxError, "SECRET_LIKE_PROJECTION"):
+                outbox.enqueue_projection(_poison_projection())
+
+            self.assertEqual(outbox.pending(), ())
+            quarantine = state / "outbox" / "quarantined" / "INSP-POISON.json"
+            self.assertTrue(quarantine.is_file())
+            payload, _ = durable_json_load(quarantine)
+            self.assertEqual(payload["message_id"], "MSG-POISON")
 
 
 if __name__ == "__main__":
