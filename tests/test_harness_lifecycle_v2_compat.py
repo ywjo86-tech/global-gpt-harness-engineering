@@ -1,9 +1,13 @@
+import hashlib
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from runtime.orchestrator.execution_lifecycle_v2 import (
+    ExecutionLifecycleV2Error,
+    adapt_legacy_task_lv_authority,
     build_v2_operator_plan_job,
     resolve_lifecycle_binding,
     validate_execution_authority_bundle,
@@ -12,6 +16,61 @@ from runtime.orchestrator.operator_plan_execution import build_operator_plan_job
 
 
 RUNTIME_RELEASE_DIGEST = "a" * 64
+LEGACY_TASK_CONTRACT = '''# Contract
+
+## TASK-001 — bootstrap
+Purpose: Bootstrap safely.
+Dependencies: NONE
+Change Targets: CT-001
+Required Capabilities: reasoning, filesystem_write, shell, test, git, implementation
+Validation: TEST-001
+Completion Condition: Bootstrap passes.
+
+## TASK-002 — profile
+Purpose: Build profile.
+Dependencies: TASK-001
+Change Targets: CT-002
+Required Capabilities: reasoning, filesystem_write, shell, test, git, implementation
+Validation: TEST-002
+Completion Condition: Profile passes.
+
+## SOURCE Change Targets
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | `app/` | CREATE | TASK-001 | PLANNED_NEW |
+| CT-002 | `app/profile/` | CREATE | TASK-002 | PLANNED_NEW |
+
+## SOURCE Task Dependencies
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-001 | SEQUENTIAL | NONE | Entry |
+| TASK-002 | SEQUENTIAL | TASK-001 | Upstream |
+
+## GATE-001 — first
+Required Tasks: TASK-001, TASK-002
+'''
+
+
+def legacy_projection(plan_sha: str) -> dict:
+    return {
+        "schema_version": "orchestration.task-lv-authority-projection.v1",
+        "project_id": "FAMILY_AI_ENGLISH_COACH",
+        "canonical_plan_sha256": plan_sha,
+        "contract_shape": "TASK_STAGE_GATE",
+        "projection_policy": {
+            "lv_identity": "TASK_ID",
+            "gate_membership": "CANONICAL_GATE_REQUIRED_TASKS",
+            "dependencies": "CANONICAL_TASK_DEPENDENCIES",
+            "execution": "CANONICAL_TASK_DEPENDENCY_TYPE",
+            "completion_criteria": "CANONICAL_TASK_COMPLETION_CONDITION_PLUS_VALIDATION",
+            "provider_capabilities": "CANONICAL_TASK_REQUIRED_CAPABILITIES",
+            "operational_capability": "DECLARED_NONE",
+        },
+        "change_targets": {
+            "CT-001": {"source_expression": "app/", "owned_files": ["app/"]},
+            "CT-002": {"source_expression": "app/profile/", "owned_files": ["app/profile/"]},
+        },
+    }
 
 
 class HarnessLifecycleV2CompatTests(unittest.TestCase):
@@ -98,6 +157,60 @@ class HarnessLifecycleV2CompatTests(unittest.TestCase):
             self.assertTrue(forbidden.isdisjoint(bundle))
             for authority in bundle["gate_authorities"]:
                 self.assertTrue(forbidden.isdisjoint(authority))
+
+    def test_family_style_task_lv_projection_is_adapted_read_only(self) -> None:
+        plan_sha = hashlib.sha256(LEGACY_TASK_CONTRACT.encode("utf-8")).hexdigest()
+        projection = legacy_projection(plan_sha)
+        projection_text = json.dumps(projection, sort_keys=True, separators=(",", ":"))
+        projection_sha = hashlib.sha256(projection_text.encode("utf-8")).hexdigest()
+        before = projection_text
+
+        authority = adapt_legacy_task_lv_authority(
+            canonical_plan_text=LEGACY_TASK_CONTRACT,
+            canonical_plan_sha256=plan_sha,
+            projection_text=projection_text,
+            projection_sha256=projection_sha,
+            project_id="FAMILY_AI_ENGLISH_COACH",
+            gate_id="GATE-001",
+            authority_ref="docs/harness/task-lv-authority-projection.json",
+        )
+
+        self.assertEqual(projection_text, before)
+        self.assertEqual(authority, {
+            "gate_id": "GATE-001",
+            "authority_kind": "TASK_LV_PROJECTION",
+            "authority_ref": "docs/harness/task-lv-authority-projection.json",
+            "authority_sha256": projection_sha,
+        })
+        forbidden = {"final_assignee", "provider_ref", "model_ref", "completion_authority", "effect_authority"}
+        self.assertTrue(forbidden.isdisjoint(authority))
+
+    def test_legacy_adapter_fails_closed_on_projection_digest_or_gate_mismatch(self) -> None:
+        plan_sha = hashlib.sha256(LEGACY_TASK_CONTRACT.encode("utf-8")).hexdigest()
+        projection_text = json.dumps(legacy_projection(plan_sha), sort_keys=True, separators=(",", ":"))
+        projection_sha = hashlib.sha256(projection_text.encode("utf-8")).hexdigest()
+
+        with self.assertRaisesRegex(ExecutionLifecycleV2Error, "projection digest mismatch"):
+            adapt_legacy_task_lv_authority(
+                canonical_plan_text=LEGACY_TASK_CONTRACT,
+                canonical_plan_sha256=plan_sha,
+                projection_text=projection_text,
+                projection_sha256="0" * 64,
+                project_id="FAMILY_AI_ENGLISH_COACH",
+                gate_id="GATE-001",
+                authority_ref="docs/harness/task-lv-authority-projection.json",
+            )
+
+        with self.assertRaises(ExecutionLifecycleV2Error):
+            adapt_legacy_task_lv_authority(
+                canonical_plan_text=LEGACY_TASK_CONTRACT,
+                canonical_plan_sha256=plan_sha,
+                projection_text=projection_text,
+                projection_sha256=projection_sha,
+                project_id="FAMILY_AI_ENGLISH_COACH",
+                gate_id="GATE-999",
+                authority_ref="docs/harness/task-lv-authority-projection.json",
+            )
 
 
 if __name__ == "__main__":
