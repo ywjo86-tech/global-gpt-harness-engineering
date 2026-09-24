@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 from .durable_io import atomic_write_json
 from .execution_lifecycle_v2 import (
+    ExecutionLifecycleV2Error,
     resolve_lifecycle_binding,
     validate_execution_authority_bundle,
 )
@@ -63,11 +64,14 @@ def _gate_for_job(job: Mapping[str, Any], gate_id: str) -> Mapping[str, Any]:
 
 
 def _dispatch_binding(job: Mapping[str, Any], gate_id: str) -> dict[str, str]:
-    validate_operator_plan_job(job)
-    binding = resolve_lifecycle_binding(job)
-    if binding.get("lifecycle_mode") != "V2" or binding.get("bound_at_activation") is not True:
-        raise OperatorDispatchError("durable dispatch requires activation-bound V2 lifecycle")
-    bundle = validate_execution_authority_bundle(job)
+    try:
+        validate_operator_plan_job(job)
+        binding = resolve_lifecycle_binding(job)
+        if binding.get("lifecycle_mode") != "V2" or binding.get("bound_at_activation") is not True:
+            raise OperatorDispatchError("durable dispatch requires activation-bound V2 lifecycle")
+        bundle = validate_execution_authority_bundle(job)
+    except (OperatorPlanExecutionError, ExecutionLifecycleV2Error) as exc:
+        raise OperatorDispatchError(str(exc)) from exc
     gate = _gate_for_job(job, gate_id)
     source_head = str(gate.get("head") or "")
     if not _SHA40_64.fullmatch(source_head):
@@ -206,11 +210,14 @@ def build_v2_operator_plan_executor(
     dispatch_store: OperatorDispatchStore | None = None,
 ):
     """V2-only executor seam; the legacy executor remains completely unchanged."""
-    validate_operator_plan_job(job)
-    binding = resolve_lifecycle_binding(job)
-    if binding.get("lifecycle_mode") != "V2":
-        raise OperatorDispatchError("V2 executor requires V2 lifecycle binding")
-    validate_execution_authority_bundle(job)
+    try:
+        validate_operator_plan_job(job)
+        binding = resolve_lifecycle_binding(job)
+        if binding.get("lifecycle_mode") != "V2":
+            raise OperatorDispatchError("V2 executor requires V2 lifecycle binding")
+        validate_execution_authority_bundle(job)
+    except (OperatorPlanExecutionError, ExecutionLifecycleV2Error) as exc:
+        raise OperatorDispatchError(str(exc)) from exc
     receipts = receipt_store or OperatorPlanReceiptStore(
         str(job_state_root(job)), project_id=str(job["project_id"]), run_id=str(job["run_id"])
     )
