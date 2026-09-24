@@ -165,6 +165,7 @@ class ExternalCapabilityRequestV1:
     deadline_ms: int
     attempt: int
     payload_digest: str
+    provider_binding_required: bool | None = None
     provider_decision_ref: str = ""
     provider_id: str = ""
     model_id: str = ""
@@ -185,11 +186,17 @@ class ExternalCapabilityRequestV1:
             raise ExternalCapabilityContractError("deadline_ms must be a positive integer")
         if isinstance(self.attempt, bool) or self.attempt != 1:
             raise ExternalCapabilityContractError("attempt must be exactly one")
+        if self.provider_binding_required is not None and not isinstance(self.provider_binding_required, bool):
+            raise ExternalCapabilityContractError("provider binding requirement must be boolean")
         provider_binding = (
             self.provider_decision_ref, self.provider_id, self.model_id, self.route_ref
         )
         present = tuple(bool(str(value).strip()) for value in provider_binding)
-        if any(present) and not all(present):
+        if self.provider_binding_required is True and not all(present):
+            raise ExternalCapabilityContractError("provider binding is required")
+        if self.provider_binding_required is False and any(present):
+            raise ExternalCapabilityContractError("unexpected provider binding for non-model advisory")
+        if self.provider_binding_required is None and any(present) and not all(present):
             raise ExternalCapabilityContractError("unexpected provider binding is incomplete")
 
     def to_dict(self) -> dict[str, Any]:
@@ -201,7 +208,10 @@ class ExternalCapabilityRequestV1:
 
     @property
     def provider_bound(self) -> bool:
-        return bool(self.provider_decision_ref)
+        provider_binding = (
+            self.provider_decision_ref, self.provider_id, self.model_id, self.route_ref
+        )
+        return all(bool(str(value).strip()) for value in provider_binding)
 
 
 @dataclass(frozen=True, slots=True)
