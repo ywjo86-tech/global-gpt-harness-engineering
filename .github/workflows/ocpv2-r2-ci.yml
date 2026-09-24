@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - impl/operator-control-plane-v2-r2
+      - impl/ocp-rdc-independent-primary-path-20260923
   pull_request:
     paths:
       - "runtime/orchestrator/**"
@@ -58,6 +59,7 @@ jobs:
       - run: python3 -m unittest -v tests.test_production_execution_gateway
       - run: python3 -m unittest -v tests.test_production_tool_transport
       - run: python3 -m unittest -v tests.test_ocpv2_final_acceptance_release_blockers
+      - run: python3 -m unittest -v tests.test_ocpv2_release_source_authority
       - name: Full MCP boundary lint
         run: python3 scripts/full_mcp_lint.py runtime/full_mcp runtime/orchestrator/production_execution_gateway.py
       - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
