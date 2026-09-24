@@ -141,10 +141,10 @@ def _receipt_guard(
     descriptor: ExternalCapabilityDescriptorV1,
     target_state: str,
 ) -> ActivationDecisionV1 | None:
-    # Synthetic CANARY remains governed by the existing runtime CANARY policy;
-    # READY/ACTIVE require the explicit RJI-7 and dangerous-work receipts.
-    if target_state == "CANARY":
-        return None
+    # Every deployment-bearing lifecycle transition, including a bounded
+    # synthetic CANARY, must bind the RJI-7 qualification and user safety
+    # approval receipts.  The runtime CANARY policy remains an additional
+    # qualification layer; it is not a substitute for activation approval.
     if not policy.rji7_pass_receipt.strip() or not evidence.rji7_receipt_ref.strip():
         return _blocked(descriptor, target_state, "RJI7_RECEIPT_MISSING")
     if not policy.safety_approval_receipt.strip() or not evidence.safety_approval_receipt_ref.strip():
