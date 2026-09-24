@@ -27,6 +27,7 @@ from .github_rest_client import (
 CONTROL_PREFIX = "OCPV2_CONTROL_V2\n"
 RESULT_PREFIX = "OCPV2_RESULT_V1\n"
 _DELIVERY_ACK_SCHEMA = "ocpv2.github-delivery-ack.v1"
+_DELIVERY_PENDING_SCHEMA = "ocpv2.github-delivery-pending.v1"
 
 
 class GitHubControlAdapterError(ValueError):
@@ -87,10 +88,18 @@ class GitHubControlAdapter:
             if state_root:
                 configured_ack_path = Path(state_root) / "transport" / "github-delivery-acks.json"
         self.delivery_ack_path = None if configured_ack_path is None else Path(configured_ack_path).absolute()
-        if self.delivery_ack_path is not None and self.delivery_ack_path.is_symlink():
-            raise GitHubControlAdapterError("delivery ack path must not be a symlink")
+        self.delivery_pending_path = (
+            None
+            if self.delivery_ack_path is None
+            else self.delivery_ack_path.with_name(self.delivery_ack_path.name + ".pending")
+        )
+        for path in (self.delivery_ack_path, self.delivery_pending_path):
+            if path is not None and path.is_symlink():
+                raise GitHubControlAdapterError("delivery state path must not be a symlink")
         self._acknowledged: set[str] = set()
         self._pending: dict[str, list[_PendingDelivery]] = {}
+        for pending in self._load_delivery_pending():
+            self._pending.setdefault(pending.message_id, []).append(pending)
 
     def _verified_repository_id(self) -> int:
         if getattr(self.rest_client, "repository_id", None) != self.config.allowed_repository_id:
@@ -113,6 +122,53 @@ class GitHubControlAdapter:
     def _content_sha256(canonical: bytes) -> str:
         return hashlib.sha256(canonical).hexdigest()
 
+    @staticmethod
+    def _validate_delivery_entry(entry: object, *, label: str) -> dict[str, str]:
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "source_message_id",
+            "message_id",
+            "content_sha256",
+        }:
+            raise GitHubControlAdapterError(f"{label} entry is invalid")
+        source_message_id = str(entry.get("source_message_id") or "")
+        message_id = str(entry.get("message_id") or "")
+        content_sha256 = str(entry.get("content_sha256") or "")
+        if (
+            not source_message_id
+            or not message_id
+            or len(content_sha256) != 64
+            or any(ch not in "0123456789abcdef" for ch in content_sha256)
+        ):
+            raise GitHubControlAdapterError(f"{label} entry is invalid")
+        return {
+            "source_message_id": source_message_id,
+            "message_id": message_id,
+            "content_sha256": content_sha256,
+        }
+
+    @staticmethod
+    def _save_delivery_state(path: Path, schema_version: str, entries: list[dict[str, str]]) -> None:
+        parent = path.parent
+        if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+            raise GitHubControlAdapterError("delivery state root is unsafe")
+        parent.mkdir(parents=True, exist_ok=True)
+        if parent.is_symlink() or path.is_symlink():
+            raise GitHubControlAdapterError("delivery state is unsafe")
+        payload = {"schema_version": schema_version, "entries": entries}
+        fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=str(parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        except OSError as exc:
+            raise GitHubControlAdapterError("delivery state write failed") from exc
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
     def _load_delivery_acks(self) -> list[dict[str, str]]:
         path = self.delivery_ack_path
         if path is None or not path.exists():
@@ -128,20 +184,7 @@ class GitHubControlAdapter:
         entries = value.get("entries")
         if not isinstance(entries, list):
             raise GitHubControlAdapterError("delivery ack entries are invalid")
-        result: list[dict[str, str]] = []
-        for entry in entries:
-            if not isinstance(entry, Mapping) or set(entry) != {"source_message_id", "message_id", "content_sha256"}:
-                raise GitHubControlAdapterError("delivery ack entry is invalid")
-            source_message_id = str(entry.get("source_message_id") or "")
-            message_id = str(entry.get("message_id") or "")
-            content_sha256 = str(entry.get("content_sha256") or "")
-            if not source_message_id or not message_id or len(content_sha256) != 64:
-                raise GitHubControlAdapterError("delivery ack entry is invalid")
-            result.append({
-                "source_message_id": source_message_id,
-                "message_id": message_id,
-                "content_sha256": content_sha256,
-            })
+        result = [self._validate_delivery_entry(entry, label="delivery ack") for entry in entries]
         if len(result) > self.config.delivery_ack_limit:
             raise GitHubControlAdapterError("delivery ack state exceeds configured limit")
         return result
@@ -150,27 +193,52 @@ class GitHubControlAdapter:
         path = self.delivery_ack_path
         if path is None:
             return
-        parent = path.parent
-        if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
-            raise GitHubControlAdapterError("delivery ack root is unsafe")
-        parent.mkdir(parents=True, exist_ok=True)
-        if parent.is_symlink() or path.is_symlink():
-            raise GitHubControlAdapterError("delivery ack state is unsafe")
         bounded = entries[-self.config.delivery_ack_limit:]
-        payload = {"schema_version": _DELIVERY_ACK_SCHEMA, "entries": bounded}
-        fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=str(parent))
+        self._save_delivery_state(path, _DELIVERY_ACK_SCHEMA, bounded)
+
+    def _load_delivery_pending(self) -> list[_PendingDelivery]:
+        path = self.delivery_pending_path
+        if path is None or not path.exists():
+            return []
+        if path.is_symlink() or not path.is_file():
+            raise GitHubControlAdapterError("delivery pending state is unsafe")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        except OSError as exc:
-            raise GitHubControlAdapterError("delivery ack write failed") from exc
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise GitHubControlAdapterError("delivery pending state is invalid") from exc
+        if not isinstance(value, Mapping) or value.get("schema_version") != _DELIVERY_PENDING_SCHEMA:
+            raise GitHubControlAdapterError("delivery pending schema mismatch")
+        entries = value.get("entries")
+        if not isinstance(entries, list):
+            raise GitHubControlAdapterError("delivery pending entries are invalid")
+        parsed = [self._validate_delivery_entry(entry, label="delivery pending") for entry in entries]
+        if len(parsed) > self.config.delivery_ack_limit:
+            raise GitHubControlAdapterError("delivery pending state exceeds configured limit")
+        return [_PendingDelivery(**entry) for entry in parsed]
+
+    def _save_delivery_pending(self) -> None:
+        path = self.delivery_pending_path
+        if path is None:
+            return
+        entries: list[dict[str, str]] = []
+        for queue in self._pending.values():
+            for pending in queue:
+                entries.append({
+                    "source_message_id": pending.source_message_id,
+                    "message_id": pending.message_id,
+                    "content_sha256": pending.content_sha256,
+                })
+        if not entries:
+            if path.exists():
+                if path.is_symlink() or not path.is_file():
+                    raise GitHubControlAdapterError("delivery pending state is unsafe")
+                try:
+                    path.unlink()
+                except OSError as exc:
+                    raise GitHubControlAdapterError("delivery pending cleanup failed") from exc
+            return
+        bounded = entries[-self.config.delivery_ack_limit:]
+        self._save_delivery_state(path, _DELIVERY_PENDING_SCHEMA, bounded)
 
     def _is_durably_acknowledged(self, source_message_id: str, content_sha256: str) -> bool:
         return any(
@@ -229,6 +297,7 @@ class GitHubControlAdapter:
         queue = self._pending.setdefault(message, [])
         if pending not in queue:
             queue.append(pending)
+            self._save_delivery_pending()
 
     def _remember_pending(self, *, source_message_id: str, parsed: Mapping[str, Any], canonical: bytes) -> None:
         message_id = parsed.get("message_id")
@@ -239,16 +308,26 @@ class GitHubControlAdapter:
             message_id=message_id,
             content_sha256=self._content_sha256(canonical),
         )
-        self._pending.setdefault(message_id, []).append(pending)
+        queue = self._pending.setdefault(message_id, [])
+        if pending not in queue:
+            queue.append(pending)
+            self._save_delivery_pending()
+
+    def _discard_pending(self, pending: _PendingDelivery) -> None:
+        queue = self._pending.get(pending.message_id, [])
+        remaining = [item for item in queue if item != pending]
+        if remaining:
+            self._pending[pending.message_id] = remaining
+        else:
+            self._pending.pop(pending.message_id, None)
+        self._save_delivery_pending()
 
     def _persist_successful_publish(self, message_id: object) -> None:
         value = str(message_id or "")
         queue = self._pending.get(value)
         if not value or not queue:
             return
-        pending = queue.pop(0)
-        if not queue:
-            self._pending.pop(value, None)
+        pending = queue[0]
         entries = self._load_delivery_acks()
         entries = [entry for entry in entries if entry["source_message_id"] != pending.source_message_id]
         entries.append({
@@ -256,7 +335,11 @@ class GitHubControlAdapter:
             "message_id": pending.message_id,
             "content_sha256": pending.content_sha256,
         })
+        # Commit the exact durable ACK before removing the pending fingerprint. If the
+        # process dies after this write, the next process suppresses duplicate publish
+        # and only finishes pending-ledger cleanup.
         self._save_delivery_acks(entries)
+        self._discard_pending(pending)
 
     def receive(self, *, limit: int = 16) -> tuple[RawControlEnvelope, ...]:
         repository_id = self._verified_repository_id()
@@ -317,7 +400,16 @@ class GitHubControlAdapter:
             canonical = self._canonical_object_bytes(parsed)
             fingerprint = self._content_sha256(canonical)
             if self._is_durably_acknowledged(source_message_id, fingerprint):
+                for pending in tuple(self._pending.get(str(parsed.get("message_id") or ""), [])):
+                    if (
+                        pending.source_message_id == source_message_id
+                        and pending.content_sha256 == fingerprint
+                    ):
+                        self._discard_pending(pending)
                 continue
+            # Persist the exact transport fingerprint before exposing the raw control to
+            # the service. A later outbox recovery can therefore publish and ACK without
+            # re-running the inspection/activation side effect after process restart.
             self._remember_pending(source_message_id=source_message_id, parsed=parsed, canonical=canonical)
             result.append(
                 RawControlEnvelope(
@@ -354,8 +446,23 @@ class GitHubControlAdapter:
         if len(body_bytes) > self.config.max_comment_bytes:
             raise GitHubControlAdapterError("projection exceeds configured byte limit")
         self._verified_repository_id()
+
+        message_id = str(projection.get("message_id") or "")
+        queue = self._pending.get(message_id, [])
+        if queue:
+            pending = queue[0]
+            if self.has_durable_ack(
+                pending.message_id,
+                source_message_id=pending.source_message_id,
+                content_sha256=pending.content_sha256,
+            ):
+                # A previous process committed the durable ACK but died before pending
+                # cleanup. Do not republish remotely; just complete local reconciliation.
+                self._discard_pending(pending)
+                return
+
         try:
             self.rest_client.publish_comment(body_bytes.decode("utf-8"))
         except GitHubRESTClientError as exc:
             raise GitHubControlAdapterError(f"projection publish failed: {exc}") from exc
-        self._persist_successful_publish(projection.get("message_id"))
+        self._persist_successful_publish(message_id)
