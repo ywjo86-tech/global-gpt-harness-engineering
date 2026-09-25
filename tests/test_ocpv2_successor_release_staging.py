@@ -31,12 +31,7 @@ def successor_api():
     assert importlib.util.find_spec(module_name) is not None, (
         "successor_release_staging module is not implemented"
     )
-    module = importlib.import_module(module_name)
-    return (
-        module.SuccessorReleaseStageError,
-        module.SuccessorReleaseStageRequest,
-        module.SuccessorReleaseStager,
-    )
+    return importlib.import_module(module_name)
 
 
 def git(root: Path, *args: str) -> str:
@@ -78,48 +73,50 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
         return registry, target, base, release
 
     def test_request_requires_exact_two_phase_binding(self):
-        Error, Request, _ = successor_api()
-        dry = Request.from_mapping(BASE_REQUEST)
+        api = successor_api()
+        dry = api.SuccessorReleaseStageRequest.from_mapping(BASE_REQUEST)
         self.assertEqual(dry.mode, "DRY_RUN")
-        with self.assertRaises(Error):
-            Request.from_mapping({**dry.to_dict(), "mode": "STAGE"})
-        with self.assertRaises(Error):
-            Request.from_mapping({**dry.to_dict(), "successor_profile": "../serving"})
+        with self.assertRaises(api.SuccessorReleaseStageError):
+            api.SuccessorReleaseStageRequest.from_mapping({**dry.to_dict(), "mode": "STAGE"})
+        with self.assertRaises(api.SuccessorReleaseStageError):
+            api.SuccessorReleaseStageRequest.from_mapping({**dry.to_dict(), "successor_profile": "../serving"})
 
     def test_two_phase_lineage_has_stable_intent_and_distinct_phase_digest(self):
-        _, Request, _ = successor_api()
-        dry = Request.from_mapping(BASE_REQUEST)
-        stage = Request.from_mapping(
+        api = successor_api()
+        dry = api.SuccessorReleaseStageRequest.from_mapping(BASE_REQUEST)
+        stage = api.SuccessorReleaseStageRequest.from_mapping(
             {**dry.to_dict(), "mode": "STAGE", "preflight_digest": "d" * 64}
         )
         self.assertEqual(dry.stage_intent_digest, stage.stage_intent_digest)
         self.assertNotEqual(dry.phase_request_digest, stage.phase_request_digest)
 
     def test_same_request_id_with_changed_intent_is_detectable(self):
-        _, Request, _ = successor_api()
-        original = Request.from_mapping(BASE_REQUEST)
-        changed = Request.from_mapping({**BASE_REQUEST, "target_head": "e" * 40})
+        api = successor_api()
+        original = api.SuccessorReleaseStageRequest.from_mapping(BASE_REQUEST)
+        changed = api.SuccessorReleaseStageRequest.from_mapping(
+            {**BASE_REQUEST, "target_head": "e" * 40}
+        )
         self.assertEqual(original.request_id, changed.request_id)
         self.assertNotEqual(original.stage_intent_digest, changed.stage_intent_digest)
 
     def test_same_complete_phase_has_same_replay_identity(self):
-        _, Request, _ = successor_api()
-        first = Request.from_mapping(BASE_REQUEST)
-        replay = Request.from_mapping(dict(BASE_REQUEST))
+        api = successor_api()
+        first = api.SuccessorReleaseStageRequest.from_mapping(BASE_REQUEST)
+        replay = api.SuccessorReleaseStageRequest.from_mapping(dict(BASE_REQUEST))
         self.assertEqual(first.phase_request_digest, replay.phase_request_digest)
 
     def test_dry_run_is_non_mutating_and_binds_remote_target(self):
-        _, Request, Stager = successor_api()
+        api = successor_api()
         with tempfile.TemporaryDirectory() as td:
             registry, project, base, release = self._fixture(Path(td))
-            request = Request.from_mapping(
+            request = api.SuccessorReleaseStageRequest.from_mapping(
                 {
                     **BASE_REQUEST,
                     "expected_head": base,
                     "target_head": release,
                 }
             )
-            stager = Stager(registry)
+            stager = api.SuccessorReleaseStager(registry)
             result = stager.execute(request)
             self.assertEqual(result["status"], "STAGE_READY")
             self.assertFalse(result["mutation_performed"])
@@ -129,7 +126,7 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
             self.assertRegex(result["preflight_digest"], r"^[0-9a-f]{64}$")
 
     def test_stage_fetches_fast_forwards_and_only_calls_successor_stage_callback(self):
-        _, Request, Stager = successor_api()
+        api = successor_api()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             registry, project, base, release = self._fixture(root)
@@ -160,13 +157,13 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
                     "timer_path": str(timer),
                 }
 
-            stager = Stager(
+            stager = api.SuccessorReleaseStager(
                 registry,
                 stage_callback=stage_callback,
                 user_config_root=config_root,
                 user_unit_root=unit_root,
             )
-            dry = Request.from_mapping(
+            dry = api.SuccessorReleaseStageRequest.from_mapping(
                 {
                     **BASE_REQUEST,
                     "expected_head": base,
@@ -174,7 +171,7 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
                 }
             )
             preflight = stager.execute(dry)
-            stage = Request.from_mapping(
+            stage = api.SuccessorReleaseStageRequest.from_mapping(
                 {
                     **dry.to_dict(),
                     "mode": "STAGE",
