@@ -13,7 +13,10 @@ from runtime.orchestrator import remote_control_envelope as control
 from runtime.orchestrator import ocpv2_successor_stage_runtime as stage_runtime
 from runtime.orchestrator.remote_operator_service import ControlMode, RemoteOperatorService
 from runtime.orchestrator.remote_operator_transport import RawControlEnvelope
-from runtime.orchestrator.successor_release_staging import SuccessorReleaseStageRequest
+from runtime.orchestrator.successor_release_staging import (
+    SuccessorReleaseStageError,
+    SuccessorReleaseStageRequest,
+)
 
 
 POLICY_REF = "P2-SUCCESSOR-STAGE"
@@ -105,6 +108,25 @@ class SuccessorReleaseStageGatewayTests(unittest.TestCase):
         self.assertEqual(envelope.payload.approval_policy_ref, POLICY_REF)
         self.assertIsInstance(envelope.authorization, control.RemoteSuccessorReleaseStageAuthorization)
         self.assertEqual(envelope.authorization.successor_release_stage_policy_ref, POLICY_REF)
+
+    def test_real_slash_branch_is_allowed_but_unsafe_git_ref_shapes_are_rejected(self):
+        request = SuccessorReleaseStageRequest.from_mapping(_stage_request())
+        self.assertEqual(
+            request.expected_branch,
+            "impl/ocp-rdc-independent-primary-path-20260923",
+        )
+        for unsafe in (
+            "impl//successor",
+            "../successor",
+            "impl/.hidden/successor",
+            "impl/successor.lock",
+            "impl/successor.",
+        ):
+            with self.subTest(branch=unsafe):
+                value = _stage_request()
+                value["expected_branch"] = unsafe
+                with self.assertRaises(SuccessorReleaseStageError):
+                    SuccessorReleaseStageRequest.from_mapping(value)
 
     def test_dedicated_gateway_binds_digests_without_raw_command_surface(self):
         gateway = self._gateway()
