@@ -93,6 +93,24 @@ class OCPv2DeployPackageTests(unittest.TestCase):
             parsed = bootstrap.config_from_env_file(rendered.env_path)
             self.assertEqual(parsed.mode, "DISABLED")
 
+    def test_bootstrap_env_parser_accepts_new_activation_lifecycle_rollback_key(self):
+        bootstrap = load_bootstrap()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            rendered = bootstrap.render_package(
+                bootstrap.BootstrapConfig.disabled(repo_root=repo),
+                output_dir=root / "rendered",
+            )
+            text = rendered.env_path.read_text(encoding="utf-8")
+            rendered.env_path.write_text(
+                text + "GCH_NEW_ACTIVATION_LIFECYCLE_MODE=LEGACY\n",
+                encoding="utf-8",
+            )
+            parsed = bootstrap.config_from_env_file(rendered.env_path)
+            self.assertEqual(parsed.mode, "DISABLED")
+
     def test_timer_runs_one_shot_service_every_30_seconds(self):
         timer = (DEPLOY_ROOT / "ocpv2.user.timer").read_text(encoding="utf-8")
         self.assertIn("OnUnitActiveSec=30s", timer)
@@ -155,9 +173,8 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("RemoteResultProjectionV1", source)
         self.assertIn("outbox", source)
 
-
     def test_user_service_keeps_executable_activation_off_without_policy(self):
-        text=(DEPLOY_ROOT/"ocpv2.user.service.in").read_text(encoding="utf-8")
+        text = (DEPLOY_ROOT / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
         self.assertNotIn("OCP_FULL_PLAN_ACTIVATION_POLICY_REF=", text)
 
