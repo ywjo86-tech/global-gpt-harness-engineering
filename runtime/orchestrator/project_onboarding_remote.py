@@ -131,8 +131,20 @@ class ProjectOnboardingAdmission:
     canonical contract creation to :class:`OnboardingRegistry`.
     """
 
-    def __init__(self, registry: OnboardingRegistry):
+    def __init__(
+        self,
+        registry: OnboardingRegistry,
+        *,
+        canonical_mapping_root: str | Path | None = None,
+    ) -> None:
         self.registry = registry
+        if canonical_mapping_root is None:
+            if registry.root.name != "aliases":
+                raise ProjectOnboardingRemoteError("canonical mapping root binding is required")
+            canonical_mapping_root = registry.root.parent
+        self.canonical_mapping_root = _safe_absolute_dir_target(
+            str(canonical_mapping_root), "canonical mapping root"
+        )
 
     def _preflight(self, request: ProjectOnboardingRequest) -> tuple[dict[str, Any], str]:
         if request.schema_version != _REQUEST_SCHEMA:
@@ -148,6 +160,8 @@ class ProjectOnboardingAdmission:
         if not root.is_absolute() or not root.is_dir() or root != root.resolve():
             raise ProjectOnboardingRemoteError("project root must be absolute, existing, and resolved")
         mapping_root = _safe_absolute_dir_target(request.mapping_root, "mapping root")
+        if mapping_root != self.canonical_mapping_root:
+            raise ProjectOnboardingRemoteError("project onboarding mapping root mismatch")
 
         branch = _git(root, "branch", "--show-current")
         if branch != request.expected_branch:
@@ -199,7 +213,9 @@ class ProjectOnboardingAdmission:
 
         try:
             report = self.registry.bootstrap(
-                request.project_root, request.alias, mapping_root=request.mapping_root
+                request.project_root,
+                request.alias,
+                mapping_root=str(self.canonical_mapping_root),
             )
         except ProjectOnboardingError as exc:
             raise ProjectOnboardingRemoteError(str(exc)) from exc
