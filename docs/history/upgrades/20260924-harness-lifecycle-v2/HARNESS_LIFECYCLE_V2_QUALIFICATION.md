@@ -12,7 +12,7 @@ This qualification does **not** promote the successor to `runtime-current`, rewr
 
 ## Qualified behavior
 
-The successor now proves the following closed loop for new Full Plan activations:
+The successor proves the following closed loop for new Full Plan activations:
 
 1. approved Full Plan activation materializes a Lifecycle V2 binding and execution-authority bundle;
 2. operator dispatch is durable and create-once;
@@ -51,12 +51,23 @@ Lifecycle V2 does **not** create, infer, or absorb any of the following authorit
 
 The registered Full Plan authority seal covers `lifecycle_binding` and `execution_authority_bundle`. Tampering either field after sealing produces `RUN_AUTHORITY_DRIFT`. Only the pre-existing declared runtime gate overlay fields remain outside the immutable authority core.
 
+## Project onboarding authority boundary
+
+The remotely supplied onboarding request cannot choose an arbitrary registry/mapping root in deployed OCP composition.
+
+- deployed `_compose_service()` binds `ProjectOnboardingAdmission` to the validated `HARNESS_CONTRACT_MAPPING_ROOT`;
+- a request whose `mapping_root` differs from that configured canonical root fails closed;
+- isolated/unit callers retain backward-compatible optional binding behavior;
+- project onboarding remains separately feature-gated and grants no Full Plan execution, provider/model, Gateway, Full MCP, or completion authority.
+
+This hardening was required by the final full-branch review before qualification.
+
 ## Rollback / default-disable evidence
 
-New Full Plan activations default to Lifecycle V2 only at the **new activation construction seam**.
+New Full Plan activations default to Lifecycle V2 only at the **new activation construction/composition seam**.
 
 - `GCH_NEW_ACTIVATION_LIFECYCLE_MODE=V2` is the deployed service default.
-- An explicit `GCH_NEW_ACTIVATION_LIFECYCLE_MODE=LEGACY` value provides the rollback seam for future new activations.
+- An explicit `GCH_NEW_ACTIVATION_LIFECYCLE_MODE=LEGACY` value provides `NEW_ACTIVATION_DEFAULT_DISABLE` rollback for future new activations.
 - Any other value fails closed with `NEW_ACTIVATION_LIFECYCLE_MODE_INVALID`.
 - Existing registered jobs are not reinterpreted by this environment setting.
 - Existing jobs without a V2 binding continue to resolve as LEGACY.
@@ -77,30 +88,31 @@ Project onboarding remains separately feature-gated and fail-closed; adding Life
 - Gate 13 immutable lifecycle authority seal: PASS.
 - Gate 14 exact-head successor runtime release qualification: PASS.
 - Gate 15 deployed default/explicit rollback wiring: PASS after fixing the OCP composition seam.
+- Gate 16 final compatibility qualification: PASS after final onboarding canonical mapping-root authority hardening and test-fixture correction.
 
-## Final CI evidence before this qualification record
+## Final CI evidence
 
 PR: `#15 Harness Lifecycle V2 compatibility bridge`
 
-Pre-document qualified implementation head: `c279600c28a307a4a3981b4bb66d709d23950bb3`
+Final qualified implementation head: `68b376c3fd6884359f185ca4f276a1e214280918`
 
-GitHub Actions run: `36094778582`
+GitHub Actions run: `36095889124`
 
 - `focused`: PASS
 - `successor-release-qualification`: PASS
-- `full-regression`: PASS
+- `full-regression`: PASS — `FULL_REGRESSION_SUMMARY run=2392 failures=0 errors=0 skipped=14`
 - `regression-delta`: PASS
 
-The successor-release job checked out the exact PR head, built and verified a `gch.runtime-release.v2` release, and confirmed the qualification checkout remained clean.
+The focused suite includes Lifecycle V2 G11–G15 coverage, AI Office and Family compatibility canaries, SFT prefix activation bridge, project onboarding remote/envelope/service/runtime/deploy-default checks, OCP transport/authority boundary tests, runtime migration handoff tests, Production Execution Gateway tests, and Full MCP boundary lint. The successor-release job checks out the exact PR head, builds/verifies the immutable runtime release, and confirms the qualification checkout remains clean.
 
 ## Promotion boundary
 
-This document qualifies the successor implementation only. The following are **not performed by this PR** and remain separate controlled rollout steps:
+This document qualifies the successor implementation only. The following are **not performed by this PR** and remain separate controlled rollout steps under normal OCP authority:
 
 1. merge/integration into the selected stable OCP successor branch;
 2. build of the final runtime release from that post-integration exact source head;
-3. side-by-side deploy / canary under normal OCP authority;
+3. side-by-side deploy / canary;
 4. `runtime-current` switch after active-runtime qualification;
 5. any explicit migration of an already registered project run.
 
-No RDC path is required for normal promotion.
+The existing runtime migration handoff invariants remain the governing mechanism for a future controlled rollout. No new promotion request kind/control plane is introduced by this implementation slice, and no RDC path is required for normal promotion.
