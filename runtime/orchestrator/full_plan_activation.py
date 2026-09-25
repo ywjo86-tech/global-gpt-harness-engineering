@@ -203,9 +203,15 @@ def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
 
 def activate_approved_full_plan(bundle: ExecutableAuthorityBundleV1, *,
                                 ai_context: AIFullPlanActivationContextV1,
-                                harness_state_root: str | Path) -> FullPlanActivationResultV1:
+                                harness_state_root: str | Path,
+                                lifecycle_mode: str = "V2") -> FullPlanActivationResultV1:
     _validate_context(bundle, ai_context)
-    job = build_executable_full_plan_job(bundle, ai_context=ai_context, harness_state_root=harness_state_root)
+    job = build_executable_full_plan_job(
+        bundle,
+        ai_context=ai_context,
+        harness_state_root=harness_state_root,
+        lifecycle_mode=lifecycle_mode,
+    )
     preflight = preflight_job(job)
     if preflight.get("status") != "PASS":
         raise FullPlanActivationError("ACTIVATION_PREFLIGHT_BLOCKED:" + str(preflight.get("reason")))
