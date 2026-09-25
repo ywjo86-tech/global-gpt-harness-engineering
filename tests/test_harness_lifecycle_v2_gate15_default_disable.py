@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,16 +11,6 @@ from runtime.orchestrator.remote_operator_service import ControlMode
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BOOTSTRAP_PATH = REPO_ROOT / "deploy" / "operator-control-plane-v2" / "bootstrap.py"
-
-
-def load_bootstrap():
-    spec = importlib.util.spec_from_file_location("ocpv2_bootstrap_lifecycle_default", BOOTSTRAP_PATH)
-    if spec is None or spec.loader is None:
-        raise AssertionError("bootstrap module cannot be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 class HarnessLifecycleV2Gate15DefaultDisableTests(unittest.TestCase):
@@ -86,37 +75,44 @@ class HarnessLifecycleV2Gate15DefaultDisableTests(unittest.TestCase):
 
             self.assertEqual(activation.call_args.kwargs["lifecycle_mode"], "LEGACY")
 
-    def test_deployment_env_renders_v2_default_and_accepts_legacy_override(self) -> None:
-        bootstrap = load_bootstrap()
+    def test_deployed_service_defaults_v2_and_env_file_can_override_to_legacy(self) -> None:
+        service_template = (
+            REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Environment=GCH_NEW_ACTIVATION_LIFECYCLE_MODE=V2", service_template)
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
             repo.mkdir()
-            token = root / "github.token"
-            token.write_text("test-token-placeholder", encoding="utf-8")
+            token = root / "token"
+            token.write_text("x", encoding="utf-8")
             token.chmod(0o600)
-            config = bootstrap.BootstrapConfig(
-                mode="OBSERVE_ONLY",
-                repo_root=repo,
-                control_repository_id=1379497136,
-                control_pr_number=1,
-                allowed_actor_ids=("235775273",),
-                token_file=token,
-                state_root=root / "state",
-            )
-            rendered = bootstrap.render_package(config, output_dir=root / "rendered")
-            text = rendered.env_path.read_text(encoding="utf-8")
-            self.assertIn("GCH_NEW_ACTIVATION_LIFECYCLE_MODE=V2\n", text)
-
-            rendered.env_path.write_text(
-                text.replace(
-                    "GCH_NEW_ACTIVATION_LIFECYCLE_MODE=V2",
-                    "GCH_NEW_ACTIVATION_LIFECYCLE_MODE=LEGACY",
-                ),
+            env_path = root / "ocp.env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "OCP_MODE=OBSERVE_ONLY",
+                        "OCP_GITHUB_CONTROL_REPOSITORY_ID=987654",
+                        "OCP_GITHUB_CONTROL_PR_NUMBER=7",
+                        "OCP_GITHUB_ALLOWED_ACTOR_IDS=123",
+                        f"OCP_GITHUB_TOKEN_FILE={token}",
+                        f"OCP_STATE_ROOT={root / 'state'}",
+                        f"OCP_REPO_ROOT={repo}",
+                        "GCH_NEW_ACTIVATION_LIFECYCLE_MODE=LEGACY",
+                    ]
+                )
+                + "\n",
                 encoding="utf-8",
             )
-            restored = bootstrap.config_from_env_file(rendered.env_path)
-            self.assertEqual(restored.mode, "OBSERVE_ONLY")
+            config = runtime_service.load_runtime_config(
+                env_path,
+                process_environment={"GCH_NEW_ACTIVATION_LIFECYCLE_MODE": "V2"},
+            )
+            self.assertEqual(
+                runtime_service.new_activation_lifecycle_mode_from_environment(config.environment),
+                "LEGACY",
+            )
 
 
 if __name__ == "__main__":
