@@ -472,7 +472,8 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         ):
             raise RuntimeServiceError("PROJECT_ONBOARDING_REGISTRY_UNSAFE")
         onboarding_admission = ProjectOnboardingAdmission(
-            OnboardingRegistry(onboarding_root / "aliases")
+            OnboardingRegistry(onboarding_root / "aliases"),
+            canonical_mapping_root=onboarding_root,
         )
 
     def durable_acknowledged(message_id: str) -> bool:
