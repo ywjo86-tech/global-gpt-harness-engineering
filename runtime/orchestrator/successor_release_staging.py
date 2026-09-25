@@ -57,6 +57,19 @@ def _canonical(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def _file_sha256(path: Path, *, outcome: str) -> str:
+    if path.is_symlink() or not path.is_file():
+        raise SuccessorReleaseStageError(
+            "staging artifact must be a regular non-symlink file", outcome=outcome
+        )
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise SuccessorReleaseStageError(
+            "staging artifact hash is unavailable", outcome=outcome
+        ) from exc
+
+
 def _safe_id(value: object, label: str) -> str:
     text = str(value or "")
     if not _SAFE_ID.fullmatch(text) or ".." in text:
@@ -555,6 +568,136 @@ class SuccessorReleaseStager:
             return Path(self.lock_root)
         return self.registry.root.parent / "successor-stage-locks"
 
+    def _artifact_roots(self, *, outcome: str) -> tuple[Path, Path]:
+        if self.user_config_root is None or self.user_unit_root is None:
+            raise SuccessorReleaseStageError(
+                "successor artifact roots are required", outcome=outcome
+            )
+        roots: list[Path] = []
+        for raw, label in (
+            (self.user_config_root, "user config root"),
+            (self.user_unit_root, "user unit root"),
+        ):
+            path = Path(raw)
+            if not path.is_absolute() or path.is_symlink() or not path.is_dir():
+                raise SuccessorReleaseStageError(f"{label} is unsafe", outcome=outcome)
+            try:
+                canonical = path.resolve(strict=True)
+            except OSError as exc:
+                raise SuccessorReleaseStageError(
+                    f"{label} is unavailable", outcome=outcome
+                ) from exc
+            if canonical != path:
+                raise SuccessorReleaseStageError(
+                    f"{label} is not canonical", outcome=outcome
+                )
+            roots.append(canonical)
+        return roots[0], roots[1]
+
+    def _serving_artifact_hashes(self, *, outcome: str) -> dict[str, str]:
+        config_root, unit_root = self._artifact_roots(outcome=outcome)
+        paths = {
+            "env": config_root / "ocpv2.env",
+            "service": unit_root / "ocpv2.service",
+            "timer": unit_root / "ocpv2.timer",
+        }
+        return {
+            name: _file_sha256(path, outcome=outcome)
+            for name, path in paths.items()
+        }
+
+    def _stage_successor_artifacts(
+        self,
+        root: Path,
+        request: SuccessorReleaseStageRequest,
+    ) -> dict[str, str]:
+        config_root, unit_root = self._artifact_roots(
+            outcome="FAILED_AFTER_GIT_ADVANCE"
+        )
+        callback = self.stage_artifacts if callable(self.stage_artifacts) else self.stage_callback
+        if not callable(callback):
+            raise SuccessorReleaseStageError(
+                "successor artifact staging callback is unavailable",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            )
+        try:
+            raw = callback(root, request.successor_profile, config_root, unit_root)
+        except SuccessorReleaseStageError:
+            raise
+        except Exception as exc:
+            raise SuccessorReleaseStageError(
+                "successor artifact staging failed",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            ) from exc
+        if not isinstance(raw, Mapping) or set(raw) != {
+            "env_path",
+            "service_path",
+            "timer_path",
+        }:
+            raise SuccessorReleaseStageError(
+                "successor artifact staging result is invalid",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            )
+        expected = {
+            "env_path": config_root / f"ocpv2-{request.successor_profile}.env",
+            "service_path": unit_root / f"ocpv2-{request.successor_profile}.service",
+            "timer_path": unit_root / f"ocpv2-{request.successor_profile}.timer",
+        }
+        hashes: dict[str, str] = {}
+        for key, expected_path in expected.items():
+            actual = Path(str(raw[key]))
+            if actual != expected_path:
+                raise SuccessorReleaseStageError(
+                    "successor artifact path escaped fixed profile destinations",
+                    outcome="FAILED_AFTER_GIT_ADVANCE",
+                )
+            hashes[key.removesuffix("_path")] = _file_sha256(
+                actual, outcome="FAILED_AFTER_GIT_ADVANCE"
+            )
+        return hashes
+
+    def _successor_service_state(self, profile: str) -> dict[str, bool]:
+        if self.service_state_probe is None:
+            return {
+                "service_active": False,
+                "service_enabled": False,
+                "timer_active": False,
+                "timer_enabled": False,
+                "polling_enabled": False,
+            }
+        probe = self.service_state_probe
+        try:
+            if hasattr(probe, "observe") and callable(probe.observe):
+                raw = probe.observe(profile)
+            elif callable(probe):
+                raw = probe(profile)
+            else:
+                raise TypeError("service state probe is not callable")
+        except Exception as exc:
+            raise SuccessorReleaseStageError(
+                "successor service state observation failed",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            ) from exc
+        required = {
+            "service_active",
+            "service_enabled",
+            "timer_active",
+            "timer_enabled",
+            "polling_enabled",
+        }
+        if not isinstance(raw, Mapping) or set(raw) != required:
+            raise SuccessorReleaseStageError(
+                "successor service state observation is invalid",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            )
+        state = {name: bool(raw[name]) for name in required}
+        if any(state.values()):
+            raise SuccessorReleaseStageError(
+                "successor service/timer/polling must remain inert",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            )
+        return state
+
     def _execute_dry_run(
         self,
         workspace: SuccessorWorkspaceIdentity,
@@ -637,6 +780,12 @@ class SuccessorReleaseStager:
             if remote_target != binding.remote_target_head:
                 raise SuccessorReleaseStageError("remote target ref drifted since DRY_RUN")
 
+            serving_hashes_before: dict[str, str] | None = None
+            if self.user_config_root is not None or self.user_unit_root is not None:
+                serving_hashes_before = self._serving_artifact_hashes(
+                    outcome="FAILED_BEFORE_MUTATION"
+                )
+
             temporary_ref = self._temporary_ref(request)
             fetched = False
             try:
@@ -708,10 +857,83 @@ class SuccessorReleaseStager:
                     outcome="FAILED_AFTER_GIT_ADVANCE",
                 )
 
-                raise SuccessorReleaseStageError(
-                    "successor artifact staging is not implemented yet",
+                if serving_hashes_before is None:
+                    raise SuccessorReleaseStageError(
+                        "successor artifact roots are required",
+                        outcome="FAILED_AFTER_GIT_ADVANCE",
+                    )
+
+                # Fence 5: prove the serving artifacts are unchanged immediately
+                # before the successor-only artifact writer runs.
+                serving_pre_stage = self._serving_artifact_hashes(
+                    outcome="FAILED_AFTER_GIT_ADVANCE"
+                )
+                if serving_pre_stage != serving_hashes_before:
+                    raise SuccessorReleaseStageError(
+                        "serving artifact drift before successor staging",
+                        outcome="FAILED_AFTER_GIT_ADVANCE",
+                    )
+
+                successor_hashes = self._stage_successor_artifacts(root, request)
+
+                # Fence 6: artifact writes cannot alter Git or serving identity.
+                self._validate_isolation(
+                    workspace, outcome="FAILED_AFTER_GIT_ADVANCE"
+                )
+                self._validate_local_git(
+                    workspace,
+                    request,
+                    expected_head=request.target_head,
                     outcome="FAILED_AFTER_GIT_ADVANCE",
                 )
+                serving_hashes_after = self._serving_artifact_hashes(
+                    outcome="FAILED_AFTER_GIT_ADVANCE"
+                )
+                if serving_hashes_after != serving_hashes_before:
+                    raise SuccessorReleaseStageError(
+                        "serving artifacts changed during successor staging",
+                        outcome="FAILED_AFTER_GIT_ADVANCE",
+                    )
+
+                service_state = self._successor_service_state(
+                    request.successor_profile
+                )
+
+                # Fence 7: final immutable observations before returning success.
+                self._validate_isolation(
+                    workspace, outcome="FAILED_AFTER_GIT_ADVANCE"
+                )
+                self._validate_local_git(
+                    workspace,
+                    request,
+                    expected_head=request.target_head,
+                    outcome="FAILED_AFTER_GIT_ADVANCE",
+                )
+                final_serving_hashes = self._serving_artifact_hashes(
+                    outcome="FAILED_AFTER_GIT_ADVANCE"
+                )
+                if final_serving_hashes != serving_hashes_before:
+                    raise SuccessorReleaseStageError(
+                        "serving artifacts drifted before final receipt",
+                        outcome="FAILED_AFTER_GIT_ADVANCE",
+                    )
+
+                return {
+                    "status": "STAGED",
+                    "mutation_performed": True,
+                    "service_manager_invoked": False,
+                    "polling_enabled": service_state["polling_enabled"],
+                    "target_head": request.target_head,
+                    "post_head": request.target_head,
+                    "fetched_sha": fetched_head,
+                    "preflight_digest": request.preflight_digest,
+                    "stage_intent_digest": request.stage_intent_digest,
+                    "phase_request_digest": request.phase_request_digest,
+                    "successor_artifact_hashes": successor_hashes,
+                    "serving_artifact_hashes_before": serving_hashes_before,
+                    "serving_artifact_hashes_after": final_serving_hashes,
+                    "service_state": service_state,
+                }
             finally:
                 if fetched:
                     self.full_mcp.delete_temporary_ref(root, temporary_ref)
