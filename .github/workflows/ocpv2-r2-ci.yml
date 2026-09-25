@@ -29,6 +29,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 -m unittest -v tests.test_project_onboarding_remote
+      - run: python3 -m unittest -v tests.test_project_onboarding_envelope
+      - run: python3 -m unittest -v tests.test_project_onboarding_service
       - run: python3 -m unittest -v tests.test_remote_operator_envelope
       - run: python3 -m unittest -v tests.test_remote_operator_receipt
       - run: python3 -m unittest -v tests.test_remote_operator_outbox
