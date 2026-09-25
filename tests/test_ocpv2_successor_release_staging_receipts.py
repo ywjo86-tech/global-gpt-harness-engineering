@@ -209,7 +209,7 @@ class SuccessorReleaseReceiptTests(unittest.TestCase):
     def test_successful_stage_receipt_contains_complete_evidence(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            registry, project, base, release, lifecycle, cfg, units = self._fixture(root)
+            registry, _project, base, release, lifecycle, cfg, units = self._fixture(root)
             full_mcp = CountingFullMcp(branch="stable", head=base, remote_head=release)
             store, probe, stager = self._stager(
                 registry, lifecycle, cfg, units, full_mcp, root / "receipts"
@@ -272,7 +272,7 @@ class SuccessorReleaseReceiptTests(unittest.TestCase):
             self.assertFalse(receipt["timer_active"])
             self.assertFalse(receipt["timer_enabled"])
             self.assertFalse(receipt["polling_enabled"])
-            self.assertEqual(git(project, "rev-parse", "HEAD"), release)
+            self.assertEqual(full_mcp.current_head, release)
             self.assertEqual(store.read_phase(stage.phase_request_digest), receipt)
             self.assertEqual(probe.calls, ["lifecycle-v2-p2"])
 
