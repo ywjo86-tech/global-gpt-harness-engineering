@@ -10,7 +10,9 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -31,8 +33,9 @@ _STAGE_ENV_KEYS = {
     "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED",
     "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF",
 }
+_POLICY_REF = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 
-# The wrapper owns these two additive keys.  Extending the legacy parser allow-list
+# The wrapper owns these two additive keys. Extending the legacy parser allow-list
 # does not enable the capability; the feature still defaults fail-closed below.
 base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS)
 
@@ -47,9 +50,8 @@ def successor_release_stage_enabled_from_environment(environment: Mapping[str, s
 
 def _safe_policy_ref(environment: Mapping[str, str]) -> str:
     value = str(environment.get("OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF") or "").strip()
-    if not value:
+    if not value or ".." in value or not _POLICY_REF.fullmatch(value):
         raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_POLICY_REQUIRED")
-    base._safe_id(value, "successor release stage policy ref")
     return value
 
 
@@ -70,11 +72,17 @@ def _load_stage_callback(repo_root: Path):
     path = repo_root / "deploy" / "operator-control-plane-v2" / "bootstrap.py"
     if path.is_symlink() or not path.is_file():
         raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_BOOTSTRAP_UNAVAILABLE")
-    spec = importlib.util.spec_from_file_location("_ocpv2_successor_stage_bootstrap", path)
+    module_name = "_ocpv2_successor_stage_bootstrap"
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_BOOTSTRAP_UNAVAILABLE")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
     callback = getattr(module, "stage_successor_artifacts", None)
     if not callable(callback):
         raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_CALLBACK_UNAVAILABLE")
@@ -118,7 +126,8 @@ class _ReadOnlySuccessorServiceStateProbe:
 
 
 def _successor_stager(config: base.RuntimeConfig) -> SuccessorReleaseStager:
-    assert config.state_root is not None
+    if config.state_root is None:
+        raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_STATE_ROOT_REQUIRED")
     mapping_root = _mapping_root(config)
     serving_root = config.repo_root.resolve(strict=True)
     config_root = (Path.home() / ".config" / "gch").absolute()
