@@ -1,16 +1,42 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from runtime.orchestrator.project_onboarding import OnboardingRegistry
-from runtime.orchestrator.successor_release_staging import (
-    SuccessorReleaseStageError,
-    SuccessorReleaseStageRequest,
-    SuccessorReleaseStager,
-)
+
+
+BASE_REQUEST = {
+    "request_id": "stage-p2-001",
+    "schema_version": "orchestration.successor-release-stage-request.v1",
+    "project_alias": "successor-p2",
+    "expected_branch": "stable",
+    "expected_head": "a" * 40,
+    "target_ref": "refs/heads/release",
+    "target_head": "b" * 40,
+    "successor_profile": "lifecycle-v2-p2",
+    "approval_policy_ref": "P2-SUCCESSOR-STAGE",
+    "approval_policy_digest": "c" * 64,
+    "mode": "DRY_RUN",
+    "preflight_digest": None,
+}
+
+
+def successor_api():
+    module_name = "runtime.orchestrator.successor_release_staging"
+    assert importlib.util.find_spec(module_name) is not None, (
+        "successor_release_staging module is not implemented"
+    )
+    module = importlib.import_module(module_name)
+    return (
+        module.SuccessorReleaseStageError,
+        module.SuccessorReleaseStageRequest,
+        module.SuccessorReleaseStager,
+    )
 
 
 def git(root: Path, *args: str) -> str:
@@ -42,44 +68,58 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
         git(source, "commit", "-am", "release")
         release = git(source, "rev-parse", "HEAD")
         git(source, "push", "origin", "release")
-        subprocess.run(["git", "clone", "--branch", "stable", str(remote), str(target)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "clone", "--branch", "stable", str(remote), str(target)],
+            check=True,
+            capture_output=True,
+        )
         registry = OnboardingRegistry(registry_root)
         registry.register(target, "successor-p2")
         return registry, target, base, release
 
     def test_request_requires_exact_two_phase_binding(self):
-        dry = SuccessorReleaseStageRequest.from_mapping({
-            "schema_version": "orchestration.successor-release-stage-request.v1",
-            "project_alias": "successor-p2",
-            "expected_branch": "stable",
-            "expected_head": "a" * 40,
-            "target_ref": "refs/heads/release",
-            "target_head": "b" * 40,
-            "successor_profile": "lifecycle-v2-p2",
-            "mode": "DRY_RUN",
-            "preflight_digest": None,
-        })
+        Error, Request, _ = successor_api()
+        dry = Request.from_mapping(BASE_REQUEST)
         self.assertEqual(dry.mode, "DRY_RUN")
-        with self.assertRaises(SuccessorReleaseStageError):
-            SuccessorReleaseStageRequest.from_mapping({**dry.to_dict(), "mode": "STAGE"})
-        with self.assertRaises(SuccessorReleaseStageError):
-            SuccessorReleaseStageRequest.from_mapping({**dry.to_dict(), "successor_profile": "../serving"})
+        with self.assertRaises(Error):
+            Request.from_mapping({**dry.to_dict(), "mode": "STAGE"})
+        with self.assertRaises(Error):
+            Request.from_mapping({**dry.to_dict(), "successor_profile": "../serving"})
+
+    def test_two_phase_lineage_has_stable_intent_and_distinct_phase_digest(self):
+        _, Request, _ = successor_api()
+        dry = Request.from_mapping(BASE_REQUEST)
+        stage = Request.from_mapping(
+            {**dry.to_dict(), "mode": "STAGE", "preflight_digest": "d" * 64}
+        )
+        self.assertEqual(dry.stage_intent_digest, stage.stage_intent_digest)
+        self.assertNotEqual(dry.phase_request_digest, stage.phase_request_digest)
+
+    def test_same_request_id_with_changed_intent_is_detectable(self):
+        _, Request, _ = successor_api()
+        original = Request.from_mapping(BASE_REQUEST)
+        changed = Request.from_mapping({**BASE_REQUEST, "target_head": "e" * 40})
+        self.assertEqual(original.request_id, changed.request_id)
+        self.assertNotEqual(original.stage_intent_digest, changed.stage_intent_digest)
+
+    def test_same_complete_phase_has_same_replay_identity(self):
+        _, Request, _ = successor_api()
+        first = Request.from_mapping(BASE_REQUEST)
+        replay = Request.from_mapping(dict(BASE_REQUEST))
+        self.assertEqual(first.phase_request_digest, replay.phase_request_digest)
 
     def test_dry_run_is_non_mutating_and_binds_remote_target(self):
+        _, Request, Stager = successor_api()
         with tempfile.TemporaryDirectory() as td:
             registry, project, base, release = self._fixture(Path(td))
-            request = SuccessorReleaseStageRequest.from_mapping({
-                "schema_version": "orchestration.successor-release-stage-request.v1",
-                "project_alias": "successor-p2",
-                "expected_branch": "stable",
-                "expected_head": base,
-                "target_ref": "refs/heads/release",
-                "target_head": release,
-                "successor_profile": "lifecycle-v2-p2",
-                "mode": "DRY_RUN",
-                "preflight_digest": None,
-            })
-            stager = SuccessorReleaseStager(registry)
+            request = Request.from_mapping(
+                {
+                    **BASE_REQUEST,
+                    "expected_head": base,
+                    "target_head": release,
+                }
+            )
+            stager = Stager(registry)
             result = stager.execute(request)
             self.assertEqual(result["status"], "STAGE_READY")
             self.assertFalse(result["mutation_performed"])
@@ -89,12 +129,14 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
             self.assertRegex(result["preflight_digest"], r"^[0-9a-f]{64}$")
 
     def test_stage_fetches_fast_forwards_and_only_calls_successor_stage_callback(self):
+        _, Request, Stager = successor_api()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             registry, project, base, release = self._fixture(root)
             config_root = root / "config"
             unit_root = root / "units"
-            config_root.mkdir(); unit_root.mkdir()
+            config_root.mkdir()
+            unit_root.mkdir()
             serving = {
                 config_root / "ocpv2.env": "serving-env\n",
                 unit_root / "ocpv2.service": "serving-service\n",
@@ -112,29 +154,33 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
                 env.write_text("disabled\n", encoding="utf-8")
                 service.write_text("stage-only\n", encoding="utf-8")
                 timer.write_text("inactive\n", encoding="utf-8")
-                return {"env_path": str(env), "service_path": str(service), "timer_path": str(timer)}
+                return {
+                    "env_path": str(env),
+                    "service_path": str(service),
+                    "timer_path": str(timer),
+                }
 
-            stager = SuccessorReleaseStager(
+            stager = Stager(
                 registry,
                 stage_callback=stage_callback,
                 user_config_root=config_root,
                 user_unit_root=unit_root,
             )
-            dry = SuccessorReleaseStageRequest.from_mapping({
-                "schema_version": "orchestration.successor-release-stage-request.v1",
-                "project_alias": "successor-p2",
-                "expected_branch": "stable",
-                "expected_head": base,
-                "target_ref": "refs/heads/release",
-                "target_head": release,
-                "successor_profile": "lifecycle-v2-p2",
-                "mode": "DRY_RUN",
-                "preflight_digest": None,
-            })
+            dry = Request.from_mapping(
+                {
+                    **BASE_REQUEST,
+                    "expected_head": base,
+                    "target_head": release,
+                }
+            )
             preflight = stager.execute(dry)
-            stage = SuccessorReleaseStageRequest.from_mapping({
-                **dry.to_dict(), "mode": "STAGE", "preflight_digest": preflight["preflight_digest"]
-            })
+            stage = Request.from_mapping(
+                {
+                    **dry.to_dict(),
+                    "mode": "STAGE",
+                    "preflight_digest": preflight["preflight_digest"],
+                }
+            )
             result = stager.execute(stage)
             self.assertEqual(result["status"], "STAGED")
             self.assertTrue(result["mutation_performed"])
