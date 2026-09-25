@@ -61,6 +61,7 @@ _REQUIRED_ENV = {
 }
 _OPTIONAL_ENV = {
     "GCH_STATE_ROOT",
+    "GCH_NEW_ACTIVATION_LIFECYCLE_MODE",
     "OCP_CANARY_PROJECT_ID",
     "OCP_CANARY_RUN_ID",
     "OCP_CANARY_TASK_ID",
@@ -125,6 +126,14 @@ def full_plan_activation_enabled_from_environment(environment: Mapping[str, str]
 def project_onboarding_enabled_from_environment(environment: Mapping[str, str]) -> bool:
     """Enable create-once project onboarding only on the exact explicit value `1`."""
     return str(environment.get("OCP_PROJECT_ONBOARDING_ENABLED") or "").strip() == "1"
+
+
+def new_activation_lifecycle_mode_from_environment(environment: Mapping[str, str]) -> str:
+    """Default only new Full Plan activations to V2; explicit LEGACY is the rollback seam."""
+    mode = str(environment.get("GCH_NEW_ACTIVATION_LIFECYCLE_MODE") or "V2").strip()
+    if mode not in {"V2", "LEGACY"}:
+        raise RuntimeServiceError("NEW_ACTIVATION_LIFECYCLE_MODE_INVALID")
+    return mode
 
 
 def _runtime_release_for_root(root: Path) -> RuntimeReleaseManifest:
@@ -638,11 +647,15 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             harness_state_root, project_id=bundle.project_id, run_id=bundle.activation_request_id,
         )
         ai_context = coordinate_approved_full_plan_activation(bundle, office_store=office_store)
+        lifecycle_mode = new_activation_lifecycle_mode_from_environment(config.environment)
         receipt = full_plan_activation_store.record_or_load(
             request_id=bundle.activation_request_id,
             bundle=bundle,
             registrar=lambda: activate_approved_full_plan(
-                bundle, ai_context=ai_context, harness_state_root=harness_state_root,
+                bundle,
+                ai_context=ai_context,
+                harness_state_root=harness_state_root,
+                lifecycle_mode=lifecycle_mode,
             ),
         )
         projection = RemoteFullPlanActivationProjectionV1.from_receipt(
