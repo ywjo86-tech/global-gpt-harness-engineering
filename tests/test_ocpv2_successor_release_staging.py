@@ -472,5 +472,120 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
             self.assertTrue((unit_root / "ocpv2-lifecycle-v2-p2.timer").is_file())
 
 
+    def test_receipt_store_replays_same_phase_without_side_effects(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            full_mcp = RecordingFullMcp(
+                branch="stable",
+                head=base,
+                remote_heads=[release],
+                object_present=False,
+            )
+            store = api.SuccessorReleaseReceiptStore(root / "receipts")
+            stager = api.SuccessorReleaseStager(
+                registry,
+                full_mcp=full_mcp,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+                receipt_store=store,
+            )
+            request = self._request(api, base, release)
+            first = stager.execute(request)
+            full_mcp.calls.clear()
+            replay = stager.execute(request)
+            self.assertEqual(replay, first)
+            self.assertEqual(full_mcp.calls, [])
+            stored = store.read_phase(request.phase_request_digest)
+            self.assertEqual(stored, first)
+
+    def test_successful_stage_receipt_contains_normative_evidence(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            config_root = root / "config"
+            unit_root = root / "units"
+            receipt_root = root / "receipts"
+            config_root.mkdir()
+            unit_root.mkdir()
+            for path, value in {
+                config_root / "ocpv2.env": "serving-env\n",
+                unit_root / "ocpv2.service": "serving-service\n",
+                unit_root / "ocpv2.timer": "serving-timer\n",
+            }.items():
+                path.write_text(value, encoding="utf-8")
+
+            def stage_artifacts(repo_root: Path, profile: str, cfg: Path, units: Path):
+                env = cfg / f"ocpv2-{profile}.env"
+                service = units / f"ocpv2-{profile}.service"
+                timer = units / f"ocpv2-{profile}.timer"
+                env.write_text("disabled\n", encoding="utf-8")
+                service.write_text("stage-only\n", encoding="utf-8")
+                timer.write_text("inactive\n", encoding="utf-8")
+                return {
+                    "env_path": str(env),
+                    "service_path": str(service),
+                    "timer_path": str(timer),
+                }
+
+            store = api.SuccessorReleaseReceiptStore(receipt_root)
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+                receipt_store=store,
+                stage_artifacts=stage_artifacts,
+                user_config_root=config_root,
+                user_unit_root=unit_root,
+            )
+            dry = self._request(api, base, release)
+            preflight = stager.execute(dry)
+            stage = self._stage_request(api, dry, preflight)
+            result = stager.execute(stage)
+            receipt = store.read_phase(stage.phase_request_digest)
+            self.assertEqual(receipt, result)
+            expected = {
+                "receipt_schema",
+                "request_id",
+                "stage_intent_digest",
+                "phase_request_digest",
+                "project_alias",
+                "canonical_root",
+                "project_id",
+                "approval_policy_ref",
+                "approval_policy_digest",
+                "expected_branch",
+                "pre_head",
+                "target_ref",
+                "target_head",
+                "remote_target_head",
+                "fetched_sha",
+                "ancestor_fast_forward",
+                "branch_fast_forward",
+                "preflight_digest",
+                "post_head",
+                "successor_artifact_hashes",
+                "serving_artifact_hashes_before",
+                "serving_artifact_hashes_after",
+                "service_state",
+                "guard_outcomes",
+                "outcome",
+                "status",
+                "mutation_performed",
+                "service_manager_invoked",
+                "polling_enabled",
+            }
+            self.assertTrue(expected.issubset(receipt))
+            self.assertEqual(receipt["receipt_schema"], "orchestration.successor-release-stage-receipt.v1")
+            self.assertEqual(receipt["request_id"], stage.request_id)
+            self.assertEqual(receipt["project_alias"], stage.project_alias)
+            self.assertEqual(receipt["canonical_root"], str(project.resolve()))
+            self.assertEqual(receipt["pre_head"], base)
+            self.assertEqual(receipt["post_head"], release)
+            self.assertEqual(receipt["outcome"], "STAGED")
+            self.assertTrue(receipt["ancestor_fast_forward"])
+            self.assertTrue(receipt["branch_fast_forward"])
+
+
 if __name__ == "__main__":
     unittest.main()
