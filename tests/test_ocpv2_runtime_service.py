@@ -355,7 +355,6 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         self.assertIn("decode_remote_control_payload(value)", source)
         self.assertNotIn("envelope = validate_remote_envelope(value)", source)
 
-
     def test_remote_control_status_projection_does_not_touch_durable_outbox(self):
         outbox = Mock()
         finalize_remote_control_projection(
@@ -371,9 +370,8 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
 
     def test_user_service_invokes_runtime_module_not_bootstrap_poll_loop(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
-        self.assertIn("-m runtime.orchestrator.ocpv2_runtime_service", text)
+        self.assertRegex(text, r"-m runtime\.orchestrator\.ocpv2_(?:runtime_service|successor_stage_runtime)")
         self.assertNotIn("bootstrap.py run-once", text)
-
 
     def test_host_inspection_feature_flag_is_explicit_and_fail_closed(self):
         self.assertFalse(host_inspection_enabled_from_environment({}))
@@ -394,7 +392,6 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
     def test_user_service_defaults_host_inspection_off(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_HOST_INSPECTION_ENABLED=0", text)
-
 
     def test_work_activation_feature_flag_is_explicit_and_fail_closed(self):
         self.assertFalse(work_activation_enabled_from_environment({}))
@@ -421,11 +418,9 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             self.assertTrue(config.full_plan_activation_enabled)
             self.assertEqual(config.full_plan_activation_policy_ref, "FP-POLICY-1")
 
-
     def test_user_service_defaults_work_activation_off(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_WORK_ACTIVATION_ENABLED=0", text)
-
 
     def test_full_plan_activation_flag_is_exact_one_and_independent(self):
         self.assertFalse(full_plan_activation_enabled_from_environment({}))
