@@ -39,14 +39,14 @@ RDC remains break-glass only and is not part of the normal P2 path.
 The capability must:
 
 1. accept only a registered successor identity;
-2. bind one request to an exact expected branch and current HEAD;
+2. bind one stage intent to an exact expected branch and current HEAD;
 3. bind one reviewed remote ref to one exact approved target SHA;
-4. prove the target is reachable by fast-forward from the admitted current HEAD;
+4. prove the fetched target is reachable by fast-forward from the admitted current HEAD;
 5. update only the admitted successor workspace;
 6. stage only the fixed P2 successor profile `lifecycle-v2-p2`;
 7. keep successor service/timer/polling/production effects disabled;
 8. prove serving artifacts are byte-identical before and after staging;
-9. produce an immutable, replay-safe receipt containing all guards, SHAs, and hashes;
+9. produce immutable, replay-safe audit records containing all guards, SHAs, and hashes;
 10. fail closed on identity drift, state drift, approval drift, non-fast-forward history, activation attempts, or post-condition failure.
 
 ## 4. Non-goals and prohibited transitions
@@ -68,13 +68,13 @@ This capability must not perform or authorize:
 
 Any future need for one of these operations requires a separate lifecycle gate and authority decision.
 
-## 5. Request contract
+## 5. Request and identity contract
 
 The new request kind is `SUCCESSOR_RELEASE_STAGE`.
 
 The canonical request schema must bind at least:
 
-- `request_id`: unique immutable request identity;
+- `request_id`: unique immutable stage-intent lineage identity shared by its DRY_RUN and STAGE phases;
 - `schema_version`: successor release stage request schema;
 - `project_alias`: registered successor alias;
 - `expected_branch`: exact currently checked-out successor branch;
@@ -88,6 +88,13 @@ The canonical request schema must bind at least:
 - `preflight_digest`: absent for `DRY_RUN`, mandatory for `STAGE`.
 
 `target_ref` is the reviewed target ref and `target_head` is the exact target SHA. These names preserve the seam already started in PR #18 while making their semantics normative.
+
+The implementation derives two digests:
+
+- `stage_intent_digest`: stable digest over the immutable stage intent, excluding phase-only fields `mode` and `preflight_digest`;
+- `phase_request_digest`: digest over the complete normalized phase request, including `mode` and `preflight_digest` where applicable.
+
+A `request_id` may be shared by exactly one DRY_RUN/STAGE lineage only when its `stage_intent_digest` remains identical. Reusing a `request_id` with a different stage intent is an identity collision and fails closed.
 
 Unknown fields, unsafe identifiers, missing fields, malformed SHAs, unsupported profile values, or unsupported modes fail closed.
 
@@ -109,16 +116,17 @@ It validates:
 - exact target-ref/target-SHA remote binding;
 - approval policy ref/digest binding;
 - fixed successor profile;
-- current HEAD is an ancestor of, or equal to, the approved target;
-- all P2 authority invariants.
+- all P2 authority invariants that can be proven without fetching target objects.
 
-The resulting `preflight_digest` cryptographically binds the normalized request fields and all authoritative observations needed by `STAGE`.
+If `target_head` is already present locally, DRY_RUN may additionally perform a read-only ancestry check. If it is not present locally, ancestry remains an explicit `PENDING_FETCH_PROOF` guard and **must** be proven during STAGE after the bounded fetch. DRY_RUN must never fetch merely to complete that proof.
+
+The resulting `preflight_digest` cryptographically binds the `stage_intent_digest`, normalized preflight observations, policy binding, and any explicitly pending STAGE-time guards.
 
 A `DRY_RUN` success may report `STAGE_READY` but confers no mutation authority by itself.
 
 ### 6.2 STAGE
 
-`STAGE` requires the exact `preflight_digest` produced by an approved `DRY_RUN` and must pass through the Production Execution Gateway.
+`STAGE` requires the exact `preflight_digest` produced by an approved DRY_RUN for the same `request_id` and `stage_intent_digest`, and it must pass through the Production Execution Gateway.
 
 Before any mutation, the gateway/stager must acquire the successor staging lock and revalidate all mutable facts. A stale preflight never authorizes mutation.
 
@@ -141,13 +149,14 @@ The stager owns only the resolved successor root for this transaction. It receiv
 The transaction must validate state at these fences:
 
 1. admission/preflight observation;
-2. after acquiring the exclusive stage lock and immediately before Git mutation;
-3. immediately after Git advancement;
-4. immediately before successor artifact staging;
-5. immediately after successor artifact staging;
-6. final post-condition/receipt boundary.
+2. after acquiring the exclusive stage lock and immediately before Git fetch/mutation;
+3. immediately after bounded fetch and target verification;
+4. immediately after Git advancement;
+5. immediately before successor artifact staging;
+6. immediately after successor artifact staging;
+7. final post-condition/receipt boundary.
 
-At every applicable fence, branch, HEAD, cleanliness, workspace identity, policy binding, and lifecycle exclusion are rechecked. Any unexpected drift fails closed.
+At every applicable fence, branch, HEAD, cleanliness, workspace identity, policy binding, and lifecycle exclusion are checked against the **phase-appropriate expected state**. Before advancement, HEAD must equal `expected_head`; after advancement, HEAD must equal `target_head`. Any other drift fails closed.
 
 No check-then-act interval may silently inherit authority from an earlier observation.
 
@@ -160,15 +169,18 @@ The allowed sequence is:
 1. revalidate exact `expected_branch`, `expected_head`, cleanliness, identity, and approval binding under lock;
 2. fetch **only** the reviewed `target_ref` into a request-scoped temporary namespace such as `refs/ocp/successor-stage/<request_id>`;
 3. resolve the fetched object and require exact equality with `target_head`;
-4. require the admitted current HEAD to be an ancestor of, or equal to, `target_head`;
-5. advance only the currently admitted branch by fast-forward to `target_head`;
-6. verify post-advance branch and HEAD exactly.
+4. require `expected_head` to be an ancestor of, or equal to, `target_head`;
+5. revalidate the currently checked-out branch/HEAD immediately before advancement;
+6. advance only the currently admitted branch by fast-forward to `target_head`;
+7. verify post-advance branch and HEAD exactly.
 
-The temporary ref must never be treated as a new runtime branch or lifecycle authority and must be cleaned up as a bounded staging artifact when safe to do so.
+The bounded fetch is itself a Git metadata mutation: it may add fetched objects and the request-scoped temporary ref, but it must not move the current branch, HEAD, index, or worktree. Receipt semantics distinguish this phase from branch advancement.
+
+The temporary ref must never be treated as a new runtime branch or lifecycle authority. It may be deleted as a bounded cleanup operation after its evidence has been recorded; fetched objects need not be destructively removed.
 
 Forbidden Git operations include arbitrary fetch refspecs, arbitrary checkout, branch switching, reset, rebase, force update, detached-HEAD staging, and history rewrite.
 
-If current HEAD already equals `target_head`, a new approved request may proceed with zero Git delta only for a legitimate idempotent/recovery staging case. It must still pass every other guard.
+If current HEAD already equals `target_head`, a new approved request may proceed with zero branch delta only for a legitimate idempotent/recovery staging case. It must still pass every other guard.
 
 ## 10. Successor artifact staging
 
@@ -194,7 +206,7 @@ The staged successor profile must remain `DISABLED`.
 
 ## 11. Serving preservation and post-conditions
 
-Before Git mutation, capture cryptographic hashes of the serving artifacts:
+Before any STAGE Git mutation, capture cryptographic hashes of the serving artifacts:
 
 - serving `ocpv2.env`;
 - serving `ocpv2.service`;
@@ -211,7 +223,7 @@ Capture successor artifact state and hashes for:
 Final verification must prove:
 
 - successor HEAD equals `target_head`;
-- successor worktree/index is clean unless the canonical staging contract explicitly creates tracked-state changes, which this design does not permit;
+- successor worktree/index is clean;
 - successor profile is `lifecycle-v2-p2`;
 - successor service is not active;
 - successor timer is not active;
@@ -223,12 +235,16 @@ Final verification must prove:
 
 Read-only service-manager queries may be used for verification; mutation-capable service-manager operations are not authorized.
 
-## 12. Immutable receipt and idempotency
+## 12. Immutable audit records and idempotency
 
-Every `DRY_RUN` and `STAGE` decision produces or updates the appropriate immutable audit record through the existing canonical receipt mechanism. A successful `STAGE` receipt must include at least:
+Every DRY_RUN and STAGE decision appends its own immutable audit record through the canonical receipt/audit mechanism; an existing record is never updated in place.
+
+The DRY_RUN record and STAGE record are linked by `request_id`, `stage_intent_digest`, and `preflight_digest` while retaining distinct `phase_request_digest` values.
+
+A successful STAGE receipt must include at least:
 
 - request ID;
-- canonical request digest;
+- stage-intent digest and phase-request digest;
 - project/successor alias and canonical root identity;
 - approval policy ref and digest;
 - expected branch and pre-HEAD;
@@ -236,7 +252,8 @@ Every `DRY_RUN` and `STAGE` decision produces or updates the appropriate immutab
 - remotely observed/fetched SHA;
 - ancestor/fast-forward guard result;
 - preflight digest;
-- Git mutation result and pre/post HEAD;
+- Git fetch result and branch mutation result;
+- pre/post HEAD;
 - successor env/service/timer hashes;
 - serving env/service/timer pre/post hashes;
 - service/timer active and enabled observations;
@@ -244,9 +261,9 @@ Every `DRY_RUN` and `STAGE` decision produces or updates the appropriate immutab
 - all guard outcomes;
 - final transaction outcome.
 
-A repeated request with the same canonical request digest must not re-execute side effects. It returns the existing immutable receipt/result.
+A repeated phase request with the same `phase_request_digest` must not re-execute side effects. It returns the existing immutable phase receipt/result.
 
-A reused `request_id` with a different canonical request digest is rejected as an identity collision.
+A repeated DRY_RUN for the same stage intent may reuse the prior immutable result only when the implementation can prove its observations are still valid; otherwise it must create a new preflight lineage rather than treating stale observations as current authority.
 
 ## 13. Failure semantics and recovery
 
@@ -254,15 +271,18 @@ The stager fails closed and records the furthest safe phase reached.
 
 Normative outcomes include:
 
-- `FAILED_BEFORE_MUTATION`: no Git or successor artifact mutation occurred;
-- `FAILED_AFTER_GIT_ADVANCE`: Git reached the approved target, but successor artifact staging or later verification did not complete successfully;
+- `FAILED_BEFORE_MUTATION`: no Git metadata, branch, worktree, or successor artifact mutation occurred;
+- `FAILED_AFTER_FETCH`: only the bounded fetch/request-scoped Git metadata changed; current branch, HEAD, index, worktree, and successor artifacts did not advance;
+- `FAILED_AFTER_GIT_ADVANCE`: current branch/HEAD reached the approved target, but successor artifact staging or later verification did not complete successfully;
 - `STAGED`: all Git, staging, isolation, disabled-state, and preservation checks passed.
+
+Safe cleanup of the request-scoped temporary ref is permitted and must be recorded; it is not a rollback of branch history.
 
 The implementation must not use `reset --hard`, forced checkout, or another compensating history mutation to roll back a Git advance after a later failure.
 
-After `FAILED_AFTER_GIT_ADVANCE`, recovery requires a **new admission** bound to the now-current HEAD. The new request may have zero Git delta if current HEAD already equals the reviewed target, but it must independently re-prove policy, isolation, disabled state, serving preservation, and all post-conditions.
+After `FAILED_AFTER_GIT_ADVANCE`, recovery requires a **new admission** bound to the now-current HEAD. The new request may have zero branch delta if current HEAD already equals the reviewed target, but it must independently re-prove policy, isolation, disabled state, serving preservation, and all post-conditions.
 
-A same-digest replay is audit/idempotency retrieval, not a recovery execution.
+A same-phase-digest replay is audit/idempotency retrieval, not a recovery execution.
 
 ## 14. Admission and execution authority split
 
@@ -306,12 +326,12 @@ Provides only the bounded host primitives required by the admitted transaction. 
 
 Before GREEN implementation, PR #18 must pin at least the following behavior:
 
-1. exact two-phase binding: STAGE without matching preflight digest fails;
-2. DRY_RUN is repository/worktree/systemd non-mutating;
+1. exact two-phase binding: STAGE without matching request lineage, stage-intent digest, and preflight digest fails;
+2. DRY_RUN is repository/worktree/systemd non-mutating and uses no fetch when the target object is absent locally;
 3. happy path stages the exact approved target and only successor artifacts;
 4. dirty successor worktree fails closed;
 5. branch or expected HEAD drift fails closed;
-6. non-fast-forward target fails closed;
+6. non-fast-forward target fails closed after bounded fetch without moving the branch/HEAD/worktree;
 7. serving alias/root fails closed;
 8. predecessor alias/root fails closed;
 9. fetched SHA different from approved `target_head` fails closed;
@@ -320,19 +340,21 @@ Before GREEN implementation, PR #18 must pin at least the following behavior:
 12. activation/service-manager mutation attempt is structurally unavailable or rejected;
 13. serving env/service/timer hash drift fails the transaction;
 14. successor active/enabled/polling state fails the transaction;
-15. request replay with the same digest is side-effect free and returns the existing receipt;
-16. reused request ID with a different digest fails closed;
-17. failure after Git advance does not reset/rollback history and requires new admission;
-18. successful receipt contains all normative SHA/hash/guard evidence.
+15. same phase-request digest replay is side-effect free and returns the existing receipt;
+16. same request ID with a different stage-intent digest fails closed;
+17. DRY_RUN and STAGE for the same request lineage may have different phase-request digests without identity collision;
+18. failure after bounded fetch records `FAILED_AFTER_FETCH` and does not move branch/HEAD/worktree;
+19. failure after Git advance does not reset/rollback history and requires new admission;
+20. successful receipt contains all normative SHA/hash/guard evidence.
 
 Unit tests may instantiate `SuccessorReleaseStager` directly to prove its local contract, but the production integration test must prove that mutation is reachable only through the Production Execution Gateway / Full MCP boundary.
 
 ## 16. Relationship to current PR #18
 
-At the current PR head, PR #18 has started the RED seam around:
+At the PR head that existed when this spec was authored, PR #18 had started the RED seam around:
 
 - request parsing;
-- `DRY_RUN` / `STAGE` two-phase binding;
+- DRY_RUN / STAGE two-phase binding;
 - remote target binding;
 - exact expected branch/HEAD;
 - safe successor profile;
@@ -365,11 +387,12 @@ This design is satisfied only when the implementation can prove all of the follo
 - OCP gained no general mutation authority;
 - state-changing work remains behind Production Execution Gateway / Full MCP;
 - only a registered isolated successor can be targeted;
-- request, policy, branch, pre-HEAD, reviewed ref, and exact target SHA are cryptographically bound;
+- stage intent, policy, branch, pre-HEAD, reviewed ref, and exact target SHA are cryptographically bound;
+- DRY_RUN remains non-mutating even when ancestry proof requires a later fetch;
 - only fast-forward release synchronization is possible;
 - stage-user-service is successor-only and structurally non-activating;
 - serving files remain byte-identical;
 - successor polling/production effects remain disabled;
-- every result is auditable and replay-safe;
+- every phase result is immutable, auditable, and replay-safe;
 - partial failure never triggers unsafe rollback mutation;
 - runtime-current, P3, predecessor shutdown, and existing Run migration remain outside this authority.
