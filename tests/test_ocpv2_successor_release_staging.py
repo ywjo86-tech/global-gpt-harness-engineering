@@ -72,6 +72,28 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
         registry.register(target, "successor-p2")
         return registry, target, base, release
 
+    def _request(self, api, base: str, release: str, **overrides):
+        return api.SuccessorReleaseStageRequest.from_mapping(
+            {
+                **BASE_REQUEST,
+                "expected_head": base,
+                "target_head": release,
+                **overrides,
+            }
+        )
+
+    def _safe_lifecycle(self, api, root: Path):
+        serving = root / "serving-runtime"
+        serving.mkdir()
+        return lambda: api.SuccessorLifecycleIdentity(
+            serving_root=serving,
+            predecessor_root=None,
+        )
+
+    def _assert_no_stage_mutation(self, project: Path, expected_head: str):
+        self.assertEqual(git(project, "rev-parse", "HEAD"), expected_head)
+        self.assertFalse((project / ".git" / "refs" / "ocp").exists())
+
     def test_request_requires_exact_two_phase_binding(self):
         api = successor_api()
         dry = api.SuccessorReleaseStageRequest.from_mapping(BASE_REQUEST)
@@ -105,18 +127,108 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
         replay = api.SuccessorReleaseStageRequest.from_mapping(dict(BASE_REQUEST))
         self.assertEqual(first.phase_request_digest, replay.phase_request_digest)
 
+    def test_dirty_successor_worktree_fails_before_mutation(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            (project / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            with self.assertRaises(api.SuccessorReleaseStageError):
+                stager.execute(self._request(api, base, release))
+            self._assert_no_stage_mutation(project, base)
+
+    def test_expected_branch_drift_fails_before_mutation(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            with self.assertRaises(api.SuccessorReleaseStageError):
+                stager.execute(self._request(api, base, release, expected_branch="other"))
+            self._assert_no_stage_mutation(project, base)
+
+    def test_expected_head_drift_fails_before_mutation(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            with self.assertRaises(api.SuccessorReleaseStageError):
+                stager.execute(self._request(api, "f" * 40, release))
+            self._assert_no_stage_mutation(project, base)
+
+    def test_serving_root_cannot_be_successor_root(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=lambda: api.SuccessorLifecycleIdentity(
+                    serving_root=project,
+                    predecessor_root=None,
+                ),
+            )
+            with self.assertRaises(api.SuccessorReleaseStageError):
+                stager.execute(self._request(api, base, release))
+            self._assert_no_stage_mutation(project, base)
+
+    def test_predecessor_root_cannot_be_successor_root(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            serving = root / "serving-runtime"
+            serving.mkdir()
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=lambda: api.SuccessorLifecycleIdentity(
+                    serving_root=serving,
+                    predecessor_root=project,
+                ),
+            )
+            with self.assertRaises(api.SuccessorReleaseStageError):
+                stager.execute(self._request(api, base, release))
+            self._assert_no_stage_mutation(project, base)
+
+    def test_canonical_identity_rejects_symlink_alias_to_serving_root(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            serving_alias = root / "serving-alias"
+            serving_alias.symlink_to(project, target_is_directory=True)
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=lambda: api.SuccessorLifecycleIdentity(
+                    serving_root=serving_alias,
+                    predecessor_root=None,
+                ),
+            )
+            with self.assertRaises(api.SuccessorReleaseStageError):
+                stager.execute(self._request(api, base, release))
+            self._assert_no_stage_mutation(project, base)
+
     def test_dry_run_is_non_mutating_and_binds_remote_target(self):
         api = successor_api()
         with tempfile.TemporaryDirectory() as td:
-            registry, project, base, release = self._fixture(Path(td))
-            request = api.SuccessorReleaseStageRequest.from_mapping(
-                {
-                    **BASE_REQUEST,
-                    "expected_head": base,
-                    "target_head": release,
-                }
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            request = self._request(api, base, release)
+            stager = api.SuccessorReleaseStager(
+                registry,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
             )
-            stager = api.SuccessorReleaseStager(registry)
             result = stager.execute(request)
             self.assertEqual(result["status"], "STAGE_READY")
             self.assertFalse(result["mutation_performed"])
@@ -157,19 +269,15 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
                     "timer_path": str(timer),
                 }
 
+            lifecycle = self._safe_lifecycle(api, root)
             stager = api.SuccessorReleaseStager(
                 registry,
+                lifecycle_identity_provider=lifecycle,
                 stage_callback=stage_callback,
                 user_config_root=config_root,
                 user_unit_root=unit_root,
             )
-            dry = api.SuccessorReleaseStageRequest.from_mapping(
-                {
-                    **BASE_REQUEST,
-                    "expected_head": base,
-                    "target_head": release,
-                }
-            )
+            dry = self._request(api, base, release)
             preflight = stager.execute(dry)
             stage = api.SuccessorReleaseStageRequest.from_mapping(
                 {
