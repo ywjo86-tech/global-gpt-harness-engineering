@@ -16,7 +16,7 @@ class ProjectOnboardingRuntimeTests(unittest.TestCase):
         enabled = ocpv2_runtime_service.project_onboarding_enabled_from_environment
         self.assertTrue(enabled({"OCP_PROJECT_ONBOARDING_ENABLED": "1"}))
         for value in ("", "0", "true", "TRUE", "yes", "2"):
-            self.assertFalse(enabled({"OCP_PROJECT_ONBOARDING_ENABLED": value))
+            self.assertFalse(enabled({"OCP_PROJECT_ONBOARDING_ENABLED": value}))
 
     def test_status_projection_is_not_treated_as_canonical_result(self):
         ocpv2_runtime_service.finalize_remote_control_projection(
