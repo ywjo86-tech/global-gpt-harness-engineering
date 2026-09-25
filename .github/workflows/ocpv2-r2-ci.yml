@@ -28,6 +28,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python3 -m unittest -v tests.test_harness_lifecycle_v2_gate13_authority_seal
       - run: python3 -m unittest -v tests.test_harness_lifecycle_v2_gate12_new_activation_default
       - run: python3 -m unittest -v tests.test_harness_lifecycle_v2_gate11_successor_qualification
       - run: python3 -m unittest -v tests.test_ai_office_successor_compat
