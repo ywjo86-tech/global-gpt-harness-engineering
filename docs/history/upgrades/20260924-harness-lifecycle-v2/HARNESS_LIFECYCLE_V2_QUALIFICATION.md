@@ -90,20 +90,46 @@ Project onboarding remains separately feature-gated and fail-closed; adding Life
 - Gate 15 deployed default/explicit rollback wiring: PASS after fixing the OCP composition seam.
 - Gate 16 final compatibility qualification: PASS after final onboarding canonical mapping-root authority hardening and test-fixture correction.
 
-## Final CI evidence
+## G16 behavior baseline evidence
 
 PR: `#15 Harness Lifecycle V2 compatibility bridge`
 
-Final qualified implementation head: `68b376c3fd6884359f185ca4f276a1e214280918`
+G16 behavior baseline implementation commit: `68b376c3fd6884359f185ca4f276a1e214280918`
 
-GitHub Actions run: `36095889124`
+G16 baseline GitHub Actions run: `36095889124`
 
 - `focused`: PASS
 - `successor-release-qualification`: PASS
 - `full-regression`: PASS — `FULL_REGRESSION_SUMMARY run=2392 failures=0 errors=0 skipped=14`
 - `regression-delta`: PASS
 
+These identifiers are immutable evidence for the G16 behavior baseline; they are **not** a claim that this branch-resident document names the current PR head.
+
 The focused suite includes Lifecycle V2 G11–G15 coverage, AI Office and Family compatibility canaries, SFT prefix activation bridge, project onboarding remote/envelope/service/runtime/deploy-default checks, OCP transport/authority boundary tests, runtime migration handoff tests, Production Execution Gateway tests, and Full MCP boundary lint. The successor-release job checks out the exact PR head, builds/verifies the immutable runtime release, and confirms the qualification checkout remains clean.
+
+## P0 promotion-readiness interruption record
+
+Detected: 2026-09-25 during Production Promotion Readiness.
+
+Observed state:
+
+- PR #15 had advanced beyond the G16 baseline because completion-record documentation was committed after the baseline qualification.
+- The durable qualification/plan text still described `68b376c3fd6884359f185ca4f276a1e214280918` / `36095889124` as the final branch head/run even though later documentation commits had changed the PR head.
+- Runtime authority, Legacy preservation, Gateway / Full MCP effect authority, and the rollback seam were not implicated.
+
+Root cause:
+
+A branch-resident mutable document attempted to carry a self-referential "final current HEAD" identity. Any commit that updates that document necessarily creates a new HEAD, so the embedded identity becomes stale by construction.
+
+Resolution:
+
+1. Treat `68b376c3fd6884359f185ca4f276a1e214280918` / `36095889124` as the immutable G16 behavior baseline only.
+2. Do not embed the eventual promotion-candidate exact HEAD in a mutable file on that same branch.
+3. After this ledger repair lands, run fresh exact-head CI on the resulting PR head.
+4. Seal the resulting exact promotion-candidate HEAD + CI run externally on PR #15 after all required jobs pass.
+5. Keep merge, side-by-side production deployment, canary traffic, `runtime-current` switching, and existing-run migration outside this P0 repair.
+
+This removes the self-reference loop while preserving a durable root-cause and recovery record.
 
 ## Promotion boundary
 
