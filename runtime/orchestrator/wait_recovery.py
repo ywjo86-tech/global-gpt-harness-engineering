@@ -72,6 +72,7 @@ class ResourceWaitRecoveryDecision:
 
 
 _RULES = {
+    ("WAITING_RESOURCE", "OPERATOR_DISPATCH_ACK_PENDING"): ("DCC_OR_OPERATOR", True),
     ("WAITING_RESOURCE", "OPERATOR_TASK_RECEIPT_PENDING"): ("DCC_OR_OPERATOR", True),
     ("WAITING_RESOURCE", "CONTINUATION_RECOVERY_PENDING"): ("DCC_RECONCILER", True),
     ("WAITING_RESOURCE", "LOW_RESOURCE_BACKPRESSURE"): ("RESOURCE_RECOVERY", True),
@@ -150,8 +151,6 @@ def record_provider_wait_recovery_evidence(
             raise WaitRecoveryError("provider wait evidence path is unsafe")
         existing = json.loads(path.read_text(encoding="utf-8"))
         if existing != evidence:
-            # created_at makes exact replay different; accept an existing record only
-            # when every authority-bearing field is identical.
             left = {k: v for k, v in existing.items() if k not in {"created_at", "evidence_sha256"}}
             right = {k: v for k, v in evidence.items() if k not in {"created_at", "evidence_sha256"}}
             if left != right:

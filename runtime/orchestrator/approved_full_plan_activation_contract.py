@@ -19,9 +19,10 @@ _REQUEST_FIELDS = {
 }
 _ARTIFACT_FIELDS = {"path", "sha256"}
 _LV_ARTIFACT_FIELDS = {"lv_id", "path", "sha256"}
-_GATE_FIELDS = {
+_GATE_REQUIRED_FIELDS = {
     "gate_id", "approval_evidence", "engine_requirement_evidence", "project_requirement_evidence_by_lv",
 }
+_GATE_OPTIONAL_FIELDS = {"adopted_prefix_evidence"}
 
 
 class ApprovedFullPlanActivationContractError(ValueError):
@@ -119,10 +120,14 @@ class GateBindingRefV1:
     approval_evidence: ArtifactRefV1
     engine_requirement_evidence: ArtifactRefV1 | None
     project_requirement_evidence_by_lv: tuple[LVArtifactRefV1, ...]
+    adopted_prefix_evidence: ArtifactRefV1 | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "GateBindingRefV1":
-        if not isinstance(value, Mapping) or set(value) != _GATE_FIELDS:
+        if not isinstance(value, Mapping):
+            raise ApprovedFullPlanActivationContractError("FIELDS_MISMATCH")
+        fields = set(value)
+        if not _GATE_REQUIRED_FIELDS.issubset(fields) or fields - _GATE_REQUIRED_FIELDS - _GATE_OPTIONAL_FIELDS:
             raise ApprovedFullPlanActivationContractError("FIELDS_MISMATCH")
         rows = value.get("project_requirement_evidence_by_lv")
         if not isinstance(rows, list):
@@ -134,20 +139,27 @@ class GateBindingRefV1:
         engine_raw = value.get("engine_requirement_evidence")
         if engine_raw is not None and not isinstance(engine_raw, Mapping):
             raise ApprovedFullPlanActivationContractError("FIELDS_MISMATCH")
+        prefix_raw = value.get("adopted_prefix_evidence")
+        if prefix_raw is not None and not isinstance(prefix_raw, Mapping):
+            raise ApprovedFullPlanActivationContractError("FIELDS_MISMATCH")
         return cls(
             gate_id=_safe_id(value["gate_id"], "GATE"),
             approval_evidence=ArtifactRefV1.from_mapping(value["approval_evidence"], label="gate_approval"),
             engine_requirement_evidence=None if engine_raw is None else ArtifactRefV1.from_mapping(engine_raw, label="engine_requirement"),
             project_requirement_evidence_by_lv=lv_refs,
+            adopted_prefix_evidence=None if prefix_raw is None else ArtifactRefV1.from_mapping(prefix_raw, label="adopted_prefix_evidence"),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "gate_id": self.gate_id,
             "approval_evidence": self.approval_evidence.to_dict(),
             "engine_requirement_evidence": None if self.engine_requirement_evidence is None else self.engine_requirement_evidence.to_dict(),
             "project_requirement_evidence_by_lv": [item.to_dict() for item in self.project_requirement_evidence_by_lv],
         }
+        if self.adopted_prefix_evidence is not None:
+            value["adopted_prefix_evidence"] = self.adopted_prefix_evidence.to_dict()
+        return value
 
 
 @dataclass(frozen=True, slots=True)

@@ -99,11 +99,16 @@ class ValidatedGateAuthorityV1:
     engine_requirement_evidence_sha256: str
     project_requirement_evidence_paths_by_lv: tuple[tuple[str, str, str], ...]
     lv_order: tuple[str, ...]
+    adopted_prefix_evidence_path: str = ""
+    adopted_prefix_evidence_sha256: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["project_requirement_evidence_paths_by_lv"] = [list(row) for row in self.project_requirement_evidence_paths_by_lv]
         value["lv_order"] = list(self.lv_order)
+        if not self.adopted_prefix_evidence_path:
+            value.pop("adopted_prefix_evidence_path", None)
+            value.pop("adopted_prefix_evidence_sha256", None)
         return value
 
 
@@ -168,6 +173,19 @@ def _validate_gate_requirement_artifacts(*, project_root: Path, harness_state_ro
             raise ApprovedFullPlanBindingError("EXECUTABLE_REQUIREMENT_BINDING_MISMATCH") from exc
         engine_path = str(resolved)
 
+    prefix_path = ""
+    prefix_sha256 = ""
+    prefix_ref = gate_ref.adopted_prefix_evidence
+    if prefix_ref is not None:
+        resolved_prefix, _ = resolve_harness_authority_file(
+            harness_state_root=harness_state_root, project_id=project_id, kind="artifact",
+            raw=prefix_ref.path, label="EXECUTABLE_PREFIX_ADOPTION_BINDING_MISMATCH",
+        )
+        prefix_sha256 = sha256_file(resolved_prefix)
+        if prefix_sha256 != prefix_ref.sha256:
+            raise ApprovedFullPlanBindingError("EXECUTABLE_PREFIX_ADOPTION_BINDING_MISMATCH")
+        prefix_path = str(resolved_prefix)
+
     supplied = {item.lv_id: item for item in gate_ref.project_requirement_evidence_by_lv}
     expected_lvs = [item.lv_id for item in plan.lvs]
     if project_requirements_required and set(supplied) != set(expected_lvs):
@@ -217,6 +235,8 @@ def _validate_gate_requirement_artifacts(*, project_root: Path, harness_state_ro
         engine_requirement_evidence_path=engine_path, engine_requirement_evidence_sha256=engine_sha256,
         project_requirement_evidence_paths_by_lv=tuple(project_rows),
         lv_order=tuple(item.lv_id for item in plan.lvs),
+        adopted_prefix_evidence_path=prefix_path,
+        adopted_prefix_evidence_sha256=prefix_sha256,
     )
 
 

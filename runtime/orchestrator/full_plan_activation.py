@@ -12,6 +12,11 @@ from runtime.ai_office.full_plan_activation import AIFullPlanActivationContextV1
 
 from .approved_full_plan_binding import ExecutableAuthorityBundleV1
 from .durable_io import DurableIOError, canonical_json_bytes, durable_json_load, durable_json_save, sha256_bytes
+from .execution_lifecycle_v2 import (
+    LIFECYCLE_BINDING_SCHEMA,
+    _build_execution_authority_bundle,
+    validate_execution_authority_bundle,
+)
 from .production_full_plan_entry import FullPlanJobError, canonical_job_path, load_job, preflight_job, register_job
 from .production_run_authority import AUTO_RECONCILE_OWNER, executor_runtime_identity
 
@@ -141,9 +146,11 @@ def _validate_context(bundle: ExecutableAuthorityBundleV1, context: AIFullPlanAc
 
 def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
                                    ai_context: AIFullPlanActivationContextV1,
-                                   harness_state_root: str | Path) -> dict[str, Any]:
+                                   harness_state_root: str | Path,
+                                   lifecycle_mode: str = "V2") -> dict[str, Any]:
     if not isinstance(bundle, ExecutableAuthorityBundleV1): raise FullPlanActivationError("EXECUTABLE_AUTHORITY_BUNDLE_REQUIRED")
     if not isinstance(ai_context, AIFullPlanActivationContextV1): raise FullPlanActivationError("AI_FULL_PLAN_CONTEXT_REQUIRED")
+    if lifecycle_mode not in {"LEGACY", "V2"}: raise FullPlanActivationError("ACTIVATION_LIFECYCLE_MODE_INVALID")
     _validate_context(bundle, ai_context)
     state = Path(harness_state_root).resolve()
     if state.is_symlink() or not state.is_dir(): raise FullPlanActivationError("HARNESS_STATE_ROOT_INVALID")
@@ -175,15 +182,36 @@ def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
         if gate.project_requirement_evidence_paths_by_lv:
             item["requirement_evidence_paths_by_lv"] = {lv: path for lv, path, _ in gate.project_requirement_evidence_paths_by_lv}
             item["requirement_evidence_sha256_by_lv"] = {lv: digest for lv, _, digest in gate.project_requirement_evidence_paths_by_lv}
+        if gate.adopted_prefix_evidence_path:
+            item["adopted_prefix_evidence_path"] = gate.adopted_prefix_evidence_path
+            item["adopted_prefix_evidence_sha256"] = gate.adopted_prefix_evidence_sha256
         job["gates"].append(item)
+    if lifecycle_mode == "LEGACY":
+        return job
+    binding = {
+        "schema_version": LIFECYCLE_BINDING_SCHEMA,
+        "lifecycle_mode": "V2",
+        "bound_at_activation": True,
+        "migration_allowed": False,
+        "runtime_release_digest": bundle.runtime_release_digest,
+    }
+    job["lifecycle_binding"] = binding
+    job["execution_authority_bundle"] = _build_execution_authority_bundle(job, binding)
+    validate_execution_authority_bundle(job)
     return job
 
 
 def activate_approved_full_plan(bundle: ExecutableAuthorityBundleV1, *,
                                 ai_context: AIFullPlanActivationContextV1,
-                                harness_state_root: str | Path) -> FullPlanActivationResultV1:
+                                harness_state_root: str | Path,
+                                lifecycle_mode: str = "V2") -> FullPlanActivationResultV1:
     _validate_context(bundle, ai_context)
-    job = build_executable_full_plan_job(bundle, ai_context=ai_context, harness_state_root=harness_state_root)
+    job = build_executable_full_plan_job(
+        bundle,
+        ai_context=ai_context,
+        harness_state_root=harness_state_root,
+        lifecycle_mode=lifecycle_mode,
+    )
     preflight = preflight_job(job)
     if preflight.get("status") != "PASS":
         raise FullPlanActivationError("ACTIVATION_PREFLIGHT_BLOCKED:" + str(preflight.get("reason")))

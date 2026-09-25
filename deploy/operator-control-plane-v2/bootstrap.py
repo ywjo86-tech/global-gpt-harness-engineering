@@ -155,6 +155,8 @@ def _env_text(config: BootstrapConfig) -> str:
             f"OCP_GITHUB_TOKEN_FILE={token_file}",
             f"OCP_STATE_ROOT={state_root}",
             f"OCP_REPO_ROOT={config.repo_root}",
+            "OCP_PROJECT_ONBOARDING_ENABLED=0",
+            "OCP_PROJECT_ONBOARDING_POLICY_REF=",
             "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false",
             "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG=",
             "",
@@ -248,8 +250,11 @@ def config_from_env_file(path: str | Path) -> BootstrapConfig:
         "OCP_REPO_ROOT",
     }
     optional = {
+        "OCP_PROJECT_ONBOARDING_ENABLED",
+        "OCP_PROJECT_ONBOARDING_POLICY_REF",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
+        "GCH_NEW_ACTIVATION_LIFECYCLE_MODE",
     }
     if not required.issubset(env) or set(env) - required - optional:
         raise BootstrapError("environment file key set mismatch")
@@ -310,9 +315,6 @@ def _compose_non_mutating_service(config: BootstrapConfig):
     result_outbox = RemoteResultOutbox(checked.state_root / "outbox")
 
     def publish_pending_projection(projection: RemoteResultProjectionV1) -> None:
-        # Replaying an already-sealed result projection is transport recovery only.
-        # It does not grant execution, completion, provider-routing, or canonical
-        # mutation authority to the bootstrap service.
         adapter.publish_projection(projection.to_dict())
         adapter.acknowledge_delivery(projection.message_id)
 
