@@ -254,6 +254,7 @@ def config_from_env_file(path: str | Path) -> BootstrapConfig:
         "OCP_PROJECT_ONBOARDING_POLICY_REF",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
+        "GCH_NEW_ACTIVATION_LIFECYCLE_MODE",
     }
     if not required.issubset(env) or set(env) - required - optional:
         raise BootstrapError("environment file key set mismatch")
