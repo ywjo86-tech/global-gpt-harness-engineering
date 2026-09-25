@@ -43,6 +43,13 @@ def _request(root: Path, mapping_root: Path, head: str, *, mode: str, preflight_
     )
 
 
+def _admission(registry_root: Path, mapping_root: Path) -> ProjectOnboardingAdmission:
+    return ProjectOnboardingAdmission(
+        OnboardingRegistry(registry_root),
+        canonical_mapping_root=mapping_root,
+    )
+
+
 class ProjectOnboardingRemoteTests(unittest.TestCase):
     def test_dry_run_is_read_only_and_returns_bound_preflight_digest(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -50,7 +57,7 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             root, head = _project(tmp_path)
             registry_root = tmp_path / "registry"
             mapping_root = tmp_path / "mappings"
-            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            admission = _admission(registry_root, mapping_root)
             result = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
             self.assertEqual(result["schema_version"], "orchestration.project-onboarding-result.v1")
             self.assertEqual(result["status"], "REGISTRATION_READY")
@@ -68,7 +75,7 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             root, head = _project(tmp_path)
             registry_root = tmp_path / "registry"
             mapping_root = tmp_path / "mappings"
-            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            admission = _admission(registry_root, mapping_root)
             with self.assertRaisesRegex(ProjectOnboardingRemoteError, "preflight"):
                 admission.execute(_request(root, mapping_root, head, mode="BOOTSTRAP"))
             dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
@@ -85,7 +92,7 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             root, head = _project(tmp_path)
             registry_root = tmp_path / "registry"
             mapping_root = tmp_path / "mappings"
-            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            admission = _admission(registry_root, mapping_root)
             with self.assertRaisesRegex(ProjectOnboardingRemoteError, "branch"):
                 admission.execute(ProjectOnboardingRequest("orchestration.project-onboarding-request.v1", "ai-commerce-intelligence", str(root), str(mapping_root), "wrong-branch", head, "DRY_RUN", None))
             with self.assertRaisesRegex(ProjectOnboardingRemoteError, "HEAD"):
@@ -100,7 +107,7 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             (root / "local.txt").write_text("uncommitted\n", encoding="utf-8")
             registry_root = tmp_path / "registry"
             mapping_root = tmp_path / "mappings"
-            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            admission = _admission(registry_root, mapping_root)
             with self.assertRaisesRegex(ProjectOnboardingRemoteError, "clean"):
                 admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
             self.assertFalse(registry_root.exists())
@@ -112,7 +119,7 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             root, head = _project(tmp_path)
             registry_root = tmp_path / "registry"
             mapping_root = tmp_path / "mappings"
-            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            admission = _admission(registry_root, mapping_root)
             dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
             (root / "IMPLEMENTATION_PLAN.md").write_text("# Plan\n\nM6 changed.\n", encoding="utf-8")
             _git(root, "add", "IMPLEMENTATION_PLAN.md")
@@ -130,16 +137,24 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             registry_root = tmp_path / "registry"
             canonical_mapping_root = tmp_path / "canonical-mappings"
             untrusted_mapping_root = tmp_path / "other-mappings"
-            admission = ProjectOnboardingAdmission(
-                OnboardingRegistry(registry_root),
-                canonical_mapping_root=canonical_mapping_root,
-            )
+            admission = _admission(registry_root, canonical_mapping_root)
             with self.assertRaisesRegex(ProjectOnboardingRemoteError, "mapping root"):
                 admission.execute(
                     _request(root, untrusted_mapping_root, head, mode="DRY_RUN")
                 )
             self.assertFalse(canonical_mapping_root.exists())
             self.assertFalse(untrusted_mapping_root.exists())
+
+    def test_runtime_alias_registry_derives_configured_mapping_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            mapping_root = tmp_path / "mappings"
+            registry_root = mapping_root / "aliases"
+            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            result = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+            self.assertEqual(result["binding"]["mapping_root"], str(mapping_root.resolve()))
+            self.assertFalse(mapping_root.exists())
 
 
 if __name__ == "__main__":
