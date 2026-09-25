@@ -34,7 +34,7 @@ class ProjectOnboardingRuntimeTests(unittest.TestCase):
     def test_composition_injects_dedicated_onboarding_admission(self):
         source = inspect.getsource(ocpv2_runtime_service._compose_service)
         self.assertIn("ProjectOnboardingAdmission", source)
-        self.assertIn("canonical_mapping_root=onboarding_root", source)
+        self.assertIn('OnboardingRegistry(onboarding_root / "aliases")', source)
         self.assertIn("onboard_authorized=onboard", source)
         self.assertIn("project_onboarding_enabled=config.project_onboarding_enabled", source)
         self.assertIn("project_onboarding_policy_ref=config.project_onboarding_policy_ref", source)
