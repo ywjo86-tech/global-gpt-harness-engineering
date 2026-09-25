@@ -16,8 +16,14 @@ from typing import Any, Callable, Mapping
 from .operator_control import OperatorDirectiveV1
 from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
 from .remote_control_envelope import (
-    APPROVED_FULL_PLAN_ACTIVATION_KIND, APPROVED_WORK_ACTIVATION_KIND, HOST_INSPECTION_KIND,
-    RemoteControlEnvelopeV1, RemoteFullPlanActivationAuthorization, RemoteWorkActivationAuthorization,
+    APPROVED_FULL_PLAN_ACTIVATION_KIND,
+    APPROVED_WORK_ACTIVATION_KIND,
+    HOST_INSPECTION_KIND,
+    PROJECT_ONBOARDING_KIND,
+    RemoteControlEnvelopeV1,
+    RemoteFullPlanActivationAuthorization,
+    RemoteProjectOnboardingAuthorization,
+    RemoteWorkActivationAuthorization,
     validate_remote_control_envelope,
 )
 from .remote_operator_envelope import RemoteControlEnvelope, RemoteOperatorEnvelopeV3
@@ -68,6 +74,7 @@ class ServicePollResult:
     inspected: int = 0
     activated: int = 0
     full_plan_activated: int = 0
+    onboarded: int = 0
 
 
 class RemoteOperatorService:
@@ -93,6 +100,9 @@ class RemoteOperatorService:
         activate_full_plan_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         full_plan_activation_enabled: bool = False,
         full_plan_activation_policy_ref: str = "",
+        onboard_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        project_onboarding_enabled: bool = False,
+        project_onboarding_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -109,6 +119,9 @@ class RemoteOperatorService:
         self.activate_full_plan_authorized = activate_full_plan_authorized
         self.full_plan_activation_enabled = bool(full_plan_activation_enabled)
         self.full_plan_activation_policy_ref = str(full_plan_activation_policy_ref or "")
+        self.onboard_authorized = onboard_authorized
+        self.project_onboarding_enabled = bool(project_onboarding_enabled)
+        self.project_onboarding_policy_ref = str(project_onboarding_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -178,6 +191,20 @@ class RemoteOperatorService:
         }
 
     @staticmethod
+    def _project_onboarding_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-project-onboarding-status-projection.v1",
+            "message_id": envelope.message_id,
+            "alias": payload.alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
     def _recover_expired_remote_control(
         raw: RawControlEnvelope,
         exc: Exception,
@@ -194,9 +221,6 @@ class RemoteOperatorService:
             envelope = validate_remote_control_envelope(value, now=issued_at)
         except Exception:
             return None
-        # The configured transport already scopes the repository. Re-check every signed
-        # transport binding that is present in RawControlEnvelope before consuming the
-        # expired request. Any mismatch remains a hard ingress failure.
         if (
             envelope.transport.adapter_id != "GITHUB_CONTROL_V1"
             or envelope.transport.channel_id != raw.source_channel_id
@@ -231,7 +255,7 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = diagnosed = projected = acknowledged = blocked = inspected = activated = full_plan_activated = 0
+        received = validated = executed = diagnosed = projected = acknowledged = blocked = inspected = activated = full_plan_activated = onboarded = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             expired_remote_control = False
@@ -251,7 +275,9 @@ class RemoteOperatorService:
                     projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_EXPIRED")
                 elif envelope.request_kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
                     projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_EXPIRED")
-                else:  # validator already rejects unknown kinds; keep a fail-closed guard.
+                elif envelope.request_kind == PROJECT_ONBOARDING_KIND:
+                    projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_EXPIRED")
+                else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
                 projected += 1
@@ -318,6 +344,35 @@ class RemoteOperatorService:
                             activated += 1
                         except Exception:
                             projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == PROJECT_ONBOARDING_KIND:
+                    payload_mode = str(envelope.payload.mode)
+                    mode_allowed = (
+                        resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
+                        if payload_mode == "DRY_RUN"
+                        else resolved_mode == ControlMode.ACTIVE
+                    )
+                    if not mode_allowed:
+                        projection = self._project_onboarding_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.project_onboarding_enabled or self.onboard_authorized is None:
+                        projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteProjectOnboardingAuthorization)
+                        or not self.project_onboarding_policy_ref
+                        or envelope.authorization.project_onboarding_policy_ref != self.project_onboarding_policy_ref
+                    ):
+                        projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.onboard_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("project onboarding result projection is malformed")
+                            onboarded += 1
+                        except Exception:
+                            projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_ERROR")
                             blocked += 1
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
@@ -406,7 +461,7 @@ class RemoteOperatorService:
                         diagnosed += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
-            else:  # pragma: no cover - enum exhaustiveness guard
+            else:
                 raise RemoteOperatorServiceError("UNKNOWN_MODE")
 
             self._publish_and_ack(envelope, projection)
@@ -425,4 +480,5 @@ class RemoteOperatorService:
             inspected=inspected,
             activated=activated,
             full_plan_activated=full_plan_activated,
+            onboarded=onboarded,
         )
