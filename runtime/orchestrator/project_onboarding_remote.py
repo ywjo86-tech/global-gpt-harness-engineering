@@ -15,6 +15,7 @@ class ProjectOnboardingRemoteError(ValueError):
     pass
 
 
+_GIT_OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _REQUEST_SCHEMA = "orchestration.project-onboarding-request.v1"
 _RESULT_SCHEMA = "orchestration.project-onboarding-result.v1"
@@ -40,11 +41,7 @@ def _canonical(value: object) -> bytes:
 def _git(root: Path, *args: str) -> str:
     try:
         return subprocess.run(
-            ["git", *args],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=True,
+            ["git", *args], cwd=root, capture_output=True, text=True, check=True
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise ProjectOnboardingRemoteError("project git binding is unavailable") from exc
@@ -63,8 +60,8 @@ class ProjectOnboardingAdmission:
     """Narrow create-once recovery admission for an unregistered project.
 
     This object does not grant execution, activation, provider, completion, or
-    effect authority.  It only verifies an exact clean Git binding and delegates
-    the canonical contract creation to :class:`OnboardingRegistry`.
+    effect authority. It only verifies an exact clean Git binding and delegates
+    canonical contract creation to :class:`OnboardingRegistry`.
     """
 
     def __init__(self, registry: OnboardingRegistry):
@@ -77,8 +74,8 @@ class ProjectOnboardingAdmission:
             raise ProjectOnboardingRemoteError("project onboarding mode is unsupported")
         if not request.expected_branch:
             raise ProjectOnboardingRemoteError("expected branch is required")
-        if not _SHA256.fullmatch(request.expected_head):
-            raise ProjectOnboardingRemoteError("expected HEAD must be a lowercase SHA-256-like Git hex binding")
+        if not _GIT_OID.fullmatch(request.expected_head):
+            raise ProjectOnboardingRemoteError("expected HEAD must be a lowercase Git object id")
 
         root = Path(request.project_root)
         if not root.is_absolute() or not root.is_dir() or root != root.resolve():
@@ -135,9 +132,7 @@ class ProjectOnboardingAdmission:
 
         try:
             report = self.registry.bootstrap(
-                request.project_root,
-                request.alias,
-                mapping_root=request.mapping_root,
+                request.project_root, request.alias, mapping_root=request.mapping_root
             )
         except ProjectOnboardingError as exc:
             raise ProjectOnboardingRemoteError(str(exc)) from exc
