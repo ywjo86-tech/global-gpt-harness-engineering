@@ -1,15 +1,19 @@
-"""Governed P2 successor release staging contracts.
-
-This module starts with the immutable request identity used by DRY_RUN/STAGE.
-Mutation behavior is added only by later TDD tasks.
-"""
+"""Governed P2 successor release staging contracts."""
 from __future__ import annotations
 
 import hashlib
 import json
 import re
+import subprocess
 from dataclasses import dataclass
-from typing import Any, Mapping
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+from .project_onboarding import (
+    OnboardingRegistry,
+    ProjectOnboardingError,
+    validate_alias_entry,
+)
 
 SUCCESSOR_RELEASE_STAGE_SCHEMA = "orchestration.successor-release-stage-request.v1"
 SUCCESSOR_PROFILE = "lifecycle-v2-p2"
@@ -78,6 +82,20 @@ def _target_ref(value: object) -> str:
     ):
         raise SuccessorReleaseStageError("invalid target ref")
     return text
+
+
+def _git_read(root: Path, *args: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SuccessorReleaseStageError("successor git observation failed") from exc
+    return result.stdout.strip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,3 +182,113 @@ class SuccessorReleaseStageRequest:
     @property
     def phase_request_digest(self) -> str:
         return hashlib.sha256(_canonical(self.to_dict())).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class SuccessorLifecycleIdentity:
+    serving_root: Path
+    predecessor_root: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class SuccessorWorkspaceIdentity:
+    alias: str
+    canonical_root: Path
+    project_id: str
+
+
+class SuccessorReleaseStager:
+    """Own the bounded P2 successor transaction; mutation is added in later tasks."""
+
+    def __init__(
+        self,
+        registry: OnboardingRegistry,
+        *,
+        full_mcp: object | None = None,
+        lifecycle_identity_provider: Callable[[], SuccessorLifecycleIdentity] | None = None,
+        receipt_store: object | None = None,
+        lock_root: Path | None = None,
+        stage_artifacts: object | None = None,
+        service_state_probe: object | None = None,
+        stage_callback: object | None = None,
+        user_config_root: Path | None = None,
+        user_unit_root: Path | None = None,
+    ) -> None:
+        self.registry = registry
+        self.full_mcp = full_mcp
+        self.lifecycle_identity_provider = lifecycle_identity_provider
+        self.receipt_store = receipt_store
+        self.lock_root = lock_root
+        self.stage_artifacts = stage_artifacts
+        self.service_state_probe = service_state_probe
+        self.stage_callback = stage_callback
+        self.user_config_root = user_config_root
+        self.user_unit_root = user_unit_root
+
+    def _resolve_workspace(
+        self, request: SuccessorReleaseStageRequest
+    ) -> SuccessorWorkspaceIdentity:
+        try:
+            matches = [
+                entry
+                for entry in self.registry.entries()
+                if entry.get("alias") == request.project_alias
+            ]
+            if len(matches) != 1:
+                raise SuccessorReleaseStageError(
+                    "successor alias must resolve to exactly one registry entry"
+                )
+            entry = matches[0]
+            validate_alias_entry(entry)
+        except ProjectOnboardingError as exc:
+            raise SuccessorReleaseStageError("successor registry binding is invalid") from exc
+
+        root = Path(entry["project_root"])
+        try:
+            canonical_root = root.resolve(strict=True)
+        except OSError as exc:
+            raise SuccessorReleaseStageError("successor project root is unavailable") from exc
+        if root != canonical_root:
+            raise SuccessorReleaseStageError("successor project root is not canonical")
+        return SuccessorWorkspaceIdentity(
+            alias=request.project_alias,
+            canonical_root=canonical_root,
+            project_id=str(entry["project_id"]),
+        )
+
+    def _validate_isolation(self, workspace: SuccessorWorkspaceIdentity) -> None:
+        if self.lifecycle_identity_provider is None:
+            raise SuccessorReleaseStageError("lifecycle identity provider is required")
+        lifecycle = self.lifecycle_identity_provider()
+        try:
+            serving_root = Path(lifecycle.serving_root).resolve(strict=True)
+            predecessor_root = (
+                Path(lifecycle.predecessor_root).resolve(strict=True)
+                if lifecycle.predecessor_root is not None
+                else None
+            )
+        except OSError as exc:
+            raise SuccessorReleaseStageError("protected lifecycle root is unavailable") from exc
+        if workspace.canonical_root == serving_root:
+            raise SuccessorReleaseStageError("successor root equals serving root")
+        if predecessor_root is not None and workspace.canonical_root == predecessor_root:
+            raise SuccessorReleaseStageError("successor root equals predecessor root")
+
+    def _validate_local_git(
+        self,
+        workspace: SuccessorWorkspaceIdentity,
+        request: SuccessorReleaseStageRequest,
+    ) -> None:
+        root = workspace.canonical_root
+        if _git_read(root, "status", "--porcelain"):
+            raise SuccessorReleaseStageError("successor worktree/index must be clean")
+        if _git_read(root, "symbolic-ref", "--short", "HEAD") != request.expected_branch:
+            raise SuccessorReleaseStageError("successor branch drift")
+        if _git_read(root, "rev-parse", "HEAD") != request.expected_head:
+            raise SuccessorReleaseStageError("successor HEAD drift")
+
+    def execute(self, request: SuccessorReleaseStageRequest) -> dict[str, Any]:
+        workspace = self._resolve_workspace(request)
+        self._validate_isolation(workspace)
+        self._validate_local_git(workspace, request)
+        raise SuccessorReleaseStageError("successor release transaction is not implemented yet")
