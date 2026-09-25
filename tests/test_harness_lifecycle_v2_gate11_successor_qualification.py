@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.orchestrator.execution_lifecycle_v2 import resolve_lifecycle_mode
+from runtime.orchestrator.execution_lifecycle_v2 import resolve_lifecycle_binding
 from runtime.orchestrator.ocpv2_runtime_service import (
     project_onboarding_enabled_from_environment,
 )
@@ -44,7 +44,7 @@ def _v2_spec() -> dict[str, str]:
 
 class HarnessLifecycleV2Gate11SuccessorQualificationTest(unittest.TestCase):
     def test_code_presence_does_not_migrate_existing_jobs_or_enable_onboarding(self) -> None:
-        self.assertEqual(resolve_lifecycle_mode({}), "LEGACY")
+        self.assertEqual(resolve_lifecycle_binding({})["lifecycle_mode"], "LEGACY")
         self.assertFalse(project_onboarding_enabled_from_environment({}))
         self.assertFalse(
             project_onboarding_enabled_from_environment(
