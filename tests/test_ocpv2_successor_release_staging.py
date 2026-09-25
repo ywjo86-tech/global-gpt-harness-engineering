@@ -40,6 +40,63 @@ def git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+class RecordingFullMcp:
+    def __init__(
+        self,
+        *,
+        branch: str,
+        head: str,
+        remote_heads: list[str],
+        object_present: bool = False,
+        ancestor: bool = True,
+        fetched_head: str | None = None,
+    ) -> None:
+        self.current_branch = branch
+        self.current_head = head
+        self.remote_heads = list(remote_heads)
+        self.object_present = object_present
+        self.ancestor = ancestor
+        self.fetched_head = fetched_head
+        self.calls: list[tuple] = []
+
+    def status(self, root: Path) -> str:
+        self.calls.append(("status", root))
+        return ""
+
+    def branch(self, root: Path) -> str:
+        self.calls.append(("branch", root))
+        return self.current_branch
+
+    def head(self, root: Path) -> str:
+        self.calls.append(("head", root))
+        return self.current_head
+
+    def ls_remote(self, root: Path, target_ref: str) -> list[str]:
+        self.calls.append(("ls_remote", root, target_ref))
+        return list(self.remote_heads)
+
+    def object_exists(self, root: Path, sha: str) -> bool:
+        self.calls.append(("object_exists", root, sha))
+        return self.object_present
+
+    def is_ancestor(self, root: Path, ancestor: str, descendant: str) -> bool:
+        self.calls.append(("is_ancestor", root, ancestor, descendant))
+        return self.ancestor
+
+    def fetch_target(self, root: Path, target_ref: str, temporary_ref: str) -> str:
+        self.calls.append(("fetch_target", root, target_ref, temporary_ref))
+        self.object_present = True
+        return self.fetched_head or self.remote_heads[0]
+
+    def fast_forward_current(self, root: Path, target_head: str) -> str:
+        self.calls.append(("fast_forward_current", root, target_head))
+        self.current_head = target_head
+        return target_head
+
+    def delete_temporary_ref(self, root: Path, temporary_ref: str) -> None:
+        self.calls.append(("delete_temporary_ref", root, temporary_ref))
+
+
 class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
     def _fixture(self, root: Path):
         remote = root / "remote.git"
@@ -84,7 +141,7 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
 
     def _safe_lifecycle(self, api, root: Path):
         serving = root / "serving-runtime"
-        serving.mkdir()
+        serving.mkdir(exist_ok=True)
         return lambda: api.SuccessorLifecycleIdentity(
             serving_root=serving,
             predecessor_root=None,
@@ -93,6 +150,15 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
     def _assert_no_stage_mutation(self, project: Path, expected_head: str):
         self.assertEqual(git(project, "rev-parse", "HEAD"), expected_head)
         self.assertFalse((project / ".git" / "refs" / "ocp").exists())
+
+    def _stage_request(self, api, dry, preflight):
+        return api.SuccessorReleaseStageRequest.from_mapping(
+            {
+                **dry.to_dict(),
+                "mode": "STAGE",
+                "preflight_digest": preflight["preflight_digest"],
+            }
+        )
 
     def test_request_requires_exact_two_phase_binding(self):
         api = successor_api()
@@ -219,6 +285,119 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
                 stager.execute(self._request(api, base, release))
             self._assert_no_stage_mutation(project, base)
 
+    def test_dry_run_missing_target_object_never_fetches_and_defers_ancestry(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            full_mcp = RecordingFullMcp(
+                branch="stable",
+                head=base,
+                remote_heads=[release],
+                object_present=False,
+            )
+            stager = api.SuccessorReleaseStager(
+                registry,
+                full_mcp=full_mcp,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            result = stager.execute(self._request(api, base, release))
+            self.assertEqual(result["ancestry_state"], "PENDING_FETCH_PROOF")
+            self.assertFalse(result["mutation_performed"])
+            self.assertNotIn("fetch_target", [call[0] for call in full_mcp.calls])
+            self.assertNotIn("fast_forward_current", [call[0] for call in full_mcp.calls])
+            self._assert_no_stage_mutation(project, base)
+
+    def test_dry_run_requires_exactly_one_remote_target_match(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            for remote_heads in ([], [release, release]):
+                full_mcp = RecordingFullMcp(
+                    branch="stable", head=base, remote_heads=remote_heads
+                )
+                stager = api.SuccessorReleaseStager(
+                    registry,
+                    full_mcp=full_mcp,
+                    lifecycle_identity_provider=self._safe_lifecycle(api, root),
+                )
+                with self.assertRaises(api.SuccessorReleaseStageError):
+                    stager.execute(self._request(api, base, release))
+                self.assertNotIn("fetch_target", [call[0] for call in full_mcp.calls])
+
+    def test_stage_rejects_target_ref_drift_before_fetch(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            full_mcp = RecordingFullMcp(
+                branch="stable", head=base, remote_heads=[release]
+            )
+            stager = api.SuccessorReleaseStager(
+                registry,
+                full_mcp=full_mcp,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            dry = self._request(api, base, release)
+            preflight = stager.execute(dry)
+            full_mcp.remote_heads = ["f" * 40]
+            with self.assertRaises(api.SuccessorReleaseStageError) as raised:
+                stager.execute(self._stage_request(api, dry, preflight))
+            self.assertEqual(raised.exception.outcome, "FAILED_BEFORE_MUTATION")
+            self.assertNotIn("fetch_target", [call[0] for call in full_mcp.calls])
+            self._assert_no_stage_mutation(project, base)
+
+    def test_stage_fetched_sha_mismatch_is_failed_after_fetch_without_fast_forward(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            full_mcp = RecordingFullMcp(
+                branch="stable",
+                head=base,
+                remote_heads=[release],
+                fetched_head="f" * 40,
+            )
+            stager = api.SuccessorReleaseStager(
+                registry,
+                full_mcp=full_mcp,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            dry = self._request(api, base, release)
+            preflight = stager.execute(dry)
+            with self.assertRaises(api.SuccessorReleaseStageError) as raised:
+                stager.execute(self._stage_request(api, dry, preflight))
+            self.assertEqual(raised.exception.outcome, "FAILED_AFTER_FETCH")
+            self.assertIn("fetch_target", [call[0] for call in full_mcp.calls])
+            self.assertNotIn("fast_forward_current", [call[0] for call in full_mcp.calls])
+            self._assert_no_stage_mutation(project, base)
+
+    def test_stage_non_fast_forward_fails_after_fetch_without_branch_movement(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            full_mcp = RecordingFullMcp(
+                branch="stable",
+                head=base,
+                remote_heads=[release],
+                fetched_head=release,
+                ancestor=False,
+            )
+            stager = api.SuccessorReleaseStager(
+                registry,
+                full_mcp=full_mcp,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            dry = self._request(api, base, release)
+            preflight = stager.execute(dry)
+            with self.assertRaises(api.SuccessorReleaseStageError) as raised:
+                stager.execute(self._stage_request(api, dry, preflight))
+            self.assertEqual(raised.exception.outcome, "FAILED_AFTER_FETCH")
+            self.assertNotIn("fast_forward_current", [call[0] for call in full_mcp.calls])
+            self._assert_no_stage_mutation(project, base)
+
     def test_dry_run_is_non_mutating_and_binds_remote_target(self):
         api = successor_api()
         with tempfile.TemporaryDirectory() as td:
@@ -279,13 +458,7 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
             )
             dry = self._request(api, base, release)
             preflight = stager.execute(dry)
-            stage = api.SuccessorReleaseStageRequest.from_mapping(
-                {
-                    **dry.to_dict(),
-                    "mode": "STAGE",
-                    "preflight_digest": preflight["preflight_digest"],
-                }
-            )
+            stage = self._stage_request(api, dry, preflight)
             result = stager.execute(stage)
             self.assertEqual(result["status"], "STAGED")
             self.assertTrue(result["mutation_performed"])
