@@ -9,8 +9,11 @@ on:
     paths:
       - "runtime/orchestrator/**"
       - "runtime/operator_transport/**"
+      - "runtime/mprf/**"
+      - "runtime/full_mcp/**"
       - "deploy/operator-control-plane-v2/**"
       - "scripts/ocpv2_full_regression.py"
+      - "scripts/rji_runtime_edp.py"
       - "requirements/full-mcp.txt"
       - "tests/**"
       - ".github/workflows/ocpv2-r2-ci.yml"
@@ -60,6 +63,8 @@ jobs:
       - run: python3 -m unittest -v tests.test_ocpv2_final_acceptance_release_blockers
       - name: Full MCP boundary lint
         run: python3 scripts/full_mcp_lint.py runtime/full_mcp runtime/orchestrator/production_execution_gateway.py
+      - name: Ruflo Jev focused runtime EDP
+        run: python3 scripts/rji_runtime_edp.py --focused
       - run: python3 -m compileall -q runtime tests deploy/operator-control-plane-v2
       - run: git diff --check
 
@@ -77,6 +82,21 @@ jobs:
         run: python3 -m pip install -r requirements/full-mcp.txt
       - name: Full repository unittest discovery
         run: python3 scripts/ocpv2_full_regression.py
+
+  rji-full-edp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install canonical Full MCP dependency lock
+        run: python3 -m pip install -r requirements/full-mcp.txt
+      - name: Ruflo Jev full runtime EDP
+        run: python3 scripts/rji_runtime_edp.py
 
   regression-delta:
     runs-on: ubuntu-latest
