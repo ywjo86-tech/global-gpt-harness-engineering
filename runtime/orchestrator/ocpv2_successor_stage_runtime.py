@@ -136,7 +136,7 @@ def _successor_stager(config: base.RuntimeConfig) -> SuccessorReleaseStager:
         OnboardingRegistry(mapping_root / "aliases"),
         lifecycle_identity_provider=lambda: SuccessorLifecycleIdentity(
             serving_root=serving_root,
-            predecessor_root=None,
+            predecessor_root=serving_root,
         ),
         receipt_store=SuccessorReleaseReceiptStore(
             config.state_root / "successor-release-stage-receipts"
