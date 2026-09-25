@@ -136,7 +136,7 @@
 
 ## Ruflo / Jev v0.4 Design Approval — RJI-DESIGN-APPROVAL-20260924
 
-```json
+```jsonc
 {
   "approval_id": "RJI-DESIGN-APPROVAL-20260924",
   "approval_type": "DESIGN_AND_IMPLEMENTATION_PLAN_AUTHORIZATION",
@@ -156,7 +156,7 @@
 
 ## Ruflo / Jev RJI-8 Dangerous-Work Approval — RJI-SAFETY-APPROVAL-20260924
 
-```json
+```jsonc
 {
   "approval_id": "RJI-SAFETY-APPROVAL-20260924",
   "approval_type": "DANGEROUS_WORK_LIVE_ACTIVATION_AUTHORIZATION",
