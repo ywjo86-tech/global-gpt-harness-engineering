@@ -24,6 +24,7 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TARGET_REF = re.compile(r"refs/(?:heads|tags)/[A-Za-z0-9][A-Za-z0-9._/-]{0,199}\Z")
+_BRANCH_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}\Z")
 _REF_COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}\Z")
 _FIELDS = {
     "request_id",
@@ -75,6 +76,25 @@ def _safe_id(value: object, label: str) -> str:
     text = str(value or "")
     if not _SAFE_ID.fullmatch(text) or ".." in text:
         raise SuccessorReleaseStageError(f"invalid {label}")
+    return text
+
+
+def _branch_name(value: object) -> str:
+    text = str(value or "")
+    parts = text.split("/")
+    if (
+        not _BRANCH_NAME.fullmatch(text)
+        or ".." in text
+        or "//" in text
+        or text.endswith(("/", "."))
+        or any(
+            not part
+            or part.startswith(".")
+            or part.endswith((".lock", "."))
+            for part in parts
+        )
+    ):
+        raise SuccessorReleaseStageError("invalid expected branch")
     return text
 
 
@@ -293,7 +313,7 @@ class SuccessorReleaseStageRequest:
             request_id=_safe_id(raw.get("request_id"), "request ID"),
             schema_version=SUCCESSOR_RELEASE_STAGE_SCHEMA,
             project_alias=_safe_id(raw.get("project_alias"), "project alias"),
-            expected_branch=_safe_id(raw.get("expected_branch"), "expected branch"),
+            expected_branch=_branch_name(raw.get("expected_branch")),
             expected_head=_sha1(raw.get("expected_head"), "expected head"),
             target_ref=_target_ref(raw.get("target_ref")),
             target_head=_sha1(raw.get("target_head"), "target head"),
