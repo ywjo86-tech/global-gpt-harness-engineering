@@ -128,14 +128,22 @@
 
 ## Completion record
 
-Implementation tasks 1–6 are complete on the successor branch. Final compatibility qualification was sealed after additional rollout-readiness gates and full-branch review fixes.
+Implementation tasks 1–6 are complete on the successor branch. Final compatibility behavior was qualified after additional rollout-readiness gates and full-branch review fixes.
 
 - G13 authority-seal qualification: PASS.
 - G14 exact-head successor release qualification: PASS.
 - G15 `NEW_ACTIVATION_DEFAULT_DISABLE` production composition/deploy rollback seam: PASS.
 - Final full-branch review: project-onboarding canonical mapping-root authority binding fixed and requalified.
-- G16 final compatibility qualification head: `68b376c3fd6884359f185ca4f276a1e214280918`.
-- G16 CI run: `36095889124` — focused PASS, successor-release-qualification PASS, full-regression PASS, regression-delta PASS.
+- G16 behavior baseline implementation commit: `68b376c3fd6884359f185ca4f276a1e214280918`.
+- G16 baseline CI run: `36095889124` — focused PASS, successor-release-qualification PASS, full-regression PASS, regression-delta PASS.
 - Durable qualification record: `docs/history/upgrades/20260924-harness-lifecycle-v2/HARNESS_LIFECYCLE_V2_QUALIFICATION.md`.
 
-This completion record does not authorize merge, `runtime-current` promotion, side-by-side production deploy, or migration of an existing registered run. Those remain separate controlled rollout operations under normal OCP authority.
+The G16 commit/run above are immutable behavior-baseline evidence, not a self-referential claim about the current branch head. The exact Production Promotion candidate HEAD is intentionally sealed outside mutable branch files after fresh exact-head CI succeeds on the final P0 ledger-repair head.
+
+### P0 promotion-readiness repair
+
+During Production Promotion Readiness, the PR head had advanced after G16 because completion-record documentation was added. The durable ledger still labeled the earlier G16 commit/run as the final current head/run. The root cause was a self-referential ledger design: changing a branch file to name its own current SHA creates a new SHA and makes that value stale immediately.
+
+The repair is to preserve the earlier pair only as G16 behavior-baseline evidence and move the eventual promotion-candidate exact HEAD + CI run to the PR-level external seal after fresh final-head CI. This repair changes no Lifecycle, Gateway, Full MCP, OCP ingress, Legacy-run, or rollback semantics.
+
+This completion record does not authorize merge, `runtime-current` promotion, side-by-side production deploy, canary traffic, or migration of an existing registered run. Those remain separate controlled rollout operations under normal OCP authority.
