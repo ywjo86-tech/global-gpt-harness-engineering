@@ -57,10 +57,10 @@
 - Consumes: existing `task_lv_authority_projection` validation/resolution functions.
 - Produces: read-only normalized gate authority references suitable for an ExecutionAuthorityBundle.
 
-- [ ] **Step 1: Add RED tests for Family-style TASK/LV projection adaptation and mismatch rejection**
-- [ ] **Step 2: Implement read-only adapter with no artifact rewrite**
-- [ ] **Step 3: Verify focused + full regression**
-- [ ] **Step 4: Commit**
+- [x] **Step 1: Add RED tests for Family-style TASK/LV projection adaptation and mismatch rejection**
+- [x] **Step 2: Implement read-only adapter with no artifact rewrite**
+- [x] **Step 3: Verify focused + full regression**
+- [x] **Step 4: Commit**
 
 ### Task 3: Durable operator dispatch and ACK state
 
@@ -73,11 +73,11 @@
 - Consumes: lifecycle binding + authority bundle digest.
 - Produces: create-once dispatch record with `DISPATCH_PREPARED`, `OPERATOR_DISPATCHED`, `OPERATOR_ACKNOWLEDGED` transitions.
 
-- [ ] **Step 1: RED idempotency/conflict/restart tests**
-- [ ] **Step 2: Implement create-once durable dispatch store**
-- [ ] **Step 3: Make V2 operator executor return ACK-pending before receipt-pending**
-- [ ] **Step 4: Verify legacy executor behavior unchanged**
-- [ ] **Step 5: Commit**
+- [x] **Step 1: RED idempotency/conflict/restart tests**
+- [x] **Step 2: Implement create-once durable dispatch store**
+- [x] **Step 3: Make V2 operator executor return ACK-pending before receipt-pending**
+- [x] **Step 4: Verify legacy executor behavior unchanged**
+- [x] **Step 5: Commit**
 
 ### Task 4: Bind receipt and continuation to dispatch
 
@@ -90,12 +90,12 @@
 - Consumes: acknowledged dispatch identity and existing operator receipt v1/v2.
 - Produces: V2 receipt/dispatch binding and automatic eligible continuation without granting DCC mutation authority.
 
-- [ ] **Step 1: RED receipt-without-dispatch and mismatched-dispatch tests**
-- [ ] **Step 2: Implement smallest compatible dispatch attestation/binding**
-- [ ] **Step 3: RED auto-continuation test**
-- [ ] **Step 4: Implement continuation trigger through existing approved execution path**
-- [ ] **Step 5: Verify legacy receipt v1/v2 behavior remains green**
-- [ ] **Step 6: Commit**
+- [x] **Step 1: RED receipt-without-dispatch and mismatched-dispatch tests**
+- [x] **Step 2: Implement smallest compatible dispatch attestation/binding**
+- [x] **Step 3: RED auto-continuation test**
+- [x] **Step 4: Implement continuation trigger through existing approved execution path**
+- [x] **Step 5: Verify legacy receipt v1/v2 behavior remains green**
+- [x] **Step 6: Commit**
 
 ### Task 5: Canary A/B/C
 
@@ -106,11 +106,11 @@
 - Consumes: Tasks 1-4.
 - Produces: Legacy Preservation, Existing Run Preservation, and three-task V2 Closed Loop qualification.
 
-- [ ] **Step 1: Canary A — legacy TASK/LV path unchanged**
-- [ ] **Step 2: Canary B — pre-existing run remains LEGACY and is not rewritten**
-- [ ] **Step 3: Canary C — Task1→Task2→Task3 with restart between dispatch and receipt, no duplicate dispatch**
-- [ ] **Step 4: Run canonical full regression and regression delta**
-- [ ] **Step 5: Commit qualification evidence**
+- [x] **Step 1: Canary A — legacy TASK/LV path unchanged**
+- [x] **Step 2: Canary B — pre-existing run remains LEGACY and is not rewritten**
+- [x] **Step 3: Canary C — Task1→Task2→Task3 with restart between dispatch and receipt, no duplicate dispatch**
+- [x] **Step 4: Run canonical full regression and regression delta**
+- [x] **Step 5: Commit qualification evidence**
 
 ### Task 6: Compatibility release gate
 
@@ -121,7 +121,21 @@
 - Consumes: all canary and regression evidence.
 - Produces: successor qualification only; no active-project migration.
 
-- [ ] **Step 1: Record eight-project non-migration matrix**
-- [ ] **Step 2: Record authority negative-space evidence**
-- [ ] **Step 3: Record rollback/default-disable evidence**
-- [ ] **Step 4: Leave AI Commerce/SFT/AI Office/Family/Ruflo/JEV/JARVIS/OCP migration as later gates, not part of this PR**
+- [x] **Step 1: Record eight-project non-migration matrix**
+- [x] **Step 2: Record authority negative-space evidence**
+- [x] **Step 3: Record rollback/default-disable evidence**
+- [x] **Step 4: Leave AI Commerce/SFT/AI Office/Family/Ruflo/JEV/JARVIS/OCP migration as later gates, not part of this PR**
+
+## Completion record
+
+Implementation tasks 1–6 are complete on the successor branch. Final compatibility qualification was sealed after additional rollout-readiness gates and full-branch review fixes.
+
+- G13 authority-seal qualification: PASS.
+- G14 exact-head successor release qualification: PASS.
+- G15 `NEW_ACTIVATION_DEFAULT_DISABLE` production composition/deploy rollback seam: PASS.
+- Final full-branch review: project-onboarding canonical mapping-root authority binding fixed and requalified.
+- G16 final compatibility qualification head: `68b376c3fd6884359f185ca4f276a1e214280918`.
+- G16 CI run: `36095889124` — focused PASS, successor-release-qualification PASS, full-regression PASS, regression-delta PASS.
+- Durable qualification record: `docs/history/upgrades/20260924-harness-lifecycle-v2/HARNESS_LIFECYCLE_V2_QUALIFICATION.md`.
+
+This completion record does not authorize merge, `runtime-current` promotion, side-by-side production deploy, or migration of an existing registered run. Those remain separate controlled rollout operations under normal OCP authority.
