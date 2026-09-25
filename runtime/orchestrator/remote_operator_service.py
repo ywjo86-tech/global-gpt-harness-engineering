@@ -20,9 +20,11 @@ from .remote_control_envelope import (
     APPROVED_WORK_ACTIVATION_KIND,
     HOST_INSPECTION_KIND,
     PROJECT_ONBOARDING_KIND,
+    SUCCESSOR_RELEASE_STAGE_KIND,
     RemoteControlEnvelopeV1,
     RemoteFullPlanActivationAuthorization,
     RemoteProjectOnboardingAuthorization,
+    RemoteSuccessorReleaseStageAuthorization,
     RemoteWorkActivationAuthorization,
     validate_remote_control_envelope,
 )
@@ -75,6 +77,7 @@ class ServicePollResult:
     activated: int = 0
     full_plan_activated: int = 0
     onboarded: int = 0
+    successor_release_staged: int = 0
 
 
 class RemoteOperatorService:
@@ -103,6 +106,9 @@ class RemoteOperatorService:
         onboard_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         project_onboarding_enabled: bool = False,
         project_onboarding_policy_ref: str = "",
+        stage_successor_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        successor_release_stage_enabled: bool = False,
+        successor_release_stage_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -122,6 +128,9 @@ class RemoteOperatorService:
         self.onboard_authorized = onboard_authorized
         self.project_onboarding_enabled = bool(project_onboarding_enabled)
         self.project_onboarding_policy_ref = str(project_onboarding_policy_ref or "")
+        self.stage_successor_authorized = stage_successor_authorized
+        self.successor_release_stage_enabled = bool(successor_release_stage_enabled)
+        self.successor_release_stage_policy_ref = str(successor_release_stage_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -205,6 +214,21 @@ class RemoteOperatorService:
         }
 
     @staticmethod
+    def _successor_release_stage_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-successor-release-stage-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "phase_request_digest": payload.phase_request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
     def _recover_expired_remote_control(
         raw: RawControlEnvelope,
         exc: Exception,
@@ -255,7 +279,8 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = diagnosed = projected = acknowledged = blocked = inspected = activated = full_plan_activated = onboarded = 0
+        received = validated = executed = diagnosed = projected = acknowledged = blocked = 0
+        inspected = activated = full_plan_activated = onboarded = successor_release_staged = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             expired_remote_control = False
@@ -277,6 +302,10 @@ class RemoteOperatorService:
                     projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_EXPIRED")
                 elif envelope.request_kind == PROJECT_ONBOARDING_KIND:
                     projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_EXPIRED")
+                elif envelope.request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
+                    projection = self._successor_release_stage_status_projection(
+                        envelope, "SUCCESSOR_RELEASE_STAGE_EXPIRED"
+                    )
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
@@ -373,6 +402,44 @@ class RemoteOperatorService:
                             onboarded += 1
                         except Exception:
                             projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
+                    payload_mode = str(envelope.payload.mode)
+                    mode_allowed = (
+                        resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
+                        if payload_mode == "DRY_RUN"
+                        else resolved_mode == ControlMode.ACTIVE
+                    )
+                    if not mode_allowed:
+                        projection = self._successor_release_stage_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.successor_release_stage_enabled or self.stage_successor_authorized is None:
+                        projection = self._successor_release_stage_status_projection(
+                            envelope, "SUCCESSOR_RELEASE_STAGE_DISABLED"
+                        )
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteSuccessorReleaseStageAuthorization)
+                        or not self.successor_release_stage_policy_ref
+                        or envelope.authorization.successor_release_stage_policy_ref
+                        != self.successor_release_stage_policy_ref
+                    ):
+                        projection = self._successor_release_stage_status_projection(
+                            envelope, "SUCCESSOR_RELEASE_STAGE_AUTHORIZATION_MISMATCH"
+                        )
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.stage_successor_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError(
+                                    "successor release stage result projection is malformed"
+                                )
+                            successor_release_staged += 1
+                        except Exception:
+                            projection = self._successor_release_stage_status_projection(
+                                envelope, "SUCCESSOR_RELEASE_STAGE_ERROR"
+                            )
                             blocked += 1
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
@@ -481,4 +548,5 @@ class RemoteOperatorService:
             activated=activated,
             full_plan_activated=full_plan_activated,
             onboarded=onboarded,
+            successor_release_staged=successor_release_staged,
         )

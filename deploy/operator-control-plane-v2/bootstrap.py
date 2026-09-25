@@ -194,6 +194,8 @@ def _env_text(config: BootstrapConfig) -> str:
             f"OCP_REPO_ROOT={config.repo_root}",
             "OCP_PROJECT_ONBOARDING_ENABLED=0",
             "OCP_PROJECT_ONBOARDING_POLICY_REF=",
+            "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED=0",
+            "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF=",
             "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false",
             "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG=",
             "",
@@ -288,6 +290,27 @@ def stage_user_service(
     )
 
 
+def stage_successor_artifacts(
+    repo_root: str | Path,
+    profile: str,
+    user_config_root: str | Path,
+    user_unit_root: str | Path,
+) -> dict[str, str]:
+    if str(profile) != "lifecycle-v2-p2":
+        raise BootstrapError("unsupported P2 successor profile")
+    package = stage_user_service(
+        BootstrapConfig.disabled(repo_root=repo_root),
+        profile=DeploymentProfile.successor(str(profile)),
+        user_config_root=user_config_root,
+        user_unit_root=user_unit_root,
+    )
+    return {
+        "env_path": str(package.env_path),
+        "service_path": str(package.service_path),
+        "timer_path": str(package.timer_path),
+    }
+
+
 def _parse_env_file(path: str | Path) -> dict[str, str]:
     source = Path(path).absolute()
     if source.is_symlink() or not source.is_file():
@@ -318,6 +341,8 @@ def config_from_env_file(path: str | Path) -> BootstrapConfig:
     optional = {
         "OCP_PROJECT_ONBOARDING_ENABLED",
         "OCP_PROJECT_ONBOARDING_POLICY_REF",
+        "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED",
+        "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
         "GCH_NEW_ACTIVATION_LIFECYCLE_MODE",

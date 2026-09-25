@@ -8,9 +8,11 @@ WorkingDirectory=@REPO_ROOT@
 Environment=OCP_HOST_INSPECTION_ENABLED=0
 Environment=OCP_WORK_ACTIVATION_ENABLED=0
 Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0
+Environment=OCP_SUCCESSOR_RELEASE_STAGE_ENABLED=0
+Environment=OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF=
 Environment=GCH_NEW_ACTIVATION_LIFECYCLE_MODE=V2
 EnvironmentFile=%h/.config/gch/ocpv2.env
-ExecStart=/usr/bin/python3 -m runtime.orchestrator.ocpv2_runtime_service --env-file %h/.config/gch/ocpv2.env
+ExecStart=/usr/bin/python3 -m runtime.orchestrator.ocpv2_successor_stage_runtime --env-file %h/.config/gch/ocpv2.env
 NoNewPrivileges=true
 PrivateTmp=true
 
