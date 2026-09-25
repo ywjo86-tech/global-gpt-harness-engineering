@@ -7,7 +7,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Protocol
 
 from .project_onboarding import (
     OnboardingRegistry,
@@ -22,6 +22,7 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TARGET_REF = re.compile(r"refs/(?:heads|tags)/[A-Za-z0-9][A-Za-z0-9._/-]{0,199}\Z")
+_REF_COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}\Z")
 _FIELDS = {
     "request_id",
     "schema_version",
@@ -39,7 +40,11 @@ _FIELDS = {
 
 
 class SuccessorReleaseStageError(ValueError):
-    """Fail-closed validation or staging error."""
+    """Fail-closed validation or staging error with bounded failure phase."""
+
+    def __init__(self, message: str, *, outcome: str = "FAILED_BEFORE_MUTATION") -> None:
+        super().__init__(message)
+        self.outcome = outcome
 
 
 def _canonical(value: object) -> bytes:
@@ -84,18 +89,138 @@ def _target_ref(value: object) -> str:
     return text
 
 
-def _git_read(root: Path, *args: str) -> str:
+def _run_git(root: Path, args: tuple[str, ...], *, allow_false: bool = False) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(
             ["git", *args],
             cwd=root,
-            check=True,
+            check=False,
             capture_output=True,
             text=True,
         )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise SuccessorReleaseStageError("successor git observation failed") from exc
-    return result.stdout.strip()
+    except OSError as exc:
+        raise SuccessorReleaseStageError("bounded successor git operation failed") from exc
+    if result.returncode != 0 and not (allow_false and result.returncode == 1):
+        raise SuccessorReleaseStageError("bounded successor git operation failed")
+    return result
+
+
+def _fetch_head_path(root: Path) -> Path:
+    dot_git = root / ".git"
+    if dot_git.is_dir():
+        return dot_git / "FETCH_HEAD"
+    if dot_git.is_file():
+        line = dot_git.read_text(encoding="utf-8").strip()
+        prefix = "gitdir: "
+        if not line.startswith(prefix):
+            raise SuccessorReleaseStageError(
+                "invalid gitdir indirection", outcome="FAILED_AFTER_FETCH"
+            )
+        git_dir = Path(line[len(prefix) :])
+        if not git_dir.is_absolute():
+            git_dir = (root / git_dir).resolve()
+        return git_dir / "FETCH_HEAD"
+    raise SuccessorReleaseStageError(
+        "successor git metadata unavailable", outcome="FAILED_AFTER_FETCH"
+    )
+
+
+class SuccessorReleaseFullMcpPort(Protocol):
+    """Narrow Git-only port; intentionally exposes no raw argv or shell API."""
+
+    def status(self, root: Path) -> str: ...
+
+    def branch(self, root: Path) -> str: ...
+
+    def head(self, root: Path) -> str: ...
+
+    def ls_remote(self, root: Path, target_ref: str) -> list[str]: ...
+
+    def object_exists(self, root: Path, sha: str) -> bool: ...
+
+    def is_ancestor(self, root: Path, ancestor: str, descendant: str) -> bool: ...
+
+    def fetch_target(self, root: Path, target_ref: str, temporary_ref: str) -> str: ...
+
+    def fast_forward_current(self, root: Path, target_head: str) -> str: ...
+
+    def delete_temporary_ref(self, root: Path, temporary_ref: str) -> None: ...
+
+
+class _BoundedGitFullMcp:
+    """Local adapter whose public surface maps one-to-one to fixed Git shapes."""
+
+    def status(self, root: Path) -> str:
+        return _run_git(root, ("status", "--porcelain")).stdout.strip()
+
+    def branch(self, root: Path) -> str:
+        return _run_git(root, ("symbolic-ref", "--short", "HEAD")).stdout.strip()
+
+    def head(self, root: Path) -> str:
+        return _run_git(root, ("rev-parse", "HEAD")).stdout.strip()
+
+    def ls_remote(self, root: Path, target_ref: str) -> list[str]:
+        result = _run_git(root, ("ls-remote", "--refs", "origin", target_ref))
+        matches: list[str] = []
+        for raw_line in result.stdout.splitlines():
+            parts = raw_line.split()
+            if len(parts) == 2 and parts[1] == target_ref and _SHA1.fullmatch(parts[0]):
+                matches.append(parts[0])
+        return matches
+
+    def object_exists(self, root: Path, sha: str) -> bool:
+        result = _run_git(root, ("cat-file", "-e", f"{sha}^{{commit}}"), allow_false=True)
+        return result.returncode == 0
+
+    def is_ancestor(self, root: Path, ancestor: str, descendant: str) -> bool:
+        result = _run_git(
+            root,
+            ("merge-base", "--is-ancestor", ancestor, descendant),
+            allow_false=True,
+        )
+        return result.returncode == 0
+
+    def fetch_target(self, root: Path, target_ref: str, temporary_ref: str) -> str:
+        try:
+            _run_git(
+                root,
+                ("fetch", "--no-tags", "origin", f"{target_ref}:{temporary_ref}"),
+            )
+        except SuccessorReleaseStageError as exc:
+            raise SuccessorReleaseStageError(
+                "bounded target fetch failed", outcome="FAILED_AFTER_FETCH"
+            ) from exc
+        fetch_head = _fetch_head_path(root)
+        try:
+            lines = [line for line in fetch_head.read_text(encoding="utf-8").splitlines() if line]
+        except OSError as exc:
+            raise SuccessorReleaseStageError(
+                "FETCH_HEAD evidence unavailable", outcome="FAILED_AFTER_FETCH"
+            ) from exc
+        fetched = [line.split()[0] for line in lines if line.split() and _SHA1.fullmatch(line.split()[0])]
+        if len(fetched) != 1:
+            raise SuccessorReleaseStageError(
+                "bounded fetch produced ambiguous evidence", outcome="FAILED_AFTER_FETCH"
+            )
+        return fetched[0]
+
+    def fast_forward_current(self, root: Path, target_head: str) -> str:
+        try:
+            _run_git(root, ("merge", "--ff-only", target_head))
+        except SuccessorReleaseStageError as exc:
+            raise SuccessorReleaseStageError(
+                "successor fast-forward failed", outcome="FAILED_AFTER_FETCH"
+            ) from exc
+        return self.head(root)
+
+    def delete_temporary_ref(self, root: Path, temporary_ref: str) -> None:
+        try:
+            _run_git(root, ("update-ref", "-d", temporary_ref))
+        except SuccessorReleaseStageError as exc:
+            raise SuccessorReleaseStageError(
+                "temporary successor stage ref cleanup failed",
+                outcome="FAILED_AFTER_FETCH",
+            ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,14 +322,25 @@ class SuccessorWorkspaceIdentity:
     project_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class _PreflightBinding:
+    stage_intent_digest: str
+    preflight_digest: str
+    canonical_root: str
+    observed_branch: str
+    observed_head: str
+    remote_target_head: str
+    ancestry_state: str
+
+
 class SuccessorReleaseStager:
-    """Own the bounded P2 successor transaction; mutation is added in later tasks."""
+    """Own the bounded P2 successor transaction without activation authority."""
 
     def __init__(
         self,
         registry: OnboardingRegistry,
         *,
-        full_mcp: object | None = None,
+        full_mcp: SuccessorReleaseFullMcpPort | None = None,
         lifecycle_identity_provider: Callable[[], SuccessorLifecycleIdentity] | None = None,
         receipt_store: object | None = None,
         lock_root: Path | None = None,
@@ -215,7 +351,7 @@ class SuccessorReleaseStager:
         user_unit_root: Path | None = None,
     ) -> None:
         self.registry = registry
-        self.full_mcp = full_mcp
+        self.full_mcp: SuccessorReleaseFullMcpPort = full_mcp or _BoundedGitFullMcp()
         self.lifecycle_identity_provider = lifecycle_identity_provider
         self.receipt_store = receipt_store
         self.lock_root = lock_root
@@ -224,6 +360,7 @@ class SuccessorReleaseStager:
         self.stage_callback = stage_callback
         self.user_config_root = user_config_root
         self.user_unit_root = user_unit_root
+        self._preflights: dict[str, _PreflightBinding] = {}
 
     def _resolve_workspace(
         self, request: SuccessorReleaseStageRequest
@@ -278,17 +415,157 @@ class SuccessorReleaseStager:
         self,
         workspace: SuccessorWorkspaceIdentity,
         request: SuccessorReleaseStageRequest,
-    ) -> None:
+    ) -> tuple[str, str]:
         root = workspace.canonical_root
-        if _git_read(root, "status", "--porcelain"):
+        if self.full_mcp.status(root):
             raise SuccessorReleaseStageError("successor worktree/index must be clean")
-        if _git_read(root, "symbolic-ref", "--short", "HEAD") != request.expected_branch:
+        branch = self.full_mcp.branch(root)
+        if branch != request.expected_branch:
             raise SuccessorReleaseStageError("successor branch drift")
-        if _git_read(root, "rev-parse", "HEAD") != request.expected_head:
+        head = self.full_mcp.head(root)
+        if head != request.expected_head:
             raise SuccessorReleaseStageError("successor HEAD drift")
+        return branch, head
+
+    def _remote_target(self, root: Path, request: SuccessorReleaseStageRequest) -> str:
+        matches = self.full_mcp.ls_remote(root, request.target_ref)
+        if len(matches) != 1:
+            raise SuccessorReleaseStageError("remote target ref is missing or ambiguous")
+        observed = matches[0]
+        if observed != request.target_head:
+            raise SuccessorReleaseStageError("remote target ref does not match approved target")
+        return observed
+
+    def _temporary_ref(self, request: SuccessorReleaseStageRequest) -> str:
+        if not _REF_COMPONENT.fullmatch(request.request_id):
+            raise SuccessorReleaseStageError("request ID is unsafe for temporary Git ref")
+        return f"refs/ocp/successor-stage/{request.request_id}"
+
+    def _execute_dry_run(
+        self,
+        workspace: SuccessorWorkspaceIdentity,
+        request: SuccessorReleaseStageRequest,
+        branch: str,
+        head: str,
+    ) -> dict[str, Any]:
+        root = workspace.canonical_root
+        remote_target = self._remote_target(root, request)
+        if self.full_mcp.object_exists(root, request.target_head):
+            if not self.full_mcp.is_ancestor(root, request.expected_head, request.target_head):
+                raise SuccessorReleaseStageError("approved target is not fast-forward reachable")
+            ancestry_state = "PROVEN_FAST_FORWARD"
+        else:
+            ancestry_state = "PENDING_FETCH_PROOF"
+
+        evidence = {
+            "stage_intent_digest": request.stage_intent_digest,
+            "canonical_root": str(root),
+            "observed_branch": branch,
+            "observed_head": head,
+            "remote_target_head": remote_target,
+            "ancestry_state": ancestry_state,
+            "approval_policy_ref": request.approval_policy_ref,
+            "approval_policy_digest": request.approval_policy_digest,
+        }
+        preflight_digest = hashlib.sha256(_canonical(evidence)).hexdigest()
+        self._preflights[request.request_id] = _PreflightBinding(
+            stage_intent_digest=request.stage_intent_digest,
+            preflight_digest=preflight_digest,
+            canonical_root=str(root),
+            observed_branch=branch,
+            observed_head=head,
+            remote_target_head=remote_target,
+            ancestry_state=ancestry_state,
+        )
+        return {
+            "status": "STAGE_READY",
+            "mutation_performed": False,
+            "target_head": request.target_head,
+            "remote_target_head": remote_target,
+            "ancestry_state": ancestry_state,
+            "preflight_digest": preflight_digest,
+            "stage_intent_digest": request.stage_intent_digest,
+            "phase_request_digest": request.phase_request_digest,
+        }
+
+    def _stage_binding(self, request: SuccessorReleaseStageRequest) -> _PreflightBinding:
+        binding = self._preflights.get(request.request_id)
+        if binding is None:
+            raise SuccessorReleaseStageError("STAGE requires a prior DRY_RUN preflight")
+        if binding.stage_intent_digest != request.stage_intent_digest:
+            raise SuccessorReleaseStageError("STAGE intent does not match DRY_RUN")
+        if binding.preflight_digest != request.preflight_digest:
+            raise SuccessorReleaseStageError("STAGE preflight digest mismatch")
+        return binding
+
+    def _execute_stage(
+        self,
+        workspace: SuccessorWorkspaceIdentity,
+        request: SuccessorReleaseStageRequest,
+        binding: _PreflightBinding,
+    ) -> dict[str, Any]:
+        root = workspace.canonical_root
+        if str(root) != binding.canonical_root:
+            raise SuccessorReleaseStageError("successor canonical root drift")
+        remote_target = self._remote_target(root, request)
+        if remote_target != binding.remote_target_head:
+            raise SuccessorReleaseStageError("remote target ref drifted since DRY_RUN")
+
+        temporary_ref = self._temporary_ref(request)
+        fetched = False
+        try:
+            try:
+                fetched_head = self.full_mcp.fetch_target(
+                    root, request.target_ref, temporary_ref
+                )
+                fetched = True
+            except SuccessorReleaseStageError as exc:
+                if exc.outcome == "FAILED_AFTER_FETCH":
+                    raise
+                raise SuccessorReleaseStageError(
+                    "bounded successor fetch failed", outcome="FAILED_AFTER_FETCH"
+                ) from exc
+            except Exception as exc:
+                raise SuccessorReleaseStageError(
+                    "bounded successor fetch failed", outcome="FAILED_AFTER_FETCH"
+                ) from exc
+
+            if fetched_head != request.target_head:
+                raise SuccessorReleaseStageError(
+                    "fetched SHA does not match approved target",
+                    outcome="FAILED_AFTER_FETCH",
+                )
+            if not self.full_mcp.object_exists(root, request.target_head):
+                raise SuccessorReleaseStageError(
+                    "fetched target object is unavailable", outcome="FAILED_AFTER_FETCH"
+                )
+            if not self.full_mcp.is_ancestor(
+                root, request.expected_head, request.target_head
+            ):
+                raise SuccessorReleaseStageError(
+                    "approved target is not fast-forward reachable",
+                    outcome="FAILED_AFTER_FETCH",
+                )
+
+            advanced_head = self.full_mcp.fast_forward_current(root, request.target_head)
+            if advanced_head != request.target_head:
+                raise SuccessorReleaseStageError(
+                    "successor HEAD did not reach approved target",
+                    outcome="FAILED_AFTER_GIT_ADVANCE",
+                )
+            raise SuccessorReleaseStageError(
+                "successor artifact staging is not implemented yet",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            )
+        finally:
+            if fetched:
+                self.full_mcp.delete_temporary_ref(root, temporary_ref)
 
     def execute(self, request: SuccessorReleaseStageRequest) -> dict[str, Any]:
         workspace = self._resolve_workspace(request)
         self._validate_isolation(workspace)
-        self._validate_local_git(workspace, request)
-        raise SuccessorReleaseStageError("successor release transaction is not implemented yet")
+        branch, head = self._validate_local_git(workspace, request)
+        if request.mode == "DRY_RUN":
+            return self._execute_dry_run(workspace, request, branch, head)
+        binding = self._stage_binding(request)
+        return self._execute_stage(workspace, request, binding)
