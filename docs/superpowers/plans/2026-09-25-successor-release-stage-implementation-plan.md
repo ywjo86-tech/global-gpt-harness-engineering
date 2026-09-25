@@ -2,53 +2,53 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the P2-only `SUCCESSOR_RELEASE_STAGE` capability so OCP can admit an exact reviewed successor release, route mutation through the Production Execution Gateway and a bounded Full MCP port, fast-forward only an already-registered isolated successor workspace, stage only the disabled `lifecycle-v2-p2` service artifacts, and emit immutable replay-safe evidence without disturbing serving OCP.
+**Goal:** Implement the P2-only `SUCCESSOR_RELEASE_STAGE` capability so OCP can admit one exact reviewed successor release, route all mutation through the Production Execution Gateway and bounded Full MCP operations, fast-forward only an already-registered isolated successor workspace, stage only disabled `lifecycle-v2-p2` artifacts, and emit immutable replay-safe evidence without disturbing serving OCP.
 
-**Architecture:** Extend the typed OCP remote-control seam with one new request kind, but keep authority asymmetric: OCP validates/admission-routes, `production_execution_gateway.py` enforces the dedicated capability envelope, `SuccessorReleaseStager` owns the transaction, and a narrow `SuccessorReleaseFullMcpPort` is the only mutation dependency. Reuse the immutable `OnboardingRegistry` for alias-to-canonical-root identity and the existing successor-only `stage_user_service()` deployment primitive; do not put release synchronization into onboarding or host inspection. DRY_RUN is observation-only; STAGE acquires a successor lock, revalidates state, performs one request-scoped fetch and fast-forward, stages disabled artifacts, verifies serving preservation/disabled state, and writes immutable receipts.
+**Architecture:** Add one typed OCP request kind while preserving the existing authority split. OCP validates and admits; `production_execution_gateway.py` accepts only the dedicated successor-stage capability; `SuccessorReleaseStager` owns the transaction; a narrow `SuccessorReleaseFullMcpPort` provides fixed Git and artifact operations; `OnboardingRegistry` supplies immutable alias-to-root identity; existing `stage_user_service()` supplies successor-only inert artifact staging. DRY_RUN is observation-only. STAGE acquires an exclusive successor lock, revalidates state, performs one request-scoped fetch and one fast-forward, stages disabled artifacts, verifies serving preservation and successor-disabled state, then seals an immutable receipt.
 
-**Tech Stack:** Python 3.12 standard library, `unittest`/`pytest`, Git CLI through a fixed bounded adapter, existing OCPv2 remote-control contracts, existing Production Execution Gateway, existing OCPv2 deployment bootstrap, JSON/SHA-256/fsync/atomic-create audit artifacts.
+**Tech Stack:** Python 3.12 standard library, `unittest`/`pytest`, fixed Git CLI argv through a bounded adapter, OCPv2 typed remote-control contracts, Production Execution Gateway, OCPv2 deployment bootstrap, canonical JSON/SHA-256/fsync/create-once receipts.
 
 **Spec:** `docs/superpowers/specs/2026-09-25-successor-release-stage-design.md`
 
 ## Global Constraints
 
-- Scope is OCPv2 **P2 Side-by-Side Deployment only**; do not enter P3 Canary.
-- Operate only on an already-registered successor workspace resolved through `OnboardingRegistry`; do not clone, create worktrees, or accept a caller-supplied project path.
+- Scope remains OCPv2 **P2 Side-by-Side Deployment only**. Do not enter P3 Canary.
+- Operate only on an already-registered successor root resolved from `OnboardingRegistry`; no clone, worktree creation, caller-supplied root, arbitrary checkout, or branch switch.
 - `successor_profile` is exactly `lifecycle-v2-p2`.
-- DRY_RUN may inspect local Git and use `git ls-remote`; it must not fetch or mutate refs, object DB, branch, HEAD, index, worktree, artifacts, or service-manager state.
-- STAGE fetches only the reviewed `target_ref` into `refs/ocp/successor-stage/<request_id>`, requires the fetched SHA to equal `target_head`, and permits only ancestor/equal fast-forward of the admitted current branch.
-- No checkout/branch switch, reset, rebase, force update, detached-HEAD staging, arbitrary refspec, arbitrary shell, or generic service-manager mutation API.
-- Reuse existing `deploy/operator-control-plane-v2/bootstrap.py::stage_user_service()` only through a bounded callback/port. Never invoke daemon-reload, enable, start, restart, timer activation, polling activation, or production activation.
-- Serving `ocpv2.env`, `ocpv2.service`, `ocpv2.timer`, and serving runtime identity must be unchanged byte-for-byte/identity-for-identity.
-- `PROJECT_ONBOARDING` remains declarative registration/bootstrap; `HOST_INSPECTION` remains read-only.
-- RDC remains break-glass only and is not an implementation/runtime dependency.
-- `runtime-current`, predecessor quiesce/termination, existing Run migration, successor polling, and production activation remain outside this plan.
-- Failure after Git advancement must never be compensated with `reset --hard`, forced checkout, or history rewrite; recovery is a new admission bound to the new current HEAD.
+- DRY_RUN may use read-only local Git and `git ls-remote`; it must not fetch or mutate refs, object DB, branch, HEAD, index, worktree, artifacts, or service-manager state.
+- STAGE fetches only `target_ref` into `refs/ocp/successor-stage/<request_id>`, requires fetched SHA == `target_head`, and allows only ancestor/equal fast-forward of the admitted branch.
+- No reset, rebase, force update, detached HEAD, caller-controlled refspec, arbitrary shell, or generic service-manager mutation API.
+- Reuse `deploy/operator-control-plane-v2/bootstrap.py::stage_user_service()` only through a bounded adapter. Never daemon-reload, enable, start, restart, activate timers, activate polling, or activate production.
+- Serving `ocpv2.env`, `ocpv2.service`, `ocpv2.timer`, and serving runtime identity must remain unchanged.
+- `PROJECT_ONBOARDING` remains declarative registration/bootstrap. `HOST_INSPECTION` remains read-only.
+- RDC remains break-glass only and is not an implementation or runtime dependency.
+- `runtime-current`, predecessor quiesce/termination, existing Run migration, successor polling, and production activation are out of scope.
+- Failure after Git advancement is never compensated with `reset --hard`, forced checkout, or history rewrite. Recovery requires a new admission bound to current HEAD.
 
 ## Review Focus
 
-1. **Canonical-root aliasing:** a different alias or symlink spelling that resolves to the serving/predecessor canonical workspace must fail before mutation; Task 2 adds an explicit canonical-identity test.
-2. **Remote-ref ambiguity/drift:** a missing ref, multi-result observation, or DRY_RUN→STAGE ref movement must fail closed without advancing branch/HEAD; Task 3 pins exact single-SHA binding and drift.
-3. **Concurrent staging:** a second STAGE for the same canonical workspace must not enter a check-then-act window; Task 4 pins exclusive-lock contention and post-lock revalidation.
-4. **Partially unsafe staged state:** missing successor artifact, serving hash drift, or active/enabled/polling observation must make the final outcome non-success even when Git reached the approved SHA; Task 5 pins those cases.
-5. **Crash/failure phase classification:** failures after fetch and after branch advance must preserve the exact furthest-safe-phase evidence and recovery semantics; Tasks 3 and 4 pin `FAILED_AFTER_FETCH` and `FAILED_AFTER_GIT_ADVANCE` separately.
+1. **Canonical-root aliasing:** a different textual alias/path that resolves to serving/predecessor identity must reject before mutation. Task 2 pins canonical identity equality and symlink rejection.
+2. **Remote-ref ambiguity/drift:** missing/multiple remote results or ref movement between DRY_RUN and STAGE must reject without branch advancement. Task 3 pins this.
+3. **Concurrent staging:** two STAGE transactions for one canonical successor must not overlap. Task 4 pins lock contention and post-lock revalidation.
+4. **Unsafe post-stage state:** missing successor artifacts, serving hash drift, or active/enabled/polling successor state must prevent `STAGED`. Task 5 pins these.
+5. **Failure-phase recovery:** failures after fetch and after branch advancement must preserve different outcomes and never trigger history rollback. Tasks 3 and 4 pin these.
 
 ---
 
 ## File Structure
 
-- **Create:** `runtime/orchestrator/successor_release_staging.py` — request normalization/digests, registered-workspace resolution, DRY_RUN/STAGE transaction, locks, phase fencing, postconditions, immutable receipts, and the narrow Full MCP protocol used by the stager.
-- **Create:** `runtime/orchestrator/successor_release_stage_gateway.py` — dedicated `SUCCESSOR_RELEASE_STAGE` Production Execution Gateway request/result contract and dispatch adapter; no generic command execution.
-- **Modify:** `runtime/orchestrator/production_execution_gateway.py` — expose the dedicated governed capability dispatch without weakening the existing host-worker gateway contract or DEC007 tool authority.
-- **Modify:** `runtime/orchestrator/remote_control_envelope.py` — add the typed `SUCCESSOR_RELEASE_STAGE` request kind, payload validation, and stage-policy authorization type.
-- **Modify:** `runtime/orchestrator/remote_operator_service.py` — route the new admitted kind to a dedicated callback and emit a bounded status projection; do not reuse `HOST_INSPECTION` or `PROJECT_ONBOARDING` callbacks.
-- **Modify:** `deploy/operator-control-plane-v2/bootstrap.py` — compose the production callback from the existing `stage_user_service()` primitive and the gateway/stager port; no service-manager mutation calls.
-- **Modify:** `tests/test_ocpv2_successor_release_staging.py` — expand the current RED seam to the full 20-test normative contract before GREEN implementation.
-- **Create:** `tests/test_ocpv2_successor_release_stage_gateway.py` — prove remote admission → dedicated Production Execution Gateway → stager/Full MCP boundary and prove direct activation/raw-command authority is unavailable.
+- **Create:** `runtime/orchestrator/successor_release_staging.py` — request/digests, registry identity, DRY_RUN/STAGE transaction, bounded Full MCP protocol, lock/fences, postconditions, immutable receipts.
+- **Create:** `runtime/orchestrator/successor_release_stage_gateway.py` — exact dedicated Production Execution Gateway request/result and dispatcher for `SUCCESSOR_RELEASE_STAGE`.
+- **Modify:** `runtime/orchestrator/production_execution_gateway.py` — expose the dedicated dispatch entry without weakening existing host-worker gateway or DEC007 validation.
+- **Modify:** `runtime/orchestrator/remote_control_envelope.py` — typed request kind, payload validation, authorization binding.
+- **Modify:** `runtime/orchestrator/remote_operator_service.py` — separate stage callback/status projection; do not reuse inspection/onboarding callbacks.
+- **Modify:** `deploy/operator-control-plane-v2/bootstrap.py` — compose bounded stager/gateway using existing successor-only `stage_user_service()`; no service-manager mutation.
+- **Modify:** `tests/test_ocpv2_successor_release_staging.py` — expand current RED seam to all 20 normative behaviors before GREEN.
+- **Create:** `tests/test_ocpv2_successor_release_stage_gateway.py` — prove OCP admission → Production Execution Gateway → stager/Full MCP and prove raw activation/command authority is absent.
 
 ---
 
-### Task 1: Seal the request, digest, and two-phase identity contract
+### Task 1: Seal request identity, digests, and two-phase lineage
 
 **Files:**
 - Create: `runtime/orchestrator/successor_release_staging.py`
@@ -56,9 +56,9 @@
 
 **Interfaces:**
 - Consumes: `runtime.orchestrator.project_onboarding.OnboardingRegistry`.
-- Produces: `SuccessorReleaseStageError`; `SuccessorReleaseStageRequest.from_mapping(mapping) -> SuccessorReleaseStageRequest`; `SuccessorReleaseStageRequest.to_dict() -> dict[str, object]`; `stage_intent_digest`; `phase_request_digest`; constants `SUCCESSOR_RELEASE_STAGE_SCHEMA`, `SUCCESSOR_PROFILE`.
+- Produces: `SuccessorReleaseStageError`, `SuccessorReleaseStageRequest.from_mapping()`, `SuccessorReleaseStageRequest.to_dict()`, `stage_intent_digest`, `phase_request_digest`, `SUCCESSOR_RELEASE_STAGE_SCHEMA`, `SUCCESSOR_PROFILE`.
 
-- [ ] **Step 1: Replace the incomplete request fixture with the normative field set and write RED tests 1, 15, 16, and 17.**
+- [ ] **Step 1: Write RED tests 1, 15, 16, 17 using the complete request schema.**
 
 ```python
 BASE_REQUEST = {
@@ -75,19 +75,16 @@ BASE_REQUEST = {
     "mode": "DRY_RUN",
     "preflight_digest": None,
 }
-
-# Pin: STAGE requires a matching preflight lineage; same request_id with changed
-# target_head/policy/branch is rejected; DRY_RUN and STAGE have equal
-# stage_intent_digest but different phase_request_digest; replay is keyed by the
-# complete phase digest.
 ```
 
-- [ ] **Step 2: Run only the request-contract tests and verify RED.**
+Assertions: STAGE without matching preflight fails; same `request_id` with changed immutable intent fails; DRY_RUN/STAGE for one intent have equal `stage_intent_digest` and different `phase_request_digest`; same complete phase digest is replay identity.
+
+- [ ] **Step 2: Verify RED.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'two_phase or request_id or phase_digest or replay'`
-Expected: FAIL because the module/request fields/digest semantics are not implemented.
+Expected: FAIL because the normative request/digest implementation is absent.
 
-- [ ] **Step 3: Implement strict normalization and digest derivation only.**
+- [ ] **Step 3: Implement exact normalization and digest code.**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -105,21 +102,29 @@ class SuccessorReleaseStageRequest:
     mode: str
     preflight_digest: str | None
 
-    @property
-    def stage_intent_digest(self) -> str: ...
+    def intent_mapping(self) -> dict[str, object]:
+        value = self.to_dict()
+        value.pop("mode")
+        value.pop("preflight_digest")
+        return value
 
     @property
-    def phase_request_digest(self) -> str: ...
+    def stage_intent_digest(self) -> str:
+        return hashlib.sha256(_canonical(self.intent_mapping())).hexdigest()
+
+    @property
+    def phase_request_digest(self) -> str:
+        return hashlib.sha256(_canonical(self.to_dict())).hexdigest()
 ```
 
-Validation must use an exact field set, canonical JSON (`sort_keys=True`, compact separators), safe identifiers, 40-hex Git SHAs, 64-hex policy/preflight digests, modes `{DRY_RUN, STAGE}`, fixed profile, `preflight_digest is None` for DRY_RUN and non-empty valid digest for STAGE.
+Use an exact field set, safe IDs, 40-hex Git SHAs, 64-hex policy/preflight digests, modes `{DRY_RUN, STAGE}`, fixed profile, `None` preflight for DRY_RUN, mandatory digest for STAGE.
 
-- [ ] **Step 4: Run the Task 1 tests and verify GREEN.**
+- [ ] **Step 4: Verify GREEN.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'two_phase or request_id or phase_digest'`
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1.**
+- [ ] **Step 5: Commit.**
 
 ```bash
 git add runtime/orchestrator/successor_release_staging.py tests/test_ocpv2_successor_release_staging.py
@@ -128,61 +133,50 @@ git commit -m "test: seal successor stage request lineage"
 
 ---
 
-### Task 2: Resolve registered successor identity and prove isolation without mutation
+### Task 2: Bind only a registered, isolated successor workspace
 
 **Files:**
 - Modify: `runtime/orchestrator/successor_release_staging.py`
 - Modify: `tests/test_ocpv2_successor_release_staging.py`
 
 **Interfaces:**
-- Consumes: `OnboardingRegistry.entries()` immutable entries and `validate_alias_entry()` behavior.
-- Produces: `SuccessorWorkspaceIdentity(alias: str, canonical_root: Path, project_id: str)`; `SuccessorLifecycleIdentity(serving_root: Path, predecessor_root: Path | None)`; `SuccessorReleaseStager(..., lifecycle_identity_provider=...)`.
+- Consumes: `OnboardingRegistry.entries()` and immutable alias entries.
+- Produces: `SuccessorWorkspaceIdentity`, `SuccessorLifecycleIdentity`, `SuccessorReleaseStager(registry, full_mcp, lifecycle_identity_provider, receipt_store, lock_root, stage_artifacts, service_state_probe)`.
 
-- [ ] **Step 1: Add RED tests 4, 5, 7, 8 plus canonical-root/symlink Review Focus.**
+- [ ] **Step 1: Write RED tests 4, 5, 7, 8 and canonical-root Review Focus.**
 
-```python
-# dirty worktree -> FAILED_BEFORE_MUTATION
-# expected branch or expected HEAD drift -> FAILED_BEFORE_MUTATION
-# successor canonical root == serving root -> reject
-# successor canonical root == predecessor root -> reject
-# alternate/symlink identity resolving to a protected root -> reject
-```
+Pin dirty worktree, branch drift, HEAD drift, serving-root equality, predecessor-root equality, and a symlink/canonical alias to a protected root. Every case must fail before fetch/staging.
 
-The lifecycle exclusion values must come from the injected canonical provider in tests, never request fields.
+- [ ] **Step 2: Verify RED.**
 
-- [ ] **Step 2: Run isolation tests and verify RED.**
+Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'dirty or branch_drift or head_drift or serving or predecessor or canonical_identity'`
+Expected: FAIL.
 
-Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'dirty or drift or serving or predecessor or canonical_identity'`
-Expected: FAIL before any Git-fetch/staging implementation exists.
-
-- [ ] **Step 3: Implement registry-only alias resolution and read-only preflight observation.**
+- [ ] **Step 3: Implement registry-only resolution and read-only identity checks.**
 
 ```python
-class SuccessorReleaseStager:
-    def __init__(
-        self,
-        registry: OnboardingRegistry,
-        *,
-        full_mcp: SuccessorReleaseFullMcpPort,
-        lifecycle_identity_provider: Callable[[], SuccessorLifecycleIdentity],
-        receipt_store: SuccessorReleaseReceiptStore,
-        lock_root: Path,
-        ...,
-    ) -> None: ...
+@dataclass(frozen=True, slots=True)
+class SuccessorLifecycleIdentity:
+    serving_root: Path
+    predecessor_root: Path | None
 
-    def execute(self, request: SuccessorReleaseStageRequest) -> dict[str, object]: ...
+@dataclass(frozen=True, slots=True)
+class SuccessorWorkspaceIdentity:
+    alias: str
+    canonical_root: Path
+    project_id: str
 ```
 
-The stager must find exactly one immutable registry entry by alias, validate that entry, use its canonical `project_root`, reject serving/predecessor canonical identity equality, and inspect `git status --porcelain`, symbolic branch, and HEAD only through the read-only Full MCP methods.
+Resolve exactly one registry entry by alias, call the existing alias validator, use its canonical `project_root`, and compare resolved roots against lifecycle identity supplied by the canonical provider. Do not modify `project_onboarding.py`.
 
-- [ ] **Step 4: Verify the original `project_onboarding.py` is unchanged.**
+- [ ] **Step 4: Verify onboarding stayed separate.**
 
 Run: `git diff -- runtime/orchestrator/project_onboarding.py`
 Expected: no output.
 
-- [ ] **Step 5: Run Task 2 tests and commit.**
+- [ ] **Step 5: Verify GREEN and commit.**
 
-Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'dirty or drift or serving or predecessor or canonical_identity'`
+Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'dirty or branch_drift or head_drift or serving or predecessor or canonical_identity'`
 Expected: PASS.
 
 ```bash
@@ -192,65 +186,49 @@ git commit -m "feat: bind successor stage to registered isolated workspace"
 
 ---
 
-### Task 3: Implement DRY_RUN remote binding and bounded fetch/fast-forward primitives
+### Task 3: Implement observation-only DRY_RUN and bounded Git mutation
 
 **Files:**
 - Modify: `runtime/orchestrator/successor_release_staging.py`
 - Modify: `tests/test_ocpv2_successor_release_staging.py`
 
 **Interfaces:**
-- Produces narrow `SuccessorReleaseFullMcpPort` methods only:
-  - `status(root: Path) -> str`
-  - `branch(root: Path) -> str`
-  - `head(root: Path) -> str`
-  - `ls_remote(root: Path, target_ref: str) -> str`
-  - `object_exists(root: Path, sha: str) -> bool`
-  - `is_ancestor(root: Path, ancestor: str, descendant: str) -> bool`
-  - `fetch_target(root: Path, target_ref: str, temporary_ref: str) -> str`
-  - `fast_forward_current(root: Path, target_head: str) -> None`
-  - `delete_temporary_ref(root: Path, temporary_ref: str) -> None`
-- The production implementation accepts parameters, never caller shell text/refspec arrays.
+- Produces `SuccessorReleaseFullMcpPort` with only: `status`, `branch`, `head`, `ls_remote`, `object_exists`, `is_ancestor`, `fetch_target`, `fast_forward_current`, `delete_temporary_ref`.
+- No method accepts raw shell text, arbitrary argv, or arbitrary refspec.
 
-- [ ] **Step 1: Add RED tests 2, 6, 9, 10, and 18 plus missing/ambiguous remote-ref Review Focus.**
+- [ ] **Step 1: Write RED tests 2, 6, 9, 10, 18 and remote-ref Review Focus.**
 
-```python
-# DRY_RUN: target not local -> ancestry=PENDING_FETCH_PROOF and no fetch call.
-# non-FF: bounded fetch may occur, but branch/HEAD/worktree stay at expected state.
-# fetched SHA != target_head -> FAILED_AFTER_FETCH.
-# ls-remote value changes between DRY_RUN and STAGE -> fail before branch advance.
-# fetch exception after request-scoped metadata mutation -> FAILED_AFTER_FETCH.
-# zero/multiple ls-remote SHA lines -> fail closed.
-```
+Pin: DRY_RUN with absent local target reports `PENDING_FETCH_PROOF` and calls no fetch; non-FF after bounded fetch does not move branch/HEAD/worktree; fetched SHA mismatch fails; remote ref drift fails; failure after bounded fetch records `FAILED_AFTER_FETCH`; zero or multiple exact-ref results fail closed.
 
 - [ ] **Step 2: Verify RED.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'dry_run or non_fast_forward or fetched_sha or target_ref_drift or after_fetch or remote_ref'`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the fixed Git adapter and DRY_RUN semantics.**
+- [ ] **Step 3: Implement fixed Git operations.**
 
-The concrete adapter may call Git with fixed argv templates only:
+Only these argv shapes are permitted:
 
 ```python
-["git", "status", "--porcelain"]
-["git", "symbolic-ref", "--short", "HEAD"]
-["git", "rev-parse", "HEAD"]
-["git", "ls-remote", "--refs", "origin", target_ref]
-["git", "cat-file", "-e", f"{sha}^{{commit}}"]
-["git", "merge-base", "--is-ancestor", ancestor, descendant]
-["git", "fetch", "--no-tags", "origin", f"{target_ref}:{temporary_ref}"]
-["git", "merge", "--ff-only", target_head]
-["git", "update-ref", "-d", temporary_ref]
+("git", "status", "--porcelain")
+("git", "symbolic-ref", "--short", "HEAD")
+("git", "rev-parse", "HEAD")
+("git", "ls-remote", "--refs", "origin", target_ref)
+("git", "cat-file", "-e", f"{sha}^{{commit}}")
+("git", "merge-base", "--is-ancestor", ancestor, descendant)
+("git", "fetch", "--no-tags", "origin", f"{target_ref}:{temporary_ref}")
+("git", "merge", "--ff-only", target_head)
+("git", "update-ref", "-d", temporary_ref)
 ```
 
-No API accepts arbitrary argv/shell. DRY_RUN never calls `fetch_target()`. STAGE temporary ref must be exactly `refs/ocp/successor-stage/<request_id>`.
+DRY_RUN never calls `fetch_target`. STAGE temporary ref is exactly `refs/ocp/successor-stage/<request_id>`. Validate remote SHA before fetch and fetched SHA after fetch.
 
-- [ ] **Step 4: Run Task 3 tests and verify GREEN.**
+- [ ] **Step 4: Verify GREEN.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'dry_run or non_fast_forward or fetched_sha or target_ref_drift or after_fetch or remote_ref'`
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 3.**
+- [ ] **Step 5: Commit.**
 
 ```bash
 git add runtime/orchestrator/successor_release_staging.py tests/test_ocpv2_successor_release_staging.py
@@ -259,41 +237,32 @@ git commit -m "feat: add bounded successor release git operations"
 
 ---
 
-### Task 4: Add exclusive lock, TOCTOU fences, and no-rollback recovery semantics
+### Task 4: Add exclusive lock, TOCTOU fences, and no-rollback recovery
 
 **Files:**
 - Modify: `runtime/orchestrator/successor_release_staging.py`
 - Modify: `tests/test_ocpv2_successor_release_staging.py`
 
 **Interfaces:**
-- Produces: `SuccessorStageLock` keyed from canonical root + alias; phase enum/outcomes `FAILED_BEFORE_MUTATION`, `FAILED_AFTER_FETCH`, `FAILED_AFTER_GIT_ADVANCE`, `STAGED`.
+- Produces: `SuccessorStageLock`; outcomes `FAILED_BEFORE_MUTATION`, `FAILED_AFTER_FETCH`, `FAILED_AFTER_GIT_ADVANCE`, `STAGED`.
 
-- [ ] **Step 1: Add RED tests 11 and 19 plus concurrent-lock Review Focus.**
+- [ ] **Step 1: Write RED tests 11, 19 and lock-contention Review Focus.**
 
-```python
-# Drift HEAD/worktree after DRY_RUN but before STAGE lock/revalidation -> no fetch.
-# Drift after fetch but before branch advance -> no branch move.
-# Inject staging failure after successful FF -> HEAD remains target_head,
-# outcome FAILED_AFTER_GIT_ADVANCE, and no reset/checkout/rebase operation is observed.
-# Replaying the failed phase digest does not retry; a new request_id/current-head admission is required.
-# A second transaction for the same canonical successor cannot acquire the lock.
-```
+Pin drift after preflight/before mutation, drift after fetch/before branch advance, second concurrent STAGE rejection, staging failure after FF leaving HEAD at approved target, no reset/checkout/rebase call, same-phase replay not acting as recovery, and new admission required.
 
 - [ ] **Step 2: Verify RED.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'toctou or git_advance or lock_contention or no_rollback'`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement lock and all seven spec fences.**
+- [ ] **Step 3: Implement one create-exclusive lock and seven fences.**
 
-Use an create-exclusive lock file under the supplied `lock_root` with a deterministic SHA-256 key of canonical root + alias. Recheck identity/branch/HEAD/cleanliness/policy at: preflight; post-lock pre-fetch; post-fetch; post-advance; pre-artifact; post-artifact; final receipt. Before advancement require `expected_head`; after it require `target_head`.
+Use an `O_CREAT|O_EXCL|O_NOFOLLOW` lock file keyed by SHA-256 of canonical root + alias. Revalidate at: preflight; post-lock/pre-fetch; post-fetch; post-advance; pre-artifact; post-artifact; final receipt. Before branch advancement require `expected_head`; after advancement require `target_head`.
 
-- [ ] **Step 4: Run Task 4 tests and verify GREEN.**
+- [ ] **Step 4: Verify GREEN and commit.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'toctou or git_advance or lock_contention or no_rollback'`
 Expected: PASS.
-
-- [ ] **Step 5: Commit Task 4.**
 
 ```bash
 git add runtime/orchestrator/successor_release_staging.py tests/test_ocpv2_successor_release_staging.py
@@ -302,7 +271,7 @@ git commit -m "feat: fence successor staging transaction"
 
 ---
 
-### Task 5: Stage successor-only artifacts and verify serving/disabled postconditions
+### Task 5: Stage successor-only artifacts and verify inert postconditions
 
 **Files:**
 - Modify: `runtime/orchestrator/successor_release_staging.py`
@@ -310,47 +279,45 @@ git commit -m "feat: fence successor staging transaction"
 - Modify: `tests/test_ocpv2_successor_release_staging.py`
 
 **Interfaces:**
-- Consumes: existing `DeploymentProfile.successor(name)` and `stage_user_service(config, profile=..., user_config_root=..., user_unit_root=...)`.
-- Produces: fixed `stage_successor_artifacts(repo_root: Path, profile: str, config_root: Path, unit_root: Path) -> Mapping[str, str]` adapter; read-only `SuccessorServiceStateProbe.observe(profile) -> Mapping[str, bool]` with no mutation methods.
+- Consumes existing `DeploymentProfile.successor()` and `stage_user_service()`.
+- Produces `stage_successor_artifacts(repo_root, profile, config_root, unit_root) -> Mapping[str, str]` and a read-only `SuccessorServiceStateProbe.observe(profile) -> Mapping[str, bool]`.
 
-- [ ] **Step 1: Add/expand RED tests 3, 12, 13, and 14 plus partial-artifact Review Focus.**
+- [ ] **Step 1: Write RED tests 3, 12, 13, 14 and partial-artifact Review Focus.**
 
-```python
-# exact target + only ocpv2-lifecycle-v2-p2.{env,service,timer} staged.
-# stager/port exposes no daemon_reload/enable/start/restart API.
-# serving env/service/timer changed between pre/post hash -> transaction fails.
-# successor service active OR timer active OR enabled OR polling enabled -> fail.
-# missing/unsafe successor artifact -> fail after Git advance, without rollback.
-```
+Pin exact approved target and only successor artifact writes; absence of daemon-reload/enable/start/restart API; serving artifact hash drift failure; active service/timer, enabled unit, or polling true failure; missing successor artifact failure after Git advance without rollback.
 
 - [ ] **Step 2: Verify RED.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'happy_path or activation or serving_hash or successor_state or partial_artifact'`
 Expected: FAIL.
 
-- [ ] **Step 3: Add only a callable adapter around existing stage-only bootstrap behavior.**
+- [ ] **Step 3: Add the fixed bootstrap adapter only.**
 
 ```python
-def stage_successor_artifacts(...):
-    profile_obj = DeploymentProfile.successor(profile)
+def stage_successor_artifacts(config, *, profile: str, user_config_root: Path, user_unit_root: Path) -> dict[str, str]:
     if profile != "lifecycle-v2-p2":
         raise BootstrapError("unsupported P2 successor profile")
-    package = stage_user_service(config, profile=profile_obj,
-                                 user_config_root=config_root,
-                                 user_unit_root=unit_root)
-    return {"env_path": str(package.env_path),
-            "service_path": str(package.service_path),
-            "timer_path": str(package.timer_path)}
+    package = stage_user_service(
+        config,
+        profile=DeploymentProfile.successor(profile),
+        user_config_root=user_config_root,
+        user_unit_root=user_unit_root,
+    )
+    return {
+        "env_path": str(package.env_path),
+        "service_path": str(package.service_path),
+        "timer_path": str(package.timer_path),
+    }
 ```
 
-Do not add any `systemctl` mutation invocation. Hash serving files before the first STAGE Git mutation and again after successor staging; hash all successor artifacts; use read-only service-state probes for active/enabled/polling verification.
+Hash serving files before first STAGE Git mutation and after artifact staging. Hash successor env/service/timer. Read-only probes verify inactive/not-enabled/polling-disabled.
 
-- [ ] **Step 4: Verify no service-manager mutation path was introduced.**
+- [ ] **Step 4: Prove no forbidden service mutation was introduced.**
 
-Run: `git diff -- deploy/operator-control-plane-v2/bootstrap.py | grep -E 'daemon-reload|systemctl.*(enable|start|restart)|--now' && exit 1 || true`
-Expected: success with no forbidden introduced call.
+Run: `git diff -- deploy/operator-control-plane-v2/bootstrap.py | grep -E '^\+.*(daemon-reload|systemctl.*(enable|start|restart)|--now)' && exit 1 || true`
+Expected: success with no matching added line.
 
-- [ ] **Step 5: Run Task 5 tests and commit.**
+- [ ] **Step 5: Verify GREEN and commit.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'happy_path or activation or serving_hash or successor_state or partial_artifact'`
 Expected: PASS.
@@ -362,34 +329,34 @@ git commit -m "feat: stage disabled successor service artifacts"
 
 ---
 
-### Task 6: Seal immutable phase receipts and replay behavior
+### Task 6: Seal immutable receipts and idempotent replay
 
 **Files:**
 - Modify: `runtime/orchestrator/successor_release_staging.py`
 - Modify: `tests/test_ocpv2_successor_release_staging.py`
 
 **Interfaces:**
-- Produces: `SuccessorReleaseReceiptStore(root: Path)` with `read_phase(phase_request_digest)`, `append(receipt)`, and create-once files; successful receipt schema `orchestration.successor-release-stage-receipt.v1`.
+- Produces `SuccessorReleaseReceiptStore.read_phase(phase_request_digest)` and `append(receipt)`; receipt schema `orchestration.successor-release-stage-receipt.v1`.
 
 - [ ] **Step 1: Complete RED tests 15 and 20.**
 
-Successful receipt assertions must cover request ID; both digests; alias/canonical identity; policy ref/digest; expected branch/pre-head; target ref/SHA; remotely observed/fetched SHA; ancestor/FF result; preflight digest; fetch/branch result; pre/post HEAD; successor artifact hashes; serving artifact pre/post hashes; active/enabled/polling observations; guard outcomes; final outcome.
+Successful receipt must assert: request ID, both digests, alias/canonical root identity, policy ref/digest, expected branch/pre-head, target ref/SHA, remotely observed/fetched SHA, ancestor/FF result, preflight digest, fetch/branch result, pre/post HEAD, successor hashes, serving pre/post hashes, active/enabled/polling observations, guard outcomes, final outcome.
 
 - [ ] **Step 2: Verify RED.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py -k 'replay or receipt'`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement create-once canonical JSON receipts and replay retrieval.**
+- [ ] **Step 3: Implement create-once canonical JSON receipts.**
 
-Use O_EXCL/O_NOFOLLOW where available, write canonical JSON, `flush()` + `fsync()`, never update an existing receipt. Same `phase_request_digest` returns the existing result without invoking Git/staging ports. A repeated DRY_RUN may only reuse when its stored observation fingerprint is revalidated; otherwise execute a fresh DRY_RUN/preflight lineage.
+Use `O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW`, canonical JSON, flush/fsync, and no in-place update. An existing identical `phase_request_digest` returns stored result without invoking Git/staging. A stale DRY_RUN observation is never silently reused as current mutation authority.
 
-- [ ] **Step 4: Run receipt tests and the complete 20-test contract.**
+- [ ] **Step 4: Run the full 20-test local contract.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py`
-Expected: PASS; all normative 20 behaviors are represented.
+Expected: PASS.
 
-- [ ] **Step 5: Commit Task 6.**
+- [ ] **Step 5: Commit.**
 
 ```bash
 git add runtime/orchestrator/successor_release_staging.py tests/test_ocpv2_successor_release_staging.py
@@ -398,7 +365,7 @@ git commit -m "feat: seal successor staging receipts"
 
 ---
 
-### Task 7: Route SUCCESSOR_RELEASE_STAGE through OCP admission and Production Execution Gateway
+### Task 7: Route the capability through OCP admission and Production Execution Gateway
 
 **Files:**
 - Create: `runtime/orchestrator/successor_release_stage_gateway.py`
@@ -411,44 +378,37 @@ git commit -m "feat: seal successor staging receipts"
 **Interfaces:**
 - `SUCCESSOR_RELEASE_STAGE_KIND = "SUCCESSOR_RELEASE_STAGE"`.
 - `RemoteSuccessorReleaseStageAuthorization(successor_release_stage_policy_ref: str)`.
-- `SuccessorReleaseStageGatewayRequest.from_stage_request(request) -> SuccessorReleaseStageGatewayRequest` binds kind, phase digest, policy digest, canonical capability ID, and gateway digest.
-- `dispatch_successor_release_stage(request, *, stager) -> Mapping[str, object]` is the only mutation dispatch for this capability.
-- `RemoteOperatorService(..., stage_successor_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None, successor_release_stage_enabled: bool, successor_release_stage_policy_ref: str)`.
+- `SuccessorReleaseStageGatewayRequest.from_stage_request(request)` binds request kind, stage/phase digests, policy digest, capability ID, and gateway digest.
+- `dispatch_successor_release_stage(request, *, stager)` is the only production mutation dispatch for this capability.
+- `RemoteOperatorService` gains separate `stage_successor_authorized`, `successor_release_stage_enabled`, and `successor_release_stage_policy_ref` inputs.
 
-- [ ] **Step 1: Write integration RED tests proving the authority chain.**
+- [ ] **Step 1: Write the integration RED suite.**
 
-```python
-# valid typed envelope -> stage callback -> dedicated gateway -> stager exactly once.
-# unsupported request kind/policy/digest -> rejected before stager.
-# HOST_INSPECTION and PROJECT_ONBOARDING callbacks cannot reach stage mutation.
-# direct stager unit use remains test-only; production bootstrap wires only gateway dispatch.
-# gateway request exposes no command/argv/shell/systemctl/refspec field.
-# Full MCP port exposes only the fixed methods from Task 3/5.
-```
+Pin: typed valid envelope dispatches through dedicated gateway once; wrong kind/policy/digest rejects before stager; inspection/onboarding callbacks cannot reach stage mutation; gateway schema contains no `command`, `argv`, `shell`, `systemctl`, or arbitrary `refspec`; production bootstrap wires gateway dispatch rather than direct stager execution; Full MCP port exposes only Task 3/5 fixed methods.
 
-- [ ] **Step 2: Run the integration test and verify RED.**
+- [ ] **Step 2: Verify RED.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_stage_gateway.py`
-Expected: FAIL because the request kind/gateway wiring does not yet exist.
+Expected: FAIL.
 
-- [ ] **Step 3: Extend `remote_control_envelope.py` with a typed additive request kind.**
+- [ ] **Step 3: Add the typed remote-control request and authorization.**
 
-Add the payload to `RemotePayload`, add a dedicated authorization dataclass/field set, validate payload using `SuccessorReleaseStageRequest.from_mapping()`, and reject any mismatched authorization type or policy ref/digest. Do not modify `HOST_INSPECTION_KIND` semantics.
+Extend `RemotePayload` and `RemoteAuthorization` with the successor-stage types. `_validated_payload()` must call `SuccessorReleaseStageRequest.from_mapping()`. Envelope authorization must bind the dedicated policy ref and reject mismatched authorization classes. Do not alter `HOST_INSPECTION_KIND` semantics.
 
-- [ ] **Step 4: Implement the dedicated gateway contract without weakening worker gateway validation.**
+- [ ] **Step 4: Add the dedicated gateway contract without weakening the existing worker gateway.**
 
-`successor_release_stage_gateway.py` owns its small exact schema. `production_execution_gateway.py` exports a narrow dispatcher entry that accepts only that validated object and a `SuccessorReleaseStager`; do not add `SUCCESSOR_RELEASE_STAGE` to generic worker `build_gateway_request()` or relax DEC007 validation.
+`successor_release_stage_gateway.py` owns its exact schema and digest. `production_execution_gateway.py` exports the bounded dispatcher. Do not add successor staging to generic `build_gateway_request()` and do not relax DEC007 tool authorization validation.
 
-- [ ] **Step 5: Wire `RemoteOperatorService` and bootstrap composition.**
+- [ ] **Step 5: Wire service and bootstrap composition.**
 
-The service gets a separate branch/counter/projection for the new kind. `bootstrap.py` constructs the stager with the bounded port, receipt/lock roots below OCP state root, the existing stage-only artifact adapter, and canonical lifecycle identity provider. Mutation is requested through the dedicated gateway callback only; no OCP raw Git/shell/systemd call is added.
+`RemoteOperatorService.poll_once()` gets a separate successor-stage branch, counter, and status projection. `bootstrap.py` constructs the stager with state-root receipt/lock directories, fixed Full MCP port, lifecycle identity provider, `stage_successor_artifacts`, read-only service-state probe, and the dedicated gateway callback. OCP gets no direct raw Git/shell/systemd call.
 
-- [ ] **Step 6: Run integration and focused staging tests.**
+- [ ] **Step 6: Verify integration and focused contract.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_stage_gateway.py tests/test_ocpv2_successor_release_staging.py`
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 7.**
+- [ ] **Step 7: Commit.**
 
 ```bash
 git add runtime/orchestrator/successor_release_stage_gateway.py runtime/orchestrator/production_execution_gateway.py runtime/orchestrator/remote_control_envelope.py runtime/orchestrator/remote_operator_service.py deploy/operator-control-plane-v2/bootstrap.py tests/test_ocpv2_successor_release_stage_gateway.py
@@ -457,27 +417,32 @@ git commit -m "feat: route successor staging through production gateway"
 
 ---
 
-### Task 8: Qualification, regression, boundary review, and P2-only handoff
+### Task 8: Qualification and P2-only handoff
 
 **Files:**
-- Modify only if qualification evidence requires it: `docs/superpowers/specs/2026-09-25-successor-release-stage-design.md` status line from approved design state to implemented/verified state; do not alter normative design content.
-- No rollout/runtime-current/P3 file is modified in this task.
+- No production activation or rollout-transition file is modified.
+- Modify the design/qualification document only if the implementation itself requires a tracked verification-status update after all checks pass.
 
 **Interfaces:**
-- Consumes all prior task outputs.
-- Produces verification evidence only; it does not activate the successor.
+- Consumes all Tasks 1-7.
+- Produces verification evidence only; no successor activation.
 
-- [ ] **Step 1: Run focused contract tests.**
+- [ ] **Step 1: Run focused tests.**
 
 Run: `python3 -m pytest -q tests/test_ocpv2_successor_release_staging.py tests/test_ocpv2_successor_release_stage_gateway.py`
 Expected: PASS.
 
-- [ ] **Step 2: Run the repository full regression.**
+- [ ] **Step 2: Run the repository OCP full-regression harness.**
 
-Run: `python3 -m pytest -q`
-Expected: PASS with zero failures/errors; record the exact test/skip count from output.
+Run: `python3 scripts/ocpv2_full_regression.py`
+Expected: exit 0; record exact passed/skipped/failure/error counts.
 
-- [ ] **Step 3: Run static/compile checks.**
+- [ ] **Step 3: Run Full MCP boundary lint.**
+
+Run: `python3 scripts/full_mcp_lint.py`
+Expected: exit 0.
+
+- [ ] **Step 4: Run compile/diff checks.**
 
 ```bash
 python3 -m compileall -q runtime deploy/operator-control-plane-v2 tests
@@ -485,68 +450,55 @@ git diff --check
 git status --short
 ```
 
-Expected: compileall and diff-check PASS; status contains only intentional branch changes.
+Expected: compileall/diff-check exit 0; status contains only intentional branch changes.
 
-- [ ] **Step 4: Perform the authority-boundary diff review.**
+- [ ] **Step 5: Review the complete PR diff against the P2 authority boundary.**
 
-```bash
-git diff --unified=0 HEAD~1..HEAD -- runtime/orchestrator deploy/operator-control-plane-v2 tests
-```
+Run: `git diff --check impl/ocp-rdc-independent-primary-path-20260923...HEAD`
+Expected: exit 0.
 
-Reviewer must confirm: no arbitrary shell API; no raw caller-controlled refspec; no checkout/reset/rebase/force; no service-manager mutation; no serving file write path; no `runtime-current`; no P3; no predecessor shutdown; no Run migration; onboarding and host-inspection semantics remain unchanged.
+Run: `git diff --name-status impl/ocp-rdc-independent-primary-path-20260923...HEAD`
+Expected: only files required by the approved design/plan; no runtime-current, P3, predecessor shutdown, Run migration, or RDC-normal-path file.
 
-- [ ] **Step 5: Run regression-delta against the PR base using the repository's existing regression-delta procedure.**
+- [ ] **Step 6: Verify inert deployment semantics from tests/evidence only.**
 
-Compare base `impl/ocp-rdc-independent-primary-path-20260923` with the final PR HEAD and require `current_only=0`. If the repository's established command/script name differs from prior qualification evidence, use that existing command verbatim rather than inventing a new checker.
+Require successor profile `lifecycle-v2-p2`, mode `DISABLED`, polling false, service/timer inactive and not enabled, serving hashes unchanged, serving runtime identity unchanged. Do not call daemon-reload/enable/start/restart and do not switch runtime-current.
 
-- [ ] **Step 6: Verify deployment remains inert.**
+- [ ] **Step 7: Stop at the P2 host-staging resume gate.**
 
-Inspect generated/staged successor artifacts only; do **not** call daemon-reload/enable/start/restart and do not switch `runtime-current`. Confirm successor mode/profile remains `DISABLED`, polling is false, and serving artifact hashes/identity are unchanged.
-
-- [ ] **Step 7: Commit only evidence/status changes if any were required.**
-
-```bash
-git add docs/superpowers/specs/2026-09-25-successor-release-stage-design.md
-git commit -m "docs: record successor release stage verification"
-```
-
-Skip this commit if no tracked evidence/status file changed.
-
-- [ ] **Step 8: Stop at the P2 host-staging resume gate.**
-
-Final implementation output must explicitly state that `SUCCESSOR_RELEASE_STAGE` is source-integrated and verified but deployed serving OCP still needs the separately controlled bootstrap/deployment boundary before the previously stalled P2 host staging can resume. Do not enter P3 Canary in this plan.
+Report source integration/verification and the separate controlled deployment/bootstrap boundary still required to make the capability available to deployed serving OCP. Do not enter P3 Canary in this plan.
 
 ---
 
 ## RED Contract Coverage Matrix
 
-| # | Normative RED behavior | Owning task |
+| # | Normative behavior | Owning task |
 |---|---|---|
 | 1 | exact two-phase lineage/intent/preflight binding | Task 1 |
 | 2 | DRY_RUN nonmutating/no fetch | Task 3 |
 | 3 | happy path exact target/successor-only | Task 5 |
 | 4 | dirty worktree fails | Task 2 |
 | 5 | branch/HEAD drift fails | Task 2 |
-| 6 | non-FF after bounded fetch, no branch movement | Task 3 |
+| 6 | non-FF after bounded fetch; no branch movement | Task 3 |
 | 7 | serving alias/root fails | Task 2 |
 | 8 | predecessor alias/root fails | Task 2 |
 | 9 | fetched SHA mismatch fails | Task 3 |
-| 10 | target ref drift between phases fails | Task 3 |
+| 10 | target-ref drift between phases fails | Task 3 |
 | 11 | TOCTOU head/worktree drift fails | Task 4 |
-| 12 | activation/service-manager mutation unavailable | Task 5 + Task 7 |
+| 12 | activation/service-manager mutation unavailable | Tasks 5, 7 |
 | 13 | serving hash drift fails | Task 5 |
 | 14 | successor active/enabled/polling fails | Task 5 |
-| 15 | same phase digest replay side-effect free | Task 1 + Task 6 |
+| 15 | same phase digest replay side-effect free | Tasks 1, 6 |
 | 16 | same request ID/different intent fails | Task 1 |
 | 17 | same lineage/different phase digests allowed | Task 1 |
-| 18 | failure after fetch = FAILED_AFTER_FETCH/no branch move | Task 3 |
-| 19 | failure after Git advance has no rollback/new admission required | Task 4 |
-| 20 | success receipt contains all evidence | Task 6 |
+| 18 | after-fetch failure classified without branch move | Task 3 |
+| 19 | after-Git-advance failure has no rollback; new admission required | Task 4 |
+| 20 | success receipt contains all normative evidence | Task 6 |
 
 ## Self-Review Checklist
 
-- **Spec coverage:** Tasks 1-8 cover request identity, two-phase preflight, canonical workspace isolation, TOCTOU lock/fences, bounded Git, successor-only staging, serving preservation, immutable audit/replay, failure/recovery semantics, OCP/Gateway/Full MCP authority split, all 20 RED tests, regression, and P2-only handoff.
-- **Placeholder scan:** No `TBD`, `TODO`, “implement later”, generic “add error handling”, or unspecified “write tests” steps are permitted. Every implementation task has named files, interfaces, RED command, GREEN command, and commit boundary.
-- **Type consistency:** `SuccessorReleaseStageRequest`, `SuccessorReleaseStager`, `SuccessorReleaseFullMcpPort`, `SuccessorReleaseReceiptStore`, `SuccessorLifecycleIdentity`, and dedicated gateway/admission names are defined once in their owning tasks and reused unchanged by later tasks.
-- **Review Focus:** canonical-root aliasing, remote-ref ambiguity/drift, lock contention, unsafe partial artifact/service state, and phase/crash classification each have an explicit owning test task.
-- **Authority check:** No task grants OCP arbitrary host mutation, repurposes onboarding/host inspection, activates the successor, changes runtime-current, enters P3, shuts down predecessor, migrates existing Runs, or introduces RDC as a normal dependency.
+- **Spec coverage:** Tasks 1-8 cover request identity, two-phase binding, registered canonical identity, serving/predecessor exclusion, TOCTOU locking, bounded fetch/FF, successor-only inert staging, serving preservation, immutable replay-safe receipts, failure/recovery semantics, OCP/Gateway/Full MCP authority split, all 20 RED tests, qualification, and P2-only handoff.
+- **Placeholder scan:** No `TBD`, `TODO`, omitted code body, generic “add error handling”, or unspecified “write tests” step remains.
+- **Type consistency:** `SuccessorReleaseStageRequest`, `SuccessorReleaseStager`, `SuccessorReleaseFullMcpPort`, `SuccessorReleaseReceiptStore`, `SuccessorLifecycleIdentity`, and the dedicated gateway/admission names are defined once and reused unchanged.
+- **Review Focus:** canonical-root aliasing, remote-ref ambiguity/drift, lock contention, unsafe post-stage state, and failure-phase recovery each have an explicit test owner.
+- **Authority check:** No task gives OCP arbitrary host mutation, repurposes onboarding/host inspection, activates successor, changes runtime-current, enters P3, shuts down predecessor, migrates existing Runs, or makes RDC normal-path infrastructure.
