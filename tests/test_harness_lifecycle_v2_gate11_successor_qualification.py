@@ -4,10 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.orchestrator.execution_lifecycle_v2 import (
-    LIFECYCLE_MODE_LEGACY,
-    resolve_lifecycle_mode,
-)
+from runtime.orchestrator.execution_lifecycle_v2 import resolve_lifecycle_mode
 from runtime.orchestrator.ocpv2_runtime_service import (
     project_onboarding_enabled_from_environment,
 )
@@ -47,7 +44,7 @@ def _v2_spec() -> dict[str, str]:
 
 class HarnessLifecycleV2Gate11SuccessorQualificationTest(unittest.TestCase):
     def test_code_presence_does_not_migrate_existing_jobs_or_enable_onboarding(self) -> None:
-        self.assertEqual(resolve_lifecycle_mode({}), LIFECYCLE_MODE_LEGACY)
+        self.assertEqual(resolve_lifecycle_mode({}), "LEGACY")
         self.assertFalse(project_onboarding_enabled_from_environment({}))
         self.assertFalse(
             project_onboarding_enabled_from_environment(
@@ -64,7 +61,10 @@ class HarnessLifecycleV2Gate11SuccessorQualificationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = MigrationStore(Path(directory) / "migrations")
             legacy = store.create(_v1_spec())
-            self.assertEqual(store.load(legacy.migration_id).schema_version, "orchestration.runtime-migration.v1")
+            self.assertEqual(
+                store.load(legacy.migration_id).schema_version,
+                "orchestration.runtime-migration.v1",
+            )
 
             store.rollback(legacy.migration_id, "qualification fixture complete")
             successor = store.create_v2(_v2_spec())
@@ -93,7 +93,9 @@ class HarnessLifecycleV2Gate11SuccessorQualificationTest(unittest.TestCase):
             )
             tx = store.advance(tx.migration_id, MigrationPhase.RUNTIME_ACTIVATED)
             tx = store.record_restored_runtime_evidence(tx.migration_id, "7" * 64)
-            rolled_back = store.rollback(tx.migration_id, "gate11 rollback qualification")
+            rolled_back = store.rollback(
+                tx.migration_id, "gate11 rollback qualification"
+            )
             self.assertEqual(rolled_back.phase, MigrationPhase.ROLLED_BACK)
             self.assertEqual(rolled_back.source_manifest_sha256, "5" * 64)
 
