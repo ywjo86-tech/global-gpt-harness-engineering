@@ -17,6 +17,7 @@ from .project_onboarding import (
 )
 
 SUCCESSOR_RELEASE_STAGE_SCHEMA = "orchestration.successor-release-stage-request.v1"
+SUCCESSOR_RELEASE_STAGE_RECEIPT_SCHEMA = "orchestration.successor-release-stage-receipt.v1"
 SUCCESSOR_PROFILE = "lifecycle-v2-p2"
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
@@ -426,6 +427,120 @@ class SuccessorStageLock:
         return False
 
 
+class SuccessorReleaseReceiptStore:
+    """Create-once canonical JSON store keyed by phase request digest."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+        if not self.root.is_absolute():
+            raise SuccessorReleaseStageError("successor receipt root must be absolute")
+
+    def _ensure_root(self) -> Path:
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise SuccessorReleaseStageError("successor receipt root is unavailable") from exc
+        if self.root.is_symlink() or not self.root.is_dir():
+            raise SuccessorReleaseStageError("successor receipt root is unsafe")
+        try:
+            canonical = self.root.resolve(strict=True)
+        except OSError as exc:
+            raise SuccessorReleaseStageError("successor receipt root is unavailable") from exc
+        if canonical != self.root:
+            raise SuccessorReleaseStageError("successor receipt root is not canonical")
+        return canonical
+
+    def _path(self, phase_request_digest: str) -> Path:
+        digest = _sha256(phase_request_digest, "phase request digest")
+        return self._ensure_root() / f"{digest}.json"
+
+    def read_phase(self, phase_request_digest: str) -> dict[str, Any] | None:
+        path = self._path(phase_request_digest)
+        if not path.exists():
+            return None
+        if path.is_symlink() or not path.is_file():
+            raise SuccessorReleaseStageError("successor receipt file is unsafe")
+        try:
+            raw = path.read_bytes()
+            value = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SuccessorReleaseStageError("successor receipt is unreadable") from exc
+        if not isinstance(value, dict):
+            raise SuccessorReleaseStageError("successor receipt is invalid")
+        if value.get("phase_request_digest") != phase_request_digest:
+            raise SuccessorReleaseStageError("successor receipt digest binding mismatch")
+        if raw != _canonical(value):
+            raise SuccessorReleaseStageError("successor receipt is not canonical JSON")
+        return value
+
+    def append(self, receipt: Mapping[str, Any]) -> dict[str, Any]:
+        value = dict(receipt)
+        digest = _sha256(value.get("phase_request_digest"), "phase request digest")
+        path = self._path(digest)
+        payload = _canonical(value)
+        existing = self.read_phase(digest)
+        if existing is not None:
+            if _canonical(existing) != payload:
+                raise SuccessorReleaseStageError("successor receipt digest already sealed")
+            return existing
+        try:
+            fd = os.open(
+                path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600,
+            )
+        except FileExistsError:
+            existing = self.read_phase(digest)
+            if existing is not None and _canonical(existing) == payload:
+                return existing
+            raise SuccessorReleaseStageError("successor receipt digest already sealed")
+        except OSError as exc:
+            raise SuccessorReleaseStageError("successor receipt creation failed") from exc
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            directory_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except Exception:
+            try:
+                path.unlink(missing_ok=True)
+            finally:
+                raise
+        return value
+
+    def find_preflight(
+        self,
+        *,
+        request_id: str,
+        stage_intent_digest: str,
+        preflight_digest: str,
+    ) -> dict[str, Any] | None:
+        root = self._ensure_root()
+        for path in sorted(root.glob("*.json")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(value, dict):
+                continue
+            if (
+                value.get("mode") == "DRY_RUN"
+                and value.get("request_id") == request_id
+                and value.get("stage_intent_digest") == stage_intent_digest
+                and value.get("preflight_digest") == preflight_digest
+                and value.get("status") == "STAGE_READY"
+            ):
+                return value
+        return None
+
+
 class SuccessorReleaseStager:
     """Own the bounded P2 successor transaction without activation authority."""
 
@@ -454,6 +569,28 @@ class SuccessorReleaseStager:
         self.user_config_root = user_config_root
         self.user_unit_root = user_unit_root
         self._preflights: dict[str, _PreflightBinding] = {}
+
+    def _read_replay(self, request: SuccessorReleaseStageRequest) -> dict[str, Any] | None:
+        store = self.receipt_store
+        if store is None or not hasattr(store, "read_phase"):
+            return None
+        replay = store.read_phase(request.phase_request_digest)
+        if replay is None:
+            return None
+        if not isinstance(replay, Mapping):
+            raise SuccessorReleaseStageError("stored successor phase receipt is invalid")
+        return dict(replay)
+
+    def _append_receipt(self, receipt: Mapping[str, Any]) -> dict[str, Any]:
+        store = self.receipt_store
+        if store is None:
+            return dict(receipt)
+        if not hasattr(store, "append"):
+            raise SuccessorReleaseStageError("successor receipt store is invalid")
+        stored = store.append(receipt)
+        if not isinstance(stored, Mapping):
+            raise SuccessorReleaseStageError("stored successor receipt is invalid")
+        return dict(stored)
 
     def _resolve_workspace(
         self, request: SuccessorReleaseStageRequest
@@ -486,12 +623,9 @@ class SuccessorReleaseStager:
             project_id=str(entry["project_id"]),
         )
 
-    def _validate_isolation(
-        self,
-        workspace: SuccessorWorkspaceIdentity,
-        *,
-        outcome: str = "FAILED_BEFORE_MUTATION",
-    ) -> None:
+    def _lifecycle_snapshot(
+        self, *, outcome: str = "FAILED_BEFORE_MUTATION"
+    ) -> dict[str, str | None]:
         if self.lifecycle_identity_provider is None:
             raise SuccessorReleaseStageError(
                 "lifecycle identity provider is required", outcome=outcome
@@ -508,6 +642,21 @@ class SuccessorReleaseStager:
             raise SuccessorReleaseStageError(
                 "protected lifecycle root is unavailable", outcome=outcome
             ) from exc
+        return {
+            "serving_root": str(serving_root),
+            "predecessor_root": str(predecessor_root) if predecessor_root is not None else None,
+        }
+
+    def _validate_isolation(
+        self,
+        workspace: SuccessorWorkspaceIdentity,
+        *,
+        outcome: str = "FAILED_BEFORE_MUTATION",
+    ) -> None:
+        lifecycle = self._lifecycle_snapshot(outcome=outcome)
+        serving_root = Path(str(lifecycle["serving_root"]))
+        predecessor_raw = lifecycle["predecessor_root"]
+        predecessor_root = Path(predecessor_raw) if predecessor_raw is not None else None
         if workspace.canonical_root == serving_root:
             raise SuccessorReleaseStageError(
                 "successor root equals serving root", outcome=outcome
@@ -751,6 +900,29 @@ class SuccessorReleaseStager:
 
     def _stage_binding(self, request: SuccessorReleaseStageRequest) -> _PreflightBinding:
         binding = self._preflights.get(request.request_id)
+        if binding is None and self.receipt_store is not None and hasattr(
+            self.receipt_store, "find_preflight"
+        ):
+            raw = self.receipt_store.find_preflight(
+                request_id=request.request_id,
+                stage_intent_digest=request.stage_intent_digest,
+                preflight_digest=str(request.preflight_digest),
+            )
+            if raw is not None:
+                try:
+                    binding = _PreflightBinding(
+                        stage_intent_digest=str(raw["stage_intent_digest"]),
+                        preflight_digest=str(raw["preflight_digest"]),
+                        canonical_root=str(raw["canonical_root"]),
+                        observed_branch=str(raw["observed_branch"]),
+                        observed_head=str(raw["observed_head"]),
+                        remote_target_head=str(raw["remote_target_head"]),
+                        ancestry_state=str(raw["ancestry_state"]),
+                    )
+                except KeyError as exc:
+                    raise SuccessorReleaseStageError(
+                        "stored DRY_RUN preflight is incomplete"
+                    ) from exc
         if binding is None:
             raise SuccessorReleaseStageError("STAGE requires a prior DRY_RUN preflight")
         if binding.stage_intent_digest != request.stage_intent_digest:
@@ -773,7 +945,6 @@ class SuccessorReleaseStager:
             self._effective_lock_root(), workspace.alias, workspace.canonical_root
         )
         with lock:
-            # Fence 2: revalidate all mutable local identity immediately after lock.
             self._validate_isolation(workspace)
             self._validate_local_git(workspace, request)
             remote_target = self._remote_target(root, request)
@@ -811,8 +982,6 @@ class SuccessorReleaseStager:
                         outcome="FAILED_AFTER_FETCH",
                     )
 
-                # Fence 3: fetching may add objects/refs only. Branch, HEAD,
-                # index, worktree, and lifecycle identity must still be exact.
                 self._validate_isolation(workspace, outcome="FAILED_AFTER_FETCH")
                 self._validate_local_git(
                     workspace,
@@ -834,8 +1003,6 @@ class SuccessorReleaseStager:
                         outcome="FAILED_AFTER_FETCH",
                     )
 
-                # Branch movement is one admitted ff-only operation. There is
-                # deliberately no reset/checkout/rebase recovery API.
                 advanced_head = self.full_mcp.fast_forward_current(
                     root, request.target_head
                 )
@@ -845,8 +1012,6 @@ class SuccessorReleaseStager:
                         outcome="FAILED_AFTER_GIT_ADVANCE",
                     )
 
-                # Fence 4: after advancement, the approved target is the new
-                # durable baseline. Any later failure must leave it in place.
                 self._validate_isolation(
                     workspace, outcome="FAILED_AFTER_GIT_ADVANCE"
                 )
@@ -863,8 +1028,6 @@ class SuccessorReleaseStager:
                         outcome="FAILED_AFTER_GIT_ADVANCE",
                     )
 
-                # Fence 5: prove the serving artifacts are unchanged immediately
-                # before the successor-only artifact writer runs.
                 serving_pre_stage = self._serving_artifact_hashes(
                     outcome="FAILED_AFTER_GIT_ADVANCE"
                 )
@@ -876,7 +1039,6 @@ class SuccessorReleaseStager:
 
                 successor_hashes = self._stage_successor_artifacts(root, request)
 
-                # Fence 6: artifact writes cannot alter Git or serving identity.
                 self._validate_isolation(
                     workspace, outcome="FAILED_AFTER_GIT_ADVANCE"
                 )
@@ -899,7 +1061,6 @@ class SuccessorReleaseStager:
                     request.successor_profile
                 )
 
-                # Fence 7: final immutable observations before returning success.
                 self._validate_isolation(
                     workspace, outcome="FAILED_AFTER_GIT_ADVANCE"
                 )
@@ -938,12 +1099,140 @@ class SuccessorReleaseStager:
                 if fetched:
                     self.full_mcp.delete_temporary_ref(root, temporary_ref)
 
+    def _dry_run_receipt(
+        self,
+        workspace: SuccessorWorkspaceIdentity,
+        request: SuccessorReleaseStageRequest,
+        result: Mapping[str, Any],
+        branch: str,
+        head: str,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": SUCCESSOR_RELEASE_STAGE_RECEIPT_SCHEMA,
+            "receipt_schema": SUCCESSOR_RELEASE_STAGE_RECEIPT_SCHEMA,
+            "request_id": request.request_id,
+            "mode": request.mode,
+            "stage_intent_digest": request.stage_intent_digest,
+            "phase_request_digest": request.phase_request_digest,
+            "preflight_digest": result["preflight_digest"],
+            "project_alias": request.project_alias,
+            "canonical_root": str(workspace.canonical_root),
+            "canonical_successor_root": str(workspace.canonical_root),
+            "project_id": workspace.project_id,
+            "approval_policy_ref": request.approval_policy_ref,
+            "approval_policy_digest": request.approval_policy_digest,
+            "expected_branch": request.expected_branch,
+            "expected_head": request.expected_head,
+            "observed_branch": branch,
+            "observed_head": head,
+            "pre_head": head,
+            "target_ref": request.target_ref,
+            "target_head": request.target_head,
+            "remote_target_head": result["remote_target_head"],
+            "ancestry_state": result["ancestry_state"],
+            "outcome": "STAGE_READY",
+            "status": "STAGE_READY",
+            "mutation_performed": False,
+            "service_manager_invoked": False,
+            "polling_enabled": False,
+        }
+
+    def _stage_receipt(
+        self,
+        workspace: SuccessorWorkspaceIdentity,
+        request: SuccessorReleaseStageRequest,
+        binding: _PreflightBinding,
+        result: Mapping[str, Any],
+        runtime_before: Mapping[str, Any],
+        runtime_after: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        state = dict(result["service_state"])
+        guards = {
+            "registered_successor": "PASS",
+            "canonical_isolation": "PASS",
+            "clean_exact_branch_head": "PASS",
+            "remote_target_binding": "PASS",
+            "bounded_fetch": "PASS",
+            "fast_forward_only": "PASS",
+            "serving_preservation": "PASS",
+            "successor_inert": "PASS",
+        }
+        receipt = {
+            "schema_version": SUCCESSOR_RELEASE_STAGE_RECEIPT_SCHEMA,
+            "receipt_schema": SUCCESSOR_RELEASE_STAGE_RECEIPT_SCHEMA,
+            "request_id": request.request_id,
+            "mode": request.mode,
+            "stage_intent_digest": request.stage_intent_digest,
+            "phase_request_digest": request.phase_request_digest,
+            "preflight_digest": request.preflight_digest,
+            "project_alias": request.project_alias,
+            "canonical_root": str(workspace.canonical_root),
+            "canonical_successor_root": str(workspace.canonical_root),
+            "project_id": workspace.project_id,
+            "approval_policy_ref": request.approval_policy_ref,
+            "approval_policy_digest": request.approval_policy_digest,
+            "expected_branch": request.expected_branch,
+            "expected_head": request.expected_head,
+            "pre_head": request.expected_head,
+            "target_ref": request.target_ref,
+            "target_head": request.target_head,
+            "remote_target_head": binding.remote_target_head,
+            "fetched_sha": result["fetched_sha"],
+            "ancestor_result": True,
+            "ancestor_fast_forward": True,
+            "fast_forward_result": True,
+            "branch_fast_forward": True,
+            "fetch_result": "FETCHED",
+            "branch_result": "FAST_FORWARDED",
+            "post_head": result["post_head"],
+            "successor_artifact_hashes": result["successor_artifact_hashes"],
+            "serving_artifact_hashes_before": result["serving_artifact_hashes_before"],
+            "serving_artifact_hashes_after": result["serving_artifact_hashes_after"],
+            "serving_runtime_identity_before": dict(runtime_before),
+            "serving_runtime_identity_after": dict(runtime_after),
+            "service_state": state,
+            "service_active": state["service_active"],
+            "service_enabled": state["service_enabled"],
+            "timer_active": state["timer_active"],
+            "timer_enabled": state["timer_enabled"],
+            "polling_enabled": state["polling_enabled"],
+            "guard_results": guards,
+            "guard_outcomes": guards,
+            "mutation_performed": bool(result["mutation_performed"]),
+            "service_manager_invoked": bool(result["service_manager_invoked"]),
+            "outcome": "STAGED",
+            "status": "STAGED",
+        }
+        return receipt
+
     def execute(self, request: SuccessorReleaseStageRequest) -> dict[str, Any]:
+        replay = self._read_replay(request)
+        if replay is not None:
+            return replay
+
         workspace = self._resolve_workspace(request)
-        # Fence 1: preflight/entry observation before any STAGE lock or mutation.
         self._validate_isolation(workspace)
         branch, head = self._validate_local_git(workspace, request)
         if request.mode == "DRY_RUN":
-            return self._execute_dry_run(workspace, request, branch, head)
+            result = self._execute_dry_run(workspace, request, branch, head)
+            receipt = self._dry_run_receipt(workspace, request, result, branch, head)
+            return self._append_receipt(receipt)
+
         binding = self._stage_binding(request)
-        return self._execute_stage(workspace, request, binding)
+        runtime_before = self._lifecycle_snapshot()
+        result = self._execute_stage(workspace, request, binding)
+        runtime_after = self._lifecycle_snapshot(outcome="FAILED_AFTER_GIT_ADVANCE")
+        if runtime_after != runtime_before:
+            raise SuccessorReleaseStageError(
+                "serving runtime identity changed during successor staging",
+                outcome="FAILED_AFTER_GIT_ADVANCE",
+            )
+        receipt = self._stage_receipt(
+            workspace,
+            request,
+            binding,
+            result,
+            runtime_before,
+            runtime_after,
+        )
+        return self._append_receipt(receipt)
