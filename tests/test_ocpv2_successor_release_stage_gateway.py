@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from runtime.orchestrator import remote_control_envelope as control
 from runtime.orchestrator import ocpv2_successor_stage_runtime as stage_runtime
@@ -138,6 +142,26 @@ class SuccessorReleaseStageGatewayTests(unittest.TestCase):
         gateway = self._gateway()
         self.assertTrue(issubclass(gateway.SuccessorReleaseStageGatewayError, production_gateway.GatewayError))
         self.assertNotIn("SUCCESSOR_RELEASE_STAGE", production_gateway.SUPPORTED_BACKENDS)
+
+    def test_p2_runtime_binds_predecessor_exclusion_to_serving_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "serving"
+            repo.mkdir()
+            state = root / "state"
+            state.mkdir()
+            mapping = root / "mapping"
+            (mapping / "aliases").mkdir(parents=True)
+            config = SimpleNamespace(
+                repo_root=repo,
+                state_root=state,
+                environment={"HARNESS_CONTRACT_MAPPING_ROOT": str(mapping)},
+            )
+            with patch.object(stage_runtime, "_load_stage_callback", return_value=lambda *args: {}):
+                stager = stage_runtime._successor_stager(config)
+            identity = stager.lifecycle_identity_provider()
+            self.assertEqual(identity.serving_root, repo.resolve())
+            self.assertEqual(identity.predecessor_root, repo.resolve())
 
     def test_remote_service_routes_stage_to_dedicated_callback(self):
         envelope = _validated_envelope(self)
