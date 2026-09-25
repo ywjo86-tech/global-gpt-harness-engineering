@@ -175,6 +175,9 @@ def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
         if gate.project_requirement_evidence_paths_by_lv:
             item["requirement_evidence_paths_by_lv"] = {lv: path for lv, path, _ in gate.project_requirement_evidence_paths_by_lv}
             item["requirement_evidence_sha256_by_lv"] = {lv: digest for lv, _, digest in gate.project_requirement_evidence_paths_by_lv}
+        if gate.adopted_prefix_evidence_path:
+            item["adopted_prefix_evidence_path"] = gate.adopted_prefix_evidence_path
+            item["adopted_prefix_evidence_sha256"] = gate.adopted_prefix_evidence_sha256
         job["gates"].append(item)
     return job
 
