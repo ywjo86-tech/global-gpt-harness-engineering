@@ -64,6 +64,13 @@ jobs:
       - run: python3 -m unittest -v tests.test_ocpv2_replay_churn
       - run: python3 -m unittest -v tests.test_operator_console_projection
       - run: python3 -m unittest -v tests.test_ocpv2_deploy_package
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_release_stage_gateway
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging_artifacts
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging_fences
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging_fencing
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging_receipts
+      - run: python3 -m unittest -v tests.test_ocpv2_successor_stage_bootstrap
       - run: python3 -m unittest -v tests.test_ocpv2_manual_deploy_preview
       - run: python3 -m unittest -v tests.test_ocpv2_authority_negative_space
       - run: python3 -m unittest -v tests.test_operator_control
