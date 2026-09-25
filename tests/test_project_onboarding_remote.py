@@ -123,6 +123,24 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             self.assertFalse(registry_root.exists())
             self.assertFalse(mapping_root.exists())
 
+    def test_request_mapping_root_must_match_configured_canonical_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            registry_root = tmp_path / "registry"
+            canonical_mapping_root = tmp_path / "canonical-mappings"
+            untrusted_mapping_root = tmp_path / "other-mappings"
+            admission = ProjectOnboardingAdmission(
+                OnboardingRegistry(registry_root),
+                canonical_mapping_root=canonical_mapping_root,
+            )
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "mapping root"):
+                admission.execute(
+                    _request(root, untrusted_mapping_root, head, mode="DRY_RUN")
+                )
+            self.assertFalse(canonical_mapping_root.exists())
+            self.assertFalse(untrusted_mapping_root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
