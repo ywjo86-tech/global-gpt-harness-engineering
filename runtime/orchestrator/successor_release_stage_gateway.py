@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
+from .production_execution_gateway import GatewayError
 from .successor_release_staging import (
     SuccessorReleaseStageRequest,
     SuccessorReleaseStageError,
@@ -31,7 +32,7 @@ _FIELDS = {
 }
 
 
-class SuccessorReleaseStageGatewayError(ValueError):
+class SuccessorReleaseStageGatewayError(GatewayError):
     """Fail-closed successor staging admission/dispatch failure."""
 
 
