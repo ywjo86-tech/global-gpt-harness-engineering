@@ -93,6 +93,22 @@ class OCPv2DeployPackageTests(unittest.TestCase):
             parsed = bootstrap.config_from_env_file(rendered.env_path)
             self.assertEqual(parsed.mode, "DISABLED")
 
+    def test_rendered_env_keeps_successor_stage_explicitly_off_and_parseable(self):
+        bootstrap = load_bootstrap()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            rendered = bootstrap.render_package(
+                bootstrap.BootstrapConfig.disabled(repo_root=repo),
+                output_dir=root / "rendered",
+            )
+            text = rendered.env_path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("OCP_SUCCESSOR_RELEASE_STAGE_ENABLED=0"), 1)
+            self.assertEqual(text.count("OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF="), 1)
+            parsed = bootstrap.config_from_env_file(rendered.env_path)
+            self.assertEqual(parsed.mode, "DISABLED")
+
     def test_bootstrap_env_parser_accepts_new_activation_lifecycle_rollback_key(self):
         bootstrap = load_bootstrap()
         with tempfile.TemporaryDirectory() as td:
