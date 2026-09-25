@@ -27,6 +27,7 @@ from .full_plan_activation import FullPlanActivationStore, activate_approved_ful
 from .host_inspection_port import HostInspectionPort
 from .plan_activation import PlanActivationStore, activate_approved_work
 from .project_onboarding import OnboardingRegistry
+from .project_onboarding_remote import ProjectOnboardingAdmission
 from .ocpv2_canonical_recovery import recover_pending_canonical_results, resolve_registered_full_plan_completion
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
 from .read_only_host_diagnostic import execute_read_only_host_diagnostic
@@ -70,6 +71,8 @@ _OPTIONAL_ENV = {
     "OCP_WORK_ACTIVATION_POLICY_REF",
     "OCP_FULL_PLAN_ACTIVATION_ENABLED",
     "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
+    "OCP_PROJECT_ONBOARDING_ENABLED",
+    "OCP_PROJECT_ONBOARDING_POLICY_REF",
     "HARNESS_CONTRACT_MAPPING_ROOT",
     "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
     "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
@@ -100,6 +103,8 @@ class RuntimeConfig:
     full_plan_activation_policy_ref: str = ""
     diagnostic_enabled: bool = False
     diagnostic_policy: DiagnosticPolicy | None = None
+    project_onboarding_enabled: bool = False
+    project_onboarding_policy_ref: str = ""
 
 
 def host_inspection_enabled_from_environment(environment: Mapping[str, str]) -> bool:
@@ -115,6 +120,11 @@ def work_activation_enabled_from_environment(environment: Mapping[str, str]) -> 
 def full_plan_activation_enabled_from_environment(environment: Mapping[str, str]) -> bool:
     """Enable executable Full Plan registration only on exact `1`."""
     return str(environment.get("OCP_FULL_PLAN_ACTIVATION_ENABLED") or "").strip() == "1"
+
+
+def project_onboarding_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable create-once project onboarding only on the exact explicit value `1`."""
+    return str(environment.get("OCP_PROJECT_ONBOARDING_ENABLED") or "").strip() == "1"
 
 
 def _runtime_release_for_root(root: Path) -> RuntimeReleaseManifest:
@@ -139,6 +149,7 @@ def finalize_remote_control_projection(
         "orchestration.remote-inspection-status-projection.v1",
         "orchestration.remote-activation-status-projection.v1",
         "orchestration.remote-full-plan-activation-status-projection.v1",
+        "orchestration.remote-project-onboarding-status-projection.v1",
     }:
         return
     parsed = parse_remote_projection(projection)
@@ -167,8 +178,8 @@ def _read_env_file(path: str | Path) -> dict[str, str]:
     if source.is_symlink() or not source.is_file():
         raise RuntimeServiceError("environment file must be a regular non-symlink file")
     result: dict[str, str] = {}
-    for raw in source.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
+    for raw_line in source.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
@@ -242,11 +253,17 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     full_plan_activation_policy_ref = str(environment.get("OCP_FULL_PLAN_ACTIVATION_POLICY_REF") or "").strip()
     if full_plan_activation_enabled:
         _safe_id(full_plan_activation_policy_ref, "Full Plan activation policy ref")
+    project_onboarding_enabled = project_onboarding_enabled_from_environment(environment)
+    project_onboarding_policy_ref = str(environment.get("OCP_PROJECT_ONBOARDING_POLICY_REF") or "").strip()
+    if project_onboarding_enabled:
+        _safe_id(project_onboarding_policy_ref, "project onboarding policy ref")
     return RuntimeConfig(
         mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment,
         host_inspection_enabled_from_environment(environment), work_activation_enabled, activation_policy_ref,
         full_plan_activation_enabled, full_plan_activation_policy_ref,
         diagnostic_enabled=diagnostic_enabled, diagnostic_policy=diagnostic_policy,
+        project_onboarding_enabled=project_onboarding_enabled,
+        project_onboarding_policy_ref=project_onboarding_policy_ref,
     )
 
 
@@ -407,6 +424,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     activation_store: PlanActivationStore | None = None
     full_plan_authority_root: Path | None = None
     full_plan_activation_store: FullPlanActivationStore | None = None
+    onboarding_admission: ProjectOnboardingAdmission | None = None
     if config.work_activation_enabled:
         mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
         if not mapping_root_raw:
@@ -432,6 +450,21 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         if activation_release is None:
             activation_release = _runtime_release_for_root(config.repo_root)
         full_plan_activation_store = FullPlanActivationStore(harness_state_root)
+
+    if config.project_onboarding_enabled:
+        onboarding_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not onboarding_root_raw:
+            raise RuntimeServiceError("PROJECT_ONBOARDING_REGISTRY_REQUIRED")
+        onboarding_root = Path(onboarding_root_raw).expanduser().absolute()
+        if (
+            not onboarding_root.is_dir()
+            or onboarding_root.is_symlink()
+            or onboarding_root.resolve() != onboarding_root
+        ):
+            raise RuntimeServiceError("PROJECT_ONBOARDING_REGISTRY_UNSAFE")
+        onboarding_admission = ProjectOnboardingAdmission(
+            OnboardingRegistry(onboarding_root / "aliases")
+        )
 
     def durable_acknowledged(message_id: str) -> bool:
         binding = binding_store.get(message_id)
@@ -618,6 +651,20 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
+    def onboard(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if onboarding_admission is None:
+            raise RuntimeServiceError("PROJECT_ONBOARDING_DISABLED")
+        result = onboarding_admission.execute(envelope.payload)
+        return {
+            "schema_version": "orchestration.remote-project-onboarding-status-projection.v1",
+            "message_id": envelope.message_id,
+            "alias": envelope.payload.alias,
+            "request_digest": envelope.payload.request_digest,
+            "mode": envelope.payload.mode,
+            "result_class": str(result.get("status") or "PROJECT_ONBOARDING_ERROR"),
+            "result": result,
+        }
+
     def after_projection_published(envelope, projection):
         if isinstance(envelope, RemoteControlEnvelopeV1):
             finalize_remote_control_projection(outbox, projection)
@@ -648,6 +695,9 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         activate_full_plan_authorized=activate_full_plan,
         full_plan_activation_enabled=config.full_plan_activation_enabled,
         full_plan_activation_policy_ref=config.full_plan_activation_policy_ref,
+        onboard_authorized=onboard,
+        project_onboarding_enabled=config.project_onboarding_enabled,
+        project_onboarding_policy_ref=config.project_onboarding_policy_ref,
     )
 
 
@@ -655,7 +705,7 @@ def run_once(config: RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         return {"mode": "DISABLED", "received": 0, "validated": 0, "executed": 0,
                 "diagnosed": 0, "projected": 0, "acknowledged": 0, "blocked": 0,
-                "inspected": 0, "activated": 0, "full_plan_activated": 0}
+                "inspected": 0, "activated": 0, "full_plan_activated": 0, "onboarded": 0}
     service = _compose_service(config)
     result = service.poll_once(mode=config.mode)
     return {
@@ -670,6 +720,7 @@ def run_once(config: RuntimeConfig) -> dict[str, Any]:
         "inspected": result.inspected,
         "activated": result.activated,
         "full_plan_activated": result.full_plan_activated,
+        "onboarded": result.onboarded,
     }
 
 
