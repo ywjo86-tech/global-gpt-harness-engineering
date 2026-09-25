@@ -70,8 +70,14 @@ def load_job(path: str | Path) -> dict[str, Any]:
         if gate.get("full_plan_opt_in") is not True or gate.get("project_final_validation") is not True:
             raise FullPlanJobError("Gate job requires explicit FULL_PLAN opt-in and final validation")
         adoption_path = gate.get("adopted_prefix_evidence_path")
-        if adoption_path is not None and (not isinstance(adoption_path, str) or not adoption_path):
-            raise FullPlanJobError("Gate job adopted_prefix_evidence_path is invalid")
+        adoption_digest = gate.get("adopted_prefix_evidence_sha256")
+        if (adoption_path is None) != (adoption_digest is None):
+            raise FullPlanJobError("Gate job prefix adoption evidence binding is incomplete")
+        if adoption_path is not None:
+            if not isinstance(adoption_path, str) or not adoption_path:
+                raise FullPlanJobError("Gate job adopted_prefix_evidence_path is invalid")
+            if not isinstance(adoption_digest, str) or not _SHA256.fullmatch(adoption_digest):
+                raise FullPlanJobError("Gate job adopted prefix evidence digest is invalid")
         for field in ("manual_action_package_paths_by_lv", "manual_action_authorization_paths_by_lv"):
             manual_paths = gate.get(field)
             if manual_paths is not None:
@@ -325,23 +331,25 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
         if "requirement_evidence_sha256" in gate:
             checks.append((gate.get("requirement_evidence_path"), gate.get("requirement_evidence_sha256"), "engine_requirement"))
         if "requirement_evidence_sha256_by_lv" in gate:
-            for lv_id, path in dict(gate.get("requirement_evidence_paths_by_lv") or {}).items():
+            for lv_id, evidence_path in dict(gate.get("requirement_evidence_paths_by_lv") or {}).items():
                 expected = dict(gate.get("requirement_evidence_sha256_by_lv") or {}).get(lv_id)
-                checks.append((path, expected, f"project_requirement:{lv_id}"))
-        for path, expected, label in checks:
-            source = Path(str(path or ""))
+                checks.append((evidence_path, expected, f"project_requirement:{lv_id}"))
+        if "adopted_prefix_evidence_sha256" in gate:
+            checks.append((gate.get("adopted_prefix_evidence_path"), gate.get("adopted_prefix_evidence_sha256"), "prefix_adoption"))
+        for evidence_path, expected, label in checks:
+            source = Path(str(evidence_path or ""))
             if (not isinstance(expected, str) or not _SHA256.fullmatch(expected)
                     or source.is_symlink() or not source.is_file()):
-                return {"status": "BLOCK", "state": "BLOCKED",
-                        "reason": f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"}
+                reason = "PREFIX_ADOPTION_EVIDENCE_DRIFT" if label == "prefix_adoption" else f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": reason}
             try:
                 actual = sha256_file(source)
             except OSError:
-                return {"status": "BLOCK", "state": "BLOCKED",
-                        "reason": f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"}
+                reason = "PREFIX_ADOPTION_EVIDENCE_DRIFT" if label == "prefix_adoption" else f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": reason}
             if actual != expected:
-                return {"status": "BLOCK", "state": "BLOCKED",
-                        "reason": f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"}
+                reason = "PREFIX_ADOPTION_EVIDENCE_DRIFT" if label == "prefix_adoption" else f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": reason}
     if job.get("authority_core_sha256"):
         try:
             validate_authority_core(job)
