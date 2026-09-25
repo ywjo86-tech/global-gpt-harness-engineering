@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
 
 from runtime.orchestrator.project_onboarding import OnboardingRegistry
 from runtime.orchestrator.project_onboarding_remote import (
@@ -15,9 +15,7 @@ from runtime.orchestrator.project_onboarding_remote import (
 
 
 def _git(root: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True, check=True
-    ).stdout.strip()
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
 
 
 def _project(tmp_path: Path, name: str = "commerce-project") -> tuple[Path, str]:
@@ -45,124 +43,86 @@ def _request(root: Path, mapping_root: Path, head: str, *, mode: str, preflight_
     )
 
 
-def test_dry_run_is_read_only_and_returns_bound_preflight_digest(tmp_path: Path) -> None:
-    root, head = _project(tmp_path)
-    registry_root = tmp_path / "registry"
-    mapping_root = tmp_path / "mappings"
-    admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+class ProjectOnboardingRemoteTests(unittest.TestCase):
+    def test_dry_run_is_read_only_and_returns_bound_preflight_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            result = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+            self.assertEqual(result["schema_version"], "orchestration.project-onboarding-result.v1")
+            self.assertEqual(result["status"], "REGISTRATION_READY")
+            self.assertFalse(result["mutation_performed"])
+            self.assertEqual(result["binding"]["branch"], "m6-successor")
+            self.assertEqual(result["binding"]["head"], head)
+            self.assertTrue(result["binding"]["clean"])
+            self.assertEqual(len(result["preflight_digest"]), 64)
+            self.assertFalse(registry_root.exists())
+            self.assertFalse(mapping_root.exists())
 
-    result = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+    def test_bootstrap_requires_exact_prior_preflight_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "preflight"):
+                admission.execute(_request(root, mapping_root, head, mode="BOOTSTRAP"))
+            dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+            result = admission.execute(_request(root, mapping_root, head, mode="BOOTSTRAP", preflight_digest=dry_run["preflight_digest"]))
+            self.assertEqual(result["status"], "BOOTSTRAPPED")
+            self.assertTrue(result["mutation_performed"])
+            entry = json.loads((registry_root / "ai-commerce-intelligence.json").read_text(encoding="utf-8"))
+            self.assertEqual(entry["project_root"], str(root))
+            self.assertTrue((mapping_root / f"{root.name}.json").is_file())
 
-    assert result["schema_version"] == "orchestration.project-onboarding-result.v1"
-    assert result["status"] == "REGISTRATION_READY"
-    assert result["mutation_performed"] is False
-    assert result["binding"]["branch"] == "m6-successor"
-    assert result["binding"]["head"] == head
-    assert result["binding"]["clean"] is True
-    assert len(result["preflight_digest"]) == 64
-    assert not registry_root.exists()
-    assert not mapping_root.exists()
+    def test_branch_or_head_drift_fails_closed_before_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "branch"):
+                admission.execute(ProjectOnboardingRequest("orchestration.project-onboarding-request.v1", "ai-commerce-intelligence", str(root), str(mapping_root), "wrong-branch", head, "DRY_RUN", None))
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "HEAD"):
+                admission.execute(ProjectOnboardingRequest("orchestration.project-onboarding-request.v1", "ai-commerce-intelligence", str(root), str(mapping_root), "m6-successor", "0" * 40, "DRY_RUN", None))
+            self.assertFalse(registry_root.exists())
+            self.assertFalse(mapping_root.exists())
 
+    def test_dirty_worktree_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            (root / "local.txt").write_text("uncommitted\n", encoding="utf-8")
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "clean"):
+                admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+            self.assertFalse(registry_root.exists())
+            self.assertFalse(mapping_root.exists())
 
-def test_bootstrap_requires_exact_prior_preflight_digest(tmp_path: Path) -> None:
-    root, head = _project(tmp_path)
-    registry_root = tmp_path / "registry"
-    mapping_root = tmp_path / "mappings"
-    admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
-
-    with pytest.raises(ProjectOnboardingRemoteError, match="preflight"):
-        admission.execute(_request(root, mapping_root, head, mode="BOOTSTRAP"))
-
-    dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
-    result = admission.execute(
-        _request(
-            root,
-            mapping_root,
-            head,
-            mode="BOOTSTRAP",
-            preflight_digest=dry_run["preflight_digest"],
-        )
-    )
-
-    assert result["status"] == "BOOTSTRAPPED"
-    assert result["mutation_performed"] is True
-    entry = json.loads((registry_root / "ai-commerce-intelligence.json").read_text(encoding="utf-8"))
-    assert entry["project_root"] == str(root)
-    assert (mapping_root / f"{root.name}.json").is_file()
-
-
-def test_branch_or_head_drift_fails_closed_before_mutation(tmp_path: Path) -> None:
-    root, head = _project(tmp_path)
-    registry_root = tmp_path / "registry"
-    mapping_root = tmp_path / "mappings"
-    admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
-
-    with pytest.raises(ProjectOnboardingRemoteError, match="branch"):
-        admission.execute(
-            ProjectOnboardingRequest(
-                schema_version="orchestration.project-onboarding-request.v1",
-                alias="ai-commerce-intelligence",
-                project_root=str(root),
-                mapping_root=str(mapping_root),
-                expected_branch="wrong-branch",
-                expected_head=head,
-                mode="DRY_RUN",
-            )
-        )
-
-    with pytest.raises(ProjectOnboardingRemoteError, match="HEAD"):
-        admission.execute(
-            ProjectOnboardingRequest(
-                schema_version="orchestration.project-onboarding-request.v1",
-                alias="ai-commerce-intelligence",
-                project_root=str(root),
-                mapping_root=str(mapping_root),
-                expected_branch="m6-successor",
-                expected_head="0" * 40,
-                mode="DRY_RUN",
-            )
-        )
-
-    assert not registry_root.exists()
-    assert not mapping_root.exists()
-
-
-def test_dirty_worktree_fails_closed(tmp_path: Path) -> None:
-    root, head = _project(tmp_path)
-    (root / "local.txt").write_text("uncommitted\n", encoding="utf-8")
-    registry_root = tmp_path / "registry"
-    mapping_root = tmp_path / "mappings"
-    admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
-
-    with pytest.raises(ProjectOnboardingRemoteError, match="clean"):
-        admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
-
-    assert not registry_root.exists()
-    assert not mapping_root.exists()
+    def test_preflight_digest_is_invalidated_by_head_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
+            dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+            (root / "IMPLEMENTATION_PLAN.md").write_text("# Plan\n\nM6 changed.\n", encoding="utf-8")
+            _git(root, "add", "IMPLEMENTATION_PLAN.md")
+            _git(root, "commit", "-m", "change plan")
+            new_head = _git(root, "rev-parse", "HEAD")
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "preflight"):
+                admission.execute(_request(root, mapping_root, new_head, mode="BOOTSTRAP", preflight_digest=dry_run["preflight_digest"]))
+            self.assertFalse(registry_root.exists())
+            self.assertFalse(mapping_root.exists())
 
 
-def test_preflight_digest_is_invalidated_by_head_change(tmp_path: Path) -> None:
-    root, head = _project(tmp_path)
-    registry_root = tmp_path / "registry"
-    mapping_root = tmp_path / "mappings"
-    admission = ProjectOnboardingAdmission(OnboardingRegistry(registry_root))
-    dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
-
-    (root / "IMPLEMENTATION_PLAN.md").write_text("# Plan\n\nM6 changed.\n", encoding="utf-8")
-    _git(root, "add", "IMPLEMENTATION_PLAN.md")
-    _git(root, "commit", "-m", "change plan")
-    new_head = _git(root, "rev-parse", "HEAD")
-
-    with pytest.raises(ProjectOnboardingRemoteError, match="preflight"):
-        admission.execute(
-            _request(
-                root,
-                mapping_root,
-                new_head,
-                mode="BOOTSTRAP",
-                preflight_digest=dry_run["preflight_digest"],
-            )
-        )
-
-    assert not registry_root.exists()
-    assert not mapping_root.exists()
+if __name__ == "__main__":
+    unittest.main()
