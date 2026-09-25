@@ -604,14 +604,6 @@ class DurableFullPlanSupervisor:
         stall_alerted = False
         while process.is_alive():
             elapsed = time.monotonic() - started
-            if elapsed >= self.gate_timeout_seconds:
-                process.terminate()
-                process.join(timeout=2.0)
-                if process.is_alive():
-                    process.kill()
-                    process.join(timeout=2.0)
-                parent.close()
-                return "TIMEOUT", {"reason": "GATE_EXECUTION_TIMEOUT", "elapsed_seconds": elapsed}
             now = time.monotonic()
             if not stall_alerted and elapsed >= self.stall_alert_seconds:
                 stall_alerted = True
@@ -626,6 +618,14 @@ class DurableFullPlanSupervisor:
                     reason="NO_SEMANTIC_PROGRESS", elapsed_seconds=int(elapsed),
                     current_stage=state.get("last_semantic_event"),
                 )
+            if elapsed >= self.gate_timeout_seconds:
+                process.terminate()
+                process.join(timeout=2.0)
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=2.0)
+                parent.close()
+                return "TIMEOUT", {"reason": "GATE_EXECUTION_TIMEOUT", "elapsed_seconds": elapsed}
             if now - last_heartbeat >= self.heartbeat_seconds:
                 lease = dict(state.get("lease") or {})
                 lease["heartbeat_at"] = _now()
