@@ -288,6 +288,27 @@ def stage_user_service(
     )
 
 
+def stage_successor_artifacts(
+    repo_root: str | Path,
+    profile: str,
+    user_config_root: str | Path,
+    user_unit_root: str | Path,
+) -> dict[str, str]:
+    if str(profile) != "lifecycle-v2-p2":
+        raise BootstrapError("unsupported P2 successor profile")
+    package = stage_user_service(
+        BootstrapConfig.disabled(repo_root=repo_root),
+        profile=DeploymentProfile.successor(str(profile)),
+        user_config_root=user_config_root,
+        user_unit_root=user_unit_root,
+    )
+    return {
+        "env_path": str(package.env_path),
+        "service_path": str(package.service_path),
+        "timer_path": str(package.timer_path),
+    }
+
+
 def _parse_env_file(path: str | Path) -> dict[str, str]:
     source = Path(path).absolute()
     if source.is_symlink() or not source.is_file():
