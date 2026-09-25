@@ -25,6 +25,10 @@ from .project_onboarding_remote import (
     ProjectOnboardingRemoteError,
     ProjectOnboardingRequest,
 )
+from .successor_release_staging import (
+    SuccessorReleaseStageError,
+    SuccessorReleaseStageRequest,
+)
 from .remote_operator_envelope import (
     REMOTE_OPERATOR_ENVELOPE_SCHEMA,
     RemoteOperatorEnvelopeV2,
@@ -37,6 +41,7 @@ HOST_INSPECTION_KIND = "HOST_INSPECTION"
 APPROVED_WORK_ACTIVATION_KIND = "APPROVED_WORK_ACTIVATION"
 APPROVED_FULL_PLAN_ACTIVATION_KIND = "APPROVED_FULL_PLAN_ACTIVATION"
 PROJECT_ONBOARDING_KIND = "PROJECT_ONBOARDING"
+SUCCESSOR_RELEASE_STAGE_KIND = "SUCCESSOR_RELEASE_STAGE"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TOP_FIELDS = {
@@ -48,6 +53,7 @@ _INSPECTION_AUTH_FIELDS = {"inspection_policy_ref"}
 _ACTIVATION_AUTH_FIELDS = {"activation_policy_ref"}
 _FULL_PLAN_ACTIVATION_AUTH_FIELDS = {"full_plan_activation_policy_ref"}
 _PROJECT_ONBOARDING_AUTH_FIELDS = {"project_onboarding_policy_ref"}
+_SUCCESSOR_RELEASE_STAGE_AUTH_FIELDS = {"successor_release_stage_policy_ref"}
 
 
 class RemoteControlEnvelopeError(ValueError):
@@ -98,6 +104,15 @@ def _unsigned(payload: Mapping[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _payload_request_digest(request: object) -> str:
+    if isinstance(request, SuccessorReleaseStageRequest):
+        return request.phase_request_digest
+    value = getattr(request, "request_digest", None)
+    if not isinstance(value, str):
+        raise RemoteControlEnvelopeError("payload request digest unavailable")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class RemoteControlAuthorization:
     inspection_policy_ref: str
@@ -130,17 +145,27 @@ class RemoteProjectOnboardingAuthorization:
         _safe_id(self.project_onboarding_policy_ref, "project onboarding policy ref")
 
 
+@dataclass(frozen=True, slots=True)
+class RemoteSuccessorReleaseStageAuthorization:
+    successor_release_stage_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.successor_release_stage_policy_ref, "successor release stage policy ref")
+
+
 RemotePayload = (
     HostInspectionRequestV1
     | ApprovedWorkActivationRequestV1
     | ApprovedFullPlanActivationRequestV1
     | ProjectOnboardingRequest
+    | SuccessorReleaseStageRequest
 )
 RemoteAuthorization = (
     RemoteControlAuthorization
     | RemoteWorkActivationAuthorization
     | RemoteFullPlanActivationAuthorization
     | RemoteProjectOnboardingAuthorization
+    | RemoteSuccessorReleaseStageAuthorization
 )
 
 
@@ -212,6 +237,15 @@ def _validated_project_onboarding_payload(raw: object) -> ProjectOnboardingReque
         raise RemoteControlEnvelopeError(f"invalid project onboarding payload: {exc}") from exc
 
 
+def _validated_successor_release_stage_payload(raw: object) -> SuccessorReleaseStageRequest:
+    if not isinstance(raw, Mapping):
+        raise RemoteControlEnvelopeError("successor release stage payload must be an object")
+    try:
+        return SuccessorReleaseStageRequest.from_mapping(raw)
+    except SuccessorReleaseStageError as exc:
+        raise RemoteControlEnvelopeError(f"invalid successor release stage payload: {exc}") from exc
+
+
 def _validated_payload(kind: object, raw: object) -> RemotePayload:
     if kind == HOST_INSPECTION_KIND:
         return _validated_inspection_payload(raw)
@@ -221,6 +255,8 @@ def _validated_payload(kind: object, raw: object) -> RemotePayload:
         return _validated_full_plan_activation_payload(raw)
     if kind == PROJECT_ONBOARDING_KIND:
         return _validated_project_onboarding_payload(raw)
+    if kind == SUCCESSOR_RELEASE_STAGE_KIND:
+        return _validated_successor_release_stage_payload(raw)
     raise RemoteControlEnvelopeError("unsupported request kind")
 
 
@@ -233,7 +269,7 @@ def seal_remote_control_envelope(payload: Mapping[str, Any]) -> dict[str, Any]:
     if value.get("schema_version") != REMOTE_CONTROL_ENVELOPE_SCHEMA:
         raise RemoteControlEnvelopeError("unsupported remote control schema")
     request = _validated_payload(value.get("request_kind"), value.get("payload"))
-    value["payload_digest"] = request.request_digest
+    value["payload_digest"] = _payload_request_digest(request)
     value["envelope_sha256"] = _sha(_unsigned(value))
     return value
 
@@ -264,6 +300,7 @@ def validate_remote_control_envelope(
         APPROVED_WORK_ACTIVATION_KIND,
         APPROVED_FULL_PLAN_ACTIVATION_KIND,
         PROJECT_ONBOARDING_KIND,
+        SUCCESSOR_RELEASE_STAGE_KIND,
     }:
         raise RemoteControlEnvelopeError("unsupported request kind")
     message_id = _safe_id(payload["message_id"], "message ID")
@@ -285,7 +322,7 @@ def validate_remote_control_envelope(
     transport = _validate_transport(payload["transport"])
     request = _validated_payload(request_kind, payload["payload"])
     payload_digest = _digest(payload["payload_digest"], "payload digest")
-    if payload_digest != request.request_digest:
+    if payload_digest != _payload_request_digest(request):
         raise RemoteControlEnvelopeError("payload digest mismatch")
     auth_raw = payload["authorization"]
     if not isinstance(auth_raw, Mapping):
@@ -305,11 +342,18 @@ def validate_remote_control_envelope(
         authorization = RemoteFullPlanActivationAuthorization(
             full_plan_activation_policy_ref=str(auth_raw["full_plan_activation_policy_ref"]),
         )
-    else:
+    elif request_kind == PROJECT_ONBOARDING_KIND:
         _exact_fields(auth_raw, _PROJECT_ONBOARDING_AUTH_FIELDS, "authorization")
         authorization = RemoteProjectOnboardingAuthorization(
             project_onboarding_policy_ref=str(auth_raw["project_onboarding_policy_ref"]),
         )
+    else:
+        _exact_fields(auth_raw, _SUCCESSOR_RELEASE_STAGE_AUTH_FIELDS, "authorization")
+        authorization = RemoteSuccessorReleaseStageAuthorization(
+            successor_release_stage_policy_ref=str(auth_raw["successor_release_stage_policy_ref"]),
+        )
+        if authorization.successor_release_stage_policy_ref != request.approval_policy_ref:
+            raise RemoteControlEnvelopeError("successor release stage authorization mismatch")
     envelope_digest = _digest(payload["envelope_sha256"], "envelope digest")
     if envelope_digest != _sha(_unsigned(payload)):
         raise RemoteControlEnvelopeError("envelope digest mismatch")
