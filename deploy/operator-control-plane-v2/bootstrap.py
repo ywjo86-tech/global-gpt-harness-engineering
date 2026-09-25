@@ -2,8 +2,10 @@
 """Fail-closed OCPv2 user-service bootstrap helper.
 
 `check` is validation-only. `render` writes only to an explicit review directory.
-`install-user-service` writes user-level configuration/unit files but never invokes the
-service manager. `run-once` is the one-shot composition root used by the user timer.
+`install-user-service` writes the legacy user-level configuration/unit files but never
+invokes the service manager. `stage-user-service` writes successor-only isolated unit
+files and remains production-inert. `run-once` is the one-shot composition root used
+by the serving user timer.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ ALL_MODES = {
 }
 INSTALL_MODES = {"DISABLED", "OBSERVE_ONLY"}
 RUNTIME_NON_MUTATING_MODES = {"DISABLED", "OBSERVE_ONLY", "CONTROL_READ_ONLY"}
+_SAFE_PROFILE_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 
 
 class BootstrapError(ValueError):
@@ -63,6 +66,40 @@ class BootstrapConfig:
             token_file=None,
             state_root=None,
         )
+
+
+class DeploymentProfile:
+    def __init__(self, *, env_filename: str, service_filename: str, timer_filename: str, successor: bool) -> None:
+        self.env_filename = env_filename
+        self.service_filename = service_filename
+        self.timer_filename = timer_filename
+        self.successor = bool(successor)
+
+    @classmethod
+    def legacy(cls) -> "DeploymentProfile":
+        return cls(
+            env_filename="ocpv2.env",
+            service_filename="ocpv2.service",
+            timer_filename="ocpv2.timer",
+            successor=False,
+        )
+
+    @classmethod
+    def successor(cls, name: str) -> "DeploymentProfile":
+        value = str(name).strip()
+        if not value or value == "ocpv2" or any(char not in _SAFE_PROFILE_CHARS for char in value):
+            raise BootstrapError("successor profile must be a non-serving safe unit suffix")
+        stem = f"ocpv2-{value}"
+        return cls(
+            env_filename=f"{stem}.env",
+            service_filename=f"{stem}.service",
+            timer_filename=f"{stem}.timer",
+            successor=True,
+        )
+
+    @property
+    def env_reference(self) -> str:
+        return f"%h/.config/gch/{self.env_filename}"
 
 
 class RenderedPackage:
@@ -168,8 +205,25 @@ def _deploy_root() -> Path:
     return Path(__file__).resolve().parent
 
 
-def render_package(config: BootstrapConfig, *, output_dir: str | Path) -> RenderedPackage:
+def _render_unit_texts(config: BootstrapConfig, profile: DeploymentProfile) -> tuple[str, str]:
+    service_template = (_deploy_root() / "ocpv2.user.service.in").read_text(encoding="utf-8")
+    timer_template = (_deploy_root() / "ocpv2.user.timer").read_text(encoding="utf-8")
+    service = service_template.replace("@REPO_ROOT@", str(config.repo_root))
+    service = service.replace("%h/.config/gch/ocpv2.env", profile.env_reference)
+    timer = timer_template.replace("Unit=ocpv2.service", f"Unit={profile.service_filename}")
+    if "@REPO_ROOT@" in service:
+        raise BootstrapError("service template contains unresolved repo root")
+    return service, timer
+
+
+def render_package(
+    config: BootstrapConfig,
+    *,
+    output_dir: str | Path,
+    profile: DeploymentProfile | None = None,
+) -> RenderedPackage:
     checked = check_config(config)
+    selected = DeploymentProfile.legacy() if profile is None else profile
     output = Path(output_dir).absolute()
     if output.is_symlink():
         raise BootstrapError("render output must not be a symlink")
@@ -177,15 +231,10 @@ def render_package(config: BootstrapConfig, *, output_dir: str | Path) -> Render
     if not output.is_dir():
         raise BootstrapError("render output must be a directory")
 
-    template = (_deploy_root() / "ocpv2.user.service.in").read_text(encoding="utf-8")
-    timer = (_deploy_root() / "ocpv2.user.timer").read_text(encoding="utf-8")
-    service = template.replace("@REPO_ROOT@", str(checked.repo_root))
-    if "@REPO_ROOT@" in service:
-        raise BootstrapError("service template contains unresolved repo root")
-
-    env_path = output / "ocpv2.env"
-    service_path = output / "ocpv2.service"
-    timer_path = output / "ocpv2.timer"
+    service, timer = _render_unit_texts(checked, selected)
+    env_path = output / selected.env_filename
+    service_path = output / selected.service_filename
+    timer_path = output / selected.timer_filename
     env_path.write_text(_env_text(checked), encoding="utf-8")
     os.chmod(env_path, 0o600)
     service_path.write_text(service, encoding="utf-8")
@@ -198,9 +247,11 @@ def install_user_service(
     *,
     user_config_root: str | Path | None = None,
     user_unit_root: str | Path | None = None,
+    profile: DeploymentProfile | None = None,
 ) -> RenderedPackage:
     validate_install_mode(config.mode)
     checked = check_config(config)
+    selected = DeploymentProfile.legacy() if profile is None else profile
     home = Path.home()
     config_root = Path(user_config_root) if user_config_root is not None else home / ".config" / "gch"
     unit_root = Path(user_unit_root) if user_unit_root is not None else home / ".config" / "systemd" / "user"
@@ -209,17 +260,32 @@ def install_user_service(
     config_root.mkdir(parents=True, exist_ok=True)
     unit_root.mkdir(parents=True, exist_ok=True)
 
-    service_template = (_deploy_root() / "ocpv2.user.service.in").read_text(encoding="utf-8")
-    service = service_template.replace("@REPO_ROOT@", str(checked.repo_root))
-    timer = (_deploy_root() / "ocpv2.user.timer").read_text(encoding="utf-8")
-    env_path = config_root / "ocpv2.env"
-    service_path = unit_root / "ocpv2.service"
-    timer_path = unit_root / "ocpv2.timer"
+    service, timer = _render_unit_texts(checked, selected)
+    env_path = config_root / selected.env_filename
+    service_path = unit_root / selected.service_filename
+    timer_path = unit_root / selected.timer_filename
     env_path.write_text(_env_text(checked), encoding="utf-8")
     os.chmod(env_path, 0o600)
     service_path.write_text(service, encoding="utf-8")
     timer_path.write_text(timer, encoding="utf-8")
     return RenderedPackage(env_path=env_path, service_path=service_path, timer_path=timer_path)
+
+
+def stage_user_service(
+    config: BootstrapConfig,
+    *,
+    profile: DeploymentProfile,
+    user_config_root: str | Path | None = None,
+    user_unit_root: str | Path | None = None,
+) -> RenderedPackage:
+    if not profile.successor:
+        raise BootstrapError("stage-user-service requires a successor-only deployment profile")
+    return install_user_service(
+        config,
+        user_config_root=user_config_root,
+        user_unit_root=user_unit_root,
+        profile=profile,
+    )
 
 
 def _parse_env_file(path: str | Path) -> dict[str, str]:
@@ -410,6 +476,9 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--output-dir", required=True)
     install = sub.add_parser("install-user-service")
     _add_config_args(install)
+    stage = sub.add_parser("stage-user-service")
+    _add_config_args(stage)
+    stage.add_argument("--successor-profile", required=True)
     run = sub.add_parser("run-once")
     run.add_argument("--env-file", required=True)
     return parser
@@ -447,6 +516,17 @@ def main(argv: list[str] | None = None) -> int:
                     "service_path": str(rendered.service_path),
                     "timer_path": str(rendered.timer_path),
                     "service_manager_invoked": False,
+                }
+            elif args.command == "stage-user-service":
+                profile = DeploymentProfile.successor(args.successor_profile)
+                rendered = stage_user_service(config, profile=profile)
+                result = {
+                    "env_path": str(rendered.env_path),
+                    "service_path": str(rendered.service_path),
+                    "timer_path": str(rendered.timer_path),
+                    "stage_only": True,
+                    "service_manager_invoked": False,
+                    "polling_enabled": False,
                 }
             else:
                 raise BootstrapError("unknown command")
