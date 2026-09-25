@@ -29,6 +29,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 -m unittest -v tests.test_ai_office_successor_compat
+      - run: python3 -m unittest -v tests.test_family_ai_english_legacy_compat
       - run: python3 -m unittest -v tests.test_full_plan_prefix_activation_bridge
       - run: python3 -m unittest -v tests.test_project_onboarding_remote
       - run: python3 -m unittest -v tests.test_project_onboarding_envelope
