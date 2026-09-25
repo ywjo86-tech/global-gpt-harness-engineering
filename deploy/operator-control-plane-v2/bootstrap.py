@@ -194,6 +194,8 @@ def _env_text(config: BootstrapConfig) -> str:
             f"OCP_REPO_ROOT={config.repo_root}",
             "OCP_PROJECT_ONBOARDING_ENABLED=0",
             "OCP_PROJECT_ONBOARDING_POLICY_REF=",
+            "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED=0",
+            "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF=",
             "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false",
             "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG=",
             "",
@@ -339,6 +341,8 @@ def config_from_env_file(path: str | Path) -> BootstrapConfig:
     optional = {
         "OCP_PROJECT_ONBOARDING_ENABLED",
         "OCP_PROJECT_ONBOARDING_POLICY_REF",
+        "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED",
+        "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
         "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
         "GCH_NEW_ACTIVATION_LIFECYCLE_MODE",
