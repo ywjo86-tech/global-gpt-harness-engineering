@@ -16,7 +16,7 @@ class ProjectOnboardingRuntimeTests(unittest.TestCase):
         enabled = ocpv2_runtime_service.project_onboarding_enabled_from_environment
         self.assertTrue(enabled({"OCP_PROJECT_ONBOARDING_ENABLED": "1"}))
         for value in ("", "0", "true", "TRUE", "yes", "2"):
-            self.assertFalse(enabled({"OCP_PROJECT_ONBOARDING_ENABLED": value}))
+            self.assertFalse(enabled({"OCP_PROJECT_ONBOARDING_ENABLED": value))
 
     def test_status_projection_is_not_treated_as_canonical_result(self):
         ocpv2_runtime_service.finalize_remote_control_projection(
@@ -34,6 +34,7 @@ class ProjectOnboardingRuntimeTests(unittest.TestCase):
     def test_composition_injects_dedicated_onboarding_admission(self):
         source = inspect.getsource(ocpv2_runtime_service._compose_service)
         self.assertIn("ProjectOnboardingAdmission", source)
+        self.assertIn("canonical_mapping_root=onboarding_root", source)
         self.assertIn("onboard_authorized=onboard", source)
         self.assertIn("project_onboarding_enabled=config.project_onboarding_enabled", source)
         self.assertIn("project_onboarding_policy_ref=config.project_onboarding_policy_ref", source)
