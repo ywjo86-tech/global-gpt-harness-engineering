@@ -71,7 +71,7 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
         self.assertFalse(composed.lifecycle_v2_p3_promotion_enabled)
         self.assertIsNone(composed.admit_p3_promotion_authorized)
 
-    def test_enabled_runtime_profile_wires_existing_p3_admission_evaluator(self):
+    def test_enabled_runtime_profile_requires_sealed_policy_digest(self):
         service = SimpleNamespace(
             lifecycle_v2_p3_promotion_enabled=False,
             lifecycle_v2_p3_promotion_policy_ref="",
@@ -83,9 +83,26 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
                 "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF": POLICY_REF,
             }
         )
+        with patch.object(runtime.base, "_compose_service", return_value=service):
+            with self.assertRaisesRegex(runtime.SuccessorStageRuntimeError, "P3_PROMOTION_POLICY_DIGEST_REQUIRED"):
+                runtime.compose_service(config)
+
+    def test_enabled_runtime_profile_wires_existing_p3_admission_evaluator(self):
+        service = SimpleNamespace(
+            lifecycle_v2_p3_promotion_enabled=False,
+            lifecycle_v2_p3_promotion_policy_ref="",
+            admit_p3_promotion_authorized=None,
+        )
+        config = SimpleNamespace(
+            environment={
+                "OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED": "1",
+                "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF": POLICY_REF,
+                "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST": POLICY_DIGEST,
+            }
+        )
         envelope = SimpleNamespace(message_id="P3-MSG-1", payload=_request())
         with patch.object(runtime.base, "_compose_service", return_value=service), patch.object(
-            runtime, "_collect_p3_promotion_evidence", return_value=_evidence(), create=True
+            runtime, "_collect_p3_promotion_evidence", return_value=_evidence()
         ) as collect:
             composed = runtime.compose_service(config)
             self.assertTrue(composed.lifecycle_v2_p3_promotion_enabled)
