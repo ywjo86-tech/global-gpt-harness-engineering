@@ -21,6 +21,10 @@ from .host_inspection_contract import (
     HostInspectionContractError,
     HostInspectionRequestV1,
 )
+from .lifecycle_v2_p3_promotion_admission import (
+    LifecycleV2P3PromotionAdmissionError,
+    LifecycleV2P3PromotionAdmissionRequest,
+)
 from .project_onboarding_remote import (
     ProjectOnboardingRemoteError,
     ProjectOnboardingRequest,
@@ -42,6 +46,7 @@ APPROVED_WORK_ACTIVATION_KIND = "APPROVED_WORK_ACTIVATION"
 APPROVED_FULL_PLAN_ACTIVATION_KIND = "APPROVED_FULL_PLAN_ACTIVATION"
 PROJECT_ONBOARDING_KIND = "PROJECT_ONBOARDING"
 SUCCESSOR_RELEASE_STAGE_KIND = "SUCCESSOR_RELEASE_STAGE"
+LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND = "LIFECYCLE_V2_P3_PROMOTION_ADMISSION"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TOP_FIELDS = {
@@ -54,6 +59,7 @@ _ACTIVATION_AUTH_FIELDS = {"activation_policy_ref"}
 _FULL_PLAN_ACTIVATION_AUTH_FIELDS = {"full_plan_activation_policy_ref"}
 _PROJECT_ONBOARDING_AUTH_FIELDS = {"project_onboarding_policy_ref"}
 _SUCCESSOR_RELEASE_STAGE_AUTH_FIELDS = {"successor_release_stage_policy_ref"}
+_LIFECYCLE_V2_P3_PROMOTION_AUTH_FIELDS = {"lifecycle_v2_p3_promotion_policy_ref"}
 
 
 class RemoteControlEnvelopeError(ValueError):
@@ -153,12 +159,21 @@ class RemoteSuccessorReleaseStageAuthorization:
         _safe_id(self.successor_release_stage_policy_ref, "successor release stage policy ref")
 
 
+@dataclass(frozen=True, slots=True)
+class RemoteLifecycleV2P3PromotionAuthorization:
+    lifecycle_v2_p3_promotion_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.lifecycle_v2_p3_promotion_policy_ref, "Lifecycle V2 P3 promotion policy ref")
+
+
 RemotePayload = (
     HostInspectionRequestV1
     | ApprovedWorkActivationRequestV1
     | ApprovedFullPlanActivationRequestV1
     | ProjectOnboardingRequest
     | SuccessorReleaseStageRequest
+    | LifecycleV2P3PromotionAdmissionRequest
 )
 RemoteAuthorization = (
     RemoteControlAuthorization
@@ -166,6 +181,7 @@ RemoteAuthorization = (
     | RemoteFullPlanActivationAuthorization
     | RemoteProjectOnboardingAuthorization
     | RemoteSuccessorReleaseStageAuthorization
+    | RemoteLifecycleV2P3PromotionAuthorization
 )
 
 
@@ -246,6 +262,19 @@ def _validated_successor_release_stage_payload(raw: object) -> SuccessorReleaseS
         raise RemoteControlEnvelopeError(f"invalid successor release stage payload: {exc}") from exc
 
 
+def _validated_lifecycle_v2_p3_promotion_payload(
+    raw: object,
+) -> LifecycleV2P3PromotionAdmissionRequest:
+    if not isinstance(raw, Mapping):
+        raise RemoteControlEnvelopeError("Lifecycle V2 P3 promotion admission payload must be an object")
+    try:
+        return LifecycleV2P3PromotionAdmissionRequest.from_mapping(raw)
+    except LifecycleV2P3PromotionAdmissionError as exc:
+        raise RemoteControlEnvelopeError(
+            f"invalid Lifecycle V2 P3 promotion admission payload: {exc}"
+        ) from exc
+
+
 def _validated_payload(kind: object, raw: object) -> RemotePayload:
     if kind == HOST_INSPECTION_KIND:
         return _validated_inspection_payload(raw)
@@ -257,6 +286,8 @@ def _validated_payload(kind: object, raw: object) -> RemotePayload:
         return _validated_project_onboarding_payload(raw)
     if kind == SUCCESSOR_RELEASE_STAGE_KIND:
         return _validated_successor_release_stage_payload(raw)
+    if kind == LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND:
+        return _validated_lifecycle_v2_p3_promotion_payload(raw)
     raise RemoteControlEnvelopeError("unsupported request kind")
 
 
@@ -301,6 +332,7 @@ def validate_remote_control_envelope(
         APPROVED_FULL_PLAN_ACTIVATION_KIND,
         PROJECT_ONBOARDING_KIND,
         SUCCESSOR_RELEASE_STAGE_KIND,
+        LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
     }:
         raise RemoteControlEnvelopeError("unsupported request kind")
     message_id = _safe_id(payload["message_id"], "message ID")
@@ -347,13 +379,22 @@ def validate_remote_control_envelope(
         authorization = RemoteProjectOnboardingAuthorization(
             project_onboarding_policy_ref=str(auth_raw["project_onboarding_policy_ref"]),
         )
-    else:
+    elif request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
         _exact_fields(auth_raw, _SUCCESSOR_RELEASE_STAGE_AUTH_FIELDS, "authorization")
         authorization = RemoteSuccessorReleaseStageAuthorization(
             successor_release_stage_policy_ref=str(auth_raw["successor_release_stage_policy_ref"]),
         )
         if authorization.successor_release_stage_policy_ref != request.approval_policy_ref:
             raise RemoteControlEnvelopeError("successor release stage authorization mismatch")
+    else:
+        _exact_fields(auth_raw, _LIFECYCLE_V2_P3_PROMOTION_AUTH_FIELDS, "authorization")
+        authorization = RemoteLifecycleV2P3PromotionAuthorization(
+            lifecycle_v2_p3_promotion_policy_ref=str(
+                auth_raw["lifecycle_v2_p3_promotion_policy_ref"]
+            ),
+        )
+        if authorization.lifecycle_v2_p3_promotion_policy_ref != request.approval_policy_ref:
+            raise RemoteControlEnvelopeError("Lifecycle V2 P3 promotion authorization mismatch")
     envelope_digest = _digest(payload["envelope_sha256"], "envelope digest")
     if envelope_digest != _sha(_unsigned(payload)):
         raise RemoteControlEnvelopeError("envelope digest mismatch")

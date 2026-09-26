@@ -65,6 +65,7 @@ jobs:
       - run: python3 -m unittest -v tests.test_operator_console_projection
       - run: python3 -m unittest -v tests.test_ocpv2_deploy_package
       - run: python3 -m unittest -v tests.test_ocpv2_successor_release_stage_gateway
+      - run: python3 -m unittest -v tests.test_lifecycle_v2_p3_promotion_admission
       - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging
       - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging_artifacts
       - run: python3 -m unittest -v tests.test_ocpv2_successor_release_staging_fences
