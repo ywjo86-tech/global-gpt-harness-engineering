@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from runtime.orchestrator import remote_control_envelope as control
 from runtime.orchestrator.lifecycle_v2_p3_promotion_admission import (
     LifecycleV2P3PromotionAdmissionError,
+    LifecycleV2P3PromotionAdmissionEvidence,
     LifecycleV2P3PromotionAdmissionRequest,
     evaluate_p3_promotion_admission,
 )
@@ -38,6 +39,28 @@ def _request(**changes) -> dict:
     }
     value.update(changes)
     return value
+
+
+def _evidence(**changes) -> dict:
+    value = {
+        "schema_version": "orchestration.lifecycle-v2-p3-promotion-admission-evidence.v1",
+        "project_alias": "harness-lifecycle-v2-successor-20260925",
+        "observed_branch": "p2/harness-lifecycle-v2-successor-20260925",
+        "observed_head": "a" * 40,
+        "observed_successor_profile": "lifecycle-v2-p2",
+        "candidate_run_id": "fresh-canary-run-001",
+        "candidate_run_registration_state": "ABSENT",
+        "predecessor_serving": True,
+        "runtime_current_points_to_predecessor": True,
+        "approved_policy_ref": POLICY_REF,
+        "approved_policy_digest": POLICY_DIGEST,
+    }
+    value.update(changes)
+    return value
+
+
+def _validated_evidence(**changes) -> LifecycleV2P3PromotionAdmissionEvidence:
+    return LifecycleV2P3PromotionAdmissionEvidence.from_mapping(_evidence(**changes))
 
 
 def _raw_envelope() -> dict:
@@ -98,20 +121,47 @@ class FakeTransport:
 
 
 class LifecycleV2P3PromotionAdmissionTests(unittest.TestCase):
-    def test_valid_dry_run_is_single_fresh_run_and_non_mutating(self):
+    def test_valid_dry_run_requires_observed_evidence_and_is_non_mutating(self):
         request = LifecycleV2P3PromotionAdmissionRequest.from_mapping(_request())
-        result = evaluate_p3_promotion_admission(request)
+        evidence = _validated_evidence()
+        result = evaluate_p3_promotion_admission(request, evidence)
         self.assertEqual(result.status, "P3_CANARY_ADMISSION_READY")
         self.assertEqual(result.canary_run_id, "fresh-canary-run-001")
         self.assertFalse(result.mutation_authorized)
         self.assertFalse(result.runtime_current_switch_authorized)
         self.assertFalse(result.existing_run_migration_authorized)
         self.assertFalse(result.predecessor_shutdown_authorized)
+        self.assertEqual(len(result.evidence_digest), 64)
         self.assertEqual(len(result.admission_digest), 64)
         self.assertEqual(
             result.admission_digest,
-            evaluate_p3_promotion_admission(request).admission_digest,
+            evaluate_p3_promotion_admission(request, evidence).admission_digest,
         )
+
+    def test_missing_observed_evidence_fails_closed(self):
+        request = LifecycleV2P3PromotionAdmissionRequest.from_mapping(_request())
+        with self.assertRaises(LifecycleV2P3PromotionAdmissionError):
+            evaluate_p3_promotion_admission(request, None)
+
+    def test_observed_identity_policy_and_fresh_run_must_match_request(self):
+        request = LifecycleV2P3PromotionAdmissionRequest.from_mapping(_request())
+        bad_evidence = (
+            {"project_alias": "other-project"},
+            {"observed_branch": "other/branch"},
+            {"observed_head": "b" * 40},
+            {"observed_successor_profile": "other-profile"},
+            {"candidate_run_id": "other-run"},
+            {"candidate_run_registration_state": "REGISTERED"},
+            {"predecessor_serving": False},
+            {"runtime_current_points_to_predecessor": False},
+            {"approved_policy_ref": "OTHER-POLICY"},
+            {"approved_policy_digest": "e" * 64},
+        )
+        for changes in bad_evidence:
+            with self.subTest(changes=changes):
+                evidence = _validated_evidence(**changes)
+                with self.assertRaises(LifecycleV2P3PromotionAdmissionError):
+                    evaluate_p3_promotion_admission(request, evidence)
 
     def test_only_p2_to_p3_dry_run_is_accepted(self):
         bad_values = (
@@ -202,7 +252,7 @@ class LifecycleV2P3PromotionAdmissionTests(unittest.TestCase):
 
         def admit(value):
             calls.append(value.payload.request_id)
-            result = evaluate_p3_promotion_admission(value.payload)
+            result = evaluate_p3_promotion_admission(value.payload, _validated_evidence())
             return {
                 "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
                 "message_id": value.message_id,
@@ -210,6 +260,7 @@ class LifecycleV2P3PromotionAdmissionTests(unittest.TestCase):
                 "request_digest": value.payload.request_digest,
                 "mode": value.payload.mode,
                 "result_class": result.status,
+                "evidence_digest": result.evidence_digest,
                 "admission_digest": result.admission_digest,
             }
 
