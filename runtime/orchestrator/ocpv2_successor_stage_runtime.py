@@ -1,12 +1,15 @@
-"""Additive production composition for the P2 successor-stage capability.
+"""Additive production composition for successor staging and P3 admission.
 
 The legacy OCP runtime remains the implementation of transport, recovery, Full Plan,
-and all pre-existing request kinds.  This module adds only the separately gated
-SUCCESSOR_RELEASE_STAGE callback and then delegates the normal one-shot service loop.
+and all pre-existing request kinds. This module adds only separately gated successor
+staging and Lifecycle V2 P3 Promotion Admission callbacks, then delegates the normal
+one-shot service loop. P3 admission is observation-only and grants no mutation,
+runtime-current, migration, predecessor-shutdown, or effect authority.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -17,6 +20,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from . import ocpv2_runtime_service as base
+from .harness_state_root import resolve_harness_state_root
+from .lifecycle_v2_p3_promotion_admission import (
+    LifecycleV2P3PromotionAdmissionEvidence,
+    evaluate_p3_promotion_admission,
+)
 from .project_onboarding import OnboardingRegistry
 from .remote_operator_service import ControlMode, RemoteOperatorServiceError
 from .successor_release_stage_gateway import (
@@ -33,11 +41,17 @@ _STAGE_ENV_KEYS = {
     "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED",
     "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF",
 }
+_P3_ENV_KEYS = {
+    "OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED",
+    "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF",
+    "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST",
+}
 _POLICY_REF = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
-# The wrapper owns these two additive keys. Extending the legacy parser allow-list
-# does not enable the capability; the feature still defaults fail-closed below.
-base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS)
+# Extending the legacy parser allow-list never enables either capability. Both
+# features remain independently default-disabled below.
+base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS | _P3_ENV_KEYS)
 
 
 class SuccessorStageRuntimeError(ValueError):
@@ -48,10 +62,28 @@ def successor_release_stage_enabled_from_environment(environment: Mapping[str, s
     return str(environment.get("OCP_SUCCESSOR_RELEASE_STAGE_ENABLED") or "").strip() == "1"
 
 
+def lifecycle_v2_p3_promotion_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    return str(environment.get("OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED") or "").strip() == "1"
+
+
 def _safe_policy_ref(environment: Mapping[str, str]) -> str:
     value = str(environment.get("OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF") or "").strip()
     if not value or ".." in value or not _POLICY_REF.fullmatch(value):
         raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_POLICY_REQUIRED")
+    return value
+
+
+def _safe_p3_policy_ref(environment: Mapping[str, str]) -> str:
+    value = str(environment.get("OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF") or "").strip()
+    if not value or ".." in value or not _POLICY_REF.fullmatch(value):
+        raise SuccessorStageRuntimeError("P3_PROMOTION_POLICY_REQUIRED")
+    return value
+
+
+def _safe_p3_policy_digest(environment: Mapping[str, str]) -> str:
+    value = str(environment.get("OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST") or "").strip()
+    if not _SHA256.fullmatch(value):
+        raise SuccessorStageRuntimeError("P3_PROMOTION_POLICY_DIGEST_REQUIRED")
     return value
 
 
@@ -125,6 +157,29 @@ class _ReadOnlySuccessorServiceStateProbe:
         }
 
 
+class _ReadOnlyPredecessorServiceStateProbe:
+    """Observe only the fixed serving OCP units; never invokes a service mutation."""
+
+    @staticmethod
+    def _query(*args: str) -> bool:
+        completed = subprocess.run(
+            ["systemctl", "--user", *args],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+            text=True,
+        )
+        return completed.returncode == 0
+
+    def serving(self) -> bool:
+        service_active = self._query("is-active", "--quiet", "ocpv2.service")
+        timer_active = self._query("is-active", "--quiet", "ocpv2.timer")
+        timer_enabled = self._query("is-enabled", "--quiet", "ocpv2.timer")
+        return service_active or (timer_active and timer_enabled)
+
+
 def _successor_stager(config: base.RuntimeConfig) -> SuccessorReleaseStager:
     if config.state_root is None:
         raise SuccessorStageRuntimeError("SUCCESSOR_RELEASE_STAGE_STATE_ROOT_REQUIRED")
@@ -149,8 +204,173 @@ def _successor_stager(config: base.RuntimeConfig) -> SuccessorReleaseStager:
     )
 
 
+def _readonly_git(root: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+            text=True,
+        )
+    except OSError as exc:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_GIT_EVIDENCE_UNAVAILABLE") from exc
+    if completed.returncode != 0 or not completed.stdout.strip():
+        raise SuccessorStageRuntimeError("P3_PROMOTION_GIT_EVIDENCE_UNAVAILABLE")
+    return completed.stdout.strip()
+
+
+def _file_sha256(path: Path) -> str:
+    if path.is_symlink() or not path.is_file():
+        raise SuccessorStageRuntimeError("P3_PROMOTION_SERVING_ARTIFACT_UNAVAILABLE")
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_SERVING_ARTIFACT_UNAVAILABLE") from exc
+
+
+def _matching_staged_receipt(config: base.RuntimeConfig, request) -> Mapping[str, Any]:
+    if config.state_root is None:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STATE_ROOT_REQUIRED")
+    root = config.state_root / "successor-release-stage-receipts"
+    if root.is_symlink() or not root.is_dir() or root.resolve() != root:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STAGE_EVIDENCE_UNAVAILABLE")
+    matches: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        if (
+            value.get("status") == "STAGED"
+            and value.get("project_alias") == request.project_alias
+            and value.get("post_head") == request.expected_head
+            and value.get("guard_outcomes", {}).get("serving_preservation") == "PASS"
+            and value.get("guard_outcomes", {}).get("successor_inert") == "PASS"
+        ):
+            matches.append(value)
+    if len(matches) != 1:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STAGE_EVIDENCE_AMBIGUOUS")
+    return matches[0]
+
+
+def _serving_preservation_is_current(receipt: Mapping[str, Any]) -> bool:
+    identity = receipt.get("serving_runtime_identity_after")
+    if not isinstance(identity, Mapping):
+        return False
+    serving_root = str(identity.get("serving_root") or "")
+    predecessor_root = str(identity.get("predecessor_root") or "")
+    if not serving_root or serving_root != predecessor_root:
+        return False
+    expected = receipt.get("serving_artifact_hashes_after")
+    if not isinstance(expected, Mapping):
+        return False
+    config_root = (Path.home() / ".config" / "gch").absolute()
+    unit_root = (Path.home() / ".config" / "systemd" / "user").absolute()
+    current = {
+        "env": _file_sha256(config_root / "ocpv2.env"),
+        "service": _file_sha256(unit_root / "ocpv2.service"),
+        "timer": _file_sha256(unit_root / "ocpv2.timer"),
+    }
+    return current == {key: str(expected.get(key) or "") for key in ("env", "service", "timer")}
+
+
+def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> LifecycleV2P3PromotionAdmissionEvidence:
+    mapping_root = _mapping_root(config)
+    entries = [
+        item
+        for item in OnboardingRegistry(mapping_root / "aliases").entries()
+        if item.get("alias") == request.project_alias
+    ]
+    if len(entries) != 1:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_ALIAS_EVIDENCE_UNAVAILABLE")
+    entry = entries[0]
+    workspace = Path(str(entry["project_root"])).resolve(strict=True)
+    observed_branch = _readonly_git(workspace, "symbolic-ref", "--short", "HEAD")
+    observed_head = _readonly_git(workspace, "rev-parse", "HEAD")
+
+    harness_state = resolve_harness_state_root(
+        project_root=workspace,
+        environ=config.environment,
+    )
+    if harness_state.is_symlink() or not harness_state.is_dir() or harness_state.resolve() != harness_state:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_HARNESS_STATE_UNAVAILABLE")
+    candidate_path = (
+        harness_state
+        / "_workspace"
+        / "production-full-plan-jobs"
+        / str(entry["project_id"])
+        / f"{request.candidate_run_id}.job.json"
+    )
+    candidate_prev = candidate_path.with_suffix(candidate_path.suffix + ".prev")
+    candidate_state = (
+        "REGISTERED"
+        if candidate_path.exists()
+        or candidate_path.is_symlink()
+        or candidate_prev.exists()
+        or candidate_prev.is_symlink()
+        else "ABSENT"
+    )
+
+    receipt = _matching_staged_receipt(config, request)
+    predecessor_serving = _ReadOnlyPredecessorServiceStateProbe().serving()
+    runtime_current_points_to_predecessor = _serving_preservation_is_current(receipt)
+
+    return LifecycleV2P3PromotionAdmissionEvidence.from_mapping(
+        {
+            "schema_version": "orchestration.lifecycle-v2-p3-promotion-admission-evidence.v1",
+            "project_alias": request.project_alias,
+            "observed_branch": observed_branch,
+            "observed_head": observed_head,
+            "observed_successor_profile": "lifecycle-v2-p2",
+            "candidate_run_id": request.candidate_run_id,
+            "candidate_run_registration_state": candidate_state,
+            "predecessor_serving": predecessor_serving,
+            "runtime_current_points_to_predecessor": runtime_current_points_to_predecessor,
+            "approved_policy_ref": _safe_p3_policy_ref(config.environment),
+            "approved_policy_digest": _safe_p3_policy_digest(config.environment),
+        }
+    )
+
+
+def _wire_p3_promotion(config: base.RuntimeConfig, service):
+    if not lifecycle_v2_p3_promotion_enabled_from_environment(config.environment):
+        return service
+    policy_ref = _safe_p3_policy_ref(config.environment)
+    _safe_p3_policy_digest(config.environment)
+
+    def admit_p3(envelope) -> Mapping[str, Any]:
+        evidence = _collect_p3_promotion_evidence(config, envelope.payload)
+        result = evaluate_p3_promotion_admission(envelope.payload, evidence)
+        return {
+            "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": envelope.payload.request_id,
+            "project_alias": envelope.payload.project_alias,
+            "request_digest": envelope.payload.request_digest,
+            "evidence_digest": evidence.evidence_digest,
+            "mode": envelope.payload.mode,
+            "result_class": result.status,
+            "result": result.to_dict(),
+        }
+
+    service.admit_p3_promotion_authorized = admit_p3
+    service.lifecycle_v2_p3_promotion_enabled = True
+    service.lifecycle_v2_p3_promotion_policy_ref = policy_ref
+    return service
+
+
 def compose_service(config: base.RuntimeConfig):
     service = base._compose_service(config)
+    service = _wire_p3_promotion(config, service)
+
     enabled = successor_release_stage_enabled_from_environment(config.environment)
     if not enabled:
         return service
@@ -181,6 +401,7 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         result = base.run_once(config)
         result["successor_release_staged"] = 0
+        result["p3_promotion_admitted"] = 0
         return result
     service = compose_service(config)
     result = service.poll_once(mode=config.mode)
@@ -198,11 +419,12 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         "full_plan_activated": result.full_plan_activated,
         "onboarded": result.onboarded,
         "successor_release_staged": result.successor_release_staged,
+        "p3_promotion_admitted": result.p3_promotion_admitted,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one OCPv2 poll with bounded successor staging")
+    parser = argparse.ArgumentParser(description="Run one OCPv2 poll with bounded successor staging/P3 admission")
     parser.add_argument("--env-file", required=True)
     args = parser.parse_args(argv)
     try:
