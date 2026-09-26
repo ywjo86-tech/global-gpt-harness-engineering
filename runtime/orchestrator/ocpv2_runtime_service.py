@@ -632,7 +632,11 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
-    def activate_full_plan(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+    def activate_full_plan(
+        envelope: RemoteControlEnvelopeV1,
+        *,
+        enqueue_projection: bool = True,
+    ) -> Mapping[str, Any]:
         if (
             full_plan_authority_root is None
             or activation_release is None
@@ -663,7 +667,8 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         projection = RemoteFullPlanActivationProjectionV1.from_receipt(
             receipt, message_id=envelope.message_id,
         )
-        outbox.enqueue_projection(projection)
+        if enqueue_projection:
+            outbox.enqueue_projection(projection)
         return projection.to_dict()
 
     def onboard(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:

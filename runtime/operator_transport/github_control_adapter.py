@@ -341,7 +341,12 @@ class GitHubControlAdapter:
         self._save_delivery_acks(entries)
         self._discard_pending(pending)
 
-    def receive(self, *, limit: int = 16) -> tuple[RawControlEnvelope, ...]:
+    def _receive_controls(
+        self,
+        *,
+        limit: int = 16,
+        request_kind: str | None = None,
+    ) -> tuple[RawControlEnvelope, ...]:
         repository_id = self._verified_repository_id()
         bounded_limit = min(int(limit), self.config.poll_limit)
         if bounded_limit <= 0:
@@ -397,6 +402,11 @@ class GitHubControlAdapter:
                 if first_rejection is None:
                     first_rejection = GitHubControlAdapterError("SOURCE_NOT_ALLOWED: control payload must be an object")
                 continue
+            if (
+                request_kind is not None
+                and str(parsed.get("request_kind") or "") != request_kind
+            ):
+                continue
             canonical = self._canonical_object_bytes(parsed)
             fingerprint = self._content_sha256(canonical)
             if self._is_durably_acknowledged(source_message_id, fingerprint):
@@ -428,6 +438,21 @@ class GitHubControlAdapter:
         if first_rejection is not None:
             raise first_rejection
         return ()
+
+
+    def receive(self, *, limit: int = 16) -> tuple[RawControlEnvelope, ...]:
+        return self._receive_controls(limit=limit)
+
+    def receive_request_kind(
+        self,
+        request_kind: str,
+        *,
+        limit: int = 16,
+    ) -> tuple[RawControlEnvelope, ...]:
+        kind = str(request_kind or "").strip()
+        if not kind:
+            raise GitHubControlAdapterError("request kind is required")
+        return self._receive_controls(limit=limit, request_kind=kind)
 
     def acknowledge_delivery(self, message_id: str) -> None:
         value = str(message_id or "")
