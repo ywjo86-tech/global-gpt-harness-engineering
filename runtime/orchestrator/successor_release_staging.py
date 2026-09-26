@@ -209,7 +209,11 @@ class _BoundedGitFullMcp:
         return matches
 
     def object_exists(self, root: Path, sha: str) -> bool:
-        result = _run_git(root, ("cat-file", "-e", f"{sha}^{{commit}}"), allow_false=True)
+        result = _run_git(
+            root,
+            ("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"),
+            allow_false=True,
+        )
         return result.returncode == 0
 
     def is_ancestor(self, root: Path, ancestor: str, descendant: str) -> bool:
