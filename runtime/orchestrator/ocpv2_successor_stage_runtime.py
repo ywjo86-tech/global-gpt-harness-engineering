@@ -61,6 +61,8 @@ _P3_CANARY_ENV_KEYS = {
 }
 _POLICY_REF = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_P3_HANDOFF_SCHEMA = "orchestration.lifecycle-v2-p3-handoff.v1"
+_P3_HANDOFF_WAITING = "WAITING_FOR_AUTHORIZED_ACTIVATION"
 
 # Extending the legacy parser allow-list never enables any capability. Every
 # feature remains independently default-disabled below.
@@ -69,6 +71,79 @@ base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS | _P3_ENV_KEYS | _P3_CANARY_ENV_KEYS)
 
 class SuccessorStageRuntimeError(ValueError):
     pass
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _seal_p3_waiting_handoff(config: base.RuntimeConfig, request, evidence, result) -> dict[str, Any]:
+    if config.state_root is None:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STATE_ROOT_REQUIRED")
+    root = Path(config.state_root) / "p3-lifecycle-handoffs"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNAVAILABLE") from exc
+    if root.is_symlink() or not root.is_dir() or root.resolve(strict=True) != root:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNSAFE")
+
+    admission_digest = str(result.admission_digest or "")
+    if not _SHA256.fullmatch(admission_digest):
+        raise SuccessorStageRuntimeError("P3_HANDOFF_ADMISSION_DIGEST_INVALID")
+    handoff = {
+        "schema_version": _P3_HANDOFF_SCHEMA,
+        "state": _P3_HANDOFF_WAITING,
+        "last_completed_step": "P3_PROMOTION_ADMISSION",
+        "next_required_request_kind": LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+        "project_alias": str(result.project_alias),
+        "candidate_run_id": str(result.canary_run_id),
+        "admission_request_id": str(result.request_id),
+        "admission_request_digest": str(request.request_digest),
+        "admission_evidence_digest": str(evidence.evidence_digest),
+        "admission_digest": admission_digest,
+        "authorization_required": True,
+    }
+    payload = _canonical_json_bytes(handoff)
+    path = root / f"{admission_digest}.waiting.json"
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file():
+            raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNSAFE")
+        try:
+            existing_raw = path.read_bytes()
+            existing = json.loads(existing_raw.decode("utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNREADABLE") from exc
+        if existing_raw != _canonical_json_bytes(existing) or existing != handoff:
+            raise SuccessorStageRuntimeError("P3_HANDOFF_ALREADY_SEALED")
+        return handoff
+
+    try:
+        fd = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+        )
+    except FileExistsError:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_ALREADY_SEALED")
+    except OSError as exc:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNAVAILABLE") from exc
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        finally:
+            raise
+    return handoff
 
 
 def successor_release_stage_enabled_from_environment(environment: Mapping[str, str]) -> bool:
@@ -391,6 +466,7 @@ def _wire_p3_promotion(config: base.RuntimeConfig, service):
     def admit_p3(envelope) -> Mapping[str, Any]:
         evidence = _collect_p3_promotion_evidence(config, envelope.payload)
         result = evaluate_p3_promotion_admission(envelope.payload, evidence)
+        handoff = _seal_p3_waiting_handoff(config, envelope.payload, evidence, result)
         return {
             "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
             "message_id": envelope.message_id,
@@ -401,6 +477,7 @@ def _wire_p3_promotion(config: base.RuntimeConfig, service):
             "mode": envelope.payload.mode,
             "result_class": result.status,
             "result": result.to_dict(),
+            "handoff": handoff,
         }
 
     service.admit_p3_promotion_authorized = admit_p3
