@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from runtime.orchestrator import ocpv2_successor_stage_runtime as runtime
 from runtime.orchestrator.lifecycle_v2_p3_promotion_admission import (
     LifecycleV2P3PromotionAdmissionEvidence,
     LifecycleV2P3PromotionAdmissionRequest,
+    evaluate_p3_promotion_admission,
 )
 
 
@@ -125,6 +127,46 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
         self.assertFalse(projection["result"]["runtime_current_switch_authorized"])
         self.assertFalse(projection["result"]["existing_run_migration_authorized"])
         self.assertFalse(projection["result"]["predecessor_shutdown_authorized"])
+
+    def test_admission_ready_seals_durable_handoff_for_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = _config()
+            config.state_root = Path(tmp) / "ocp-state"
+            service = SimpleNamespace(
+                lifecycle_v2_p3_promotion_enabled=False,
+                lifecycle_v2_p3_promotion_policy_ref="",
+                admit_p3_promotion_authorized=None,
+            )
+            request = _request()
+            evidence = _evidence()
+            expected = evaluate_p3_promotion_admission(request, evidence)
+            envelope = SimpleNamespace(message_id="P3-HANDOFF-MSG-1", payload=request)
+
+            with patch.object(runtime, "_collect_p3_promotion_evidence", return_value=evidence):
+                composed = runtime._wire_p3_promotion(config, service)
+                projection = composed.admit_p3_promotion_authorized(envelope)
+
+            self.assertIn("handoff", projection)
+            handoff = projection["handoff"]
+            self.assertEqual(handoff["state"], "WAITING_FOR_AUTHORIZED_ACTIVATION")
+            self.assertEqual(handoff["last_completed_step"], "P3_PROMOTION_ADMISSION")
+            self.assertEqual(
+                handoff["next_required_request_kind"],
+                "LIFECYCLE_V2_P3_CANARY_ACTIVATION",
+            )
+            self.assertEqual(handoff["candidate_run_id"], request.candidate_run_id)
+            self.assertEqual(handoff["admission_request_digest"], request.request_digest)
+            self.assertEqual(handoff["admission_evidence_digest"], evidence.evidence_digest)
+            self.assertEqual(handoff["admission_digest"], expected.admission_digest)
+            self.assertIs(handoff["authorization_required"], True)
+
+            path = (
+                config.state_root
+                / "p3-lifecycle-handoffs"
+                / f"{expected.admission_digest}.waiting.json"
+            )
+            self.assertTrue(path.is_file())
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), handoff)
 
     def _collect_with_state(self, workspace: Path, harness_state: Path):
         entry = {
