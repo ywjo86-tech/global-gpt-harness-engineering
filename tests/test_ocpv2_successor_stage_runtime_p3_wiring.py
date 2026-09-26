@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -58,6 +60,17 @@ def _evidence() -> LifecycleV2P3PromotionAdmissionEvidence:
     )
 
 
+def _config() -> SimpleNamespace:
+    return SimpleNamespace(
+        environment={
+            "OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED": "1",
+            "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF": POLICY_REF,
+            "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST": POLICY_DIGEST,
+        },
+        state_root=Path("/unused/ocp-state"),
+    )
+
+
 class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
     def test_p3_gate_defaults_disabled_when_runtime_profile_does_not_enable_it(self):
         service = SimpleNamespace(
@@ -93,13 +106,7 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
             lifecycle_v2_p3_promotion_policy_ref="",
             admit_p3_promotion_authorized=None,
         )
-        config = SimpleNamespace(
-            environment={
-                "OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED": "1",
-                "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF": POLICY_REF,
-                "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST": POLICY_DIGEST,
-            }
-        )
+        config = _config()
         envelope = SimpleNamespace(message_id="P3-MSG-1", payload=_request())
         with patch.object(runtime.base, "_compose_service", return_value=service), patch.object(
             runtime, "_collect_p3_promotion_evidence", return_value=_evidence()
@@ -118,6 +125,58 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
         self.assertFalse(projection["result"]["runtime_current_switch_authorized"])
         self.assertFalse(projection["result"]["existing_run_migration_authorized"])
         self.assertFalse(projection["result"]["predecessor_shutdown_authorized"])
+
+    def _collect_with_state(self, workspace: Path, harness_state: Path):
+        entry = {
+            "alias": _request().project_alias,
+            "project_root": str(workspace),
+            "project_id": "HARNESS-LIFECYCLE-V2-SUCCESSOR-20260925",
+        }
+        registry = SimpleNamespace(entries=lambda: [entry])
+        with patch.object(runtime, "_mapping_root", return_value=workspace), patch.object(
+            runtime, "OnboardingRegistry", return_value=registry
+        ), patch.object(
+            runtime,
+            "_readonly_git",
+            side_effect=[_request().expected_branch, _request().expected_head],
+        ), patch.object(
+            runtime, "resolve_harness_state_root", return_value=harness_state
+        ), patch.object(
+            runtime, "_matching_staged_receipt", return_value={"status": "STAGED"}
+        ), patch.object(
+            runtime._ReadOnlyPredecessorServiceStateProbe, "serving", return_value=True
+        ), patch.object(
+            runtime, "_serving_preservation_is_current", return_value=True
+        ):
+            return runtime._collect_p3_promotion_evidence(_config(), _request())
+
+    def test_missing_harness_state_cannot_be_interpreted_as_absent_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "successor"
+            workspace.mkdir()
+            missing_state = Path(tmp) / "missing-state"
+            with self.assertRaisesRegex(
+                runtime.SuccessorStageRuntimeError,
+                "P3_PROMOTION_HARNESS_STATE_UNAVAILABLE",
+            ):
+                self._collect_with_state(workspace, missing_state)
+
+    def test_durable_prev_candidate_receipt_is_not_interpreted_as_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "successor"
+            workspace.mkdir()
+            harness_state = Path(tmp) / "harness-state"
+            candidate = (
+                harness_state
+                / "_workspace"
+                / "production-full-plan-jobs"
+                / "HARNESS-LIFECYCLE-V2-SUCCESSOR-20260925"
+                / f"{_request().candidate_run_id}.job.json"
+            )
+            candidate.parent.mkdir(parents=True)
+            candidate.with_suffix(candidate.suffix + ".prev").write_text("{}", encoding="utf-8")
+            evidence = self._collect_with_state(workspace, harness_state)
+            self.assertEqual(evidence.candidate_run_registration_state, "REGISTERED")
 
 
 if __name__ == "__main__":
