@@ -110,7 +110,11 @@ def _config(**env_changes) -> SimpleNamespace:
         "OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_POLICY_DIGEST": POLICY_DIGEST,
     }
     environment.update(env_changes)
-    return SimpleNamespace(environment=environment, state_root=Path("/unused/ocp-state"))
+    return SimpleNamespace(
+        environment=environment,
+        state_root=Path("/unused/ocp-state"),
+        full_plan_activation_enabled=True,
+    )
 
 
 class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
@@ -133,6 +137,16 @@ class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
         with self.assertRaisesRegex(
             runtime.SuccessorStageRuntimeError,
             "P3_CANARY_ACTIVATION_POLICY_DIGEST_REQUIRED",
+        ):
+            runtime._wire_p3_canary_activation(config, service)
+
+    def test_enabled_p3_canary_requires_full_plan_activation_prerequisite(self):
+        service = SimpleNamespace(activate_full_plan_authorized=lambda envelope: {})
+        config = _config()
+        config.full_plan_activation_enabled = False
+        with self.assertRaisesRegex(
+            runtime.SuccessorStageRuntimeError,
+            "P3_CANARY_ACTIVATION_FULL_PLAN_REQUIRED",
         ):
             runtime._wire_p3_canary_activation(config, service)
 
@@ -161,9 +175,11 @@ class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
 
     def test_wiring_rechecks_admission_then_delegates_only_inner_full_plan_activation(self):
         delegated: list[object] = []
+        enqueue_projection_flags: list[bool] = []
 
-        def canonical_full_plan(envelope):
+        def canonical_full_plan(envelope, *, enqueue_projection=True):
             delegated.append(envelope)
+            enqueue_projection_flags.append(bool(enqueue_projection))
             self.assertEqual(envelope.request_kind, APPROVED_FULL_PLAN_ACTIVATION_KIND)
             self.assertEqual(envelope.payload.activation_request_id, CANDIDATE)
             return {
@@ -210,6 +226,7 @@ class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
 
         collect.assert_called_once_with(config, request.admission_request)
         self.assertEqual(len(delegated), 1)
+        self.assertEqual(enqueue_projection_flags, [False])
         self.assertEqual(projection["result_class"], "P3_CANARY_ACTIVATED")
         self.assertEqual(projection["candidate_run_id"], CANDIDATE)
         self.assertEqual(projection["full_plan_result_status"], "FULL_PLAN_REGISTERED")
