@@ -346,6 +346,15 @@ class RemoteOperatorService:
                 expired_remote_control = True
             validated += 1
 
+            if (
+                resolved_mode == ControlMode.LIFECYCLE_V2_P3_CANARY
+                and (
+                    not isinstance(envelope, RemoteControlEnvelopeV1)
+                    or envelope.request_kind != LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND
+                )
+            ):
+                continue
+
             if expired_remote_control:
                 if envelope.request_kind == HOST_INSPECTION_KIND:
                     projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_EXPIRED")
