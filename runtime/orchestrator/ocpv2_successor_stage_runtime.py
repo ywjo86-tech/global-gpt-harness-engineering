@@ -300,6 +300,8 @@ def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> Lifec
         project_root=workspace,
         environ=config.environment,
     )
+    if harness_state.is_symlink() or not harness_state.is_dir() or harness_state.resolve() != harness_state:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_HARNESS_STATE_UNAVAILABLE")
     candidate_path = (
         harness_state
         / "_workspace"
@@ -307,7 +309,15 @@ def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> Lifec
         / str(entry["project_id"])
         / f"{request.candidate_run_id}.job.json"
     )
-    candidate_state = "REGISTERED" if candidate_path.exists() else "ABSENT"
+    candidate_prev = candidate_path.with_suffix(candidate_path.suffix + ".prev")
+    candidate_state = (
+        "REGISTERED"
+        if candidate_path.exists()
+        or candidate_path.is_symlink()
+        or candidate_prev.exists()
+        or candidate_prev.is_symlink()
+        else "ABSENT"
+    )
 
     receipt = _matching_staged_receipt(config, request)
     predecessor_serving = _ReadOnlyPredecessorServiceStateProbe().serving()
