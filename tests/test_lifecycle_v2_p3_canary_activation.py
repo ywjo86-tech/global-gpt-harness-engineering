@@ -189,8 +189,8 @@ class LifecycleV2P3CanaryActivationTests(unittest.TestCase):
             with self.subTest(field=field):
                 value = dict(good)
                 value[field] = "f" * 64
-                request = LifecycleV2P3CanaryActivationRequest.from_mapping(value)
                 with self.assertRaises(LifecycleV2P3CanaryActivationError):
+                    request = LifecycleV2P3CanaryActivationRequest.from_mapping(value)
                     evaluate_p3_canary_activation(request, _admission_result())
         value = dict(good)
         value["admission_status"] = "BLOCKED"
