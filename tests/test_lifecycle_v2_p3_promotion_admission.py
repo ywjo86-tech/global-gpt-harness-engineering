@@ -34,8 +34,10 @@ def _request(**changes) -> dict:
         "approval_policy_digest": POLICY_DIGEST,
         "mode": "DRY_RUN",
         "predecessor_serving_required": True,
+        "predecessor_quiesce_requested": False,
         "runtime_current_switch_requested": False,
         "existing_run_migration_requested": False,
+        "canary_scope": ["fresh-canary-run-001"],
     }
     value.update(changes)
     return value
@@ -182,6 +184,7 @@ class LifecycleV2P3PromotionAdmissionTests(unittest.TestCase):
             {"existing_run_migration_requested": True},
             {"runtime_current_switch_requested": True},
             {"predecessor_serving_required": False},
+            {"predecessor_quiesce_requested": True},
         )
         for changes in bad_values:
             with self.subTest(changes=changes):
