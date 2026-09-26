@@ -30,7 +30,10 @@ from .lifecycle_v2_p3_promotion_admission import (
     evaluate_p3_promotion_admission,
 )
 from .project_onboarding import OnboardingRegistry
-from .remote_control_envelope import APPROVED_FULL_PLAN_ACTIVATION_KIND
+from .remote_control_envelope import (
+    APPROVED_FULL_PLAN_ACTIVATION_KIND,
+    LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+)
 from .remote_operator_service import ControlMode, RemoteOperatorServiceError
 from .successor_release_stage_gateway import (
     SuccessorReleaseStageGatewayRequest,
@@ -409,6 +412,8 @@ def _wire_p3_promotion(config: base.RuntimeConfig, service):
 def _wire_p3_canary_activation(config: base.RuntimeConfig, service):
     if not lifecycle_v2_p3_canary_activation_enabled_from_environment(config.environment):
         return service
+    if not bool(getattr(config, "full_plan_activation_enabled", False)):
+        raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_FULL_PLAN_REQUIRED")
     policy_ref = _safe_p3_canary_policy_ref(config.environment)
     policy_digest = _safe_p3_canary_policy_digest(config.environment)
     canonical_full_plan = getattr(service, "activate_full_plan_authorized", None)
@@ -431,7 +436,7 @@ def _wire_p3_canary_activation(config: base.RuntimeConfig, service):
             request_kind=APPROVED_FULL_PLAN_ACTIVATION_KIND,
             payload=request.full_plan_activation,
         )
-        result = canonical_full_plan(delegated)
+        result = canonical_full_plan(delegated, enqueue_projection=False)
         if not isinstance(result, Mapping):
             raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_FULL_PLAN_RESULT_INVALID")
         if (
@@ -490,6 +495,31 @@ def compose_service(config: base.RuntimeConfig):
     return service
 
 
+
+class _P3CanaryFilteredTransport:
+    """Limit P3 Canary polling to the dedicated request kind before poll_limit."""
+
+    def __init__(self, transport):
+        self._transport = transport
+
+    def receive(self, *, limit: int = 16):
+        receiver = getattr(self._transport, "receive_request_kind", None)
+        if not callable(receiver):
+            raise SuccessorStageRuntimeError(
+                "P3_CANARY_TRANSPORT_FILTER_REQUIRED"
+            )
+        return receiver(
+            LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+            limit=limit,
+        )
+
+    def acknowledge_delivery(self, message_id: str) -> None:
+        self._transport.acknowledge_delivery(message_id)
+
+    def publish_projection(self, projection: Mapping[str, Any]) -> None:
+        self._transport.publish_projection(projection)
+
+
 def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         result = base.run_once(config)
@@ -498,6 +528,8 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         result["p3_canary_activated"] = 0
         return result
     service = compose_service(config)
+    if ControlMode(config.mode) == ControlMode.LIFECYCLE_V2_P3_CANARY:
+        service.transport = _P3CanaryFilteredTransport(service.transport)
     result = service.poll_once(mode=config.mode)
     return {
         "mode": result.mode,
