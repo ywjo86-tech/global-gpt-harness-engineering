@@ -19,10 +19,12 @@ from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND,
     APPROVED_WORK_ACTIVATION_KIND,
     HOST_INSPECTION_KIND,
+    LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
     PROJECT_ONBOARDING_KIND,
     SUCCESSOR_RELEASE_STAGE_KIND,
     RemoteControlEnvelopeV1,
     RemoteFullPlanActivationAuthorization,
+    RemoteLifecycleV2P3PromotionAuthorization,
     RemoteProjectOnboardingAuthorization,
     RemoteSuccessorReleaseStageAuthorization,
     RemoteWorkActivationAuthorization,
@@ -78,6 +80,7 @@ class ServicePollResult:
     full_plan_activated: int = 0
     onboarded: int = 0
     successor_release_staged: int = 0
+    p3_promotion_admitted: int = 0
 
 
 class RemoteOperatorService:
@@ -109,6 +112,9 @@ class RemoteOperatorService:
         stage_successor_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         successor_release_stage_enabled: bool = False,
         successor_release_stage_policy_ref: str = "",
+        admit_p3_promotion_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        lifecycle_v2_p3_promotion_enabled: bool = False,
+        lifecycle_v2_p3_promotion_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -131,6 +137,9 @@ class RemoteOperatorService:
         self.stage_successor_authorized = stage_successor_authorized
         self.successor_release_stage_enabled = bool(successor_release_stage_enabled)
         self.successor_release_stage_policy_ref = str(successor_release_stage_policy_ref or "")
+        self.admit_p3_promotion_authorized = admit_p3_promotion_authorized
+        self.lifecycle_v2_p3_promotion_enabled = bool(lifecycle_v2_p3_promotion_enabled)
+        self.lifecycle_v2_p3_promotion_policy_ref = str(lifecycle_v2_p3_promotion_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -229,6 +238,21 @@ class RemoteOperatorService:
         }
 
     @staticmethod
+    def _p3_promotion_admission_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
     def _recover_expired_remote_control(
         raw: RawControlEnvelope,
         exc: Exception,
@@ -281,6 +305,7 @@ class RemoteOperatorService:
 
         received = validated = executed = diagnosed = projected = acknowledged = blocked = 0
         inspected = activated = full_plan_activated = onboarded = successor_release_staged = 0
+        p3_promotion_admitted = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             expired_remote_control = False
@@ -305,6 +330,10 @@ class RemoteOperatorService:
                 elif envelope.request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
                     projection = self._successor_release_stage_status_projection(
                         envelope, "SUCCESSOR_RELEASE_STAGE_EXPIRED"
+                    )
+                elif envelope.request_kind == LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND:
+                    projection = self._p3_promotion_admission_status_projection(
+                        envelope, "P3_PROMOTION_ADMISSION_EXPIRED"
                     )
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
@@ -441,6 +470,45 @@ class RemoteOperatorService:
                                 envelope, "SUCCESSOR_RELEASE_STAGE_ERROR"
                             )
                             blocked += 1
+                elif envelope.request_kind == LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND:
+                    if resolved_mode not in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}:
+                        projection = self._p3_promotion_admission_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif (
+                        not self.lifecycle_v2_p3_promotion_enabled
+                        or self.admit_p3_promotion_authorized is None
+                    ):
+                        projection = self._p3_promotion_admission_status_projection(
+                            envelope, "P3_PROMOTION_ADMISSION_DISABLED"
+                        )
+                        blocked += 1
+                    elif (
+                        not isinstance(
+                            envelope.authorization,
+                            RemoteLifecycleV2P3PromotionAuthorization,
+                        )
+                        or not self.lifecycle_v2_p3_promotion_policy_ref
+                        or envelope.authorization.lifecycle_v2_p3_promotion_policy_ref
+                        != self.lifecycle_v2_p3_promotion_policy_ref
+                    ):
+                        projection = self._p3_promotion_admission_status_projection(
+                            envelope,
+                            "P3_PROMOTION_ADMISSION_AUTHORIZATION_MISMATCH",
+                        )
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.admit_p3_promotion_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError(
+                                    "P3 promotion admission result projection is malformed"
+                                )
+                            p3_promotion_admitted += 1
+                        except Exception:
+                            projection = self._p3_promotion_admission_status_projection(
+                                envelope, "P3_PROMOTION_ADMISSION_ERROR"
+                            )
+                            blocked += 1
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
@@ -549,4 +617,5 @@ class RemoteOperatorService:
             full_plan_activated=full_plan_activated,
             onboarded=onboarded,
             successor_release_staged=successor_release_staged,
+            p3_promotion_admitted=p3_promotion_admitted,
         )
