@@ -159,6 +159,7 @@ def finalize_remote_control_projection(
         "orchestration.remote-activation-status-projection.v1",
         "orchestration.remote-full-plan-activation-status-projection.v1",
         "orchestration.remote-project-onboarding-status-projection.v1",
+        "orchestration.remote-p3-canary-activation-status-projection.v1",
     }:
         return
     parsed = parse_remote_projection(projection)

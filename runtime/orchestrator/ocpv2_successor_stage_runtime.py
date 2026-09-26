@@ -1,10 +1,11 @@
-"""Additive production composition for successor staging and P3 admission.
+"""Additive production composition for successor staging and Lifecycle V2 P3.
 
 The legacy OCP runtime remains the implementation of transport, recovery, Full Plan,
-and all pre-existing request kinds. This module adds only separately gated successor
-staging and Lifecycle V2 P3 Promotion Admission callbacks, then delegates the normal
-one-shot service loop. P3 admission is observation-only and grants no mutation,
-runtime-current, migration, predecessor-shutdown, or effect authority.
+and all pre-existing request kinds. This module adds separately gated successor staging,
+P3 Promotion Admission, and bounded P3 Canary Activation callbacks, then delegates the
+normal one-shot service loop. P3 canary activation may register only the single fresh
+candidate already admitted by P3 admission; runtime-current switching, migration,
+predecessor shutdown, generic mutation, and new effect backends remain unauthorized.
 """
 from __future__ import annotations
 
@@ -16,16 +17,20 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from . import ocpv2_runtime_service as base
+from .approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
 from .harness_state_root import resolve_harness_state_root
+from .lifecycle_v2_p3_canary_activation import evaluate_p3_canary_activation
 from .lifecycle_v2_p3_promotion_admission import (
     LifecycleV2P3PromotionAdmissionEvidence,
     evaluate_p3_promotion_admission,
 )
 from .project_onboarding import OnboardingRegistry
+from .remote_control_envelope import APPROVED_FULL_PLAN_ACTIVATION_KIND
 from .remote_operator_service import ControlMode, RemoteOperatorServiceError
 from .successor_release_stage_gateway import (
     SuccessorReleaseStageGatewayRequest,
@@ -46,12 +51,17 @@ _P3_ENV_KEYS = {
     "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_REF",
     "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST",
 }
+_P3_CANARY_ENV_KEYS = {
+    "OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_ENABLED",
+    "OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_POLICY_REF",
+    "OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_POLICY_DIGEST",
+}
 _POLICY_REF = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
-# Extending the legacy parser allow-list never enables either capability. Both
-# features remain independently default-disabled below.
-base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS | _P3_ENV_KEYS)
+# Extending the legacy parser allow-list never enables any capability. Every
+# feature remains independently default-disabled below.
+base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS | _P3_ENV_KEYS | _P3_CANARY_ENV_KEYS)
 
 
 class SuccessorStageRuntimeError(ValueError):
@@ -64,6 +74,12 @@ def successor_release_stage_enabled_from_environment(environment: Mapping[str, s
 
 def lifecycle_v2_p3_promotion_enabled_from_environment(environment: Mapping[str, str]) -> bool:
     return str(environment.get("OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED") or "").strip() == "1"
+
+
+def lifecycle_v2_p3_canary_activation_enabled_from_environment(
+    environment: Mapping[str, str],
+) -> bool:
+    return str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_ENABLED") or "").strip() == "1"
 
 
 def _safe_policy_ref(environment: Mapping[str, str]) -> str:
@@ -84,6 +100,20 @@ def _safe_p3_policy_digest(environment: Mapping[str, str]) -> str:
     value = str(environment.get("OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST") or "").strip()
     if not _SHA256.fullmatch(value):
         raise SuccessorStageRuntimeError("P3_PROMOTION_POLICY_DIGEST_REQUIRED")
+    return value
+
+
+def _safe_p3_canary_policy_ref(environment: Mapping[str, str]) -> str:
+    value = str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_POLICY_REF") or "").strip()
+    if not value or ".." in value or not _POLICY_REF.fullmatch(value):
+        raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_POLICY_REQUIRED")
+    return value
+
+
+def _safe_p3_canary_policy_digest(environment: Mapping[str, str]) -> str:
+    value = str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_POLICY_DIGEST") or "").strip()
+    if not _SHA256.fullmatch(value):
+        raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_POLICY_DIGEST_REQUIRED")
     return value
 
 
@@ -178,6 +208,15 @@ class _ReadOnlyPredecessorServiceStateProbe:
         timer_active = self._query("is-active", "--quiet", "ocpv2.timer")
         timer_enabled = self._query("is-enabled", "--quiet", "ocpv2.timer")
         return service_active or (timer_active and timer_enabled)
+
+
+@dataclass(frozen=True, slots=True)
+class _P3FullPlanDelegation:
+    """Internal delegation only; never serialized or accepted as remote authority."""
+
+    message_id: str
+    request_kind: str
+    payload: ApprovedFullPlanActivationRequestV1
 
 
 def _successor_stager(config: base.RuntimeConfig) -> SuccessorReleaseStager:
@@ -367,9 +406,63 @@ def _wire_p3_promotion(config: base.RuntimeConfig, service):
     return service
 
 
+def _wire_p3_canary_activation(config: base.RuntimeConfig, service):
+    if not lifecycle_v2_p3_canary_activation_enabled_from_environment(config.environment):
+        return service
+    policy_ref = _safe_p3_canary_policy_ref(config.environment)
+    policy_digest = _safe_p3_canary_policy_digest(config.environment)
+    canonical_full_plan = getattr(service, "activate_full_plan_authorized", None)
+    if canonical_full_plan is None:
+        raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_CALLBACK_UNAVAILABLE")
+
+    def activate_p3_canary(envelope) -> Mapping[str, Any]:
+        request = envelope.payload
+        admission_request = request.admission_request
+        if (
+            admission_request.approval_policy_ref != policy_ref
+            or admission_request.approval_policy_digest != policy_digest
+        ):
+            raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_POLICY_MISMATCH")
+        evidence = _collect_p3_promotion_evidence(config, admission_request)
+        admission = evaluate_p3_promotion_admission(admission_request, evidence)
+        authorization = evaluate_p3_canary_activation(request, admission)
+        delegated = _P3FullPlanDelegation(
+            message_id=envelope.message_id,
+            request_kind=APPROVED_FULL_PLAN_ACTIVATION_KIND,
+            payload=request.full_plan_activation,
+        )
+        result = canonical_full_plan(delegated)
+        if not isinstance(result, Mapping):
+            raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_FULL_PLAN_RESULT_INVALID")
+        if (
+            str(result.get("activation_request_id") or "") != admission_request.candidate_run_id
+            or str(result.get("run_id") or "") != admission_request.candidate_run_id
+            or str(result.get("result_status") or "") != "FULL_PLAN_REGISTERED"
+        ):
+            raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_FULL_PLAN_RESULT_INVALID")
+        return {
+            "schema_version": "orchestration.remote-p3-canary-activation-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": request.request_id,
+            "project_alias": admission_request.project_alias,
+            "request_digest": request.request_digest,
+            "candidate_run_id": admission_request.candidate_run_id,
+            "result_class": "P3_CANARY_ACTIVATED",
+            "full_plan_result_status": str(result["result_status"]),
+            "full_plan_activation_digest": str(result.get("activation_digest") or ""),
+            "authorization": authorization.to_dict(),
+        }
+
+    service.activate_p3_canary_authorized = activate_p3_canary
+    service.lifecycle_v2_p3_canary_activation_enabled = True
+    service.lifecycle_v2_p3_canary_activation_policy_ref = policy_ref
+    return service
+
+
 def compose_service(config: base.RuntimeConfig):
     service = base._compose_service(config)
     service = _wire_p3_promotion(config, service)
+    service = _wire_p3_canary_activation(config, service)
 
     enabled = successor_release_stage_enabled_from_environment(config.environment)
     if not enabled:
@@ -402,6 +495,7 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         result = base.run_once(config)
         result["successor_release_staged"] = 0
         result["p3_promotion_admitted"] = 0
+        result["p3_canary_activated"] = 0
         return result
     service = compose_service(config)
     result = service.poll_once(mode=config.mode)
@@ -420,11 +514,12 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         "onboarded": result.onboarded,
         "successor_release_staged": result.successor_release_staged,
         "p3_promotion_admitted": result.p3_promotion_admitted,
+        "p3_canary_activated": result.p3_canary_activated,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one OCPv2 poll with bounded successor staging/P3 admission")
+    parser = argparse.ArgumentParser(description="Run one OCPv2 poll with bounded successor staging/Lifecycle V2 P3")
     parser.add_argument("--env-file", required=True)
     args = parser.parse_args(argv)
     try:
