@@ -14,6 +14,8 @@ from runtime.orchestrator.lifecycle_v2_p3_promotion_admission import (
     LifecycleV2P3PromotionAdmissionRequest,
     evaluate_p3_promotion_admission,
 )
+from runtime.orchestrator.ocpv2_runtime_service import finalize_remote_control_projection
+from runtime.orchestrator.remote_operator_envelope import TransportBinding
 from runtime.orchestrator.remote_operator_service import ControlMode, RemoteOperatorService
 from runtime.orchestrator.remote_operator_transport import RawControlEnvelope
 
@@ -171,6 +173,11 @@ class FakeTransport:
         self.acks.append(message_id)
 
 
+class ExplodingOutbox:
+    def mark_published(self, *args, **kwargs):
+        raise AssertionError("status-only P3 canary projection must not touch durable result outbox")
+
+
 class LifecycleV2P3CanaryActivationTests(unittest.TestCase):
     def test_contract_authorizes_only_exact_admitted_candidate(self):
         request = LifecycleV2P3CanaryActivationRequest.from_mapping(_request())
@@ -302,6 +309,57 @@ class LifecycleV2P3CanaryActivationTests(unittest.TestCase):
         self.assertEqual(result.p3_canary_activated, 1)
         self.assertEqual(result.blocked, 0)
         self.assertEqual(transport.projections[0]["result_class"], "P3_CANARY_ACTIVATED")
+
+    def test_dedicated_mode_leaves_unrelated_remote_controls_unconsumed(self):
+        unrelated = control.RemoteControlEnvelopeV1(
+            schema_version=control.REMOTE_CONTROL_ENVELOPE_SCHEMA,
+            request_kind=control.HOST_INSPECTION_KIND,
+            message_id="UNRELATED-CONTROL-001",
+            sequence=2,
+            issued_at="2026-09-26T12:00:00+00:00",
+            expires_at="2026-09-26T13:00:00+00:00",
+            actor="GPT_OPERATOR",
+            transport=TransportBinding(
+                adapter_id="TEST",
+                channel_id="CTRL",
+                source_actor_id="235775273",
+                source_message_id="41",
+            ),
+            payload=object(),
+            payload_digest="a" * 64,
+            authorization=control.RemoteControlAuthorization("READ-ONLY"),
+            envelope_sha256="b" * 64,
+        )
+        transport = FakeTransport()
+        service = RemoteOperatorService(
+            transport=transport,
+            decode_envelope=lambda raw: unrelated,
+            ingress=lambda env: (_ for _ in ()).throw(AssertionError("legacy ingress must not run")),
+            execute_authorized=lambda env, directive: (_ for _ in ()).throw(AssertionError("generic mutation executor must not run")),
+            activate_p3_canary_authorized=lambda value: (_ for _ in ()).throw(AssertionError("P3 callback must not run")),
+            lifecycle_v2_p3_canary_activation_enabled=True,
+            lifecycle_v2_p3_canary_activation_policy_ref=POLICY_REF,
+        )
+        result = service.poll_once(mode=ControlMode.LIFECYCLE_V2_P3_CANARY)
+        self.assertEqual(result.received, 1)
+        self.assertEqual(result.validated, 1)
+        self.assertEqual(result.blocked, 0)
+        self.assertEqual(transport.projections, [])
+        self.assertEqual(transport.acks, [])
+
+    def test_p3_canary_status_projection_is_not_reparsed_as_durable_result(self):
+        finalize_remote_control_projection(
+            ExplodingOutbox(),
+            {
+                "schema_version": "orchestration.remote-p3-canary-activation-status-projection.v1",
+                "message_id": "P3-CANARY-ACTIVATION-MSG-001",
+                "request_id": "p3-canary-activation-001",
+                "project_alias": "harness-lifecycle-v2-successor-20260925",
+                "request_digest": "c" * 64,
+                "candidate_run_id": CANDIDATE,
+                "result_class": "P3_CANARY_ACTIVATED",
+            },
+        )
 
     def test_p3_activation_is_not_a_new_production_execution_backend(self):
         from runtime.orchestrator import production_execution_gateway
