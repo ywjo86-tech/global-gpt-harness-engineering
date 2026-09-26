@@ -103,30 +103,32 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
                 runtime.compose_service(config)
 
     def test_enabled_runtime_profile_wires_existing_p3_admission_evaluator(self):
-        service = SimpleNamespace(
-            lifecycle_v2_p3_promotion_enabled=False,
-            lifecycle_v2_p3_promotion_policy_ref="",
-            admit_p3_promotion_authorized=None,
-        )
-        config = _config()
-        envelope = SimpleNamespace(message_id="P3-MSG-1", payload=_request())
-        with patch.object(runtime.base, "_compose_service", return_value=service), patch.object(
-            runtime, "_collect_p3_promotion_evidence", return_value=_evidence()
-        ) as collect:
-            composed = runtime.compose_service(config)
-            self.assertTrue(composed.lifecycle_v2_p3_promotion_enabled)
-            self.assertEqual(composed.lifecycle_v2_p3_promotion_policy_ref, POLICY_REF)
-            self.assertTrue(callable(composed.admit_p3_promotion_authorized))
-            projection = composed.admit_p3_promotion_authorized(envelope)
+        with tempfile.TemporaryDirectory() as tmp:
+            service = SimpleNamespace(
+                lifecycle_v2_p3_promotion_enabled=False,
+                lifecycle_v2_p3_promotion_policy_ref="",
+                admit_p3_promotion_authorized=None,
+            )
+            config = _config()
+            config.state_root = Path(tmp) / "ocp-state"
+            envelope = SimpleNamespace(message_id="P3-MSG-1", payload=_request())
+            with patch.object(runtime.base, "_compose_service", return_value=service), patch.object(
+                runtime, "_collect_p3_promotion_evidence", return_value=_evidence()
+            ) as collect:
+                composed = runtime.compose_service(config)
+                self.assertTrue(composed.lifecycle_v2_p3_promotion_enabled)
+                self.assertEqual(composed.lifecycle_v2_p3_promotion_policy_ref, POLICY_REF)
+                self.assertTrue(callable(composed.admit_p3_promotion_authorized))
+                projection = composed.admit_p3_promotion_authorized(envelope)
 
-        collect.assert_called_once_with(config, envelope.payload)
-        self.assertEqual(projection["result_class"], "P3_CANARY_ADMISSION_READY")
-        self.assertEqual(projection["request_id"], "p3-runtime-wiring-001")
-        self.assertEqual(projection["mode"], "DRY_RUN")
-        self.assertFalse(projection["result"]["mutation_authorized"])
-        self.assertFalse(projection["result"]["runtime_current_switch_authorized"])
-        self.assertFalse(projection["result"]["existing_run_migration_authorized"])
-        self.assertFalse(projection["result"]["predecessor_shutdown_authorized"])
+            collect.assert_called_once_with(config, envelope.payload)
+            self.assertEqual(projection["result_class"], "P3_CANARY_ADMISSION_READY")
+            self.assertEqual(projection["request_id"], "p3-runtime-wiring-001")
+            self.assertEqual(projection["mode"], "DRY_RUN")
+            self.assertFalse(projection["result"]["mutation_authorized"])
+            self.assertFalse(projection["result"]["runtime_current_switch_authorized"])
+            self.assertFalse(projection["result"]["existing_run_migration_authorized"])
+            self.assertFalse(projection["result"]["predecessor_shutdown_authorized"])
 
     def test_admission_ready_seals_durable_handoff_for_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
