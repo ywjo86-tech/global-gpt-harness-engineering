@@ -39,8 +39,10 @@ _REQUEST_FIELDS = {
     "approval_policy_digest",
     "mode",
     "predecessor_serving_required",
+    "predecessor_quiesce_requested",
     "runtime_current_switch_requested",
     "existing_run_migration_requested",
+    "canary_scope",
 }
 _EVIDENCE_FIELDS = {
     "schema_version",
@@ -123,6 +125,14 @@ def _bool(value: object, label: str) -> bool:
     return value
 
 
+def _canary_scope(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) != 1:
+        raise LifecycleV2P3PromotionAdmissionError(
+            "canary scope must contain exactly one fresh candidate run"
+        )
+    return (_safe_id(value[0], "canary scope run ID"),)
+
+
 @dataclass(frozen=True, slots=True)
 class LifecycleV2P3PromotionAdmissionRequest:
     schema_version: str
@@ -139,8 +149,10 @@ class LifecycleV2P3PromotionAdmissionRequest:
     approval_policy_digest: str
     mode: str
     predecessor_serving_required: bool
+    predecessor_quiesce_requested: bool
     runtime_current_switch_requested: bool
     existing_run_migration_requested: bool
+    canary_scope: tuple[str, ...]
 
     @classmethod
     def from_mapping(
@@ -149,6 +161,12 @@ class LifecycleV2P3PromotionAdmissionRequest:
     ) -> "LifecycleV2P3PromotionAdmissionRequest":
         if not isinstance(raw, Mapping):
             raise LifecycleV2P3PromotionAdmissionError("request must be an object")
+        if "canary_scope" not in raw:
+            raise LifecycleV2P3PromotionAdmissionError("canary scope is required")
+        if "predecessor_quiesce_requested" not in raw:
+            raise LifecycleV2P3PromotionAdmissionError(
+                "predecessor quiesce request flag is required"
+            )
         if set(raw) != _REQUEST_FIELDS:
             raise LifecycleV2P3PromotionAdmissionError("request fields mismatch")
         if raw.get("schema_version") != LIFECYCLE_V2_P3_PROMOTION_ADMISSION_SCHEMA:
@@ -172,6 +190,10 @@ class LifecycleV2P3PromotionAdmissionRequest:
                 raw["predecessor_serving_required"],
                 "predecessor serving requirement",
             ),
+            predecessor_quiesce_requested=_bool(
+                raw["predecessor_quiesce_requested"],
+                "predecessor quiesce request",
+            ),
             runtime_current_switch_requested=_bool(
                 raw["runtime_current_switch_requested"],
                 "runtime-current switch request",
@@ -180,6 +202,7 @@ class LifecycleV2P3PromotionAdmissionRequest:
                 raw["existing_run_migration_requested"],
                 "existing run migration request",
             ),
+            canary_scope=_canary_scope(raw["canary_scope"]),
         )
         request._validate_boundary()
         return request
@@ -197,6 +220,10 @@ class LifecycleV2P3PromotionAdmissionRequest:
             raise LifecycleV2P3PromotionAdmissionError("P3 canary requires a fresh activation")
         if not self.predecessor_serving_required:
             raise LifecycleV2P3PromotionAdmissionError("predecessor must remain serving")
+        if self.predecessor_quiesce_requested:
+            raise LifecycleV2P3PromotionAdmissionError(
+                "predecessor quiesce is outside P3 admission"
+            )
         if self.runtime_current_switch_requested:
             raise LifecycleV2P3PromotionAdmissionError(
                 "runtime-current switch is outside P3 admission"
@@ -204,6 +231,10 @@ class LifecycleV2P3PromotionAdmissionRequest:
         if self.existing_run_migration_requested:
             raise LifecycleV2P3PromotionAdmissionError(
                 "existing run migration is outside P3 admission"
+            )
+        if self.canary_scope != (self.candidate_run_id,):
+            raise LifecycleV2P3PromotionAdmissionError(
+                "canary scope must contain exactly the fresh candidate run"
             )
 
     @property
@@ -226,8 +257,10 @@ class LifecycleV2P3PromotionAdmissionRequest:
             "approval_policy_digest": self.approval_policy_digest,
             "mode": self.mode,
             "predecessor_serving_required": self.predecessor_serving_required,
+            "predecessor_quiesce_requested": self.predecessor_quiesce_requested,
             "runtime_current_switch_requested": self.runtime_current_switch_requested,
             "existing_run_migration_requested": self.existing_run_migration_requested,
+            "canary_scope": list(self.canary_scope),
         }
 
 
