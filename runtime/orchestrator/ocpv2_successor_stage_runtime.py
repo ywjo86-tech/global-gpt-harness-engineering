@@ -728,6 +728,16 @@ class _P3CanaryFilteredTransport:
         self._transport.publish_projection(projection)
 
 
+class _P3CanaryValidateFilteredTransport(_P3CanaryFilteredTransport):
+    """Receive only the validation-only P3 request during a bounded poll."""
+
+    def receive(self, *, limit: int = 16):
+        receiver = getattr(self._transport, "receive_request_kind", None)
+        if not callable(receiver):
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_TRANSPORT_FILTER_REQUIRED")
+        return receiver(LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND, limit=limit)
+
+
 def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         result = base.run_once(config)
@@ -738,6 +748,8 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
     service = compose_service(config)
     if ControlMode(config.mode) == ControlMode.LIFECYCLE_V2_P3_CANARY:
         service.transport = _P3CanaryFilteredTransport(service.transport)
+    elif lifecycle_v2_p3_canary_validate_enabled_from_environment(config.environment):
+        service.transport = _P3CanaryValidateFilteredTransport(service.transport)
     result = service.poll_once(mode=config.mode)
     return {
         "mode": result.mode,
