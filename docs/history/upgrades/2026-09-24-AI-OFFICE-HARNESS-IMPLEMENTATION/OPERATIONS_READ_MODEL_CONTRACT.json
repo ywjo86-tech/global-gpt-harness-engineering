@@ -1,0 +1,33 @@
+{
+  "forbidden_fields": [
+    "credential",
+    "token",
+    "raw_effect_payload",
+    "final_assignee"
+  ],
+  "public_fields": [
+    "schema_version",
+    "project_id",
+    "run_id",
+    "task_id",
+    "gate_id",
+    "raw_state",
+    "normalized_state",
+    "human_state",
+    "progress",
+    "progress_source",
+    "current_work",
+    "outcome",
+    "impact",
+    "next_step",
+    "approval_required",
+    "approval_refs",
+    "checkpoint_refs",
+    "evidence_refs",
+    "sources",
+    "freshness",
+    "diagnostic_health"
+  ],
+  "schema_version": "orchestration.operations-read-model.v1",
+  "source_head": "126d403f634265c496618ee27275a475a68a562f"
+}
