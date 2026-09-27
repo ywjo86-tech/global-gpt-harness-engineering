@@ -357,12 +357,15 @@ class _ReadOnlySuccessorServiceStateProbe:
 
 
 class _ReadOnlyPredecessorServiceStateProbe:
-    """Observe only the fixed serving OCP units; never invokes a service mutation."""
+    """Verify the preserved predecessor service without invoking a service mutation."""
+
+    def __init__(self, predecessor_root: Path):
+        self._predecessor_root = predecessor_root.resolve()
 
     @staticmethod
-    def _query(*args: str) -> bool:
+    def _show(*properties: str) -> dict[str, str]:
         completed = subprocess.run(
-            ["systemctl", "--user", *args],
+            ["systemctl", "--user", "show", "ocpv2.service", *properties],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -370,13 +373,44 @@ class _ReadOnlyPredecessorServiceStateProbe:
             timeout=10,
             text=True,
         )
-        return completed.returncode == 0
+        if completed.returncode != 0:
+            return {}
+        return {
+            key: value
+            for line in completed.stdout.splitlines()
+            if "=" in line
+            for key, value in (line.split("=", 1),)
+        }
 
     def serving(self) -> bool:
-        service_active = self._query("is-active", "--quiet", "ocpv2.service")
-        timer_active = self._query("is-active", "--quiet", "ocpv2.timer")
-        timer_enabled = self._query("is-enabled", "--quiet", "ocpv2.timer")
-        return service_active or (timer_active and timer_enabled)
+        service = self._show("-p", "LoadState", "-p", "WorkingDirectory", "-p", "Environment", "-p", "Result")
+        if service.get("LoadState") != "loaded" or service.get("Result") not in {"success", ""}:
+            return False
+        if Path(str(service.get("WorkingDirectory") or "/")).resolve() != self._predecessor_root:
+            return False
+        environment = str(service.get("Environment") or "")
+        if "PYTHONPATH=" in environment:
+            return False
+        timer = subprocess.run(
+            ["systemctl", "--user", "show", "ocpv2.timer", "-p", "ActiveState", "-p", "UnitFileState"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+            text=True,
+        )
+        if timer.returncode != 0:
+            return False
+        timer_state = dict(
+            line.split("=", 1)
+            for line in timer.stdout.splitlines()
+            if "=" in line
+        )
+        return (
+            timer_state.get("ActiveState") == "inactive"
+            and timer_state.get("UnitFileState") == "disabled"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -528,7 +562,7 @@ def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> Lifec
     )
 
     receipt = _matching_staged_receipt(config, request)
-    predecessor_serving = _ReadOnlyPredecessorServiceStateProbe().serving()
+    predecessor_serving = _ReadOnlyPredecessorServiceStateProbe(config.repo_root).serving()
     runtime_current_points_to_predecessor = _serving_preservation_is_current(receipt)
 
     return LifecycleV2P3PromotionAdmissionEvidence.from_mapping(

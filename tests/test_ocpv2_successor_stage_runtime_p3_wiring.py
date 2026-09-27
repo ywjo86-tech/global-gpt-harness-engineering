@@ -70,10 +70,59 @@ def _config() -> SimpleNamespace:
             "OCP_LIFECYCLE_V2_P3_PROMOTION_POLICY_DIGEST": POLICY_DIGEST,
         },
         state_root=Path("/unused/ocp-state"),
+        repo_root=Path("/unused/predecessor"),
     )
 
 
 class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
+    def test_predecessor_probe_requires_preserved_primary_identity_and_disabled_timer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            predecessor = Path(tmp) / "predecessor"
+            predecessor.mkdir()
+            probe = runtime._ReadOnlyPredecessorServiceStateProbe(predecessor)
+            service = {
+                "LoadState": "loaded",
+                "WorkingDirectory": str(predecessor),
+                "Environment": "OCP_FULL_PLAN_ACTIVATION_ENABLED=0",
+                "Result": "success",
+            }
+            timer = SimpleNamespace(
+                returncode=0,
+                stdout="ActiveState=inactive\nUnitFileState=disabled\n",
+            )
+            with patch.object(probe, "_show", return_value=service), patch.object(
+                runtime.subprocess, "run", return_value=timer
+            ):
+                self.assertTrue(probe.serving())
+
+    def test_predecessor_probe_rejects_successor_identity_or_pythonpath_injection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            predecessor = root / "predecessor"
+            successor = root / "successor"
+            predecessor.mkdir()
+            successor.mkdir()
+            probe = runtime._ReadOnlyPredecessorServiceStateProbe(predecessor)
+            timer = SimpleNamespace(
+                returncode=0,
+                stdout="ActiveState=inactive\nUnitFileState=disabled\n",
+            )
+            for working_directory, environment in (
+                (str(successor), ""),
+                (str(predecessor), "PYTHONPATH=/untrusted"),
+            ):
+                with self.subTest(working_directory=working_directory, environment=environment), patch.object(
+                    probe,
+                    "_show",
+                    return_value={
+                        "LoadState": "loaded",
+                        "WorkingDirectory": working_directory,
+                        "Environment": environment,
+                        "Result": "success",
+                    },
+                ), patch.object(runtime.subprocess, "run", return_value=timer):
+                    self.assertFalse(probe.serving())
+
     def test_p3_gate_defaults_disabled_when_runtime_profile_does_not_enable_it(self):
         service = SimpleNamespace(
             lifecycle_v2_p3_promotion_enabled=False,
