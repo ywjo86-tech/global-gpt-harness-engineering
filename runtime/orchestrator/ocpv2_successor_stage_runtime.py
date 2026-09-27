@@ -38,6 +38,7 @@ from .project_onboarding import OnboardingRegistry
 from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND,
     LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+    LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
     LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND,
     LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
 )
@@ -779,6 +780,16 @@ class _P3CanaryFilteredTransport:
         self._transport.publish_projection(projection)
 
 
+class _P3PromotionFilteredTransport(_P3CanaryFilteredTransport):
+    """Receive only a P3 admission request during a bounded control poll."""
+
+    def receive(self, *, limit: int = 16):
+        receiver = getattr(self._transport, "receive_request_kind", None)
+        if not callable(receiver):
+            raise SuccessorStageRuntimeError("P3_PROMOTION_TRANSPORT_FILTER_REQUIRED")
+        return receiver(LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND, limit=limit)
+
+
 class _P3CanaryValidateFilteredTransport(_P3CanaryFilteredTransport):
     """Receive only the validation-only P3 request during a bounded poll."""
 
@@ -807,6 +818,8 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
     service = compose_service(config)
     if ControlMode(config.mode) == ControlMode.LIFECYCLE_V2_P3_CANARY:
         service.transport = _P3CanaryFilteredTransport(service.transport)
+    elif lifecycle_v2_p3_promotion_enabled_from_environment(config.environment):
+        service.transport = _P3PromotionFilteredTransport(service.transport)
     elif lifecycle_v2_p3_canary_validate_enabled_from_environment(config.environment):
         service.transport = _P3CanaryValidateFilteredTransport(service.transport)
     elif lifecycle_v2_p3_canary_validate_evidence_issue_enabled_from_environment(config.environment):

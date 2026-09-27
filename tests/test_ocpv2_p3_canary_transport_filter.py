@@ -7,6 +7,7 @@ from unittest.mock import patch
 from runtime.orchestrator import ocpv2_successor_stage_runtime as runtime
 from runtime.orchestrator.remote_control_envelope import (
     LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+    LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
 )
 from runtime.orchestrator.remote_operator_service import ControlMode
 
@@ -55,6 +56,23 @@ class _Service:
 
 
 class P3CanaryTransportFilterTests(unittest.TestCase):
+    def test_run_once_prefilters_p3_admission_before_service_poll(self):
+        transport = _Transport()
+        service = _Service(transport)
+        config = SimpleNamespace(
+            mode=ControlMode.ACTIVE,
+            environment={"OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED": "1"},
+        )
+
+        with patch.object(runtime, "compose_service", return_value=service):
+            result = runtime.run_once(config)
+
+        self.assertEqual(result["p3_promotion_admitted"], 0)
+        self.assertEqual(
+            transport.filtered_calls,
+            [(LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND, 16)],
+        )
+
     def test_run_once_prefilters_p3_canary_before_service_poll(self):
         transport = _Transport()
         service = _Service(transport)

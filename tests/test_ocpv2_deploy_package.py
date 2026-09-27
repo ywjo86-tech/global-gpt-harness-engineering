@@ -194,6 +194,15 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
         self.assertNotIn("OCP_FULL_PLAN_ACTIVATION_POLICY_REF=", text)
 
+    def test_p3_control_service_is_manual_and_has_no_canary_authority(self):
+        text = (DEPLOY_ROOT / "ocpv2-p3-control.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("WorkingDirectory=@P3_CONTROL_SOURCE_ROOT@", text)
+        self.assertIn("ocpv2_p3_control_runtime", text)
+        self.assertIn("OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertIn("OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_ENABLED=0", text)
+        self.assertNotIn("[Install]", text)
+        self.assertNotIn(".timer", text)
+
 
 if __name__ == "__main__":
     unittest.main()
