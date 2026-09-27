@@ -17,9 +17,12 @@ from runtime.orchestrator.p3_canary_validate_registration_request import (
 
 class P3CanaryValidateRegistrationRequestTests(unittest.TestCase):
     def _request(self, root: Path) -> dict:
-        (root / "plan.md").write_text("plan\n", encoding="utf-8")
-        (root / "spec.md").write_text("spec\n", encoding="utf-8")
-        for args in (("init",), ("config", "user.email", "test@example.invalid"), ("config", "user.name", "Test"), ("add", "plan.md", "spec.md"), ("commit", "-m", "P3 validation"), ("branch", "-M", "p3/test")):
+        plan = root / "docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md"
+        spec = root / "docs/harness/P3_CANARY_VALIDATE_SPEC.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("plan\n", encoding="utf-8")
+        spec.write_text("spec\n", encoding="utf-8")
+        for args in (("init",), ("config", "user.email", "test@example.invalid"), ("config", "user.name", "Test"), ("add", "docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md", "docs/harness/P3_CANARY_VALIDATE_SPEC.md"), ("commit", "-m", "P3 validation"), ("branch", "-M", "p3/test")):
             subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
         head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
         state = root / "state"; state.mkdir()
@@ -34,7 +37,7 @@ class P3CanaryValidateRegistrationRequestTests(unittest.TestCase):
         })
         evidence = issue_p3_canary_validate_evidence(state_root=state, project_alias="p3-project", candidate_run_id="p3-fresh-candidate", admission_request_id="p3-admission-001", admission_request_digest=admission.request_digest, admission_evidence_digest="b" * 64, admission_digest="c" * 64, approval_ref="P3_CANARY_VALIDATE").to_dict()
         digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
-        binding = create_p3_canary_validate_binding(project_alias="p3-project", candidate_run_id="p3-fresh-candidate", admission_request_id="p3-admission-001", admission_request_digest=admission.request_digest, admission_evidence_digest="b" * 64, admission_digest="c" * 64, expected_branch="p3/test", expected_head=head, approved_plan_path="plan.md", approved_plan_sha256=digest(root / "plan.md"), approved_spec_path="spec.md", approved_spec_sha256=digest(root / "spec.md"), approval_ref="P3_CANARY_VALIDATE", p3_canary_validate_evidence_digest=evidence["evidence_digest"])
+        binding = create_p3_canary_validate_binding(project_alias="p3-project", candidate_run_id="p3-fresh-candidate", admission_request_id="p3-admission-001", admission_request_digest=admission.request_digest, admission_evidence_digest="b" * 64, admission_digest="c" * 64, expected_branch="p3/test", expected_head=head, approved_plan_path="docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md", approved_plan_sha256=digest(plan), approved_spec_path="docs/harness/P3_CANARY_VALIDATE_SPEC.md", approved_spec_sha256=digest(spec), approval_ref="P3_CANARY_VALIDATE", p3_canary_validate_evidence_digest=evidence["evidence_digest"])
         return {"schema_version": "orchestration.lifecycle-v2-p3-canary-validate-registration-request.v1", "request_id": "p3-validate-001", "admission_request": admission.to_dict(), "admission_request_digest": admission.request_digest, "admission_evidence_digest": "b" * 64, "admission_digest": "c" * 64, "admission_status": "P3_CANARY_ADMISSION_READY", "binding": binding.to_dict(), "evidence": evidence}
 
     def test_accepts_only_exact_validation_lineage(self):

@@ -21,6 +21,8 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}\Z")
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_P3_PLAN = "docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md"
+_P3_SPEC = "docs/harness/P3_CANARY_VALIDATE_SPEC.md"
 
 
 class P3CanaryValidateBindingError(ValueError):
@@ -135,6 +137,11 @@ def validate_p3_canary_validate_binding(*, binding: P3CanaryValidateBinding | Ma
     root = Path(project_root).absolute()
     if root.is_symlink() or not root.is_dir() or root.resolve() != root:
         raise P3CanaryValidateBindingError("unsafe project root")
+    if (
+        sealed.approved_plan_path != _P3_PLAN
+        or sealed.approved_spec_path != _P3_SPEC
+    ):
+        raise P3CanaryValidateBindingError("P3 authority path mismatch")
     try:
         plan, _ = resolve_committed_project_file(root, sealed.approved_plan_path, "approved plan")
         spec, _ = resolve_committed_project_file(root, sealed.approved_spec_path, "approved spec")
