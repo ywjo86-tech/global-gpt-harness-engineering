@@ -753,7 +753,7 @@ def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> Lifec
     workspace = Path(str(receipt.get("canonical_successor_root") or "")).resolve(
         strict=True
     )
-    if workspace != config.repo_root.resolve(strict=True):
+    if workspace != Path.cwd().resolve(strict=True):
         raise SuccessorStageRuntimeError("P3_PROMOTION_STAGE_IDENTITY_MISMATCH")
     project_id = str(receipt.get("project_id") or "")
     if not project_id:
