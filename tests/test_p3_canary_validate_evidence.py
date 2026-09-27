@@ -9,6 +9,11 @@ from runtime.orchestrator.p3_canary_validate_evidence import (
     P3CanaryValidateEvidenceError,
     issue_p3_canary_validate_evidence,
 )
+from runtime.orchestrator.p3_canary_validate_binding import (
+    P3CanaryValidateBindingError,
+    create_p3_canary_validate_binding,
+    validate_p3_canary_validate_binding,
+)
 
 
 class P3CanaryValidateEvidenceTests(unittest.TestCase):
@@ -60,6 +65,31 @@ class P3CanaryValidateEvidenceTests(unittest.TestCase):
             kwargs["admission_digest"] = "not-a-digest"
             with self.assertRaisesRegex(P3CanaryValidateEvidenceError, "invalid admission digest"):
                 issue_p3_canary_validate_evidence(**kwargs)
+
+    def test_binding_requires_committed_artifacts_and_exact_evidence_lineage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "plan.md").write_text("P3 validation plan\n", encoding="utf-8")
+            (root / "spec.md").write_text("P3 validation spec\n", encoding="utf-8")
+            import subprocess
+            for args in (("init",), ("config", "user.email", "test@example.invalid"), ("config", "user.name", "Test"), ("add", "plan.md", "spec.md"), ("commit", "-m", "P3 plan"), ("branch", "-M", "p3/test")):
+                subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
+            head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+            evidence = issue_p3_canary_validate_evidence(**self._kwargs(root)).to_dict()
+            sha = lambda path: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+            binding = create_p3_canary_validate_binding(
+                project_alias=evidence["project_alias"], candidate_run_id=evidence["candidate_run_id"],
+                admission_request_id=evidence["admission_request_id"], admission_request_digest=evidence["admission_request_digest"],
+                admission_evidence_digest=evidence["admission_evidence_digest"], admission_digest=evidence["admission_digest"],
+                expected_branch="p3/test", expected_head=head, approved_plan_path="plan.md", approved_plan_sha256=sha(root / "plan.md"),
+                approved_spec_path="spec.md", approved_spec_sha256=sha(root / "spec.md"), approval_ref=evidence["approval_ref"],
+                p3_canary_validate_evidence_digest=evidence["evidence_digest"],
+            )
+            self.assertEqual(validate_p3_canary_validate_binding(binding=binding, project_root=root, evidence=evidence), binding)
+            altered = dict(evidence)
+            altered["candidate_run_id"] = "P3-OTHER"
+            with self.assertRaises(P3CanaryValidateBindingError):
+                validate_p3_canary_validate_binding(binding=binding, project_root=root, evidence=altered)
 
 
 if __name__ == "__main__":

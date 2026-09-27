@@ -50,6 +50,28 @@ class P3CanaryValidateEvidence:
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
 
+    @classmethod
+    def from_mapping(cls, raw: object) -> "P3CanaryValidateEvidence":
+        if not isinstance(raw, dict) or set(raw) != set(cls.__dataclass_fields__):
+            raise P3CanaryValidateEvidenceError("evidence fields mismatch")
+        unsigned = {
+            "schema_version": str(raw.get("schema_version") or ""),
+            "project_alias": _safe_id(str(raw.get("project_alias") or ""), "project alias"),
+            "candidate_run_id": _safe_id(str(raw.get("candidate_run_id") or ""), "candidate run ID"),
+            "admission_request_id": _safe_id(str(raw.get("admission_request_id") or ""), "admission request ID"),
+            "admission_request_digest": _digest(str(raw.get("admission_request_digest") or ""), "admission request digest"),
+            "admission_evidence_digest": _digest(str(raw.get("admission_evidence_digest") or ""), "admission evidence digest"),
+            "admission_digest": _digest(str(raw.get("admission_digest") or ""), "admission digest"),
+            "approval_ref": _safe_id(str(raw.get("approval_ref") or ""), "approval reference"),
+            "scope": str(raw.get("scope") or ""),
+        }
+        if unsigned["schema_version"] != _SCHEMA or unsigned["scope"] != "P3_CANARY_VALIDATE":
+            raise P3CanaryValidateEvidenceError("unsupported evidence")
+        evidence_digest = _digest(str(raw.get("evidence_digest") or ""), "evidence digest")
+        if evidence_digest != hashlib.sha256(_canonical(unsigned)).hexdigest():
+            raise P3CanaryValidateEvidenceError("evidence digest mismatch")
+        return cls(**unsigned, evidence_digest=evidence_digest)
+
 
 def issue_p3_canary_validate_evidence(
     *,
