@@ -1,0 +1,10 @@
+{
+  "dashboard_qualification_head": "c13e257fcaffc2e994785499ced5b8efe71249b7",
+  "harness_source_head": "094c4ab87cfdbdf31745e1d78946a1c82bec7eeb",
+  "live_activated": false,
+  "orphan_cleanup_performed": false,
+  "runtime_current_switched": false,
+  "schema_version": "gch.ai-office-harness-upgrade-release-candidate.v1",
+  "services_restarted": false,
+  "status": "QUALIFIED_CANDIDATE"
+}
