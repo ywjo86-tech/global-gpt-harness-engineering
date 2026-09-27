@@ -227,7 +227,7 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
         }
         config = _config()
         config.repo_root = workspace
-        with patch.object(
+        with patch.object(runtime.Path, "cwd", return_value=workspace), patch.object(
             runtime,
             "_readonly_git",
             side_effect=[_request().expected_branch, _request().expected_head],
@@ -264,13 +264,16 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
             workspace.mkdir()
             other.mkdir()
             config = _config()
-            config.repo_root = workspace
+            config.repo_root = root / "predecessor"
+            config.repo_root.mkdir()
             receipt = {
                 "status": "STAGED",
                 "canonical_successor_root": str(other),
                 "project_id": "HARNESS-LIFECYCLE-V2-SUCCESSOR-20260925",
             }
-            with patch.object(runtime, "_matching_staged_receipt", return_value=receipt):
+            with patch.object(runtime.Path, "cwd", return_value=workspace), patch.object(
+                runtime, "_matching_staged_receipt", return_value=receipt
+            ):
                 with self.assertRaisesRegex(
                     runtime.SuccessorStageRuntimeError,
                     "P3_PROMOTION_STAGE_IDENTITY_MISMATCH",
