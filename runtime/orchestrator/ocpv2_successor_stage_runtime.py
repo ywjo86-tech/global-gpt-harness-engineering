@@ -749,16 +749,15 @@ def _serving_preservation_is_current(receipt: Mapping[str, Any]) -> bool:
 
 
 def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> LifecycleV2P3PromotionAdmissionEvidence:
-    mapping_root = _mapping_root(config)
-    entries = [
-        item
-        for item in OnboardingRegistry(mapping_root / "aliases").entries()
-        if item.get("alias") == request.project_alias
-    ]
-    if len(entries) != 1:
-        raise SuccessorStageRuntimeError("P3_PROMOTION_ALIAS_EVIDENCE_UNAVAILABLE")
-    entry = entries[0]
-    workspace = Path(str(entry["project_root"])).resolve(strict=True)
+    receipt = _matching_staged_receipt(config, request)
+    workspace = Path(str(receipt.get("canonical_successor_root") or "")).resolve(
+        strict=True
+    )
+    if workspace != config.repo_root.resolve(strict=True):
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STAGE_IDENTITY_MISMATCH")
+    project_id = str(receipt.get("project_id") or "")
+    if not project_id:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STAGE_IDENTITY_MISMATCH")
     observed_branch = _readonly_git(workspace, "symbolic-ref", "--short", "HEAD")
     observed_head = _readonly_git(workspace, "rev-parse", "HEAD")
 
@@ -772,7 +771,7 @@ def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> Lifec
         harness_state
         / "_workspace"
         / "production-full-plan-jobs"
-        / str(entry["project_id"])
+        / project_id
         / f"{request.candidate_run_id}.job.json"
     )
     candidate_prev = candidate_path.with_suffix(candidate_path.suffix + ".prev")
@@ -785,7 +784,6 @@ def _collect_p3_promotion_evidence(config: base.RuntimeConfig, request) -> Lifec
         else "ABSENT"
     )
 
-    receipt = _matching_staged_receipt(config, request)
     predecessor_serving = _ReadOnlyPredecessorServiceStateProbe(config.repo_root).serving()
     runtime_current_points_to_predecessor = _serving_preservation_is_current(receipt)
 
