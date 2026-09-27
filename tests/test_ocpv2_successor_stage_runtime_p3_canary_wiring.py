@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -118,6 +119,25 @@ def _config(**env_changes) -> SimpleNamespace:
 
 
 class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
+    def test_waiting_handoff_must_match_activation_admission_lineage(self):
+        request = _activation_request()
+        evidence = _evidence()
+        admission = evaluate_p3_promotion_admission(request.admission_request, evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            config = _config()
+            config.state_root = Path(directory)
+            runtime._seal_p3_waiting_handoff(config, request.admission_request, evidence, admission)
+
+            handoff = runtime._load_p3_waiting_handoff(config, request)
+            self.assertEqual(handoff["candidate_run_id"], CANDIDATE)
+
+            changed = _activation_request()
+            changed = changed.__class__.from_mapping(
+                {**changed.to_dict(), "admission_evidence_digest": "e" * 64}
+            )
+            with self.assertRaisesRegex(runtime.SuccessorStageRuntimeError, "P3_HANDOFF_LINEAGE_MISMATCH"):
+                runtime._load_p3_waiting_handoff(config, changed)
+
     def test_p3_canary_activation_defaults_disabled(self):
         service = SimpleNamespace(
             activate_full_plan_authorized=lambda envelope: (_ for _ in ()).throw(
@@ -220,16 +240,27 @@ class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
             authorization=None,
             envelope_sha256="f" * 64,
         )
-        with patch.object(runtime, "_collect_p3_promotion_evidence", return_value=_evidence()) as collect:
+        handoff = {
+            "state": "WAITING_FOR_AUTHORIZED_ACTIVATION",
+        }
+        validate_evidence = SimpleNamespace(evidence_digest="9" * 64)
+        with (
+            patch.object(runtime, "_collect_p3_promotion_evidence", return_value=_evidence()) as collect,
+            patch.object(runtime, "_load_p3_waiting_handoff", return_value=handoff) as load_handoff,
+            patch.object(runtime, "issue_p3_canary_validate_evidence", return_value=validate_evidence) as issue,
+        ):
             composed = runtime._wire_p3_canary_activation(config, service)
             projection = composed.activate_p3_canary_authorized(envelope)
 
         collect.assert_called_once_with(config, request.admission_request)
+        load_handoff.assert_called_once_with(config, request)
+        issue.assert_called_once()
         self.assertEqual(len(delegated), 1)
         self.assertEqual(enqueue_projection_flags, [False])
         self.assertEqual(projection["result_class"], "P3_CANARY_ACTIVATED")
         self.assertEqual(projection["candidate_run_id"], CANDIDATE)
         self.assertEqual(projection["full_plan_result_status"], "FULL_PLAN_REGISTERED")
+        self.assertEqual(projection["p3_canary_validate_evidence_digest"], "9" * 64)
         self.assertTrue(projection["authorization"]["candidate_run_registration_authorized"])
         self.assertFalse(projection["authorization"]["runtime_current_switch_authorized"])
         self.assertFalse(projection["authorization"]["existing_run_migration_authorized"])

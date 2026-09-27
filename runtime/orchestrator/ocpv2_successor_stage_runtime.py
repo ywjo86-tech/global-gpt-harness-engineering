@@ -29,6 +29,10 @@ from .lifecycle_v2_p3_promotion_admission import (
     LifecycleV2P3PromotionAdmissionEvidence,
     evaluate_p3_promotion_admission,
 )
+from .p3_canary_validate_evidence import (
+    P3CanaryValidateEvidenceError,
+    issue_p3_canary_validate_evidence,
+)
 from .project_onboarding import OnboardingRegistry
 from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND,
@@ -143,6 +147,43 @@ def _seal_p3_waiting_handoff(config: base.RuntimeConfig, request, evidence, resu
             path.unlink(missing_ok=True)
         finally:
             raise
+    return handoff
+
+
+def _load_p3_waiting_handoff(config: base.RuntimeConfig, request) -> dict[str, Any]:
+    if config.state_root is None:
+        raise SuccessorStageRuntimeError("P3_PROMOTION_STATE_ROOT_REQUIRED")
+    admission_digest = str(request.admission_digest or "")
+    if not _SHA256.fullmatch(admission_digest):
+        raise SuccessorStageRuntimeError("P3_HANDOFF_ADMISSION_DIGEST_INVALID")
+    root = Path(config.state_root) / "p3-lifecycle-handoffs"
+    if root.is_symlink() or not root.is_dir() or root.resolve(strict=True) != root:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNSAFE")
+    path = root / f"{admission_digest}.waiting.json"
+    if path.is_symlink() or not path.is_file():
+        raise SuccessorStageRuntimeError("P3_HANDOFF_WAITING_REQUIRED")
+    try:
+        raw = path.read_bytes()
+        handoff = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNREADABLE") from exc
+    if raw != _canonical_json_bytes(handoff):
+        raise SuccessorStageRuntimeError("P3_HANDOFF_STATE_UNREADABLE")
+    expected = {
+        "schema_version": _P3_HANDOFF_SCHEMA,
+        "state": _P3_HANDOFF_WAITING,
+        "last_completed_step": "P3_PROMOTION_ADMISSION",
+        "next_required_request_kind": LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+        "project_alias": request.admission_request.project_alias,
+        "candidate_run_id": request.admission_request.candidate_run_id,
+        "admission_request_id": request.admission_request.request_id,
+        "admission_request_digest": request.admission_request_digest,
+        "admission_evidence_digest": request.admission_evidence_digest,
+        "admission_digest": admission_digest,
+        "authorization_required": True,
+    }
+    if handoff != expected:
+        raise SuccessorStageRuntimeError("P3_HANDOFF_LINEAGE_MISMATCH")
     return handoff
 
 
@@ -508,6 +549,20 @@ def _wire_p3_canary_activation(config: base.RuntimeConfig, service):
         evidence = _collect_p3_promotion_evidence(config, admission_request)
         admission = evaluate_p3_promotion_admission(admission_request, evidence)
         authorization = evaluate_p3_canary_activation(request, admission)
+        _load_p3_waiting_handoff(config, request)
+        try:
+            validate_evidence = issue_p3_canary_validate_evidence(
+                state_root=config.state_root,
+                project_alias=admission_request.project_alias,
+                candidate_run_id=admission_request.candidate_run_id,
+                admission_request_id=admission_request.request_id,
+                admission_request_digest=request.admission_request_digest,
+                admission_evidence_digest=request.admission_evidence_digest,
+                admission_digest=request.admission_digest,
+                approval_ref=policy_ref,
+            )
+        except P3CanaryValidateEvidenceError as exc:
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_INVALID") from exc
         delegated = _P3FullPlanDelegation(
             message_id=envelope.message_id,
             request_kind=APPROVED_FULL_PLAN_ACTIVATION_KIND,
@@ -532,6 +587,7 @@ def _wire_p3_canary_activation(config: base.RuntimeConfig, service):
             "result_class": "P3_CANARY_ACTIVATED",
             "full_plan_result_status": str(result["result_status"]),
             "full_plan_activation_digest": str(result.get("activation_digest") or ""),
+            "p3_canary_validate_evidence_digest": validate_evidence.evidence_digest,
             "authorization": authorization.to_dict(),
         }
 
