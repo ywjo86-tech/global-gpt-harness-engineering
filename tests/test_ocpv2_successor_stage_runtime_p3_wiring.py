@@ -220,28 +220,62 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), handoff)
 
     def _collect_with_state(self, workspace: Path, harness_state: Path):
-        entry = {
-            "alias": _request().project_alias,
-            "project_root": str(workspace),
+        receipt = {
+            "status": "STAGED",
+            "canonical_successor_root": str(workspace),
             "project_id": "HARNESS-LIFECYCLE-V2-SUCCESSOR-20260925",
         }
-        registry = SimpleNamespace(entries=lambda: [entry])
-        with patch.object(runtime, "_mapping_root", return_value=workspace), patch.object(
-            runtime, "OnboardingRegistry", return_value=registry
-        ), patch.object(
+        config = _config()
+        config.repo_root = workspace
+        with patch.object(
             runtime,
             "_readonly_git",
             side_effect=[_request().expected_branch, _request().expected_head],
         ), patch.object(
             runtime, "resolve_harness_state_root", return_value=harness_state
         ), patch.object(
-            runtime, "_matching_staged_receipt", return_value={"status": "STAGED"}
+            runtime, "_matching_staged_receipt", return_value=receipt
         ), patch.object(
             runtime._ReadOnlyPredecessorServiceStateProbe, "serving", return_value=True
         ), patch.object(
             runtime, "_serving_preservation_is_current", return_value=True
         ):
-            return runtime._collect_p3_promotion_evidence(_config(), _request())
+            return runtime._collect_p3_promotion_evidence(config, _request())
+
+    def test_p3_evidence_uses_staged_identity_without_generic_alias_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "successor"
+            workspace.mkdir()
+            harness_state = Path(tmp) / "harness-state"
+            harness_state.mkdir()
+            with patch.object(
+                runtime.OnboardingRegistry,
+                "entries",
+                side_effect=AssertionError("generic alias mapping must not be used"),
+            ):
+                evidence = self._collect_with_state(workspace, harness_state)
+            self.assertEqual(evidence.observed_head, _request().expected_head)
+
+    def test_p3_evidence_rejects_staged_root_outside_runtime_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "successor"
+            other = root / "other"
+            workspace.mkdir()
+            other.mkdir()
+            config = _config()
+            config.repo_root = workspace
+            receipt = {
+                "status": "STAGED",
+                "canonical_successor_root": str(other),
+                "project_id": "HARNESS-LIFECYCLE-V2-SUCCESSOR-20260925",
+            }
+            with patch.object(runtime, "_matching_staged_receipt", return_value=receipt):
+                with self.assertRaisesRegex(
+                    runtime.SuccessorStageRuntimeError,
+                    "P3_PROMOTION_STAGE_IDENTITY_MISMATCH",
+                ):
+                    runtime._collect_p3_promotion_evidence(config, _request())
 
     def test_missing_harness_state_cannot_be_interpreted_as_absent_candidate(self):
         with tempfile.TemporaryDirectory() as tmp:
