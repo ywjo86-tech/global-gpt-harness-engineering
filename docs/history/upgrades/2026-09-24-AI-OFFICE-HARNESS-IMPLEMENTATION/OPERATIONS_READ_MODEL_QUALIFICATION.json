@@ -1,11 +1,30 @@
 {
   "authority_change": false,
-  "head_before_qualification_commit": "5f01829bba533bcc825eb79f90bd97669cf887c4",
-  "projection_only_bridge": true,
+  "branch": "implementation-ai-office-harness-ocp-20260924",
+  "gate": "2",
+  "gate_3_entered": false,
+  "plan_sha256": "4f197c0816b813e83394d092c80d6e848c6a125ce50fd75230448963e9b2ad99",
+  "project_id": "AI-OFFICE-HARNESS-UPGRADE-OCP-20260924",
   "public_schema": "orchestration.operations-read-model.v1",
+  "qualification": {
+    "authority_drift": "NONE",
+    "core_reconfirmation": "PASS",
+    "fresh_track_a_suite": "PASS"
+  },
+  "run_id": "AI-OFFICE-HARNESS-OCP-ACT-20260924-01",
+  "runtime_current_changed": false,
   "schema_version": "gch.operations-read-model-qualification.v1",
-  "self_diagnosis_projection": "READ_ONLY",
+  "source_head": "df8a691f727be27ee4e8d9102bb08b448228c929",
+  "spec_sha256": "ec89a69e434bec237bc614037a5e52fba614683107719434bd13a1a774936017",
   "status": "PASS",
-  "test_count": 20,
+  "tested_modules": [
+    "tests.test_operations_read_model",
+    "tests.test_incident_projection",
+    "tests.test_process_lifecycle_diagnostics",
+    "tests.test_jarvis_bridge_operations_projection",
+    "tests.test_operator_console_projection",
+    "tests.test_ai_office_reporting",
+    "tests.test_ai_office_authority_negative_space"
+  ],
   "track": "A"
 }
