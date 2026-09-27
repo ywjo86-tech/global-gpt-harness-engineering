@@ -1005,13 +1005,17 @@ def _wire_p3_canary_validate_registration(config: base.RuntimeConfig, service):
         ):
             raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_ADMISSION_LINEAGE_MISMATCH")
         _load_p3_waiting_handoff(config, request)
-        entries = [item for item in OnboardingRegistry(_mapping_root(config) / "aliases").entries() if item.get("alias") == request.admission_request.project_alias]
-        if len(entries) != 1:
+        project_root = Path.cwd().absolute()
+        if (
+            project_root.is_symlink()
+            or not project_root.is_dir()
+            or project_root.resolve() != project_root
+        ):
             raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_PROJECT_UNAVAILABLE")
         try:
             receipt = register_p3_canary_validate(
                 state_root=config.state_root,
-                project_root=Path(str(entries[0]["project_root"])),
+                project_root=project_root,
                 binding=request.binding,
                 evidence=request.evidence.to_dict(),
             )
