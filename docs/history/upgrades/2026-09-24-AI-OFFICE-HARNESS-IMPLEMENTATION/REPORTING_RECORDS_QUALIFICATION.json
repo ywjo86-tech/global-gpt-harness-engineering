@@ -1,0 +1,26 @@
+{
+  "branch": "implementation-ai-office-harness-ocp-20260924",
+  "execution_retry_on_report_failure": false,
+  "gate": "2",
+  "gate_3_entered": false,
+  "llmwiki_runtime_truth": false,
+  "notion_runtime_truth": false,
+  "operations_report_schema_preserved": "ai-office.report.v1",
+  "plan_sha256": "4f197c0816b813e83394d092c80d6e848c6a125ce50fd75230448963e9b2ad99",
+  "project_id": "AI-OFFICE-HARNESS-UPGRADE-OCP-20260924",
+  "qualification": {
+    "authority_drift": "NONE",
+    "fresh_gate_2_integrated_suite": "PASS",
+    "new_reporting_suite": "PASS",
+    "operational_reporting_regression": "PASS"
+  },
+  "run_id": "AI-OFFICE-HARNESS-OCP-ACT-20260924-01",
+  "runtime_current_changed": false,
+  "schema_version": "gch.reporting-records-qualification.v1",
+  "source_head": "26bf7c9da6c07ca9881e2007bc86d125ae252c27",
+  "spec_sha256": "ec89a69e434bec237bc614037a5e52fba614683107719434bd13a1a774936017",
+  "status": "PASS",
+  "test_count": 53,
+  "track": "C",
+  "work_record_schema": "ai-office.report-data.v1"
+}
