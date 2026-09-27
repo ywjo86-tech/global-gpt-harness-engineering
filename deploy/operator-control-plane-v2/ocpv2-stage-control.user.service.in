@@ -1,0 +1,17 @@
+[Unit]
+Description=OCPv2 bounded successor-stage control poll
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@STAGE_CONTROL_SOURCE_ROOT@
+Environment=OCP_HOST_INSPECTION_ENABLED=0
+Environment=OCP_WORK_ACTIVATION_ENABLED=0
+Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0
+Environment=OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED=0
+Environment=OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_ENABLED=0
+Environment=GCH_NEW_ACTIVATION_LIFECYCLE_MODE=V2
+EnvironmentFile=%h/.config/gch/ocpv2-stage-control.env
+ExecStart=/usr/bin/python3 -m runtime.orchestrator.ocpv2_stage_control_runtime --env-file %h/.config/gch/ocpv2-stage-control.env
+NoNewPrivileges=true
+PrivateTmp=true

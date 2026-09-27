@@ -203,6 +203,15 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertNotIn("[Install]", text)
         self.assertNotIn(".timer", text)
 
+    def test_stage_control_service_is_manual_and_has_no_p3_authority(self):
+        text = (DEPLOY_ROOT / "ocpv2-stage-control.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("WorkingDirectory=@STAGE_CONTROL_SOURCE_ROOT@", text)
+        self.assertIn("ocpv2_stage_control_runtime", text)
+        self.assertIn("OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertIn("OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED=0", text)
+        self.assertNotIn("[Install]", text)
+        self.assertNotIn(".timer", text)
+
 
 if __name__ == "__main__":
     unittest.main()

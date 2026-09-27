@@ -41,6 +41,7 @@ from .remote_control_envelope import (
     LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
     LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND,
     LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
+    SUCCESSOR_RELEASE_STAGE_KIND,
 )
 from .remote_operator_service import ControlMode, RemoteOperatorServiceError
 from .successor_release_stage_gateway import (
@@ -814,6 +815,16 @@ class _P3CanaryFilteredTransport:
         self._transport.publish_projection(projection)
 
 
+class _SuccessorStageFilteredTransport(_P3CanaryFilteredTransport):
+    """Receive only a successor-stage request during a bounded control poll."""
+
+    def receive(self, *, limit: int = 16):
+        receiver = getattr(self._transport, "receive_request_kind", None)
+        if not callable(receiver):
+            raise SuccessorStageRuntimeError("SUCCESSOR_STAGE_TRANSPORT_FILTER_REQUIRED")
+        return receiver(SUCCESSOR_RELEASE_STAGE_KIND, limit=limit)
+
+
 class _P3PromotionFilteredTransport(_P3CanaryFilteredTransport):
     """Receive only a P3 admission request during a bounded control poll."""
 
@@ -850,7 +861,9 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         result["p3_canary_activated"] = 0
         return result
     service = compose_service(config)
-    if ControlMode(config.mode) == ControlMode.LIFECYCLE_V2_P3_CANARY:
+    if successor_release_stage_enabled_from_environment(config.environment):
+        service.transport = _SuccessorStageFilteredTransport(service.transport)
+    elif ControlMode(config.mode) == ControlMode.LIFECYCLE_V2_P3_CANARY:
         service.transport = _P3CanaryFilteredTransport(service.transport)
     elif lifecycle_v2_p3_promotion_enabled_from_environment(config.environment):
         service.transport = _P3PromotionFilteredTransport(service.transport)
