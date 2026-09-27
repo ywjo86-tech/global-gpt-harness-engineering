@@ -21,6 +21,7 @@ from .remote_control_envelope import (
     HOST_INSPECTION_KIND,
     LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
     LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND,
+    LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
     LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
     PROJECT_ONBOARDING_KIND,
     SUCCESSOR_RELEASE_STAGE_KIND,
@@ -28,6 +29,7 @@ from .remote_control_envelope import (
     RemoteFullPlanActivationAuthorization,
     RemoteLifecycleV2P3CanaryActivationAuthorization,
     RemoteLifecycleV2P3CanaryValidateAuthorization,
+    RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization,
     RemoteLifecycleV2P3PromotionAuthorization,
     RemoteProjectOnboardingAuthorization,
     RemoteSuccessorReleaseStageAuthorization,
@@ -88,6 +90,7 @@ class ServicePollResult:
     p3_promotion_admitted: int = 0
     p3_canary_activated: int = 0
     p3_canary_validate_registered: int = 0
+    p3_canary_validate_evidence_issued: int = 0
 
 
 class RemoteOperatorService:
@@ -128,6 +131,9 @@ class RemoteOperatorService:
         register_p3_canary_validate_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         lifecycle_v2_p3_canary_validate_enabled: bool = False,
         lifecycle_v2_p3_canary_validate_policy_ref: str = "",
+        issue_p3_canary_validate_evidence_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        lifecycle_v2_p3_canary_validate_evidence_enabled: bool = False,
+        lifecycle_v2_p3_canary_validate_evidence_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -161,6 +167,9 @@ class RemoteOperatorService:
         self.register_p3_canary_validate_authorized = register_p3_canary_validate_authorized
         self.lifecycle_v2_p3_canary_validate_enabled = bool(lifecycle_v2_p3_canary_validate_enabled)
         self.lifecycle_v2_p3_canary_validate_policy_ref = str(lifecycle_v2_p3_canary_validate_policy_ref or "")
+        self.issue_p3_canary_validate_evidence_authorized = issue_p3_canary_validate_evidence_authorized
+        self.lifecycle_v2_p3_canary_validate_evidence_enabled = bool(lifecycle_v2_p3_canary_validate_evidence_enabled)
+        self.lifecycle_v2_p3_canary_validate_evidence_policy_ref = str(lifecycle_v2_p3_canary_validate_evidence_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -295,6 +304,11 @@ class RemoteOperatorService:
         return {"schema_version": "orchestration.remote-p3-canary-validate-registration-status-projection.v1", "message_id": envelope.message_id, "request_id": payload.request_id, "project_alias": payload.admission_request.project_alias, "request_digest": payload.request_digest, "candidate_run_id": payload.admission_request.candidate_run_id, "result_class": str(result_class)}
 
     @staticmethod
+    def _p3_canary_validate_evidence_status_projection(envelope: RemoteControlEnvelopeV1, result_class: str) -> dict[str, Any]:
+        payload = envelope.payload
+        return {"schema_version": "orchestration.remote-p3-canary-validate-evidence-issue-status-projection.v1", "message_id": envelope.message_id, "request_id": payload.request_id, "project_alias": payload.admission_request.project_alias, "request_digest": payload.request_digest, "candidate_run_id": payload.admission_request.candidate_run_id, "result_class": str(result_class)}
+
+    @staticmethod
     def _recover_expired_remote_control(
         raw: RawControlEnvelope,
         exc: Exception,
@@ -347,7 +361,7 @@ class RemoteOperatorService:
 
         received = validated = executed = diagnosed = projected = acknowledged = blocked = 0
         inspected = activated = full_plan_activated = onboarded = successor_release_staged = 0
-        p3_promotion_admitted = p3_canary_activated = p3_canary_validate_registered = 0
+        p3_promotion_admitted = p3_canary_activated = p3_canary_validate_registered = p3_canary_validate_evidence_issued = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             expired_remote_control = False
@@ -392,6 +406,8 @@ class RemoteOperatorService:
                     )
                 elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND:
                     projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_EXPIRED")
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
+                    projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_EXPIRED")
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
@@ -621,6 +637,21 @@ class RemoteOperatorService:
                             p3_canary_validate_registered += 1
                         except Exception:
                             projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_ERROR"); blocked += 1
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
+                    if resolved_mode not in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}:
+                        projection = self._p3_canary_validate_evidence_status_projection(envelope, "MODE_BLOCKED"); blocked += 1
+                    elif not self.lifecycle_v2_p3_canary_validate_evidence_enabled or self.issue_p3_canary_validate_evidence_authorized is None:
+                        projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_DISABLED"); blocked += 1
+                    elif not isinstance(envelope.authorization, RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization) or not self.lifecycle_v2_p3_canary_validate_evidence_policy_ref or envelope.authorization.lifecycle_v2_p3_canary_validate_evidence_policy_ref != self.lifecycle_v2_p3_canary_validate_evidence_policy_ref:
+                        projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_AUTHORIZATION_MISMATCH"); blocked += 1
+                    else:
+                        try:
+                            projection = self.issue_p3_canary_validate_evidence_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("P3 validation evidence issue result projection is malformed")
+                            p3_canary_validate_evidence_issued += 1
+                        except Exception:
+                            projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_ERROR"); blocked += 1
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
@@ -735,4 +766,5 @@ class RemoteOperatorService:
             p3_promotion_admitted=p3_promotion_admitted,
             p3_canary_activated=p3_canary_activated,
             p3_canary_validate_registered=p3_canary_validate_registered,
+            p3_canary_validate_evidence_issued=p3_canary_validate_evidence_issued,
         )

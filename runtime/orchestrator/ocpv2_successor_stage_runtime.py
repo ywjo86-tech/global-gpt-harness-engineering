@@ -39,6 +39,7 @@ from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND,
     LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
     LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND,
+    LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
 )
 from .remote_operator_service import ControlMode, RemoteOperatorServiceError
 from .successor_release_stage_gateway import (
@@ -70,6 +71,11 @@ _P3_VALIDATE_ENV_KEYS = {
     "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_POLICY_REF",
     "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_POLICY_DIGEST",
 }
+_P3_VALIDATE_EVIDENCE_ENV_KEYS = {
+    "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_ENABLED",
+    "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_REF",
+    "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_DIGEST",
+}
 _POLICY_REF = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _P3_HANDOFF_SCHEMA = "orchestration.lifecycle-v2-p3-handoff.v1"
@@ -77,7 +83,7 @@ _P3_HANDOFF_WAITING = "WAITING_FOR_AUTHORIZED_ACTIVATION"
 
 # Extending the legacy parser allow-list never enables any capability. Every
 # feature remains independently default-disabled below.
-base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS | _P3_ENV_KEYS | _P3_CANARY_ENV_KEYS | _P3_VALIDATE_ENV_KEYS)
+base._OPTIONAL_ENV.update(_STAGE_ENV_KEYS | _P3_ENV_KEYS | _P3_CANARY_ENV_KEYS | _P3_VALIDATE_ENV_KEYS | _P3_VALIDATE_EVIDENCE_ENV_KEYS)
 
 
 class SuccessorStageRuntimeError(ValueError):
@@ -210,6 +216,24 @@ def lifecycle_v2_p3_canary_activation_enabled_from_environment(
 
 def lifecycle_v2_p3_canary_validate_enabled_from_environment(environment: Mapping[str, str]) -> bool:
     return str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_ENABLED") or "").strip() == "1"
+
+
+def lifecycle_v2_p3_canary_validate_evidence_issue_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    return str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_ENABLED") or "").strip() == "1"
+
+
+def _safe_p3_validate_evidence_issue_policy_ref(environment: Mapping[str, str]) -> str:
+    value = str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_REF") or "").strip()
+    if not value or ".." in value or not _POLICY_REF.fullmatch(value):
+        raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_REQUIRED")
+    return value
+
+
+def _safe_p3_validate_evidence_issue_policy_digest(environment: Mapping[str, str]) -> str:
+    value = str(environment.get("OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_DIGEST") or "").strip()
+    if not _SHA256.fullmatch(value):
+        raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_DIGEST_REQUIRED")
+    return value
 
 
 def _safe_p3_validate_policy_ref(environment: Mapping[str, str]) -> str:
@@ -671,9 +695,36 @@ def _wire_p3_canary_validate_registration(config: base.RuntimeConfig, service):
     return service
 
 
+def _wire_p3_canary_validate_evidence_issue(config: base.RuntimeConfig, service):
+    if not lifecycle_v2_p3_canary_validate_evidence_issue_enabled_from_environment(config.environment):
+        return service
+    policy_ref = _safe_p3_validate_evidence_issue_policy_ref(config.environment)
+    _safe_p3_validate_evidence_issue_policy_digest(config.environment)
+
+    def issue_p3_validate_evidence(envelope) -> Mapping[str, Any]:
+        request = envelope.payload
+        if request.approval_ref != policy_ref:
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_ISSUE_POLICY_MISMATCH")
+        observed = _collect_p3_promotion_evidence(config, request.admission_request)
+        admission = evaluate_p3_promotion_admission(request.admission_request, observed)
+        if (admission.status != request.admission_status or admission.request_digest != request.admission_request_digest or admission.evidence_digest != request.admission_evidence_digest or admission.admission_digest != request.admission_digest):
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_ISSUE_ADMISSION_LINEAGE_MISMATCH")
+        try:
+            evidence = issue_p3_canary_validate_evidence(state_root=config.state_root, project_alias=request.admission_request.project_alias, candidate_run_id=request.admission_request.candidate_run_id, admission_request_id=request.admission_request.request_id, admission_request_digest=request.admission_request_digest, admission_evidence_digest=request.admission_evidence_digest, admission_digest=request.admission_digest, approval_ref=request.approval_ref)
+        except P3CanaryValidateEvidenceError as exc:
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_ISSUE_INVALID") from exc
+        return {"schema_version":"orchestration.remote-p3-canary-validate-evidence-issue-status-projection.v1","message_id":envelope.message_id,"request_id":request.request_id,"project_alias":request.admission_request.project_alias,"request_digest":request.request_digest,"candidate_run_id":request.admission_request.candidate_run_id,"result_class":"P3_CANARY_VALIDATE_EVIDENCE_ISSUED","evidence":evidence.to_dict()}
+
+    service.issue_p3_canary_validate_evidence_authorized = issue_p3_validate_evidence
+    service.lifecycle_v2_p3_canary_validate_evidence_enabled = True
+    service.lifecycle_v2_p3_canary_validate_evidence_policy_ref = policy_ref
+    return service
+
+
 def compose_service(config: base.RuntimeConfig):
     service = base._compose_service(config)
     service = _wire_p3_promotion(config, service)
+    service = _wire_p3_canary_validate_evidence_issue(config, service)
     service = _wire_p3_canary_validate_registration(config, service)
     service = _wire_p3_canary_activation(config, service)
 
@@ -738,6 +789,14 @@ class _P3CanaryValidateFilteredTransport(_P3CanaryFilteredTransport):
         return receiver(LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND, limit=limit)
 
 
+class _P3CanaryValidateEvidenceIssueFilteredTransport(_P3CanaryFilteredTransport):
+    def receive(self, *, limit: int = 16):
+        receiver = getattr(self._transport, "receive_request_kind", None)
+        if not callable(receiver):
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_EVIDENCE_ISSUE_TRANSPORT_FILTER_REQUIRED")
+        return receiver(LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND, limit=limit)
+
+
 def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         result = base.run_once(config)
@@ -750,6 +809,8 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         service.transport = _P3CanaryFilteredTransport(service.transport)
     elif lifecycle_v2_p3_canary_validate_enabled_from_environment(config.environment):
         service.transport = _P3CanaryValidateFilteredTransport(service.transport)
+    elif lifecycle_v2_p3_canary_validate_evidence_issue_enabled_from_environment(config.environment):
+        service.transport = _P3CanaryValidateEvidenceIssueFilteredTransport(service.transport)
     result = service.poll_once(mode=config.mode)
     return {
         "mode": result.mode,
@@ -768,6 +829,7 @@ def run_once(config: base.RuntimeConfig) -> dict[str, Any]:
         "p3_promotion_admitted": result.p3_promotion_admitted,
         "p3_canary_activated": result.p3_canary_activated,
         "p3_canary_validate_registered": getattr(result, "p3_canary_validate_registered", 0),
+        "p3_canary_validate_evidence_issued": getattr(result, "p3_canary_validate_evidence_issued", 0),
     }
 
 
