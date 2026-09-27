@@ -675,6 +675,94 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             outbox.enqueue_projection(projection)
         return projection.to_dict()
 
+    def recover_full_plan(envelope):
+        """Read and verify an already-registered Full Plan activation."""
+        if (
+            full_plan_authority_root is None
+            or activation_release is None
+            or full_plan_activation_store is None
+        ):
+            raise RuntimeServiceError(
+                "FULL_PLAN_ACTIVATION_DISABLED"
+            )
+
+        recovery_payload = getattr(
+            envelope.payload,
+            "full_plan_activation",
+            envelope.payload,
+        )
+
+        bundle = validate_approved_full_plan_binding(
+            recovery_payload,
+            authority_root=full_plan_authority_root,
+            runtime_release=activation_release,
+            harness_state_root=harness_state_root,
+        )
+
+        receipt = full_plan_activation_store.load_existing(
+            bundle.activation_request_id
+        )
+
+        if receipt is None:
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_RECEIPT_MISSING"
+            )
+
+        if (
+            receipt.activation_request_id
+            != bundle.activation_request_id
+            or receipt.run_id != bundle.activation_request_id
+            or receipt.bundle_digest != bundle.bundle_digest
+            or receipt.executable_authority_bundle_digest
+            != bundle.bundle_digest
+        ):
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_BINDING_MISMATCH"
+            )
+
+        from pathlib import Path as _RecoveryPath
+        from .production_full_plan_entry import (
+            recover_registered_job_state_after_external_binding_drift,
+        )
+
+        try:
+            raw_job, _durable_state = (
+                recover_registered_job_state_after_external_binding_drift(
+                    _RecoveryPath(receipt.canonical_job_path)
+                )
+            )
+        except Exception as exc:
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_JOB_INVALID"
+            ) from exc
+
+        if (
+            str(raw_job.get("run_id") or "")
+            != bundle.activation_request_id
+            or str(raw_job.get("project_id") or "")
+            != bundle.project_id
+            or str(raw_job.get("activation_binding_digest") or "")
+            != bundle.request_digest
+            or str(
+                raw_job.get(
+                    "executable_authority_bundle_digest"
+                ) or ""
+            )
+            != bundle.bundle_digest
+        ):
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_JOB_BINDING_MISMATCH"
+            )
+
+        return {
+            "request_digest": bundle.request_digest,
+            "bundle_digest": bundle.bundle_digest,
+            "receipt": receipt.to_dict(),
+            "canonical_job": raw_job,
+        }
+
+    activate_full_plan.recover_existing = recover_full_plan
+
     def onboard(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
         if onboarding_admission is None:
             raise RuntimeServiceError("PROJECT_ONBOARDING_DISABLED")

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -268,5 +272,299 @@ class OCPv2SuccessorStageRuntimeP3CanaryWiringTests(unittest.TestCase):
         self.assertFalse(projection["authorization"]["generic_mutation_authorized"])
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+class OCPv2P3CanaryCrashRecoveryRedTests(unittest.TestCase):
+    """RED contract for DESIGN LOCKED P3 crash/replay recovery."""
+
+    def _envelope(self, request):
+        return SimpleNamespace(
+            schema_version="orchestration.remote-control-envelope.v1",
+            request_kind="LIFECYCLE_V2_P3_CANARY_ACTIVATION",
+            message_id="P3-CANARY-RECOVERY-MSG-1",
+            sequence=99,
+            issued_at="2026-09-27T00:00:00+00:00",
+            expires_at="2026-09-28T00:00:00+00:00",
+            actor="GPT_OPERATOR",
+            transport=SimpleNamespace(
+                adapter_id="TEST",
+                channel_id="CTRL",
+                source_actor_id="1",
+                source_message_id="99",
+            ),
+            payload=request,
+            payload_digest=request.request_digest,
+            authorization=None,
+            envelope_sha256="f" * 64,
+        )
+
+    def test_registered_same_candidate_recovers_without_mutation_callback(self):
+        """
+        RED-1 + RED-8.
+
+        Simulate the replay-visible state after canonical Full Plan registration
+        succeeded but before the outer P3 completion was durably recorded.
+
+        Recovery must not call canonical Full Plan mutation again.
+        """
+        request = _activation_request()
+
+        registered = LifecycleV2P3PromotionAdmissionEvidence.from_mapping(
+            {
+                **_evidence().to_dict(),
+                "candidate_run_registration_state": "REGISTERED",
+            }
+        )
+
+        mutation_calls = []
+
+        def canonical_full_plan(*args, **kwargs):
+            mutation_calls.append((args, kwargs))
+            raise AssertionError(
+                "recovery must not re-run canonical Full Plan mutation"
+            )
+
+
+        # RED1_READ_ONLY_RECOVERY_FIXTURE_V1
+        request_digest = "d" * 64
+        bundle_digest = "a" * 64
+        authority_digest = "c" * 64
+
+        unsigned_receipt = {
+            "schema_version":
+                "orchestration.full-plan-activation-receipt.v1",
+            "activation_request_id": CANDIDATE,
+            "bundle_digest": bundle_digest,
+            "result_status": "FULL_PLAN_REGISTERED",
+            "canonical_job_path": "/fixture/job.json",
+            "run_id": CANDIDATE,
+            "authority_digest": authority_digest,
+            "executable_authority_bundle_digest": bundle_digest,
+        }
+
+        unsigned_receipt["activation_digest"] = hashlib.sha256(
+            json.dumps(
+                unsigned_receipt,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+
+        def recover_existing(_envelope):
+            return {
+                "request_digest": request_digest,
+                "bundle_digest": bundle_digest,
+                "receipt": dict(unsigned_receipt),
+                "canonical_job": {
+                    "run_id": CANDIDATE,
+                    "activation_binding_digest": request_digest,
+                    "executable_authority_bundle_digest":
+                        bundle_digest,
+                    "authority_core_sha256": authority_digest,
+                },
+            }
+
+        canonical_full_plan.recover_existing = recover_existing
+
+        service = SimpleNamespace(
+            activate_full_plan_authorized=canonical_full_plan,
+            activate_p3_canary_authorized=None,
+            lifecycle_v2_p3_canary_activation_enabled=False,
+            lifecycle_v2_p3_canary_activation_policy_ref="",
+        )
+
+        config = _config()
+
+        # RED1_WRITABLE_STATE_ROOT_V1
+        temp_state = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_state.cleanup)
+        config.state_root = Path(temp_state.name)
+
+        envelope = self._envelope(request)
+
+        with (
+            patch.object(
+                runtime,
+                "_collect_p3_promotion_evidence",
+                return_value=registered,
+            ),
+            patch.object(
+                runtime,
+                "_load_p3_waiting_handoff",
+                return_value={
+                    "state": "WAITING_FOR_AUTHORIZED_ACTIVATION",
+                    "project_alias": PROJECT,
+                    "candidate_run_id": CANDIDATE,
+                },
+            ),
+        ):
+            composed = runtime._wire_p3_canary_activation(config, service)
+            projection = composed.activate_p3_canary_authorized(envelope)
+
+        self.assertEqual(mutation_calls, [])
+        self.assertEqual(projection["result_class"], "P3_CANARY_ACTIVATED")
+        self.assertEqual(projection["candidate_run_id"], CANDIDATE)
+        self.assertIn(
+            projection["full_plan_result_status"],
+            {"FULL_PLAN_REGISTERED", "FULL_PLAN_ALREADY_REGISTERED"},
+        )
+
+
+
+class OCPv2P3CanaryCrashRecoveryBoundaryRedTests(unittest.TestCase):
+    """Durable behavioral RED-2..7 contracts from the locked recovery design."""
+
+    def _valid_receipt(self, *, binding="a" * 64, authority="c" * 64):
+        unsigned = {
+            "schema_version":
+                "orchestration.full-plan-activation-receipt.v1",
+            "activation_request_id": CANDIDATE,
+            "bundle_digest": binding,
+            "result_status": "FULL_PLAN_REGISTERED",
+            "canonical_job_path": "/fixture/job.json",
+            "run_id": CANDIDATE,
+            "authority_digest": authority,
+            "executable_authority_bundle_digest": binding,
+        }
+        unsigned["activation_digest"] = hashlib.sha256(
+            json.dumps(
+                unsigned,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        return unsigned
+
+    def _valid_job(self, *, request_digest="d" * 64, bundle_digest="a" * 64, authority="c" * 64):
+        return {
+            "run_id": CANDIDATE,
+            "activation_binding_digest": request_digest,
+            "executable_authority_bundle_digest": bundle_digest,
+            "authority_core_sha256": authority,
+        }
+
+    def test_red2_binding_mismatch_is_fail_closed(self):
+        recover = getattr(runtime, "_recover_p3_registered_canary", None)
+        self.assertIsNotNone(recover)
+
+        with self.assertRaisesRegex(
+            runtime.SuccessorStageRuntimeError,
+            "P3_CANARY_RECOVERY_BINDING_MISMATCH",
+        ):
+            recover(
+                waiting_handoff={"candidate_run_id": CANDIDATE},
+                request_digest="d" * 64,
+                bundle_digest="a" * 64,
+                receipt=self._valid_receipt(binding="b" * 64),
+                canonical_job=self._valid_job(bundle_digest="b" * 64),
+            )
+
+    def test_red3_missing_waiting_handoff_is_fail_closed(self):
+        recover = getattr(runtime, "_recover_p3_registered_canary", None)
+        self.assertIsNotNone(recover)
+
+        with self.assertRaisesRegex(
+            runtime.SuccessorStageRuntimeError,
+            "P3_CANARY_RECOVERY_HANDOFF_REQUIRED",
+        ):
+            recover(
+                waiting_handoff=None,
+                request_digest="d" * 64,
+                bundle_digest="a" * 64,
+                receipt=self._valid_receipt(),
+                canonical_job=self._valid_job(),
+            )
+
+    def test_red4_malformed_receipt_digest_is_fail_closed(self):
+        recover = getattr(runtime, "_recover_p3_registered_canary", None)
+        self.assertIsNotNone(recover)
+
+        receipt = self._valid_receipt()
+        receipt["activation_digest"] = "0" * 64
+
+        with self.assertRaisesRegex(
+            runtime.SuccessorStageRuntimeError,
+            "P3_CANARY_RECOVERY_RECEIPT_INVALID",
+        ):
+            recover(
+                waiting_handoff={"candidate_run_id": CANDIDATE},
+                request_digest="d" * 64,
+                bundle_digest="a" * 64,
+                receipt=receipt,
+                canonical_job=self._valid_job(),
+            )
+
+    def test_red5_canonical_job_authority_mismatch_is_fail_closed(self):
+        recover = getattr(runtime, "_recover_p3_registered_canary", None)
+        self.assertIsNotNone(recover)
+
+        receipt = self._valid_receipt(authority="c" * 64)
+        job = self._valid_job(authority="e" * 64)
+
+        with self.assertRaisesRegex(
+            runtime.SuccessorStageRuntimeError,
+            "P3_CANARY_RECOVERY_JOB_AUTHORITY_MISMATCH",
+        ):
+            recover(
+                waiting_handoff={"candidate_run_id": CANDIDATE},
+                request_digest="d" * 64,
+                bundle_digest="a" * 64,
+                receipt=receipt,
+                canonical_job=job,
+            )
+
+    def test_red6_identical_terminal_evidence_is_idempotent(self):
+        seal = getattr(runtime, "_seal_p3_terminal_handoff", None)
+        self.assertIsNotNone(seal)
+
+        with tempfile.TemporaryDirectory() as td:
+            config = SimpleNamespace(state_root=Path(td))
+
+            terminal = {
+                "schema_version":
+                    "orchestration.lifecycle-v2-p3-handoff-terminal.v1",
+                "state": "P3_CANARY_ACTIVATED",
+                "project_alias": PROJECT,
+                "candidate_run_id": CANDIDATE,
+                "admission_digest": "a" * 64,
+                "canary_request_digest": "b" * 64,
+                "full_plan_activation_digest": "c" * 64,
+                "full_plan_result_status": "FULL_PLAN_REGISTERED",
+                "completion_mode": "NEW_ACTIVATION",
+            }
+
+            first = seal(config, terminal)
+            second = seal(config, terminal)
+
+            self.assertEqual(first, second)
+
+    def test_red7_terminal_evidence_conflict_blocks(self):
+        seal = getattr(runtime, "_seal_p3_terminal_handoff", None)
+        self.assertIsNotNone(seal)
+
+        with tempfile.TemporaryDirectory() as td:
+            config = SimpleNamespace(state_root=Path(td))
+
+            terminal = {
+                "schema_version":
+                    "orchestration.lifecycle-v2-p3-handoff-terminal.v1",
+                "state": "P3_CANARY_ACTIVATED",
+                "project_alias": PROJECT,
+                "candidate_run_id": CANDIDATE,
+                "admission_digest": "a" * 64,
+                "canary_request_digest": "b" * 64,
+                "full_plan_activation_digest": "c" * 64,
+                "full_plan_result_status": "FULL_PLAN_REGISTERED",
+                "completion_mode": "NEW_ACTIVATION",
+            }
+
+            seal(config, terminal)
+            changed = dict(terminal)
+            changed["completion_mode"] = "RECOVERED_EXISTING_ACTIVATION"
+
+            with self.assertRaisesRegex(
+                runtime.SuccessorStageRuntimeError,
+                "P3_TERMINAL_HANDOFF_CONFLICT",
+            ):
+                seal(config, changed)

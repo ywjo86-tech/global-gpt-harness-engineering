@@ -24,6 +24,7 @@ from typing import Any, Mapping
 from . import ocpv2_runtime_service as base
 from .approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
 from .harness_state_root import resolve_harness_state_root
+from .full_plan_activation import FullPlanActivationReceiptV1
 from .lifecycle_v2_p3_canary_activation import evaluate_p3_canary_activation
 from .lifecycle_v2_p3_promotion_admission import (
     LifecycleV2P3PromotionAdmissionEvidence,
@@ -82,6 +83,17 @@ _POLICY_REF = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _P3_HANDOFF_SCHEMA = "orchestration.lifecycle-v2-p3-handoff.v1"
 _P3_HANDOFF_WAITING = "WAITING_FOR_AUTHORIZED_ACTIVATION"
+
+_P3_TERMINAL_HANDOFF_SCHEMA = "orchestration.lifecycle-v2-p3-handoff-terminal.v1"
+_P3_TERMINAL_STATE = "P3_CANARY_ACTIVATED"
+_P3_TERMINAL_COMPLETION_MODES = {
+    "NEW_ACTIVATION",
+    "RECOVERED_EXISTING_ACTIVATION",
+}
+_P3_TERMINAL_RESULT_STATUSES = {
+    "FULL_PLAN_REGISTERED",
+    "FULL_PLAN_ALREADY_REGISTERED",
+}
 
 # Extending the legacy parser allow-list never enables any capability. Every
 # feature remains independently default-disabled below.
@@ -163,6 +175,217 @@ def _seal_p3_waiting_handoff(config: base.RuntimeConfig, request, evidence, resu
         finally:
             raise
     return handoff
+
+
+
+
+def _recover_p3_registered_canary(
+    *,
+    waiting_handoff: Mapping[str, Any] | None,
+    request_digest: str,
+    bundle_digest: str,
+    receipt: Mapping[str, Any],
+    canonical_job: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Verify an already-registered P3 candidate without mutation replay."""
+    if not isinstance(waiting_handoff, Mapping):
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_HANDOFF_REQUIRED"
+        )
+
+    candidate = str(waiting_handoff.get("candidate_run_id") or "")
+    if not candidate:
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_HANDOFF_REQUIRED"
+        )
+
+    try:
+        validated = FullPlanActivationReceiptV1.from_mapping(receipt)
+    except Exception as exc:
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_RECEIPT_INVALID"
+        ) from exc
+
+    if (
+        validated.activation_request_id != candidate
+        or validated.run_id != candidate
+    ):
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_BINDING_MISMATCH"
+        )
+
+    if (
+        validated.bundle_digest != bundle_digest
+        or validated.executable_authority_bundle_digest != bundle_digest
+    ):
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_BINDING_MISMATCH"
+        )
+
+    if not isinstance(canonical_job, Mapping):
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_JOB_AUTHORITY_MISMATCH"
+        )
+
+    if str(canonical_job.get("run_id") or "") != candidate:
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_JOB_AUTHORITY_MISMATCH"
+        )
+
+    if (
+        str(canonical_job.get("activation_binding_digest") or "")
+        != request_digest
+        or str(
+            canonical_job.get(
+                "executable_authority_bundle_digest"
+            ) or ""
+        )
+        != bundle_digest
+    ):
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_BINDING_MISMATCH"
+        )
+
+    job_authority = str(
+        canonical_job.get("authority_core_sha256") or ""
+    )
+    if (
+        not job_authority
+        or job_authority != validated.authority_digest
+    ):
+        raise SuccessorStageRuntimeError(
+            "P3_CANARY_RECOVERY_JOB_AUTHORITY_MISMATCH"
+        )
+
+    return {
+        "activation_request_id": validated.activation_request_id,
+        "run_id": validated.run_id,
+        "result_status": "FULL_PLAN_ALREADY_REGISTERED",
+        "activation_digest": validated.activation_digest,
+        "canonical_job_path": validated.canonical_job_path,
+        "request_digest": request_digest,
+        "bundle_digest": validated.bundle_digest,
+        "executable_authority_bundle_digest":
+            validated.executable_authority_bundle_digest,
+    }
+
+
+def _seal_p3_terminal_handoff(
+    config: base.RuntimeConfig,
+    terminal: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    expected_fields = {
+        "schema_version",
+        "state",
+        "project_alias",
+        "candidate_run_id",
+        "admission_digest",
+        "canary_request_digest",
+        "full_plan_activation_digest",
+        "full_plan_result_status",
+        "completion_mode",
+    }
+    value = dict(terminal)
+
+    if set(value) != expected_fields:
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+    if value["schema_version"] != _P3_TERMINAL_HANDOFF_SCHEMA:
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+    if value["state"] != _P3_TERMINAL_STATE:
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+    if value["completion_mode"] not in _P3_TERMINAL_COMPLETION_MODES:
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+    if value["full_plan_result_status"] not in _P3_TERMINAL_RESULT_STATUSES:
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+
+    for key in (
+        "project_alias",
+        "candidate_run_id",
+        "admission_digest",
+        "canary_request_digest",
+        "full_plan_activation_digest",
+    ):
+        if not isinstance(value[key], str) or not value[key]:
+            raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+
+    for key in (
+        "admission_digest",
+        "canary_request_digest",
+        "full_plan_activation_digest",
+    ):
+        if len(value[key]) != 64:
+            raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_INVALID")
+        try:
+            int(value[key], 16)
+        except ValueError as exc:
+            raise SuccessorStageRuntimeError(
+                "P3_TERMINAL_HANDOFF_INVALID"
+            ) from exc
+
+    state_root = Path(config.state_root)
+    if state_root.is_symlink():
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_ROOT_INVALID")
+
+    root = state_root / "p3-lifecycle-handoffs"
+    root.mkdir(parents=True, exist_ok=True)
+
+    if root.is_symlink() or not root.is_dir():
+        raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_ROOT_INVALID")
+    try:
+        if root.resolve(strict=True) != root.resolve():
+            raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_ROOT_INVALID")
+    except OSError as exc:
+        raise SuccessorStageRuntimeError(
+            "P3_TERMINAL_HANDOFF_ROOT_INVALID"
+        ) from exc
+
+    # admission_digest is immutable lineage identity.
+    path = root / f"{value['admission_digest']}.terminal.json"
+
+    raw = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file():
+            raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_CONFLICT")
+        try:
+            existing_raw = path.read_bytes()
+            existing = json.loads(existing_raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SuccessorStageRuntimeError(
+                "P3_TERMINAL_HANDOFF_CONFLICT"
+            ) from exc
+
+        canonical_existing = json.dumps(
+            existing,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+
+        if existing_raw != canonical_existing or existing != value:
+            raise SuccessorStageRuntimeError("P3_TERMINAL_HANDOFF_CONFLICT")
+        return existing
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+    return value
 
 
 def _load_p3_waiting_handoff(config: base.RuntimeConfig, request) -> dict[str, Any]:
@@ -632,6 +855,86 @@ def _wire_p3_canary_activation(config: base.RuntimeConfig, service):
         ):
             raise SuccessorStageRuntimeError("P3_CANARY_ACTIVATION_POLICY_MISMATCH")
         evidence = _collect_p3_promotion_evidence(config, admission_request)
+
+        # P3_REGISTERED_RECOVERY_WIRING_V1
+        evidence_state = str(
+            evidence.to_dict().get(
+                "candidate_run_registration_state"
+            ) or ""
+        )
+
+        if evidence_state == "REGISTERED":
+            waiting_handoff = _load_p3_waiting_handoff(
+                config,
+                request,
+            )
+
+            recover_existing = getattr(
+                canonical_full_plan,
+                "recover_existing",
+                None,
+            )
+
+            if not callable(recover_existing):
+                raise SuccessorStageRuntimeError(
+                    "P3_CANARY_RECOVERY_CALLBACK_UNAVAILABLE"
+                )
+
+            artifacts = recover_existing(envelope)
+
+            if not isinstance(artifacts, Mapping):
+                raise SuccessorStageRuntimeError(
+                    "P3_CANARY_RECOVERY_ARTIFACTS_INVALID"
+                )
+
+            recovered = _recover_p3_registered_canary(
+                waiting_handoff=waiting_handoff,
+                request_digest=str(
+                    artifacts.get("request_digest") or ""
+                ),
+                bundle_digest=str(
+                    artifacts.get("bundle_digest") or ""
+                ),
+                receipt=artifacts.get("receipt"),
+                canonical_job=artifacts.get("canonical_job"),
+            )
+
+            terminal = _seal_p3_terminal_handoff(
+                config,
+                {
+                    "schema_version":
+                        _P3_TERMINAL_HANDOFF_SCHEMA,
+                    "state": _P3_TERMINAL_STATE,
+                    "project_alias": request.admission_request.project_alias,
+                    "candidate_run_id":
+                        request.admission_request.candidate_run_id,
+                    "admission_digest":
+                        request.admission_digest,
+                    "canary_request_digest":
+                        request.request_digest,
+                    "full_plan_activation_digest":
+                        recovered["activation_digest"],
+                    "full_plan_result_status":
+                        recovered["result_status"],
+                    "completion_mode":
+                        "RECOVERED_EXISTING_ACTIVATION",
+                },
+            )
+
+            return {
+                "result_class": "P3_CANARY_ACTIVATED",
+                "project_alias": terminal["project_alias"],
+                "candidate_run_id": terminal["candidate_run_id"],
+                "full_plan_result_status":
+                    terminal["full_plan_result_status"],
+                "completion_mode": terminal["completion_mode"],
+                "admission_digest": terminal["admission_digest"],
+                "canary_request_digest":
+                    terminal["canary_request_digest"],
+                "full_plan_activation_digest":
+                    terminal["full_plan_activation_digest"],
+            }
+
         admission = evaluate_p3_promotion_admission(admission_request, evidence)
         authorization = evaluate_p3_canary_activation(request, admission)
         _load_p3_waiting_handoff(config, request)

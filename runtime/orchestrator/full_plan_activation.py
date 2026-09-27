@@ -91,6 +91,10 @@ class FullPlanActivationStore:
         except (DurableIOError, OSError, ValueError) as exc: raise FullPlanActivationError("ACTIVATION_RECEIPT_INVALID") from exc
         return FullPlanActivationReceiptV1.from_mapping(value)
 
+    def load_existing(self, request_id: str):
+        """Read an existing durable receipt without mutation."""
+        return self._load(self._path(request_id))
+
     def record_or_load(self, *, request_id: str, bundle: ExecutableAuthorityBundleV1,
                        registrar: Callable[[], FullPlanActivationResultV1]) -> FullPlanActivationReceiptV1:
         if request_id != bundle.activation_request_id:
