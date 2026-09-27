@@ -368,6 +368,38 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         )
         outbox.mark_published.assert_not_called()
 
+    def test_successor_stage_status_projection_does_not_touch_durable_outbox(self):
+        outbox = Mock()
+        finalize_remote_control_projection(
+            outbox,
+            {
+                "schema_version": "orchestration.remote-successor-release-stage-status-projection.v1",
+                "message_id": "P3-F165-RESTAGE2-DRYRUN-MSG",
+                "request_id": "P3-F165-RESTAGE2",
+                "project_alias": "harness-lifecycle-v2-successor-20260925",
+                "phase_request_digest": "a" * 64,
+                "mode": "DRY_RUN",
+                "result_class": "STAGE_READY",
+            },
+        )
+        outbox.mark_published.assert_not_called()
+
+    def test_p3_promotion_status_projection_does_not_touch_durable_outbox(self):
+        outbox = Mock()
+        finalize_remote_control_projection(
+            outbox,
+            {
+                "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
+                "message_id": "P3-LIVE-ADMISSION-MSG",
+                "request_id": "P3-LIVE-ADMISSION",
+                "project_alias": "harness-lifecycle-v2-successor-20260925",
+                "request_digest": "b" * 64,
+                "mode": "DRY_RUN",
+                "result_class": "P3_CANARY_ADMISSION_READY",
+            },
+        )
+        outbox.mark_published.assert_not_called()
+
     def test_user_service_invokes_runtime_module_not_bootstrap_poll_loop(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertRegex(text, r"-m runtime\.orchestrator\.ocpv2_(?:runtime_service|successor_stage_runtime)")
