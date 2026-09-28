@@ -10,6 +10,7 @@ INCIDENT_STATES = frozenset({
     "OPEN", "ACKNOWLEDGED", "RECOVERING", "RESOLVED", "SUPERSEDED", "HISTORICAL"
 })
 _CURRENT_INCIDENT_STATES = frozenset({"STALLED", "FAILED"})
+_INCIDENT_STALE_AFTER_SECONDS = 300
 
 
 class IncidentProjectionError(ValueError):
@@ -52,13 +53,54 @@ def project_incidents(
         evidence_ref = str(row.get("evidence_ref") or "").strip()
         if not incident_id or not kind or not opened_at or not evidence_ref:
             raise IncidentProjectionError("incident evidence identity is incomplete")
+        try:
+            observed_at = datetime.fromisoformat(
+                last_observed_at.replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError) as exc:
+            raise IncidentProjectionError(
+                "incident last_observed_at is invalid"
+            ) from exc
+        if observed_at.tzinfo is None or observed_at > now:
+            raise IncidentProjectionError(
+                "incident last_observed_at must be timezone-aware and not future"
+            )
+
+        stale = (
+            now - observed_at
+        ).total_seconds() > _INCIDENT_STALE_AFTER_SECONDS
+
         explicit_unresolved = bool(row.get("unresolved"))
         explicit_state = str(row.get("state") or "").strip().upper()
-        if explicit_state in INCIDENT_STATES:
+        row_state_ref = str(row.get("current_state_ref") or "").strip()
+        canonical_state_ref = str(current_state_ref or "").strip()
+
+        unresolved_current_ref = (
+            explicit_unresolved
+            and bool(canonical_state_ref)
+            and row_state_ref == canonical_state_ref
+        )
+
+        terminal_states = {"RESOLVED", "SUPERSEDED", "HISTORICAL"}
+        live_states = {"OPEN", "ACKNOWLEDGED", "RECOVERING"}
+
+        if explicit_state in terminal_states:
             projected_state = explicit_state
         elif state_now == "RECOVERING":
             projected_state = "RECOVERING"
-        elif state_now in _CURRENT_INCIDENT_STATES or explicit_unresolved:
+        elif state_now in _CURRENT_INCIDENT_STATES:
+            projected_state = (
+                explicit_state if explicit_state in live_states else "OPEN"
+            )
+        elif unresolved_current_ref:
+            projected_state = (
+                explicit_state if explicit_state in live_states else "OPEN"
+            )
+        elif stale:
+            projected_state = "HISTORICAL"
+        elif explicit_state in live_states:
+            projected_state = explicit_state
+        elif explicit_unresolved:
             projected_state = "OPEN"
         else:
             projected_state = "HISTORICAL"
