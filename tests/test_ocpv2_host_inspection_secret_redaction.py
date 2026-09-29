@@ -23,7 +23,7 @@ class OCPv2HostInspectionSecretRedactionTests(unittest.TestCase):
         (self.project / "IMPLEMENTATION_PLAN.md").write_text(
             "# approved plan\n", encoding="utf-8"
         )
-        (self.project / "secret-like.txt").write_text(
+        (self.project / "notes.txt").write_text(
             "token=abc123\n", encoding="utf-8"
         )
         subprocess.run(
@@ -81,7 +81,7 @@ class OCPv2HostInspectionSecretRedactionTests(unittest.TestCase):
                 "correlation_id": "CORR-SECRET-1",
                 "project_alias": "demo",
                 "operation": "filesystem.read",
-                "arguments": {"path": "secret-like.txt", "max_bytes": 64},
+                "arguments": {"path": "notes.txt", "max_bytes": 64},
                 "state_change_required": False,
             }
         )
@@ -89,7 +89,8 @@ class OCPv2HostInspectionSecretRedactionTests(unittest.TestCase):
         result = self.port.inspect(request)
 
         self.assertEqual(result.status, "OK")
-        self.assertEqual(result.data["text"], "token=[REDACTED]\n")
+        self.assertEqual(result.data["text"], "[REDACTED]\n")
+        self.assertTrue(result.data["redaction_applied"])
 
         projection = RemoteInspectionProjectionV1.from_result(
             result, message_id="MSG-SECRET-1"
