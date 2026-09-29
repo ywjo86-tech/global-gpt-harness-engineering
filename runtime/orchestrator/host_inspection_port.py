@@ -1,6 +1,7 @@
 """Harness-owned, no-effect host inspection over existing safe read services."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -18,10 +19,28 @@ from .production_attention_watch import discover_pending_attention
 from .user_service_observer import UserServiceObserver, UserServiceObserverError
 
 _NO_MUTATION_SCOPE = "__HOST_INSPECTION_NO_MUTATION__"
+_SECRET_VALUE = re.compile(
+    r"(?im)\b(api[_-]?key|authorization|password|token|credential|secret)\s*[:=]\s*[^\r\n]*"
+)
+_BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[^\s,;}]+")
 
 
 class HostInspectionError(ValueError):
     pass
+
+
+def _redact_filesystem_read(data: Mapping[str, Any]) -> Mapping[str, Any]:
+    text = data.get("text")
+    if not isinstance(text, str):
+        return data
+    redacted, key_count = _SECRET_VALUE.subn("[REDACTED]", text)
+    redacted, bearer_count = _BEARER_VALUE.subn("[REDACTED]", redacted)
+    if not (key_count or bearer_count):
+        return data
+    safe = dict(data)
+    safe["text"] = redacted
+    safe["redaction_applied"] = True
+    return safe
 
 
 class HostInspectionPort:
@@ -119,4 +138,6 @@ class HostInspectionPort:
             return self._blocked(request, "PATH_POLICY_VIOLATION")
         if not isinstance(data, Mapping):
             raise HostInspectionError("HOST_INSPECTION_RESULT_INVALID")
+        if request.operation == "filesystem.read":
+            data = _redact_filesystem_read(data)
         return HostInspectionResultV1.ok(request, data)
