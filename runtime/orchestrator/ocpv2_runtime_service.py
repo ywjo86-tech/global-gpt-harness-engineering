@@ -163,6 +163,7 @@ def finalize_remote_control_projection(
         "orchestration.remote-inspection-status-projection.v1",
         "orchestration.remote-activation-status-projection.v1",
         "orchestration.remote-full-plan-activation-status-projection.v1",
+        "orchestration.remote-gate-approval-issue-status-projection.v1",
         "orchestration.remote-project-onboarding-status-projection.v1",
         "orchestration.remote-successor-release-stage-status-projection.v1",
         "orchestration.remote-p3-promotion-admission-status-projection.v1",
