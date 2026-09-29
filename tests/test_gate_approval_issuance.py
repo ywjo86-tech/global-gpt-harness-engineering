@@ -33,6 +33,8 @@ class GateApprovalIssuanceTest(unittest.TestCase):
             "approval_ref": "OWNER-APPROVAL-001", "issued_at": issued,
             "expires_at": expires, "mode": "DRY_RUN", "preflight_digest": None,
             "owner_approval_comment_id": None,
+            "engine_requirement_evidence": None,
+            "project_requirement_evidence_by_lv": [],
         }
         self.binding = {"evidence": {"payload": {"project_id": "TEST-PROJECT"}, "record_hash": "c" * 64}}
         self.digest = _sha(self.binding)

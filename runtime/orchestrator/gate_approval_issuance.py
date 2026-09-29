@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .contract_adapter import load_project_mapping, sha256_file, validate_mapping_sources
+from .approved_full_plan_activation_contract import GateBindingRefV1
+from .approved_full_plan_binding import _validate_gate_requirement_artifacts
 from .gate_approval import seal_approval_evidence, validate_approval_evidence
 from .gate_orchestrator import load_gate_plan, namespace_root
 from .project_onboarding import OnboardingRegistry
@@ -26,6 +28,7 @@ _FIELDS = {
     "schema_version", "request_id", "project_alias", "gate_id", "expected_branch",
     "expected_head", "requirements_sha256", "approval_id", "approval_ref",
     "issued_at", "expires_at", "mode", "preflight_digest", "owner_approval_comment_id",
+    "engine_requirement_evidence", "project_requirement_evidence_by_lv",
 }
 _SAFE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -78,6 +81,8 @@ class GateApprovalIssuanceRequest:
     mode: str
     preflight_digest: str | None
     owner_approval_comment_id: int | None
+    engine_requirement_evidence: Mapping[str, str] | None
+    project_requirement_evidence_by_lv: list[Mapping[str, str]]
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "GateApprovalIssuanceRequest":
@@ -108,6 +113,15 @@ class GateApprovalIssuanceRequest:
             raise GateApprovalIssuanceError("OWNER_APPROVAL_COMMENT_REQUIRED")
         if mode not in {"DRY_RUN", "ISSUE"}:
             raise GateApprovalIssuanceError("MODE_INVALID")
+        try:
+            GateBindingRefV1.from_mapping({
+                "gate_id": raw["gate_id"],
+                "approval_evidence": {"path": "approval-placeholder.json", "sha256": "0" * 64},
+                "engine_requirement_evidence": raw["engine_requirement_evidence"],
+                "project_requirement_evidence_by_lv": raw["project_requirement_evidence_by_lv"],
+            })
+        except ValueError as exc:
+            raise GateApprovalIssuanceError("REQUIREMENT_REFERENCES_INVALID") from exc
         return cls(**{key: raw[key] for key in _FIELDS})
 
     def to_dict(self) -> dict[str, Any]:
@@ -178,6 +192,19 @@ class GateApprovalIssuer:
             plan_sha256=plan.canonical_plan_sha256, branch=request.expected_branch,
             head=request.expected_head, lv_order=payload["scope"]["lv_order"],
             owned_files_by_lv=payload["scope"]["owned_files_by_lv"],
+        )
+        gate_ref = GateBindingRefV1.from_mapping({
+            "gate_id": request.gate_id,
+            "approval_evidence": {"path": f"{request.request_id}.json", "sha256": _sha(sealed)},
+            "engine_requirement_evidence": request.engine_requirement_evidence,
+            "project_requirement_evidence_by_lv": request.project_requirement_evidence_by_lv,
+        })
+        _validate_gate_requirement_artifacts(
+            project_root=root, harness_state_root=self.state_root,
+            project_id=plan.project_id, plan=plan, gate_ref=gate_ref,
+            approval_path=Path(f"{request.request_id}.json"), approval_sha256=_sha(sealed),
+            requirements_sha256=request.requirements_sha256,
+            project_requirements_required=mapping.task_lv_projection_path is not None,
         )
         binding = {
             "project_alias": request.project_alias, "project_root": str(root),

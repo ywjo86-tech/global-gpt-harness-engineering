@@ -23,7 +23,9 @@ project-specific Gate approval bound to the exact source HEAD.
 
 1. `GATE_APPROVAL_ISSUE` in `DRY_RUN` mode verifies the registered project,
    canonical mapping/plan, exact branch/HEAD, clean source, Gate scope,
-   requirements digest and bounded expiry. It returns a preflight digest and
+   requirements evidence references, requirements digest and bounded expiry.
+   It uses the same requirement-artifact validator as Full Plan activation,
+   then returns a preflight digest and
    the proposed approval payload without writing.
 2. The project owner posts a separate exact approval comment in GitHub PR #1,
    after reviewing the DRY_RUN digest and scope. The comment must have the
@@ -70,8 +72,8 @@ project-specific Gate approval bound to the exact source HEAD.
 The GitHub provenance field distinguishes the observed Codex connector from
 comments without an app identity. It does not prove a person used the browser;
 the owner must keep personal API credentials out of automation. The issuer
-must also validate the approved requirements artifact, not just a caller
-supplied digest, before production use.
+must bind the project-specific requirement evidence and digest during both
+preflight and activation.
 
 ## Deployment
 
