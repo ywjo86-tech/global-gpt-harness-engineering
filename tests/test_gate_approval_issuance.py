@@ -19,7 +19,6 @@ class GateApprovalIssuanceTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
         self.namespace = root / "_workspace" / "global-gate" / "TEST-PROJECT" / "approval"
-        self.namespace.mkdir(parents=True)
         self.issuer = object.__new__(GateApprovalIssuer)
         self.issuer.state_root = root
         now = datetime.now(timezone.utc)
@@ -44,7 +43,7 @@ class GateApprovalIssuanceTest(unittest.TestCase):
         request = GateApprovalIssuanceRequest.from_mapping(self.raw)
         result = self.issuer.execute(request)
         self.assertEqual(result["status"], "PREFLIGHT_READY")
-        self.assertEqual(list(self.namespace.iterdir()), [])
+        self.assertFalse(self.namespace.exists())
 
     def test_issue_requires_distinct_unedited_owner_comment_and_replays(self) -> None:
         raw = dict(self.raw, mode="ISSUE", preflight_digest=self.digest,

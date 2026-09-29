@@ -242,8 +242,14 @@ class GateApprovalIssuer:
         self._verify_owner_comment(request, digest, owner_approval_comment, owner_actor_id)
         project_id = binding["evidence"]["payload"]["project_id"]
         target_root = namespace_root(self.state_root, project_id, "approval")
-        if target_root.is_symlink() or not target_root.is_dir():
-            raise GateApprovalIssuanceError("APPROVAL_NAMESPACE_INVALID")
+        cursor = self.state_root
+        for part in target_root.relative_to(self.state_root).parts:
+            cursor = cursor / part
+            if cursor.is_symlink() or (cursor.exists() and not cursor.is_dir()):
+                raise GateApprovalIssuanceError("APPROVAL_NAMESPACE_INVALID")
+            cursor.mkdir(exist_ok=True, mode=0o700)
+            if cursor.is_symlink() or not cursor.is_dir():
+                raise GateApprovalIssuanceError("APPROVAL_NAMESPACE_INVALID")
         relative = f"{request.request_id}.json"
         target = target_root / relative
         encoded = _canonical(binding["evidence"])
