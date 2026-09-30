@@ -76,6 +76,10 @@ _OPTIONAL_ENV = {
     "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
     "OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED",
     "OCP_FULL_PLAN_OWNER_ACTOR_ID",
+    "OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_PATH",
+    "OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_SHA256",
+    "OCP_FULL_PLAN_ATTESTATION_ISSUER",
+    "OCP_FULL_PLAN_ATTESTATION_AUDIENCE",
     "OCP_GATE_APPROVAL_ISSUE_ENABLED",
     "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
@@ -664,6 +668,20 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
+    def signed_attestation_trust() -> Mapping[str, Any]:
+        actor_id = str(config.environment.get("OCP_FULL_PLAN_OWNER_ACTOR_ID") or "").strip()
+        if (str(config.environment.get("OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED") or "") != "1"
+                or not actor_id.isdecimal() or actor_id not in config.allowed_actor_ids):
+            raise RuntimeServiceError("DELEGATED_APPROVAL_NOT_ENABLED")
+        names = ("PUBLIC_KEY_PATH", "PUBLIC_KEY_SHA256", "ISSUER", "AUDIENCE")
+        values = [str(config.environment.get("OCP_FULL_PLAN_ATTESTATION_" + name) or "").strip()
+                  for name in names]
+        if not all(values):
+            raise RuntimeServiceError("ATTESTATION_TRUST_NOT_CONFIGURED")
+        return {"public_key_path": values[0], "public_key_sha256": values[1],
+                "expected_issuer": values[2], "expected_audience": values[3],
+                "expected_owner_actor_id": actor_id}
+
     def delegated_owner_loader(payload, *, require: bool = False):
         if (not require and (not isinstance(payload, ApprovedFullPlanActivationRequestV1)
                 or payload.owner_delegation_evidence is None)):
@@ -684,7 +702,10 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
                 raise RuntimeServiceError("DELEGATED_OWNER_COMMENT_UNAVAILABLE")
             return matches[0]
 
-        return {"owner_comment_loader": load_comment, "owner_actor_id": actor_id}
+        result = {"owner_comment_loader": load_comment, "owner_actor_id": actor_id}
+        if config.environment.get("OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_PATH"):
+            result["attestation_trust"] = signed_attestation_trust()
+        return result
 
     def activate_full_plan(
         envelope: RemoteControlEnvelopeV1,
@@ -849,13 +870,15 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             access = delegated_owner_loader(payload.delegation_activation, require=True)
             owner_actor_id = access["owner_actor_id"]
             load_comment = access["owner_comment_loader"]
-            delegated_args = {
+            if payload.owner_attestation is not None:
+                delegated_args["attestation_trust"] = signed_attestation_trust()
+            delegated_args.update({
                 "delegated_full_plan_scope": payload.delegation_scope,
                 "activation_request": payload.delegation_activation,
                 "serving_runtime_digest": activation_release.manifest_sha256,
-            }
+            })
         if payload.mode == "ISSUE":
-            if delegated:
+            if delegated and payload.owner_attestation is None:
                 assert load_comment is not None
                 owner_comment = load_comment(payload.owner_approval_comment_id)
             else:
@@ -872,7 +895,11 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             assert load_comment is not None
             result["owner_delegation_evidence"] = gate_approval_issuer.issue_full_plan_delegation_root(
                 activation_request=payload.delegation_activation,
-                owner_approval_comment=load_comment(payload.owner_approval_comment_id),
+                owner_approval_comment=(load_comment(payload.owner_approval_comment_id)
+                                        if payload.owner_attestation is None else None),
+                owner_attestation=payload.owner_attestation,
+                attestation_trust=(signed_attestation_trust()
+                                   if payload.owner_attestation is not None else None),
                 owner_actor_id=owner_actor_id,
                 delegated_full_plan_scope=payload.delegation_scope,
                 serving_runtime_digest=activation_release.manifest_sha256,
