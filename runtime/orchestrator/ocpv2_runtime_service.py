@@ -11,6 +11,9 @@ import argparse
 import json
 import os
 import re
+import stat
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -80,6 +83,8 @@ _OPTIONAL_ENV = {
     "OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_SHA256",
     "OCP_FULL_PLAN_ATTESTATION_ISSUER",
     "OCP_FULL_PLAN_ATTESTATION_AUDIENCE",
+    "OCP_FULL_PLAN_ATTESTATION_STATUS_URL",
+    "OCP_FULL_PLAN_ATTESTATION_STATUS_TOKEN_FILE",
     "OCP_GATE_APPROVAL_ISSUE_ENABLED",
     "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
@@ -682,6 +687,45 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
                 "expected_issuer": values[2], "expected_audience": values[3],
                 "expected_owner_actor_id": actor_id}
 
+    def signed_attestation_status_loader(decision_id: str, activation_id: str,
+                                         challenge: str) -> Mapping[str, Any]:
+        endpoint = str(config.environment.get("OCP_FULL_PLAN_ATTESTATION_STATUS_URL") or "")
+        token_path = Path(str(config.environment.get(
+            "OCP_FULL_PLAN_ATTESTATION_STATUS_TOKEN_FILE") or ""))
+        parsed = urllib.parse.urlsplit(endpoint)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment
+                or not token_path.is_absolute() or token_path.is_symlink()
+                or not token_path.is_file()
+                or stat.S_IMODE(token_path.stat().st_mode) != 0o600):
+            raise RuntimeServiceError("ATTESTATION_STATUS_NOT_CONFIGURED")
+        token = token_path.read_text(encoding="utf-8").strip()
+        if not token or len(token) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in token):
+            raise RuntimeServiceError("ATTESTATION_STATUS_TOKEN_INVALID")
+        request = urllib.request.Request(endpoint, method="POST",
+            data=json.dumps({"decision_id": decision_id, "activation_id": activation_id,
+                             "challenge": challenge}, separators=(",", ":")).encode("utf-8"),
+            headers={"Authorization": "Bearer " + token,
+                     "Content-Type": "application/json"})
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, msg, headers, newurl):
+                raise RuntimeServiceError("ATTESTATION_STATUS_REDIRECT")
+
+        try:
+            opener = urllib.request.build_opener(NoRedirect)
+            with opener.open(request, timeout=5) as response:
+                if response.status != 200:
+                    raise RuntimeServiceError("ATTESTATION_STATUS_UNAVAILABLE")
+                data = response.read(65537)
+            if len(data) > 65536:
+                raise RuntimeServiceError("ATTESTATION_STATUS_OVERSIZE")
+            value = json.loads(data)
+            if not isinstance(value, dict):
+                raise ValueError("invalid signed status")
+            return value
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise RuntimeServiceError("ATTESTATION_STATUS_UNAVAILABLE") from exc
+
     def delegated_owner_loader(payload, *, require: bool = False):
         if (not require and (not isinstance(payload, ApprovedFullPlanActivationRequestV1)
                 or payload.owner_delegation_evidence is None)):
@@ -705,6 +749,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         result = {"owner_comment_loader": load_comment, "owner_actor_id": actor_id}
         if config.environment.get("OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_PATH"):
             result["attestation_trust"] = signed_attestation_trust()
+            result["attestation_status_loader"] = signed_attestation_status_loader
         return result
 
     def activate_full_plan(
@@ -872,6 +917,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             load_comment = access["owner_comment_loader"]
             if payload.owner_attestation is not None:
                 delegated_args["attestation_trust"] = signed_attestation_trust()
+                delegated_args["attestation_status_loader"] = signed_attestation_status_loader
             delegated_args.update({
                 "delegated_full_plan_scope": payload.delegation_scope,
                 "activation_request": payload.delegation_activation,
@@ -900,6 +946,8 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
                 owner_attestation=payload.owner_attestation,
                 attestation_trust=(signed_attestation_trust()
                                    if payload.owner_attestation is not None else None),
+                attestation_status_loader=(signed_attestation_status_loader
+                                           if payload.owner_attestation is not None else None),
                 owner_actor_id=owner_actor_id,
                 delegated_full_plan_scope=payload.delegation_scope,
                 serving_runtime_digest=activation_release.manifest_sha256,
