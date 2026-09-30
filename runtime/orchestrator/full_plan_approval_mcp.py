@@ -76,10 +76,23 @@ def create_approval_mcp(
             trusted_confirmation_id="mcp:" + secrets.token_hex(24), now=now,
         )
 
+    async def confirm_revocation(decision_id: str) -> Elicit[ConfirmScope]:
+        _principal(issuer.owner_user_id, required_scope)
+        return Elicit(
+            "Revoke Full Plan decision " + decision_id
+            + "? Enter the decision ID to confirm revocation.",
+            ConfirmScope,
+        )
+
     @mcp.tool()
-    def revoke_full_plan(decision_id: str) -> dict[str, str]:
+    def revoke_full_plan(
+        decision_id: str,
+        confirmation: Annotated[ConfirmScope, Resolve(confirm_revocation)],
+    ) -> dict[str, str]:
         """Revoke an issued decision as its authenticated owner."""
         owner = _principal(issuer.owner_user_id, required_scope)
+        if confirmation.scope_sha256 != decision_id:
+            raise ApprovalIssuerError("REVOCATION_CONFIRMATION_MISMATCH")
         issuer.revoke(decision_id=decision_id, authenticated_user_id=owner)
         return {"decision_id": decision_id, "status": "revoked"}
 
