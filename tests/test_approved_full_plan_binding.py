@@ -91,6 +91,9 @@ class ApprovedFullPlanBindingTests(unittest.TestCase):
     def test_delegated_activation_checks_fresh_comment_and_exact_gate_refs(self):
         now = datetime.now(timezone.utc).replace(microsecond=0)
         stamp = lambda value: value.isoformat().replace("+00:00", "Z")
+        approval = json.loads(self.approval.read_text(encoding="utf-8"))["payload"]
+        approval["approval_id"] = "DELEGATED:USER-APPROVAL-1"
+        self.approval.write_text(json.dumps(seal_approval_evidence(approval)), encoding="utf-8")
         request = self.request(approval_ref="USER-APPROVAL-1")
         scope = {
             "schema_version": "orchestration.full-plan-owner-delegation.v1",
