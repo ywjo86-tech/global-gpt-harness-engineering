@@ -10,7 +10,7 @@ from pathlib import Path
 from runtime.orchestrator.project_onboarding import OnboardingRegistry, build_alias_entry
 from runtime.orchestrator.gate_approval_issuance import (
     GateApprovalIssuer, GateApprovalIssuanceError, GateApprovalIssuanceRequest,
-    _canonical, _sha,
+    _canonical, _canonicalize_newlines, _sha,
 )
 
 
@@ -90,6 +90,41 @@ class GateApprovalIssuanceTest(unittest.TestCase):
                                      owner_actor_id="235775273")
         self.assertEqual(replay["status"], "ALREADY_ISSUED")
         self.assertEqual(sorted(p.name for p in self.namespace.iterdir()), ["ISSUE-001.json"])
+
+    def test_exact_owner_approval_accepts_transport_crlf_without_mutating_raw_evidence(self) -> None:
+        raw = dict(self.raw, mode="ISSUE", preflight_digest=self.digest,
+                   owner_approval_comment_id=123)
+        request = GateApprovalIssuanceRequest.from_mapping(raw)
+        lf_body = "OCP_GATE_OWNER_APPROVAL_V1\n" + _canonical({
+            "approval_ref": request.approval_ref, "preflight_digest": self.digest,
+            "request_id": request.request_id,
+        }).decode("utf-8")
+        base = {"id": 123, "user": {"id": 235775273},
+                   "created_at": "2026-09-29T00:00:00Z", "updated_at": "2026-09-29T00:00:00Z",
+                   "performed_via_github_app": None}
+        crlf_body = lf_body.replace("\n", "\r\n")
+        cr_body = lf_body.replace("\n", "\r")
+
+        for body in (lf_body, crlf_body, cr_body):
+            comment = dict(base, body=body)
+            GateApprovalIssuer._verify_owner_comment(request, self.digest, comment, "235775273")
+            self.assertEqual(comment["body"], body)
+        self.assertEqual(_canonicalize_newlines(lf_body), _canonicalize_newlines(crlf_body))
+        self.assertEqual(_canonicalize_newlines(lf_body), _canonicalize_newlines(cr_body))
+
+        invalid_comments = (
+            dict(base, body=lf_body.replace("APPROVAL", "APPROVaL", 1)),
+            dict(base, body=lf_body + " "),
+            dict(base, body=lf_body.replace("\n", "\n ", 1)),
+            dict(base, body=lf_body, user={"id": 999}),
+            dict(base, body=lf_body, updated_at="2026-09-29T00:00:01Z"),
+        )
+        for comment in invalid_comments:
+            with self.assertRaisesRegex(GateApprovalIssuanceError, "EXACT_OWNER_APPROVAL_REQUIRED"):
+                GateApprovalIssuer._verify_owner_comment(request, self.digest, comment, "235775273")
+        with self.assertRaisesRegex(GateApprovalIssuanceError, "EXACT_OWNER_APPROVAL_REQUIRED"):
+            GateApprovalIssuer._verify_owner_comment(request, "f" * 64,
+                                                     dict(base, body=lf_body), "235775273")
 
 
 if __name__ == "__main__":
