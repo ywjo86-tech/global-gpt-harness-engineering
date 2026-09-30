@@ -64,6 +64,43 @@ class GateApprovalIssuanceTest(unittest.TestCase):
                 serving_runtime_digest="0" * 64,
             )
 
+    def test_signed_delegation_requires_trusted_verifier_before_gate_issue(self) -> None:
+        from tests.test_approved_full_plan_activation_contract import executable_request
+        scope = {
+            "schema_version": "orchestration.full-plan-owner-delegation.v1",
+            "decision_id": "OWNER-APPROVAL-001", "project_id": "TEST-PROJECT",
+            "plan_sha256": "d" * 64, "spec_sha256": "e" * 64,
+            "gate_ids": ["GATE-001"], "source_head": "a" * 40,
+            "runtime_sha256": "f" * 64,
+            "issued_at": self.raw["issued_at"], "expires_at": self.raw["expires_at"],
+            "excluded_actions": ["PR_MERGE", "RUNTIME_SWITCH", "SERVICE_RESTART", "REBOOT"],
+        }
+        activation = executable_request()
+        activation["approved_plan"]["sha256"] = "d" * 64
+        activation["approved_spec"]["sha256"] = "e" * 64
+        activation["expected_head"] = "a" * 40
+        activation["runtime_release_digest"] = "f" * 64
+        activation["approval_ref"] = "OWNER-APPROVAL-001"
+        activation["gate_bindings"] = [activation["gate_bindings"][0]]
+        raw = dict(self.raw, mode="ISSUE", preflight_digest=self.digest,
+                   approval_id="DELEGATED:OWNER-APPROVAL-001",
+                   delegation_scope=scope, delegation_activation=activation,
+                   finalize_delegation=True,
+                   owner_attestation={"payload": {"scope": scope}, "signature": "invalid"})
+        parsed = GateApprovalIssuanceRequest.from_mapping(raw)
+        self.assertIsNone(parsed.owner_approval_comment_id)
+        self.assertEqual(parsed.to_dict(), raw)
+        self.binding["evidence"]["payload"].update({
+            "plan_sha256": "d" * 64, "branch": "main", "head": "a" * 40,
+        })
+        with self.assertRaisesRegex(GateApprovalIssuanceError, "FULL_PLAN_DELEGATION_INVALID"):
+            self.issuer.execute(
+                parsed, owner_actor_id="235775273",
+                delegated_full_plan_scope=scope,
+                activation_request=parsed.delegation_activation,
+                serving_runtime_digest="f" * 64,
+            )
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
