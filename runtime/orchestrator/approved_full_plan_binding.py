@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -15,7 +16,8 @@ from .approved_full_plan_activation_contract import (
 from .approved_work_binding import ApprovedWorkBindingError, resolve_committed_project_file
 from .contract_adapter import ContractMappingError, load_project_mapping, sha256_file, validate_mapping_sources
 from .gate_approval import GateApprovalError, load_approval_evidence
-from .full_plan_owner_attestation import OwnerAttestationError, verify_owner_attestation
+from .full_plan_owner_attestation import (OwnerAttestationError, verify_owner_attestation,
+                                          verify_owner_status)
 from .full_plan_owner_delegation import (
     DelegationError, bind_delegation_to_activation, validate_owner_delegation,
 )
@@ -257,6 +259,7 @@ def validate_approved_full_plan_binding(
     owner_comment_loader: Callable[[int], Mapping[str, Any]] | None = None,
     owner_actor_id: str = "",
     attestation_trust: Mapping[str, Any] | None = None,
+    attestation_status_loader: Callable[[str, str, str], Mapping[str, Any]] | None = None,
 ) -> ExecutableAuthorityBundleV1:
     req = request if isinstance(request, ApprovedFullPlanActivationRequestV1) else ApprovedFullPlanActivationRequestV1.from_mapping(request)
     if req.owner_delegation_evidence is not None and (owner_comment_loader is None or not owner_actor_id) and attestation_trust is None:
@@ -388,6 +391,21 @@ def validate_approved_full_plan_binding(
                     **attestation_trust)
                 if dict(payload["owner_attestation"]["payload"]["scope"]) != dict(payload["scope"]):
                     raise ValueError("signed delegation scope mismatch")
+                if attestation_status_loader is None:
+                    raise ValueError("issuer status unavailable")
+                challenge = secrets.token_urlsafe(32)
+                status = attestation_status_loader(
+                    signed.decision_id, req.activation_request_id, challenge)
+                verify_owner_status(
+                    status, now=datetime.now(timezone.utc),
+                    public_key_path=attestation_trust["public_key_path"],
+                    public_key_sha256=attestation_trust["public_key_sha256"],
+                    expected_issuer=attestation_trust["expected_issuer"],
+                    expected_audience=attestation_trust["expected_audience"],
+                    expected_decision_id=signed.decision_id,
+                    expected_scope_sha256=signed.scope_sha256,
+                    expected_activation_id=req.activation_request_id,
+                    expected_challenge=challenge)
                 from .full_plan_owner_delegation import OwnerDelegation
                 verified = OwnerDelegation(signed.decision_id, 0, payload["scope"]["project_id"],
                                            signed.gate_ids, signed.scope_sha256, signed.expires_at)
