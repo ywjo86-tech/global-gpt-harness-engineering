@@ -246,6 +246,11 @@ def validate_approved_full_plan_binding(
     harness_state_root: str | Path,
 ) -> ExecutableAuthorityBundleV1:
     req = request if isinstance(request, ApprovedFullPlanActivationRequestV1) else ApprovedFullPlanActivationRequestV1.from_mapping(request)
+    if req.owner_delegation_evidence is not None:
+        # Parsing a reference is not proof of a user decision. The activation
+        # path must verify the owner decision and every derived Gate record
+        # before this request variant may be admitted.
+        raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_NOT_ENABLED")
     authority, aliases_root, mappings_root = resolve_executable_authority_roots(authority_root)
     # A separate project's registration can drift independently. The approved
     # alias is the only authority this request is allowed to bind.
