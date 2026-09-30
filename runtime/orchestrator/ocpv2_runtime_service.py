@@ -841,8 +841,10 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         if delegated:
             if activation_release is None or payload.delegation_activation is None:
                 raise RuntimeServiceError("FULL_PLAN_DELEGATION_INVALID")
+            gate_order = payload.delegation_scope.get("gate_ids")
             if payload.finalize_delegation and (
-                    payload.gate_id != payload.delegation_scope["gate_ids"][-1]):
+                    not isinstance(gate_order, list) or not gate_order
+                    or payload.gate_id != gate_order[-1]):
                 raise RuntimeServiceError("FULL_PLAN_DELEGATION_ORDER_INVALID")
             access = delegated_owner_loader(payload.delegation_activation, require=True)
             owner_actor_id = access["owner_actor_id"]
