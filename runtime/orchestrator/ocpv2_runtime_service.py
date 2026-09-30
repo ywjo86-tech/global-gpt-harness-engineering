@@ -20,6 +20,7 @@ from runtime.ai_office.full_plan_activation import coordinate_approved_full_plan
 from runtime.ai_office.state_store import AIOfficeStateStore
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
+from .approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
 from .approved_full_plan_binding import validate_approved_full_plan_binding
 from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
@@ -664,7 +665,8 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         return projection.to_dict()
 
     def delegated_owner_loader(payload):
-        if getattr(payload, "owner_delegation_evidence", None) is None:
+        if (not isinstance(payload, ApprovedFullPlanActivationRequestV1)
+                or payload.owner_delegation_evidence is None):
             return {}
         if str(config.environment.get("OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED") or "") != "1":
             raise RuntimeServiceError("DELEGATED_APPROVAL_NOT_ENABLED")
