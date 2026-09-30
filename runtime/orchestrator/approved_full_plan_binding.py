@@ -335,12 +335,20 @@ def validate_approved_full_plan_binding(
             raise ApprovedFullPlanBindingError("EXECUTABLE_APPROVAL_REQUIRED")
         try:
             approval = load_approval_evidence(approval_path)
+            approval_id = str(approval["payload"]["approval_id"])
+            delegated_id = f"DELEGATED:{req.approval_ref}"
+            if req.owner_delegation_evidence is None and approval_id.startswith("DELEGATED:"):
+                raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_REQUIRED")
+            if req.owner_delegation_evidence is not None and approval_id != delegated_id:
+                raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_INVALID")
             requirements_sha256 = str(approval["payload"]["requirements_sha256"])
             validate_global_gate_bindings(
                 project_root, gate_ref.gate_id, requirements_sha256=requirements_sha256,
                 approval_evidence=approval_path, branch=req.expected_branch, head=req.expected_head,
                 harness_root=harness_state_root, mapping_root=mappings_root,
             )
+        except ApprovedFullPlanBindingError:
+            raise
         except (GateApprovalError, GateOrchestrationError, OSError, ValueError, KeyError, TypeError) as exc:
             raise ApprovedFullPlanBindingError("EXECUTABLE_APPROVAL_REQUIRED") from exc
         validated_gates.append(_validate_gate_requirement_artifacts(
