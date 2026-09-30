@@ -47,6 +47,10 @@ def _sha(value: object) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
 
+def _canonicalize_newlines(value: str) -> str:
+    return value.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _safe(value: object, label: str) -> str:
     text = str(value or "")
     if not _SAFE.fullmatch(text) or ".." in text:
@@ -237,7 +241,8 @@ class GateApprovalIssuer:
                 or str(actor.get("id")) != owner_actor_id
                 or comment.get("performed_via_github_app") is not None
                 or comment.get("created_at") != comment.get("updated_at")
-                or comment.get("body") != expected):
+                or not isinstance(comment.get("body"), str)
+                or _canonicalize_newlines(comment["body"]) != expected):
             raise GateApprovalIssuanceError("EXACT_OWNER_APPROVAL_REQUIRED")
 
     def execute(self, request: GateApprovalIssuanceRequest, *,
