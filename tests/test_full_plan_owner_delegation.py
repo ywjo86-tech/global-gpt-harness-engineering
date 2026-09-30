@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timezone
 
 from runtime.orchestrator.full_plan_owner_delegation import (
-    DelegationError, validate_owner_delegation,
+    DelegationError, validate_owner_delegation, bind_delegation_to_activation,
 )
 
 
@@ -60,6 +60,25 @@ class OwnerDelegationTests(unittest.TestCase):
         weaker = {**SCOPE, "excluded_actions": ["PR_MERGE"]}
         with self.assertRaises(DelegationError):
             self.check(comment(weaker), scope=weaker)
+
+    def test_activation_must_match_entire_ordered_gate_scope(self):
+        activation = {
+            "approved_plan": {"sha256": "a" * 64},
+            "approved_spec": {"sha256": "b" * 64},
+            "expected_head": "c" * 40,
+            "runtime_release_digest": "d" * 64,
+            "gate_bindings": [{"gate_id": "GATE-001"}, {"gate_id": "GATE-002"}],
+        }
+        verified = self.check(comment())
+        self.assertEqual(bind_delegation_to_activation(verified, SCOPE, activation), ("GATE-001", "GATE-002"))
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_activation(verified, SCOPE, {**activation, "gate_bindings": [{"gate_id": "GATE-001"}]})
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_activation(verified, SCOPE, {**activation, "approved_spec": {"sha256": "e" * 64}})
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_activation(verified, SCOPE, {**activation, "expected_head": "f" * 40})
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_activation(verified, {**SCOPE, "decision_id": "OTHER"}, activation)
 
 
 if __name__ == "__main__":
