@@ -11,6 +11,9 @@ import argparse
 import json
 import os
 import re
+import stat
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -20,6 +23,7 @@ from runtime.ai_office.full_plan_activation import coordinate_approved_full_plan
 from runtime.ai_office.state_store import AIOfficeStateStore
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
+from .approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
 from .approved_full_plan_binding import validate_approved_full_plan_binding
 from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
@@ -73,6 +77,14 @@ _OPTIONAL_ENV = {
     "OCP_WORK_ACTIVATION_POLICY_REF",
     "OCP_FULL_PLAN_ACTIVATION_ENABLED",
     "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
+    "OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED",
+    "OCP_FULL_PLAN_OWNER_ACTOR_ID",
+    "OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_PATH",
+    "OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_SHA256",
+    "OCP_FULL_PLAN_ATTESTATION_ISSUER",
+    "OCP_FULL_PLAN_ATTESTATION_AUDIENCE",
+    "OCP_FULL_PLAN_ATTESTATION_STATUS_URL",
+    "OCP_FULL_PLAN_ATTESTATION_STATUS_TOKEN_FILE",
     "OCP_GATE_APPROVAL_ISSUE_ENABLED",
     "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
@@ -661,6 +673,85 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
+    def signed_attestation_trust() -> Mapping[str, Any]:
+        actor_id = str(config.environment.get("OCP_FULL_PLAN_OWNER_ACTOR_ID") or "").strip()
+        if (str(config.environment.get("OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED") or "") != "1"
+                or not actor_id.isdecimal() or actor_id not in config.allowed_actor_ids):
+            raise RuntimeServiceError("DELEGATED_APPROVAL_NOT_ENABLED")
+        names = ("PUBLIC_KEY_PATH", "PUBLIC_KEY_SHA256", "ISSUER", "AUDIENCE")
+        values = [str(config.environment.get("OCP_FULL_PLAN_ATTESTATION_" + name) or "").strip()
+                  for name in names]
+        if not all(values):
+            raise RuntimeServiceError("ATTESTATION_TRUST_NOT_CONFIGURED")
+        return {"public_key_path": values[0], "public_key_sha256": values[1],
+                "expected_issuer": values[2], "expected_audience": values[3],
+                "expected_owner_actor_id": actor_id}
+
+    def signed_attestation_status_loader(decision_id: str, activation_id: str,
+                                         challenge: str) -> Mapping[str, Any]:
+        endpoint = str(config.environment.get("OCP_FULL_PLAN_ATTESTATION_STATUS_URL") or "")
+        token_path = Path(str(config.environment.get(
+            "OCP_FULL_PLAN_ATTESTATION_STATUS_TOKEN_FILE") or ""))
+        parsed = urllib.parse.urlsplit(endpoint)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment
+                or not token_path.is_absolute() or token_path.is_symlink()
+                or not token_path.is_file()
+                or stat.S_IMODE(token_path.stat().st_mode) != 0o600):
+            raise RuntimeServiceError("ATTESTATION_STATUS_NOT_CONFIGURED")
+        token = token_path.read_text(encoding="utf-8").strip()
+        if not token or len(token) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in token):
+            raise RuntimeServiceError("ATTESTATION_STATUS_TOKEN_INVALID")
+        request = urllib.request.Request(endpoint, method="POST",
+            data=json.dumps({"decision_id": decision_id, "activation_id": activation_id,
+                             "challenge": challenge}, separators=(",", ":")).encode("utf-8"),
+            headers={"Authorization": "Bearer " + token,
+                     "Content-Type": "application/json"})
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, msg, headers, newurl):
+                raise RuntimeServiceError("ATTESTATION_STATUS_REDIRECT")
+
+        try:
+            opener = urllib.request.build_opener(NoRedirect)
+            with opener.open(request, timeout=5) as response:
+                if response.status != 200:
+                    raise RuntimeServiceError("ATTESTATION_STATUS_UNAVAILABLE")
+                data = response.read(65537)
+            if len(data) > 65536:
+                raise RuntimeServiceError("ATTESTATION_STATUS_OVERSIZE")
+            value = json.loads(data)
+            if not isinstance(value, dict):
+                raise ValueError("invalid signed status")
+            return value
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise RuntimeServiceError("ATTESTATION_STATUS_UNAVAILABLE") from exc
+
+    def delegated_owner_loader(payload, *, require: bool = False):
+        if (not require and (not isinstance(payload, ApprovedFullPlanActivationRequestV1)
+                or payload.owner_delegation_evidence is None)):
+            return {}
+        if str(config.environment.get("OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED") or "") != "1":
+            raise RuntimeServiceError("DELEGATED_APPROVAL_NOT_ENABLED")
+        actor_id = str(config.environment.get("OCP_FULL_PLAN_OWNER_ACTOR_ID") or "").strip()
+        if not actor_id.isdecimal() or actor_id not in config.allowed_actor_ids:
+            raise RuntimeServiceError("DELEGATED_OWNER_ACTOR_INVALID")
+
+        def load_comment(comment_id: int) -> Mapping[str, Any]:
+            if type(comment_id) is not int or comment_id <= 0:
+                raise RuntimeServiceError("DELEGATED_OWNER_COMMENT_INVALID")
+            # Fetch on every validation; deletion or edit must revoke the decision.
+            matches = [comment for comment in rest_client.list_comments()
+                       if comment.get("id") == comment_id]
+            if len(matches) != 1:
+                raise RuntimeServiceError("DELEGATED_OWNER_COMMENT_UNAVAILABLE")
+            return matches[0]
+
+        result = {"owner_comment_loader": load_comment, "owner_actor_id": actor_id}
+        if config.environment.get("OCP_FULL_PLAN_ATTESTATION_PUBLIC_KEY_PATH"):
+            result["attestation_trust"] = signed_attestation_trust()
+            result["attestation_status_loader"] = signed_attestation_status_loader
+        return result
+
     def activate_full_plan(
         envelope: RemoteControlEnvelopeV1,
         *,
@@ -677,6 +768,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             authority_root=full_plan_authority_root,
             runtime_release=activation_release,
             harness_state_root=harness_state_root,
+            **delegated_owner_loader(envelope.payload),
         )
         office_store = AIOfficeStateStore(
             harness_state_root, project_id=bundle.project_id, run_id=bundle.activation_request_id,
@@ -722,6 +814,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             authority_root=full_plan_authority_root,
             runtime_release=activation_release,
             harness_state_root=harness_state_root,
+            **delegated_owner_loader(recovery_payload),
         )
 
         receipt = full_plan_activation_store.load_existing(
@@ -806,16 +899,59 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         if gate_approval_issuer is None:
             raise RuntimeServiceError("GATE_APPROVAL_ISSUE_DISABLED")
         payload = envelope.payload
+        delegated = payload.delegation_scope is not None
         owner_comment = None
+        owner_actor_id = envelope.transport.source_actor_id
+        delegated_args: dict[str, Any] = {}
+        load_comment = None
+        if delegated:
+            if activation_release is None or payload.delegation_activation is None:
+                raise RuntimeServiceError("FULL_PLAN_DELEGATION_INVALID")
+            gate_order = payload.delegation_scope.get("gate_ids")
+            if payload.finalize_delegation and (
+                    not isinstance(gate_order, list) or not gate_order
+                    or payload.gate_id != gate_order[-1]):
+                raise RuntimeServiceError("FULL_PLAN_DELEGATION_ORDER_INVALID")
+            access = delegated_owner_loader(payload.delegation_activation, require=True)
+            owner_actor_id = access["owner_actor_id"]
+            load_comment = access["owner_comment_loader"]
+            if payload.owner_attestation is not None:
+                delegated_args["attestation_trust"] = signed_attestation_trust()
+                delegated_args["attestation_status_loader"] = signed_attestation_status_loader
+            delegated_args.update({
+                "delegated_full_plan_scope": payload.delegation_scope,
+                "activation_request": payload.delegation_activation,
+                "serving_runtime_digest": activation_release.manifest_sha256,
+            })
         if payload.mode == "ISSUE":
-            owner_comment = next(
-                (comment for comment in rest_client.list_comments()
-                 if comment.get("id") == payload.owner_approval_comment_id), None,
-            )
+            if delegated and payload.owner_attestation is None:
+                assert load_comment is not None
+                owner_comment = load_comment(payload.owner_approval_comment_id)
+            else:
+                owner_comment = next(
+                    (comment for comment in rest_client.list_comments()
+                     if comment.get("id") == payload.owner_approval_comment_id), None,
+                )
         result = gate_approval_issuer.execute(
             payload, owner_approval_comment=owner_comment,
-            owner_actor_id=envelope.transport.source_actor_id,
+            owner_actor_id=owner_actor_id,
+            **(delegated_args if payload.mode == "ISSUE" else {}),
         )
+        if delegated and payload.mode == "ISSUE" and payload.finalize_delegation:
+            assert load_comment is not None
+            result["owner_delegation_evidence"] = gate_approval_issuer.issue_full_plan_delegation_root(
+                activation_request=payload.delegation_activation,
+                owner_approval_comment=(load_comment(payload.owner_approval_comment_id)
+                                        if payload.owner_attestation is None else None),
+                owner_attestation=payload.owner_attestation,
+                attestation_trust=(signed_attestation_trust()
+                                   if payload.owner_attestation is not None else None),
+                attestation_status_loader=(signed_attestation_status_loader
+                                           if payload.owner_attestation is not None else None),
+                owner_actor_id=owner_actor_id,
+                delegated_full_plan_scope=payload.delegation_scope,
+                serving_runtime_digest=activation_release.manifest_sha256,
+            )
         return {
             "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
             "message_id": envelope.message_id,

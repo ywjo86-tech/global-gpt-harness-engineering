@@ -17,6 +17,7 @@ _REQUEST_FIELDS = {
     "schema_version", "activation_request_id", "project_alias", "approved_plan", "approved_spec",
     "expected_branch", "expected_head", "runtime_release_digest", "approval_ref", "gate_bindings",
 }
+_REQUEST_OPTIONAL_FIELDS = {"owner_delegation_evidence"}
 _ARTIFACT_FIELDS = {"path", "sha256"}
 _LV_ARTIFACT_FIELDS = {"lv_id", "path", "sha256"}
 _GATE_REQUIRED_FIELDS = {
@@ -174,10 +175,12 @@ class ApprovedFullPlanActivationRequestV1:
     runtime_release_digest: str
     approval_ref: str
     gate_bindings: tuple[GateBindingRefV1, ...]
+    owner_delegation_evidence: ArtifactRefV1 | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "ApprovedFullPlanActivationRequestV1":
-        if not isinstance(value, Mapping) or set(value) != _REQUEST_FIELDS:
+        if (not isinstance(value, Mapping) or not _REQUEST_FIELDS.issubset(value)
+                or set(value) - _REQUEST_FIELDS - _REQUEST_OPTIONAL_FIELDS):
             raise ApprovedFullPlanActivationContractError("FIELDS_MISMATCH")
         gates_raw = value.get("gate_bindings")
         if not isinstance(gates_raw, list) or not gates_raw:
@@ -203,10 +206,12 @@ class ApprovedFullPlanActivationRequestV1:
             runtime_release_digest=_digest(value["runtime_release_digest"], "RUNTIME_RELEASE_DIGEST"),
             approval_ref=_approval_ref(value["approval_ref"]),
             gate_bindings=gates,
+            owner_delegation_evidence=(None if "owner_delegation_evidence" not in value else
+                ArtifactRefV1.from_mapping(value["owner_delegation_evidence"], label="owner_delegation")),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "schema_version": self.schema_version,
             "activation_request_id": self.activation_request_id,
             "project_alias": self.project_alias,
@@ -218,6 +223,9 @@ class ApprovedFullPlanActivationRequestV1:
             "approval_ref": self.approval_ref,
             "gate_bindings": [item.to_dict() for item in self.gate_bindings],
         }
+        if self.owner_delegation_evidence is not None:
+            result["owner_delegation_evidence"] = self.owner_delegation_evidence.to_dict()
+        return result
 
     @property
     def request_digest(self) -> str:
