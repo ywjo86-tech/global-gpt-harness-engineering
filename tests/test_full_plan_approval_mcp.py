@@ -58,8 +58,8 @@ class ApprovalMcpTests(unittest.IsolatedAsyncioTestCase):
         async with Client(server()) as client:
             listed = await client.list_tools()
             tools = {tool.name: tool for tool in listed.tools}
-            self.assertNotIn("confirmation", tools["approve_full_plan"].inputSchema["properties"])
-            self.assertNotIn("confirmation", tools["revoke_full_plan"].inputSchema["properties"])
+            self.assertNotIn("confirmation", tools["approve_full_plan"].input_schema["properties"])
+            self.assertNotIn("confirmation", tools["revoke_full_plan"].input_schema["properties"])
             result = await client.call_tool("approve_full_plan", {"scope": {}})
             self.assertTrue(result.is_error)
             result = await client.call_tool("revoke_full_plan", {"decision_id": "d1"})
