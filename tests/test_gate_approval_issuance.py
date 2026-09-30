@@ -108,16 +108,23 @@ class GateApprovalIssuanceTest(unittest.TestCase):
             "OWNER-APPROVAL-001", "235775273", "CONFIRM-1",
             _sha(scope), ("GATE-001",), scope["expires_at"])
         with patch("runtime.orchestrator.gate_approval_issuance.verify_owner_attestation",
-                   return_value=verified) as verifier:
+                   return_value=verified) as verifier, \
+             patch("runtime.orchestrator.gate_approval_issuance.verify_owner_status") as status_check:
             result = self.issuer.execute(
                 parsed, owner_actor_id="235775273",
                 delegated_full_plan_scope=scope,
                 activation_request=parsed.delegation_activation,
                 serving_runtime_digest="f" * 64,
-                attestation_trust={"public_key_path": "/trusted/issuer.pub"},
+                attestation_trust={"public_key_path": "/trusted/issuer.pub",
+                                   "public_key_sha256": "a" * 64,
+                                   "expected_issuer": "issuer",
+                                   "expected_audience": "audience"},
+                attestation_status_loader=lambda decision, activation, challenge:
+                    {"payload": {"active": True}},
             )
         self.assertEqual(result["status"], "ISSUED")
         verifier.assert_called_once()
+        status_check.assert_called_once()
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
