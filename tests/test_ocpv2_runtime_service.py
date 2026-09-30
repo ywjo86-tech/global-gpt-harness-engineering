@@ -512,6 +512,53 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             self.assertEqual(validate.call_args.kwargs["harness_state_root"],harness_state)
             release.assert_called_once_with(repo)
 
+    def test_delegated_activation_fetches_owner_comment_fresh_and_defaults_off(self):
+        from runtime.orchestrator.approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
+        from tests.test_approved_full_plan_activation_contract import executable_request
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); repo = root / "runtime"; repo.mkdir()
+            token = root / "token"; token.write_text("x"); token.chmod(0o600)
+            ocp_state = root / "ocp-state"; ocp_state.mkdir()
+            harness_state = root / "harness-state"; harness_state.mkdir()
+            authority = root / "authority"; authority.mkdir()
+            request = executable_request()
+            request["owner_delegation_evidence"] = {"path": "owner-delegation.json", "sha256": "9" * 64}
+            payload = ApprovedFullPlanActivationRequestV1.from_mapping(request)
+            client = Mock()
+            client.list_comments.side_effect = [
+                [{"id": 17, "body": "original"}],
+                [{"id": 17, "body": "edited"}],
+            ]
+            config = RuntimeConfig(
+                mode=__import__("runtime.orchestrator.remote_operator_service", fromlist=["ControlMode"]).ControlMode.ACTIVE,
+                repo_root=repo, control_repository_id=222, control_pr_number=7,
+                allowed_actor_ids=("235775273",), token_file=token, state_root=ocp_state,
+                environment={"GCH_STATE_ROOT": str(harness_state),
+                             "HARNESS_CONTRACT_MAPPING_ROOT": str(authority)},
+                full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+            )
+            with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient", return_value=client), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter", return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.recover_pending_canonical_results"), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root", return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.validate_approved_full_plan_binding",
+                       side_effect=RuntimeError("stop")) as validate:
+                service = _compose_service(config)
+                envelope = SimpleNamespace(payload=payload, message_id="MSG-FP")
+                with self.assertRaisesRegex(RuntimeServiceError, "DELEGATED_APPROVAL_NOT_ENABLED"):
+                    service.activate_full_plan_authorized(envelope)
+                validate.assert_not_called()
+                config.environment["OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED"] = "1"
+                config.environment["OCP_FULL_PLAN_OWNER_ACTOR_ID"] = "235775273"
+                with self.assertRaisesRegex(RuntimeError, "stop"):
+                    service.activate_full_plan_authorized(envelope)
+                loader = validate.call_args.kwargs["owner_comment_loader"]
+                self.assertEqual(validate.call_args.kwargs["owner_actor_id"], "235775273")
+                self.assertEqual(loader(17)["body"], "original")
+                self.assertEqual(loader(17)["body"], "edited")
+                self.assertEqual(client.list_comments.call_count, 2)
+
     def test_user_service_defaults_full_plan_activation_off(self):
         text=(REPO_ROOT/"deploy/operator-control-plane-v2/ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
