@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.orchestrator.project_onboarding import OnboardingRegistry, build_alias_entry
 from runtime.orchestrator.gate_approval_issuance import (
@@ -76,6 +77,8 @@ class GateApprovalIssuanceTest(unittest.TestCase):
             "excluded_actions": ["PR_MERGE", "RUNTIME_SWITCH", "SERVICE_RESTART", "REBOOT"],
         }
         activation = executable_request()
+        activation["project_alias"] = "test-project"
+        activation["expected_branch"] = "main"
         activation["approved_plan"]["sha256"] = "d" * 64
         activation["approved_spec"]["sha256"] = "e" * 64
         activation["expected_head"] = "a" * 40
@@ -100,6 +103,21 @@ class GateApprovalIssuanceTest(unittest.TestCase):
                 activation_request=parsed.delegation_activation,
                 serving_runtime_digest="f" * 64,
             )
+        from runtime.orchestrator.full_plan_owner_attestation import VerifiedOwnerAttestation
+        verified = VerifiedOwnerAttestation(
+            "OWNER-APPROVAL-001", "235775273", "CONFIRM-1",
+            _sha(scope), ("GATE-001",), scope["expires_at"])
+        with patch("runtime.orchestrator.gate_approval_issuance.verify_owner_attestation",
+                   return_value=verified) as verifier:
+            result = self.issuer.execute(
+                parsed, owner_actor_id="235775273",
+                delegated_full_plan_scope=scope,
+                activation_request=parsed.delegation_activation,
+                serving_runtime_digest="f" * 64,
+                attestation_trust={"public_key_path": "/trusted/issuer.pub"},
+            )
+        self.assertEqual(result["status"], "ISSUED")
+        verifier.assert_called_once()
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
