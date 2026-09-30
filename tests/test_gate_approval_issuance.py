@@ -89,6 +89,34 @@ class GateApprovalIssuanceTest(unittest.TestCase):
         self.digest = _sha(self.binding)
         self.issuer._preflight = lambda _: (self.binding, self.digest)
 
+    def test_delegated_request_fields_are_closed_and_preserve_legacy_digest(self) -> None:
+        from tests.test_approved_full_plan_activation_contract import executable_request
+        direct = GateApprovalIssuanceRequest.from_mapping(self.raw)
+        self.assertEqual(direct.to_dict(), self.raw)
+        self.assertNotIn("delegation_scope", direct.to_dict())
+        scope = {
+            "schema_version": "orchestration.full-plan-owner-delegation.v1",
+            "decision_id": "OWNER-APPROVAL-001", "project_id": "TEST-PROJECT",
+            "plan_sha256": "a" * 64, "spec_sha256": "b" * 64,
+            "gate_ids": ["GATE-001"], "source_head": "c" * 40,
+            "runtime_sha256": "d" * 64,
+            "issued_at": self.raw["issued_at"], "expires_at": self.raw["expires_at"],
+            "excluded_actions": ["PR_MERGE", "RUNTIME_SWITCH", "SERVICE_RESTART", "REBOOT"],
+        }
+        delegated = dict(self.raw, delegation_scope=scope,
+                         delegation_activation=executable_request(),
+                         finalize_delegation=True)
+        parsed = GateApprovalIssuanceRequest.from_mapping(delegated)
+        self.assertEqual(parsed.to_dict(), delegated)
+        self.assertNotEqual(parsed.request_digest, direct.request_digest)
+        for invalid in (
+            dict(self.raw, delegation_scope=scope),
+            dict(delegated, finalize_delegation="true"),
+            dict(delegated, delegation_scope={**scope, "extra": "forbidden"}),
+        ):
+            with self.assertRaisesRegex(GateApprovalIssuanceError, "REQUEST_FIELDS_MISMATCH|FULL_PLAN_DELEGATION_INVALID"):
+                GateApprovalIssuanceRequest.from_mapping(invalid)
+
     def test_requested_alias_ignores_unrelated_ambiguous_project(self) -> None:
         root = Path(self.temp.name)
         project = root / "CANARY"
