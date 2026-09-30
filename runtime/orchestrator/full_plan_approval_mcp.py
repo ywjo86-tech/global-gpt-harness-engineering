@@ -3,12 +3,10 @@
 Run only over Streamable HTTP with OAuth token verification. The server refuses
 in-memory/stdio calls because those transports have no authenticated principal.
 """
-from __future__ import annotations
-
 import hashlib
 import secrets
 from datetime import datetime, timezone
-from typing import Annotated, Any, Mapping
+from typing import Annotated, Any
 
 from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -25,6 +23,11 @@ from .full_plan_approval_issuer import (
 class ConfirmScope(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scope_sha256: str
+
+
+class ConfirmRevocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision_id: str
 
 
 def _principal(owner: str, required_scope: str) -> str:
@@ -54,7 +57,10 @@ def create_approval_mcp(
             + "; gates " + ", ".join(scope["gate_ids"])
             + "; expires " + scope["expires_at"]
             + ". Excluded: " + ", ".join(sorted(scope["excluded_actions"]))
-            + ". Review the exact plan/spec/head/runtime in the tool request. "
+            + ". Plan SHA-256: " + scope["plan_sha256"]
+            + "; spec SHA-256: " + scope["spec_sha256"]
+            + "; source HEAD: " + scope["source_head"]
+            + "; runtime SHA-256: " + scope["runtime_sha256"] + ". "
             + "To approve once, enter this exact scope SHA-256: " + digest,
             ConfirmScope,
         )
@@ -76,22 +82,22 @@ def create_approval_mcp(
             trusted_confirmation_id="mcp:" + secrets.token_hex(24), now=now,
         )
 
-    async def confirm_revocation(decision_id: str) -> Elicit[ConfirmScope]:
+    async def confirm_revocation(decision_id: str) -> Elicit[ConfirmRevocation]:
         _principal(issuer.owner_user_id, required_scope)
         return Elicit(
             "Revoke Full Plan decision " + decision_id
             + "? Enter the decision ID to confirm revocation.",
-            ConfirmScope,
+            ConfirmRevocation,
         )
 
     @mcp.tool()
     def revoke_full_plan(
         decision_id: str,
-        confirmation: Annotated[ConfirmScope, Resolve(confirm_revocation)],
+        confirmation: Annotated[ConfirmRevocation, Resolve(confirm_revocation)],
     ) -> dict[str, str]:
         """Revoke an issued decision as its authenticated owner."""
         owner = _principal(issuer.owner_user_id, required_scope)
-        if confirmation.scope_sha256 != decision_id:
+        if confirmation.decision_id != decision_id:
             raise ApprovalIssuerError("REVOCATION_CONFIRMATION_MISMATCH")
         issuer.revoke(decision_id=decision_id, authenticated_user_id=owner)
         return {"decision_id": decision_id, "status": "revoked"}
