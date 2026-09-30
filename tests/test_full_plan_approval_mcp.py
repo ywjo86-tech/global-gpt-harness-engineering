@@ -56,8 +56,8 @@ class ApprovalMcpTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_stdio_like_in_memory_call_cannot_issue_or_revoke(self):
         async with Client(server()) as client:
-            listed, _cursor = await client.list_tools()
-            tools = {tool.name: tool for tool in listed}
+            listed = await client.list_tools()
+            tools = {tool.name: tool for tool in listed.tools}
             self.assertNotIn("confirmation", tools["approve_full_plan"].inputSchema["properties"])
             self.assertNotIn("confirmation", tools["revoke_full_plan"].inputSchema["properties"])
             result = await client.call_tool("approve_full_plan", {"scope": {}})
