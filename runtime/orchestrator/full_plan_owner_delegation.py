@@ -131,3 +131,36 @@ def bind_delegation_to_activation(verified: OwnerDelegation,
     if not matched:
         raise DelegationError("ACTIVATION_BINDING_MISMATCH")
     return tuple(actual)
+
+
+def bind_delegation_to_gate(verified: OwnerDelegation, scope: Mapping[str, Any],
+                            activation: Mapping[str, Any], request: Mapping[str, Any],
+                            preflight_evidence: Mapping[str, Any], *,
+                            serving_runtime_digest: str) -> str:
+    """Bind one Gate issuance to an exact owner decision and host preflight.
+
+    The caller must use a freshly fetched GitHub comment, validate it first,
+    and take serving_runtime_digest from the host release manifest, never the
+    remote Operator request.
+    """
+    gates = bind_delegation_to_activation(verified, scope, activation)
+    try:
+        gate = request["gate_id"]
+        matched = (
+            gate in gates
+            and verified.gate_ids == gates
+            and verified.project_id == preflight_evidence["project_id"]
+            and scope["plan_sha256"] == preflight_evidence["plan_sha256"]
+            and scope["source_head"] == preflight_evidence["head"]
+            and activation["expected_branch"] == preflight_evidence["branch"]
+            and activation["expected_branch"] == request["expected_branch"]
+            and activation["expected_head"] == request["expected_head"]
+            and activation["approval_ref"] == request["approval_ref"]
+            and scope["decision_id"] == request["approval_ref"]
+            and scope["runtime_sha256"] == serving_runtime_digest
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DelegationError("GATE_BINDING_MISMATCH") from exc
+    if not matched:
+        raise DelegationError("GATE_BINDING_MISMATCH")
+    return gate
