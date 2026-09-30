@@ -15,6 +15,55 @@ from runtime.orchestrator.gate_approval_issuance import (
 
 
 class GateApprovalIssuanceTest(unittest.TestCase):
+    def test_one_exact_owner_comment_can_issue_bounded_delegated_gate(self) -> None:
+        from runtime.orchestrator.approved_full_plan_activation_contract import ApprovedFullPlanActivationRequestV1
+        raw = dict(self.raw, mode="ISSUE", preflight_digest=self.digest,
+                   owner_approval_comment_id=123,
+                   approval_id="DELEGATED:OWNER-APPROVAL-001")
+        request = GateApprovalIssuanceRequest.from_mapping(raw)
+        self.binding["evidence"]["payload"].update({
+            "plan_sha256": "d" * 64, "branch": "main", "head": "a" * 40,
+        })
+        scope = {
+            "schema_version": "orchestration.full-plan-owner-delegation.v1",
+            "decision_id": request.approval_ref, "project_id": "TEST-PROJECT",
+            "plan_sha256": "d" * 64, "spec_sha256": "e" * 64,
+            "gate_ids": ["GATE-001", "GATE-002"], "source_head": "a" * 40,
+            "runtime_sha256": "f" * 64,
+            "issued_at": self.raw["issued_at"], "expires_at": self.raw["expires_at"],
+            "excluded_actions": ["PR_MERGE", "RUNTIME_SWITCH", "SERVICE_RESTART", "REBOOT"],
+        }
+        body = "OCP_FULL_PLAN_OWNER_DELEGATION_V1\n" + _canonical(scope).decode("utf-8")
+        comment = {"id": 123, "user": {"id": 235775273}, "body": body,
+                   "created_at": self.raw["issued_at"], "updated_at": self.raw["issued_at"],
+                   "performed_via_github_app": None}
+        gate_ref = lambda gate: {"gate_id": gate,
+            "approval_evidence": {"path": gate + ".json", "sha256": "1" * 64},
+            "engine_requirement_evidence": None, "project_requirement_evidence_by_lv": []}
+        activation = ApprovedFullPlanActivationRequestV1.from_mapping({
+            "schema_version": "orchestration.approved-full-plan-activation-request.v1",
+            "activation_request_id": "A-1", "project_alias": "test-project",
+            "approved_plan": {"path": "docs/plan", "sha256": "d" * 64},
+            "approved_spec": {"path": "docs/spec", "sha256": "e" * 64},
+            "expected_branch": "main", "expected_head": "a" * 40,
+            "runtime_release_digest": "f" * 64, "approval_ref": request.approval_ref,
+            "gate_bindings": [gate_ref("GATE-001"), gate_ref("GATE-002")],
+        })
+        with self.assertRaises(GateApprovalIssuanceError):
+            self.issuer.execute(request, owner_approval_comment=comment, owner_actor_id="235775273")
+        issued = self.issuer.execute(
+            request, owner_approval_comment=comment, owner_actor_id="235775273",
+            delegated_full_plan_scope=scope, activation_request=activation,
+            serving_runtime_digest="f" * 64,
+        )
+        self.assertEqual(issued["status"], "ISSUED")
+        with self.assertRaisesRegex(GateApprovalIssuanceError, "FULL_PLAN_DELEGATION_INVALID"):
+            self.issuer.execute(
+                request, owner_approval_comment=comment, owner_actor_id="235775273",
+                delegated_full_plan_scope=scope, activation_request=activation,
+                serving_runtime_digest="0" * 64,
+            )
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
