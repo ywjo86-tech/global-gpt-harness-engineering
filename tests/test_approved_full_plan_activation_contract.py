@@ -29,6 +29,17 @@ def executable_request():
 
 
 class ApprovedFullPlanActivationContractTests(unittest.TestCase):
+    def test_optional_owner_delegation_reference_is_closed_and_safe(self):
+        value = executable_request()
+        value["owner_delegation_evidence"] = {"path": "owner-delegation.json", "sha256": "9" * 64}
+        parsed = ApprovedFullPlanActivationRequestV1.from_mapping(value)
+        self.assertEqual(parsed.to_dict(), value)
+        for bad in ("../outside.json", "/etc/passwd"):
+            invalid = executable_request()
+            invalid["owner_delegation_evidence"] = {"path": bad, "sha256": "9" * 64}
+            with self.assertRaises(ApprovedFullPlanActivationContractError):
+                ApprovedFullPlanActivationRequestV1.from_mapping(invalid)
+
     def test_authority_refs_are_domain_neutral_safe_relative_names(self):
         value = executable_request()
         value["gate_bindings"][0]["approval_evidence"]["path"] = "approval-g1.json"
