@@ -88,6 +88,49 @@ class ApprovedFullPlanBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_NOT_ENABLED"):
             self.validate(request)
 
+    def test_delegated_activation_checks_fresh_comment_and_exact_gate_refs(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        stamp = lambda value: value.isoformat().replace("+00:00", "Z")
+        request = self.request(approval_ref="USER-APPROVAL-1")
+        scope = {
+            "schema_version": "orchestration.full-plan-owner-delegation.v1",
+            "decision_id": "USER-APPROVAL-1", "project_id": "project",
+            "plan_sha256": sha(self.plan), "spec_sha256": sha(self.spec),
+            "gate_ids": ["GATE-001"], "source_head": request["expected_head"],
+            "runtime_sha256": self.release.manifest_sha256,
+            "issued_at": stamp(now - timedelta(minutes=2)),
+            "expires_at": stamp(now + timedelta(minutes=30)),
+            "excluded_actions": ["PR_MERGE", "RUNTIME_SWITCH", "SERVICE_RESTART", "REBOOT"],
+        }
+        body = "OCP_FULL_PLAN_OWNER_DELEGATION_V1\n" + json.dumps(scope, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        comment = {"id": 123, "user": {"id": 235775273}, "body": body,
+                   "created_at": stamp(now - timedelta(minutes=1)),
+                   "updated_at": stamp(now - timedelta(minutes=1)),
+                   "performed_via_github_app": None}
+        payload = {"schema_version": "orchestration.full-plan-owner-delegation-artifact.v1",
+                   "scope": scope, "owner_comment_id": 123,
+                   "gate_approval_refs": [{"gate_id": "GATE-001", "sha256": sha(self.approval)}]}
+        artifact = {"payload": payload, "record_hash": hashlib.sha256(json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()}
+        target = self.approval_root / "owner-delegation.json"
+        target.write_text(json.dumps(artifact, sort_keys=True), encoding="utf-8")
+        request["owner_delegation_evidence"] = {"path": target.name, "sha256": sha(target)}
+        args = dict(authority_root=self.authority, runtime_release=self.release, harness_state_root=self.harness,
+                    owner_actor_id="235775273")
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_NOT_ENABLED"):
+            validate_approved_full_plan_binding(request, **args)
+        result = validate_approved_full_plan_binding(request, owner_comment_loader=lambda _: comment, **args)
+        self.assertEqual(result.project_id, "project")
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_INVALID"):
+            validate_approved_full_plan_binding(request, owner_comment_loader=lambda _: None, **args)
+        altered = dict(payload, gate_approval_refs=[{"gate_id": "GATE-001", "sha256": "0" * 64}])
+        artifact = {"payload": altered, "record_hash": hashlib.sha256(json.dumps(
+            altered, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()}
+        target.write_text(json.dumps(artifact, sort_keys=True), encoding="utf-8")
+        request["owner_delegation_evidence"]["sha256"] = sha(target)
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_INVALID"):
+            validate_approved_full_plan_binding(request, owner_comment_loader=lambda _: comment, **args)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(); self.base = Path(self.tmp.name)
         self.root = self.base / "project"; self.root.mkdir()
