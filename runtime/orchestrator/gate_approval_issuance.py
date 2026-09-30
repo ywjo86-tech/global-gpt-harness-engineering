@@ -24,6 +24,7 @@ from .approved_full_plan_binding import (
     _validate_gate_requirement_artifacts, resolve_harness_authority_file,
 )
 from .approved_work_binding import resolve_committed_project_file
+from .full_plan_owner_attestation import OwnerAttestationError, verify_owner_attestation
 from .full_plan_owner_delegation import (
     FIELDS as DELEGATION_SCOPE_FIELDS,
     DelegationError, bind_delegation_to_gate, validate_owner_delegation,
@@ -40,6 +41,7 @@ _FIELDS = {
     "engine_requirement_evidence", "project_requirement_evidence_by_lv",
 }
 _DELEGATION_FIELDS = {"delegation_scope", "delegation_activation", "finalize_delegation"}
+_SIGNED_DELEGATION_FIELDS = _DELEGATION_FIELDS | {"owner_attestation"}
 _SAFE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _HEAD = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -96,14 +98,21 @@ class GateApprovalIssuanceRequest:
     delegation_scope: Mapping[str, Any] | None = None
     delegation_activation: ApprovedFullPlanActivationRequestV1 | None = None
     finalize_delegation: bool = False
+    owner_attestation: Mapping[str, Any] | None = None
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "GateApprovalIssuanceRequest":
         if (not isinstance(raw, Mapping)
-                or set(raw) not in (_FIELDS, _FIELDS | _DELEGATION_FIELDS)
+                or set(raw) not in (_FIELDS, _FIELDS | _DELEGATION_FIELDS,
+                                    _FIELDS | _SIGNED_DELEGATION_FIELDS)
                 or raw.get("schema_version") != SCHEMA):
             raise GateApprovalIssuanceError("REQUEST_FIELDS_MISMATCH")
-        delegated = set(raw) == _FIELDS | _DELEGATION_FIELDS
+        delegated = set(raw) in (_FIELDS | _DELEGATION_FIELDS,
+                                 _FIELDS | _SIGNED_DELEGATION_FIELDS)
+        signed = set(raw) == _FIELDS | _SIGNED_DELEGATION_FIELDS
+        if signed and (not isinstance(raw["owner_attestation"], Mapping)
+                       or set(raw["owner_attestation"]) != {"payload", "signature"}):
+            raise GateApprovalIssuanceError("FULL_PLAN_ATTESTATION_INVALID")
         scope = None
         activation = None
         if delegated:
@@ -137,7 +146,7 @@ class GateApprovalIssuanceRequest:
             raise GateApprovalIssuanceError("DRY_RUN_PREFLIGHT_DIGEST_FORBIDDEN")
         if mode == "ISSUE" and not _SHA.fullmatch(str(digest or "")):
             raise GateApprovalIssuanceError("PREFLIGHT_DIGEST_REQUIRED")
-        if mode == "ISSUE" and (type(comment_id) is not int or comment_id <= 0):
+        if mode == "ISSUE" and not signed and (type(comment_id) is not int or comment_id <= 0):
             raise GateApprovalIssuanceError("OWNER_APPROVAL_COMMENT_REQUIRED")
         if mode not in {"DRY_RUN", "ISSUE"}:
             raise GateApprovalIssuanceError("MODE_INVALID")
@@ -153,7 +162,8 @@ class GateApprovalIssuanceRequest:
         return cls(**{key: raw[key] for key in _FIELDS},
                    delegation_scope=dict(scope) if scope is not None else None,
                    delegation_activation=activation,
-                   finalize_delegation=raw["finalize_delegation"] if delegated else False)
+                   finalize_delegation=raw["finalize_delegation"] if delegated else False,
+                   owner_attestation=dict(raw["owner_attestation"]) if signed else None)
 
     def to_dict(self) -> dict[str, Any]:
         result = {key: getattr(self, key) for key in sorted(_FIELDS)}
@@ -162,6 +172,8 @@ class GateApprovalIssuanceRequest:
             result.update(delegation_scope=dict(self.delegation_scope),
                           delegation_activation=self.delegation_activation.to_dict(),
                           finalize_delegation=self.finalize_delegation)
+            if self.owner_attestation is not None:
+                result["owner_attestation"] = dict(self.owner_attestation)
         return result
 
     @property
@@ -282,12 +294,15 @@ class GateApprovalIssuer:
                 owner_actor_id: str = "",
                 delegated_full_plan_scope: Mapping[str, Any] | None = None,
                 activation_request: ApprovedFullPlanActivationRequestV1 | None = None,
-                serving_runtime_digest: str | None = None) -> dict[str, Any]:
+                serving_runtime_digest: str | None = None,
+                attestation_trust: Mapping[str, Any] | None = None) -> dict[str, Any]:
         binding, digest = self._preflight(request)
         if request.mode == "DRY_RUN":
             return {"status": "PREFLIGHT_READY", "mutation_performed": False,
                     "preflight_digest": digest, "approval_payload_sha256": _sha(binding["evidence"])}
-        if request.preflight_digest != digest or owner_approval_comment is None:
+        if request.preflight_digest != digest:
+            raise GateApprovalIssuanceError("EXACT_OWNER_APPROVAL_REQUIRED")
+        if request.owner_attestation is None and owner_approval_comment is None:
             raise GateApprovalIssuanceError("EXACT_OWNER_APPROVAL_REQUIRED")
         delegated = (delegated_full_plan_scope is not None or activation_request is not None
                      or serving_runtime_digest is not None)
@@ -296,11 +311,25 @@ class GateApprovalIssuer:
                     or serving_runtime_digest is None or not owner_actor_id):
                 raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID")
             try:
-                verified = validate_owner_delegation(
-                    owner_approval_comment, owner_actor_id=owner_actor_id,
-                    expected_comment_id=request.owner_approval_comment_id,
-                    expected_scope=delegated_full_plan_scope, now=datetime.now(timezone.utc),
-                )
+                if request.owner_attestation is not None:
+                    if attestation_trust is None or owner_approval_comment is not None:
+                        raise DelegationError("signed attestation trust required")
+                    signed = verify_owner_attestation(
+                        request.owner_attestation, now=datetime.now(timezone.utc),
+                        **attestation_trust,
+                    )
+                    if dict(request.owner_attestation["payload"]["scope"]) != dict(delegated_full_plan_scope):
+                        raise DelegationError("attested scope mismatch")
+                    from .full_plan_owner_delegation import OwnerDelegation
+                    verified = OwnerDelegation(signed.decision_id, 0,
+                        delegated_full_plan_scope["project_id"], signed.gate_ids,
+                        signed.scope_sha256, signed.expires_at)
+                else:
+                    verified = validate_owner_delegation(
+                        owner_approval_comment, owner_actor_id=owner_actor_id,
+                        expected_comment_id=request.owner_approval_comment_id,
+                        expected_scope=delegated_full_plan_scope, now=datetime.now(timezone.utc),
+                    )
                 if (request.approval_id != f"DELEGATED:{verified.decision_id}"
                         or activation_request.project_alias != request.project_alias):
                     raise DelegationError("delegated issue identity mismatch")
@@ -309,7 +338,7 @@ class GateApprovalIssuer:
                     request.to_dict(), binding["evidence"]["payload"],
                     serving_runtime_digest=serving_runtime_digest,
                 )
-            except (DelegationError, KeyError, TypeError, ValueError) as exc:
+            except (DelegationError, OwnerAttestationError, KeyError, TypeError, ValueError) as exc:
                 raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID") from exc
         else:
             self._verify_owner_comment(request, digest, owner_approval_comment, owner_actor_id)
@@ -361,7 +390,9 @@ class GateApprovalIssuer:
             activation_request: ApprovedFullPlanActivationRequestV1,
             owner_approval_comment: Mapping[str, Any], owner_actor_id: str,
             delegated_full_plan_scope: Mapping[str, Any],
-            serving_runtime_digest: str) -> dict[str, str]:
+            serving_runtime_digest: str,
+            owner_attestation: Mapping[str, Any] | None = None,
+            attestation_trust: Mapping[str, Any] | None = None) -> dict[str, str]:
         """Seal one root decision after all derived Gate approvals exist.
 
         This is a host-only operation. The remote Operator envelope does not
@@ -370,12 +401,24 @@ class GateApprovalIssuer:
         if not isinstance(activation_request, ApprovedFullPlanActivationRequestV1):
             raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID")
         try:
-            comment_id = owner_approval_comment["id"]
-            verified = validate_owner_delegation(
-                owner_approval_comment, owner_actor_id=owner_actor_id,
-                expected_comment_id=comment_id, expected_scope=delegated_full_plan_scope,
-                now=datetime.now(timezone.utc),
-            )
+            if owner_attestation is not None:
+                if attestation_trust is None or owner_approval_comment is not None:
+                    raise ValueError("signed attestation trust required")
+                signed = verify_owner_attestation(
+                    owner_attestation, now=datetime.now(timezone.utc), **attestation_trust)
+                if dict(owner_attestation["payload"]["scope"]) != dict(delegated_full_plan_scope):
+                    raise ValueError("attested scope mismatch")
+                from .full_plan_owner_delegation import OwnerDelegation
+                verified = OwnerDelegation(signed.decision_id, 0,
+                    delegated_full_plan_scope["project_id"], signed.gate_ids,
+                    signed.scope_sha256, signed.expires_at)
+            else:
+                comment_id = owner_approval_comment["id"]
+                verified = validate_owner_delegation(
+                    owner_approval_comment, owner_actor_id=owner_actor_id,
+                    expected_comment_id=comment_id, expected_scope=delegated_full_plan_scope,
+                    now=datetime.now(timezone.utc),
+                )
             activation = activation_request.to_dict()
             from .full_plan_owner_delegation import bind_delegation_to_activation
             bind_delegation_to_activation(verified, delegated_full_plan_scope, activation)
@@ -415,9 +458,13 @@ class GateApprovalIssuer:
             payload = {
                 "schema_version": "orchestration.full-plan-owner-delegation-artifact.v1",
                 "scope": dict(delegated_full_plan_scope),
-                "owner_comment_id": verified.comment_id,
                 "gate_approval_refs": refs,
             }
+            if owner_attestation is None:
+                payload["owner_comment_id"] = verified.comment_id
+            else:
+                payload["schema_version"] = "orchestration.full-plan-owner-attestation-artifact.v1"
+                payload["owner_attestation"] = dict(owner_attestation)
             envelope = {"payload": payload, "record_hash": _sha(payload)}
             target_root = namespace_root(self.state_root, verified.project_id, "approval")
             cursor = self.state_root
@@ -449,5 +496,5 @@ class GateApprovalIssuer:
                 finally:
                     os.unlink(temporary)
             return {"path": relative, "sha256": hashlib.sha256(encoded).hexdigest()}
-        except (OSError, KeyError, TypeError, ValueError) as exc:
+        except (OSError, KeyError, TypeError, ValueError, OwnerAttestationError) as exc:
             raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID") from exc
