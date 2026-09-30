@@ -73,6 +73,8 @@ _OPTIONAL_ENV = {
     "OCP_WORK_ACTIVATION_POLICY_REF",
     "OCP_FULL_PLAN_ACTIVATION_ENABLED",
     "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
+    "OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED",
+    "OCP_FULL_PLAN_OWNER_ACTOR_ID",
     "OCP_GATE_APPROVAL_ISSUE_ENABLED",
     "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
@@ -661,6 +663,27 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
+    def delegated_owner_loader(payload):
+        if getattr(payload, "owner_delegation_evidence", None) is None:
+            return {}
+        if str(config.environment.get("OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED") or "") != "1":
+            raise RuntimeServiceError("DELEGATED_APPROVAL_NOT_ENABLED")
+        actor_id = str(config.environment.get("OCP_FULL_PLAN_OWNER_ACTOR_ID") or "").strip()
+        if not actor_id.isdecimal() or actor_id not in config.allowed_actor_ids:
+            raise RuntimeServiceError("DELEGATED_OWNER_ACTOR_INVALID")
+
+        def load_comment(comment_id: int) -> Mapping[str, Any]:
+            if type(comment_id) is not int or comment_id <= 0:
+                raise RuntimeServiceError("DELEGATED_OWNER_COMMENT_INVALID")
+            # Fetch on every validation; deletion or edit must revoke the decision.
+            matches = [comment for comment in rest_client.list_comments()
+                       if comment.get("id") == comment_id]
+            if len(matches) != 1:
+                raise RuntimeServiceError("DELEGATED_OWNER_COMMENT_UNAVAILABLE")
+            return matches[0]
+
+        return {"owner_comment_loader": load_comment, "owner_actor_id": actor_id}
+
     def activate_full_plan(
         envelope: RemoteControlEnvelopeV1,
         *,
@@ -677,6 +700,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             authority_root=full_plan_authority_root,
             runtime_release=activation_release,
             harness_state_root=harness_state_root,
+            **delegated_owner_loader(envelope.payload),
         )
         office_store = AIOfficeStateStore(
             harness_state_root, project_id=bundle.project_id, run_id=bundle.activation_request_id,
@@ -722,6 +746,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             authority_root=full_plan_authority_root,
             runtime_release=activation_release,
             harness_state_root=harness_state_root,
+            **delegated_owner_loader(recovery_payload),
         )
 
         receipt = full_plan_activation_store.load_existing(
