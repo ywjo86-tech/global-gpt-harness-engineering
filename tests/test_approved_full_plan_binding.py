@@ -19,6 +19,7 @@ from runtime.orchestrator.approved_full_plan_binding import (
     validate_approved_full_plan_binding,
 )
 from runtime.orchestrator.gate_approval import seal_approval_evidence
+from runtime.orchestrator.gate_approval_issuance import GateApprovalIssuer
 from runtime.orchestrator.gate_orchestrator import REQUIREMENT_IDS, namespace_root
 from runtime.orchestrator.project_onboarding import OnboardingRegistry
 from runtime.orchestrator.runtime_release import RuntimeReleaseManifest
@@ -110,14 +111,17 @@ class ApprovedFullPlanBindingTests(unittest.TestCase):
                    "created_at": stamp(now - timedelta(minutes=1)),
                    "updated_at": stamp(now - timedelta(minutes=1)),
                    "performed_via_github_app": None}
-        payload = {"schema_version": "orchestration.full-plan-owner-delegation-artifact.v1",
-                   "scope": scope, "owner_comment_id": 123,
-                   "gate_approval_refs": [{"gate_id": "GATE-001", "sha256": sha(self.approval)}]}
-        artifact = {"payload": payload, "record_hash": hashlib.sha256(json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()}
-        target = self.approval_root / "owner-delegation.json"
-        target.write_text(json.dumps(artifact, sort_keys=True), encoding="utf-8")
-        request["owner_delegation_evidence"] = {"path": target.name, "sha256": sha(target)}
+        issuer = object.__new__(GateApprovalIssuer)
+        issuer.registry = self.registry
+        issuer.mapping_root = self.authority / "mappings"
+        issuer.state_root = self.harness
+        request["owner_delegation_evidence"] = issuer.issue_full_plan_delegation_root(
+            activation_request=ApprovedFullPlanActivationRequestV1.from_mapping(request),
+            owner_approval_comment=comment, owner_actor_id="235775273",
+            delegated_full_plan_scope=scope,
+            serving_runtime_digest=self.release.manifest_sha256,
+        )
+        target = self.approval_root / request["owner_delegation_evidence"]["path"]
         args = dict(authority_root=self.authority, runtime_release=self.release, harness_state_root=self.harness,
                     owner_actor_id="235775273")
         with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_NOT_ENABLED"):
@@ -126,6 +130,7 @@ class ApprovedFullPlanBindingTests(unittest.TestCase):
         self.assertEqual(result.project_id, "project")
         with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_INVALID"):
             validate_approved_full_plan_binding(request, owner_comment_loader=lambda _: None, **args)
+        payload = json.loads(target.read_text(encoding="utf-8"))["payload"]
         altered = dict(payload, gate_approval_refs=[{"gate_id": "GATE-001", "sha256": "0" * 64}])
         artifact = {"payload": altered, "record_hash": hashlib.sha256(json.dumps(
             altered, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()}
