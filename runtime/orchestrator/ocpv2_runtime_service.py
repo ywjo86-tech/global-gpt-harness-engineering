@@ -664,9 +664,9 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         outbox.enqueue_projection(projection)
         return projection.to_dict()
 
-    def delegated_owner_loader(payload):
-        if (not isinstance(payload, ApprovedFullPlanActivationRequestV1)
-                or payload.owner_delegation_evidence is None):
+    def delegated_owner_loader(payload, *, require: bool = False):
+        if (not require and (not isinstance(payload, ApprovedFullPlanActivationRequestV1)
+                or payload.owner_delegation_evidence is None)):
             return {}
         if str(config.environment.get("OCP_FULL_PLAN_OWNER_DELEGATION_ENABLED") or "") != "1":
             raise RuntimeServiceError("DELEGATED_APPROVAL_NOT_ENABLED")
@@ -833,16 +833,48 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         if gate_approval_issuer is None:
             raise RuntimeServiceError("GATE_APPROVAL_ISSUE_DISABLED")
         payload = envelope.payload
+        delegated = payload.delegation_scope is not None
         owner_comment = None
+        owner_actor_id = envelope.transport.source_actor_id
+        delegated_args: dict[str, Any] = {}
+        load_comment = None
+        if delegated:
+            if activation_release is None or payload.delegation_activation is None:
+                raise RuntimeServiceError("FULL_PLAN_DELEGATION_INVALID")
+            if payload.finalize_delegation and (
+                    payload.gate_id != payload.delegation_scope["gate_ids"][-1]):
+                raise RuntimeServiceError("FULL_PLAN_DELEGATION_ORDER_INVALID")
+            access = delegated_owner_loader(payload.delegation_activation, require=True)
+            owner_actor_id = access["owner_actor_id"]
+            load_comment = access["owner_comment_loader"]
+            delegated_args = {
+                "delegated_full_plan_scope": payload.delegation_scope,
+                "activation_request": payload.delegation_activation,
+                "serving_runtime_digest": activation_release.manifest_sha256,
+            }
         if payload.mode == "ISSUE":
-            owner_comment = next(
-                (comment for comment in rest_client.list_comments()
-                 if comment.get("id") == payload.owner_approval_comment_id), None,
-            )
+            if delegated:
+                assert load_comment is not None
+                owner_comment = load_comment(payload.owner_approval_comment_id)
+            else:
+                owner_comment = next(
+                    (comment for comment in rest_client.list_comments()
+                     if comment.get("id") == payload.owner_approval_comment_id), None,
+                )
         result = gate_approval_issuer.execute(
             payload, owner_approval_comment=owner_comment,
-            owner_actor_id=envelope.transport.source_actor_id,
+            owner_actor_id=owner_actor_id,
+            **(delegated_args if payload.mode == "ISSUE" else {}),
         )
+        if delegated and payload.mode == "ISSUE" and payload.finalize_delegation:
+            assert load_comment is not None
+            result["owner_delegation_evidence"] = gate_approval_issuer.issue_full_plan_delegation_root(
+                activation_request=payload.delegation_activation,
+                owner_approval_comment=load_comment(payload.owner_approval_comment_id),
+                owner_actor_id=owner_actor_id,
+                delegated_full_plan_scope=payload.delegation_scope,
+                serving_runtime_digest=activation_release.manifest_sha256,
+            )
         return {
             "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
             "message_id": envelope.message_id,
