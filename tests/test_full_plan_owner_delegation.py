@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from runtime.orchestrator.full_plan_owner_delegation import (
     DelegationError, validate_owner_delegation, bind_delegation_to_activation,
+    bind_delegation_to_gate,
 )
 
 
@@ -79,6 +80,39 @@ class OwnerDelegationTests(unittest.TestCase):
             bind_delegation_to_activation(verified, SCOPE, {**activation, "expected_head": "f" * 40})
         with self.assertRaises(DelegationError):
             bind_delegation_to_activation(verified, {**SCOPE, "decision_id": "OTHER"}, activation)
+
+    def test_same_owner_decision_covers_two_exact_gate_preflights(self):
+        verified = self.check(comment())
+        activation = {
+            "approved_plan": {"sha256": "a" * 64},
+            "approved_spec": {"sha256": "b" * 64},
+            "expected_branch": "main", "expected_head": "c" * 40,
+            "runtime_release_digest": "d" * 64, "approval_ref": "DECISION-1",
+            "gate_bindings": [{"gate_id": "GATE-001"}, {"gate_id": "GATE-002"}],
+        }
+        evidence = {"project_id": "PROJECT-1", "plan_sha256": "a" * 64,
+                    "branch": "main", "head": "c" * 40}
+        for gate in ("GATE-001", "GATE-002"):
+            request = {"gate_id": gate, "expected_branch": "main",
+                       "expected_head": "c" * 40, "approval_ref": "DECISION-1"}
+            self.assertEqual(bind_delegation_to_gate(
+                verified, SCOPE, activation, request, evidence,
+                serving_runtime_digest="d" * 64), gate)
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_gate(verified, SCOPE, activation,
+                                    {**request, "gate_id": "GATE-003"}, evidence,
+                                    serving_runtime_digest="d" * 64)
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_gate(verified, SCOPE, activation,
+                                    request, evidence, serving_runtime_digest="e" * 64)
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_gate(verified, SCOPE, activation,
+                                    {**request, "approval_ref": "OTHER"}, evidence,
+                                    serving_runtime_digest="d" * 64)
+        with self.assertRaises(DelegationError):
+            bind_delegation_to_gate(verified, SCOPE, activation,
+                                    request, {**evidence, "head": "f" * 40},
+                                    serving_runtime_digest="d" * 64)
 
 
 if __name__ == "__main__":
