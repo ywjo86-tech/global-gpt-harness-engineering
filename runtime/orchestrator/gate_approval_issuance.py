@@ -9,12 +9,13 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .contract_adapter import load_project_mapping, sha256_file, validate_mapping_sources
 from .approved_full_plan_activation_contract import (
@@ -24,7 +25,8 @@ from .approved_full_plan_binding import (
     _validate_gate_requirement_artifacts, resolve_harness_authority_file,
 )
 from .approved_work_binding import resolve_committed_project_file
-from .full_plan_owner_attestation import OwnerAttestationError, verify_owner_attestation
+from .full_plan_owner_attestation import (OwnerAttestationError, verify_owner_attestation,
+                                          verify_owner_status)
 from .full_plan_owner_delegation import (
     FIELDS as DELEGATION_SCOPE_FIELDS,
     DelegationError, bind_delegation_to_gate, validate_owner_delegation,
@@ -295,7 +297,8 @@ class GateApprovalIssuer:
                 delegated_full_plan_scope: Mapping[str, Any] | None = None,
                 activation_request: ApprovedFullPlanActivationRequestV1 | None = None,
                 serving_runtime_digest: str | None = None,
-                attestation_trust: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                attestation_trust: Mapping[str, Any] | None = None,
+                attestation_status_loader: Callable[[str, str, str], Mapping[str, Any]] | None = None) -> dict[str, Any]:
         binding, digest = self._preflight(request)
         if request.mode == "DRY_RUN":
             return {"status": "PREFLIGHT_READY", "mutation_performed": False,
@@ -320,6 +323,21 @@ class GateApprovalIssuer:
                     )
                     if dict(request.owner_attestation["payload"]["scope"]) != dict(delegated_full_plan_scope):
                         raise DelegationError("attested scope mismatch")
+                    if attestation_status_loader is None:
+                        raise DelegationError("issuer status unavailable")
+                    challenge = secrets.token_urlsafe(32)
+                    status = attestation_status_loader(
+                        signed.decision_id, activation_request.activation_request_id, challenge)
+                    verify_owner_status(
+                        status, now=datetime.now(timezone.utc),
+                        public_key_path=attestation_trust["public_key_path"],
+                        public_key_sha256=attestation_trust["public_key_sha256"],
+                        expected_issuer=attestation_trust["expected_issuer"],
+                        expected_audience=attestation_trust["expected_audience"],
+                        expected_decision_id=signed.decision_id,
+                        expected_scope_sha256=signed.scope_sha256,
+                        expected_activation_id=activation_request.activation_request_id,
+                        expected_challenge=challenge)
                     from .full_plan_owner_delegation import OwnerDelegation
                     verified = OwnerDelegation(signed.decision_id, 0,
                         delegated_full_plan_scope["project_id"], signed.gate_ids,
@@ -392,7 +410,8 @@ class GateApprovalIssuer:
             delegated_full_plan_scope: Mapping[str, Any],
             serving_runtime_digest: str,
             owner_attestation: Mapping[str, Any] | None = None,
-            attestation_trust: Mapping[str, Any] | None = None) -> dict[str, str]:
+            attestation_trust: Mapping[str, Any] | None = None,
+            attestation_status_loader: Callable[[str, str, str], Mapping[str, Any]] | None = None) -> dict[str, str]:
         """Seal one root decision after all derived Gate approvals exist.
 
         This is a host-only operation. The remote Operator envelope does not
@@ -408,6 +427,21 @@ class GateApprovalIssuer:
                     owner_attestation, now=datetime.now(timezone.utc), **attestation_trust)
                 if dict(owner_attestation["payload"]["scope"]) != dict(delegated_full_plan_scope):
                     raise ValueError("attested scope mismatch")
+                if attestation_status_loader is None:
+                    raise ValueError("issuer status unavailable")
+                challenge = secrets.token_urlsafe(32)
+                status = attestation_status_loader(
+                    signed.decision_id, activation_request.activation_request_id, challenge)
+                verify_owner_status(
+                    status, now=datetime.now(timezone.utc),
+                    public_key_path=attestation_trust["public_key_path"],
+                    public_key_sha256=attestation_trust["public_key_sha256"],
+                    expected_issuer=attestation_trust["expected_issuer"],
+                    expected_audience=attestation_trust["expected_audience"],
+                    expected_decision_id=signed.decision_id,
+                    expected_scope_sha256=signed.scope_sha256,
+                    expected_activation_id=activation_request.activation_request_id,
+                    expected_challenge=challenge)
                 from .full_plan_owner_delegation import OwnerDelegation
                 verified = OwnerDelegation(signed.decision_id, 0,
                     delegated_full_plan_scope["project_id"], signed.gate_ids,
