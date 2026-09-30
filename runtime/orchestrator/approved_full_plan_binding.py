@@ -18,7 +18,7 @@ from .gate_orchestrator import (
     GateOrchestrationError, GatePlan, load_gate_plan, load_project_requirement_contract,
     load_requirement_evidence, namespace_root, validate_global_gate_bindings,
 )
-from .project_onboarding import OnboardingRegistry, ProjectOnboardingError
+from .project_onboarding import ProjectOnboardingError, validate_alias_entry
 from .runtime_release import RuntimeReleaseManifest
 from .task_contract_compat import TaskContractProjectionError, resolve_task_project_requirement_contract
 
@@ -247,13 +247,18 @@ def validate_approved_full_plan_binding(
 ) -> ExecutableAuthorityBundleV1:
     req = request if isinstance(request, ApprovedFullPlanActivationRequestV1) else ApprovedFullPlanActivationRequestV1.from_mapping(request)
     authority, aliases_root, mappings_root = resolve_executable_authority_roots(authority_root)
-    try:
-        registry = OnboardingRegistry(aliases_root)
-        entry = next((item for item in registry.entries() if item.get("alias") == req.project_alias), None)
-    except ProjectOnboardingError as exc:
-        raise ApprovedFullPlanBindingError("EXECUTABLE_FULL_PLAN_REQUIRED: project registry invalid") from exc
-    if entry is None:
+    # A separate project's registration can drift independently. The approved
+    # alias is the only authority this request is allowed to bind.
+    alias_path = aliases_root / f"{req.project_alias}.json"
+    if alias_path.is_symlink() or not alias_path.is_file():
         raise ApprovedFullPlanBindingError("EXECUTABLE_FULL_PLAN_REQUIRED: project alias")
+    try:
+        entry = json.loads(alias_path.read_text(encoding="utf-8"))
+        if not isinstance(entry, dict) or entry.get("alias") != req.project_alias:
+            raise ApprovedFullPlanBindingError("EXECUTABLE_FULL_PLAN_REQUIRED: project registry invalid")
+        validate_alias_entry(entry)
+    except (OSError, UnicodeError, json.JSONDecodeError, ProjectOnboardingError) as exc:
+        raise ApprovedFullPlanBindingError("EXECUTABLE_FULL_PLAN_REQUIRED: project registry invalid") from exc
     try:
         project_root = Path(str(entry["project_root"])).resolve(strict=True)
         mapping = load_project_mapping(project_root, mapping_root=mappings_root)
