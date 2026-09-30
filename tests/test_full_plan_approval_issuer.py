@@ -8,7 +8,9 @@ from pathlib import Path
 from runtime.orchestrator.full_plan_approval_issuer import (
     ApprovalIssuerError, FullPlanApprovalIssuer,
 )
-from runtime.orchestrator.full_plan_owner_attestation import verify_owner_attestation
+from runtime.orchestrator.full_plan_owner_attestation import (
+    OwnerAttestationError, verify_owner_attestation, verify_owner_status,
+)
 
 
 def stamp(value):
@@ -63,9 +65,20 @@ class ApprovalIssuerTests(unittest.TestCase):
         active = self.issuer.status(decision_id="DECISION-1", activation_id="ACT-1",
                                     challenge=challenge, now=self.now)
         self.assertTrue(active["payload"]["active"])
+        status_args = dict(
+            public_key_path=self.public,
+            public_key_sha256=hashlib.sha256(self.public.read_bytes()).hexdigest(),
+            expected_issuer="trusted-mcp-issuer", expected_audience="ocpv2-full-plan",
+            expected_decision_id="DECISION-1", expected_scope_sha256=verified.scope_sha256,
+            expected_activation_id="ACT-1", expected_challenge=challenge, now=self.now)
+        verify_owner_status(active, **status_args)
+        with self.assertRaises(OwnerAttestationError):
+            verify_owner_status(active, **{**status_args, "expected_challenge": "other"})
         other = self.issuer.status(decision_id="DECISION-1", activation_id="ACT-2",
                                    challenge=challenge, now=self.now)
         self.assertFalse(other["payload"]["active"])
+        with self.assertRaises(OwnerAttestationError):
+            verify_owner_status(other, **{**status_args, "expected_activation_id": "ACT-2"})
         with self.assertRaisesRegex(ApprovalIssuerError, "OWNER_AUTH_REQUIRED"):
             self.issuer.revoke(decision_id="DECISION-1", authenticated_user_id="other")
         self.issuer.revoke(decision_id="DECISION-1",
@@ -73,6 +86,8 @@ class ApprovalIssuerTests(unittest.TestCase):
         revoked = self.issuer.status(decision_id="DECISION-1", activation_id="ACT-1",
                                      challenge=challenge, now=self.now)
         self.assertFalse(revoked["payload"]["active"])
+        with self.assertRaises(OwnerAttestationError):
+            verify_owner_status(revoked, **status_args)
 
     def test_untrusted_identity_and_widened_scope_rejected(self):
         with self.assertRaisesRegex(ApprovalIssuerError, "OWNER_AUTH_REQUIRED"):
