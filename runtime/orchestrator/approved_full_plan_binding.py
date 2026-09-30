@@ -5,8 +5,9 @@ import hashlib
 import json
 import subprocess
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .approved_full_plan_activation_contract import (
     ApprovedFullPlanActivationRequestV1, GateBindingRefV1,
@@ -14,6 +15,9 @@ from .approved_full_plan_activation_contract import (
 from .approved_work_binding import ApprovedWorkBindingError, resolve_committed_project_file
 from .contract_adapter import ContractMappingError, load_project_mapping, sha256_file, validate_mapping_sources
 from .gate_approval import GateApprovalError, load_approval_evidence
+from .full_plan_owner_delegation import (
+    DelegationError, bind_delegation_to_activation, validate_owner_delegation,
+)
 from .gate_orchestrator import (
     GateOrchestrationError, GatePlan, load_gate_plan, load_project_requirement_contract,
     load_requirement_evidence, namespace_root, validate_global_gate_bindings,
@@ -133,10 +137,15 @@ class ExecutableAuthorityBundleV1:
     runtime_release_source_head: str
     runtime_code_root: str
     gates: tuple[ValidatedGateAuthorityV1, ...]
+    owner_delegation_evidence_sha256: str = ""
+    owner_decision_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["gates"] = [gate.to_dict() for gate in self.gates]
+        if not self.owner_delegation_evidence_sha256:
+            value.pop("owner_delegation_evidence_sha256")
+            value.pop("owner_decision_id")
         return value
 
     @property
@@ -244,12 +253,11 @@ def validate_approved_full_plan_binding(
     request: ApprovedFullPlanActivationRequestV1 | Mapping[str, Any], *,
     authority_root: str | Path, runtime_release: RuntimeReleaseManifest,
     harness_state_root: str | Path,
+    owner_comment_loader: Callable[[int], Mapping[str, Any]] | None = None,
+    owner_actor_id: str = "",
 ) -> ExecutableAuthorityBundleV1:
     req = request if isinstance(request, ApprovedFullPlanActivationRequestV1) else ApprovedFullPlanActivationRequestV1.from_mapping(request)
-    if req.owner_delegation_evidence is not None:
-        # Parsing a reference is not proof of a user decision. The activation
-        # path must verify the owner decision and every derived Gate record
-        # before this request variant may be admitted.
+    if req.owner_delegation_evidence is not None and (owner_comment_loader is None or not owner_actor_id):
         raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_NOT_ENABLED")
     authority, aliases_root, mappings_root = resolve_executable_authority_roots(authority_root)
     # A separate project's registration can drift independently. The approved
@@ -343,6 +351,49 @@ def validate_approved_full_plan_binding(
             project_requirements_required=project_requirements_required,
         ))
 
+    delegation_sha = ""
+    decision_id = ""
+    if req.owner_delegation_evidence is not None:
+        try:
+            root_path, _ = resolve_harness_authority_file(
+                harness_state_root=harness_state_root, project_id=str(mapping.project_id),
+                kind="approval", raw=req.owner_delegation_evidence.path,
+                label="DELEGATED_APPROVAL_INVALID",
+            )
+            delegation_sha = sha256_file(root_path)
+            if delegation_sha != req.owner_delegation_evidence.sha256 or root_path.stat().st_size > 1024 * 1024:
+                raise ValueError("delegation artifact digest or size mismatch")
+            artifact = json.loads(root_path.read_text(encoding="utf-8"))
+            if not isinstance(artifact, dict) or set(artifact) != {"payload", "record_hash"}:
+                raise ValueError("delegation artifact envelope invalid")
+            payload = artifact["payload"]
+            if (not isinstance(payload, dict)
+                    or set(payload) != {"schema_version", "scope", "owner_comment_id", "gate_approval_refs"}
+                    or payload["schema_version"] != "orchestration.full-plan-owner-delegation-artifact.v1"
+                    or artifact["record_hash"] != _sha(payload)
+                    or type(payload["owner_comment_id"]) is not int
+                    or payload["owner_comment_id"] <= 0):
+                raise ValueError("delegation artifact payload invalid")
+            assert owner_comment_loader is not None
+            comment = owner_comment_loader(payload["owner_comment_id"])
+            verified = validate_owner_delegation(
+                comment, owner_actor_id=owner_actor_id,
+                expected_comment_id=payload["owner_comment_id"],
+                expected_scope=payload["scope"], now=datetime.now(timezone.utc),
+            )
+            bind_delegation_to_activation(verified, payload["scope"], req.to_dict())
+            if (verified.project_id != str(mapping.project_id)
+                    or verified.decision_id != req.approval_ref
+                    or payload["gate_approval_refs"] != [
+                        {"gate_id": ref.gate_id, "sha256": ref.approval_evidence.sha256}
+                        for ref in req.gate_bindings
+                    ]):
+                raise ValueError("delegation Gate binding mismatch")
+            decision_id = verified.decision_id
+        except (ApprovedFullPlanBindingError, DelegationError, OSError, UnicodeError,
+                json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_INVALID") from exc
+
     return ExecutableAuthorityBundleV1(
         schema_version="orchestration.executable-authority-bundle.v1",
         activation_request_id=req.activation_request_id, request_digest=req.request_digest,
@@ -354,4 +405,5 @@ def validate_approved_full_plan_binding(
         runtime_release_digest=req.runtime_release_digest,
         runtime_release_source_head=str(runtime_release.source_head),
         runtime_code_root=str(runtime_release.release_path), gates=tuple(validated_gates),
+        owner_delegation_evidence_sha256=delegation_sha, owner_decision_id=decision_id,
     )
