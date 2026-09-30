@@ -136,3 +136,62 @@ def verify_owner_attestation(
         scope_sha256=hashlib.sha256(_canonical(scope)).hexdigest(),
         gate_ids=tuple(scope["gate_ids"]), expires_at=payload["expires_at"],
     )
+
+STATUS_SCHEMA = "orchestration.full-plan-owner-status.v1"
+STATUS_FIELDS = {"schema_version", "issuer", "audience", "decision_id", "scope_sha256",
+                 "activation_id", "challenge", "active", "checked_at"}
+
+
+def verify_owner_status(
+    envelope: Mapping[str, Any], *, public_key_path: str | Path,
+    public_key_sha256: str, expected_issuer: str, expected_audience: str,
+    expected_decision_id: str, expected_scope_sha256: str,
+    expected_activation_id: str, expected_challenge: str, now: datetime,
+) -> None:
+    """Require a signed, fresh, active issuer answer for this exact attempt."""
+    if not isinstance(envelope, Mapping) or set(envelope) != ENVELOPE_FIELDS:
+        raise OwnerAttestationError("STATUS_FIELDS_INVALID")
+    payload = envelope["payload"]
+    if not isinstance(payload, Mapping) or set(payload) != STATUS_FIELDS:
+        raise OwnerAttestationError("STATUS_FIELDS_INVALID")
+    if (payload["schema_version"] != STATUS_SCHEMA
+            or payload["issuer"] != expected_issuer
+            or payload["audience"] != expected_audience
+            or payload["decision_id"] != expected_decision_id
+            or payload["scope_sha256"] != expected_scope_sha256
+            or payload["activation_id"] != expected_activation_id
+            or payload["challenge"] != expected_challenge
+            or type(payload["active"]) is not bool
+            or not payload["active"]):
+        raise OwnerAttestationError("STATUS_INACTIVE_OR_MISMATCH")
+    checked_at = _time(payload["checked_at"])
+    if (now.tzinfo is None or abs((now - checked_at).total_seconds()) > 30):
+        raise OwnerAttestationError("STATUS_STALE")
+    key = Path(public_key_path)
+    if (not isinstance(public_key_sha256, str) or not SHA.fullmatch(public_key_sha256)
+            or not key.is_absolute() or key.is_symlink() or not key.is_file()
+            or hashlib.sha256(key.read_bytes()).hexdigest() != public_key_sha256):
+        raise OwnerAttestationError("ATTESTATION_TRUST_ANCHOR_INVALID")
+    signature = envelope["signature"]
+    if not isinstance(signature, str) or not re.fullmatch(r"[A-Za-z0-9_-]{86}", signature):
+        raise OwnerAttestationError("STATUS_SIGNATURE_INVALID")
+    try:
+        raw = base64.urlsafe_b64decode(signature + "==")
+    except ValueError as exc:
+        raise OwnerAttestationError("STATUS_SIGNATURE_INVALID") from exc
+    if len(raw) != 64 or base64.urlsafe_b64encode(raw).rstrip(b"=").decode() != signature:
+        raise OwnerAttestationError("STATUS_SIGNATURE_INVALID")
+    with tempfile.TemporaryDirectory(prefix="ocp-status-") as directory:
+        data = Path(directory) / "payload.json"
+        sig = Path(directory) / "signature.bin"
+        data.write_bytes(_canonical(payload))
+        sig.write_bytes(raw)
+        try:
+            result = subprocess.run(
+                ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key),
+                 "-rawin", "-in", str(data), "-sigfile", str(sig)],
+                capture_output=True, check=False, timeout=10)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise OwnerAttestationError("STATUS_VERIFIER_UNAVAILABLE") from exc
+    if result.returncode != 0:
+        raise OwnerAttestationError("STATUS_SIGNATURE_INVALID")
