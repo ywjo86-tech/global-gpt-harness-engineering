@@ -131,6 +131,15 @@ class ApprovedFullPlanBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_INVALID"):
             validate_approved_full_plan_binding(request, owner_comment_loader=lambda _: comment, **args)
 
+    def test_delegated_gate_cannot_be_activated_without_root_decision(self):
+        envelope = json.loads(self.approval.read_text(encoding="utf-8"))
+        envelope["payload"]["approval_id"] = "DELEGATED:USER-APPROVAL-1"
+        self.approval.write_text(json.dumps(seal_approval_evidence(envelope["payload"])), encoding="utf-8")
+        request = self.request()
+        request["gate_bindings"][0]["approval_evidence"]["sha256"] = sha(self.approval)
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_REQUIRED"):
+            self.validate(request)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(); self.base = Path(self.tmp.name)
         self.root = self.base / "project"; self.root.mkdir()
