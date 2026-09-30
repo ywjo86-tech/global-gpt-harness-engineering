@@ -20,11 +20,14 @@ from .contract_adapter import load_project_mapping, sha256_file, validate_mappin
 from .approved_full_plan_activation_contract import (
     ApprovedFullPlanActivationRequestV1, GateBindingRefV1,
 )
-from .approved_full_plan_binding import _validate_gate_requirement_artifacts
+from .approved_full_plan_binding import (
+    _validate_gate_requirement_artifacts, resolve_harness_authority_file,
+)
+from .approved_work_binding import resolve_committed_project_file
 from .full_plan_owner_delegation import (
     DelegationError, bind_delegation_to_gate, validate_owner_delegation,
 )
-from .gate_approval import seal_approval_evidence, validate_approval_evidence
+from .gate_approval import load_approval_evidence, seal_approval_evidence, validate_approval_evidence
 from .gate_orchestrator import load_gate_plan, namespace_root
 from .project_onboarding import OnboardingRegistry, ProjectOnboardingError, validate_alias_entry
 
@@ -324,3 +327,98 @@ class GateApprovalIssuer:
         return {"status": status, "mutation_performed": status == "ISSUED",
                 "approval_evidence": {"path": relative, "sha256": hashlib.sha256(encoded).hexdigest()},
                 "preflight_digest": digest}
+
+    def issue_full_plan_delegation_root(self, *,
+            activation_request: ApprovedFullPlanActivationRequestV1,
+            owner_approval_comment: Mapping[str, Any], owner_actor_id: str,
+            delegated_full_plan_scope: Mapping[str, Any],
+            serving_runtime_digest: str) -> dict[str, str]:
+        """Seal one root decision after all derived Gate approvals exist.
+
+        This is a host-only operation. The remote Operator envelope does not
+        expose it; its caller must freshly fetch the GitHub owner comment.
+        """
+        if not isinstance(activation_request, ApprovedFullPlanActivationRequestV1):
+            raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID")
+        try:
+            comment_id = owner_approval_comment["id"]
+            verified = validate_owner_delegation(
+                owner_approval_comment, owner_actor_id=owner_actor_id,
+                expected_comment_id=comment_id, expected_scope=delegated_full_plan_scope,
+                now=datetime.now(timezone.utc),
+            )
+            activation = activation_request.to_dict()
+            from .full_plan_owner_delegation import bind_delegation_to_activation
+            bind_delegation_to_activation(verified, delegated_full_plan_scope, activation)
+            entry = self._registered_alias(activation_request.project_alias)
+            root = Path(str(entry["project_root"])).resolve(strict=True)
+            if (entry["project_id"] != verified.project_id
+                    or activation_request.approval_ref != verified.decision_id
+                    or serving_runtime_digest != activation_request.runtime_release_digest
+                    or self._git(root, "branch", "--show-current") != activation_request.expected_branch
+                    or self._git(root, "rev-parse", "HEAD") != activation_request.expected_head
+                    or self._git(root, "status", "--porcelain")):
+                raise ValueError("delegation source or runtime mismatch")
+            for artifact in (activation_request.approved_plan, activation_request.approved_spec):
+                committed, _ = resolve_committed_project_file(root, artifact.path, "delegation authority")
+                if sha256_file(committed) != artifact.sha256:
+                    raise ValueError("delegation plan or spec mismatch")
+            refs = []
+            for gate in activation_request.gate_bindings:
+                path, _ = resolve_harness_authority_file(
+                    harness_state_root=self.state_root, project_id=verified.project_id,
+                    kind="approval", raw=gate.approval_evidence.path,
+                    label="FULL_PLAN_DELEGATION_INVALID",
+                )
+                if sha256_file(path) != gate.approval_evidence.sha256:
+                    raise ValueError("delegated Gate digest mismatch")
+                approval = load_approval_evidence(path)["payload"]
+                if (approval["approval_id"] != f"DELEGATED:{verified.decision_id}"
+                        or approval["project_id"] != verified.project_id
+                        or approval["gate_id"] != gate.gate_id
+                        or approval["plan_sha256"] != delegated_full_plan_scope["plan_sha256"]
+                        or approval["head"] != activation_request.expected_head
+                        or approval["branch"] != activation_request.expected_branch
+                        or not (_utc(approval["issued_at"]) <= datetime.now(timezone.utc)
+                                < _utc(approval["expires_at"]))):
+                    raise ValueError("delegated Gate approval mismatch")
+                refs.append({"gate_id": gate.gate_id, "sha256": gate.approval_evidence.sha256})
+            payload = {
+                "schema_version": "orchestration.full-plan-owner-delegation-artifact.v1",
+                "scope": dict(delegated_full_plan_scope),
+                "owner_comment_id": verified.comment_id,
+                "gate_approval_refs": refs,
+            }
+            envelope = {"payload": payload, "record_hash": _sha(payload)}
+            target_root = namespace_root(self.state_root, verified.project_id, "approval")
+            cursor = self.state_root
+            for part in target_root.relative_to(self.state_root).parts:
+                cursor = cursor / part
+                if cursor.is_symlink() or (cursor.exists() and not cursor.is_dir()):
+                    raise ValueError("delegation namespace unsafe")
+                cursor.mkdir(exist_ok=True, mode=0o700)
+            relative = f"{activation_request.activation_request_id}-owner-delegation.json"
+            target = target_root / relative
+            encoded = _canonical(envelope)
+            if target.exists() or target.is_symlink():
+                if target.is_symlink() or target.read_bytes() != encoded:
+                    raise ValueError("delegation replay conflict")
+            else:
+                fd, temporary = tempfile.mkstemp(prefix=".owner-delegation-", dir=target_root)
+                try:
+                    with os.fdopen(fd, "wb") as stream:
+                        os.fchmod(stream.fileno(), 0o600)
+                        stream.write(encoded)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.link(temporary, target, follow_symlinks=False)
+                    dir_fd = os.open(target_root, os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                finally:
+                    os.unlink(temporary)
+            return {"path": relative, "sha256": hashlib.sha256(encoded).hexdigest()}
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID") from exc
