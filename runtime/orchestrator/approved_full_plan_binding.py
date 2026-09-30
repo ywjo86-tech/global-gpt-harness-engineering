@@ -15,6 +15,7 @@ from .approved_full_plan_activation_contract import (
 from .approved_work_binding import ApprovedWorkBindingError, resolve_committed_project_file
 from .contract_adapter import ContractMappingError, load_project_mapping, sha256_file, validate_mapping_sources
 from .gate_approval import GateApprovalError, load_approval_evidence
+from .full_plan_owner_attestation import OwnerAttestationError, verify_owner_attestation
 from .full_plan_owner_delegation import (
     DelegationError, bind_delegation_to_activation, validate_owner_delegation,
 )
@@ -255,9 +256,10 @@ def validate_approved_full_plan_binding(
     harness_state_root: str | Path,
     owner_comment_loader: Callable[[int], Mapping[str, Any]] | None = None,
     owner_actor_id: str = "",
+    attestation_trust: Mapping[str, Any] | None = None,
 ) -> ExecutableAuthorityBundleV1:
     req = request if isinstance(request, ApprovedFullPlanActivationRequestV1) else ApprovedFullPlanActivationRequestV1.from_mapping(request)
-    if req.owner_delegation_evidence is not None and (owner_comment_loader is None or not owner_actor_id):
+    if req.owner_delegation_evidence is not None and (owner_comment_loader is None or not owner_actor_id) and attestation_trust is None:
         raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_NOT_ENABLED")
     authority, aliases_root, mappings_root = resolve_executable_authority_roots(authority_root)
     # A separate project's registration can drift independently. The approved
@@ -375,20 +377,33 @@ def validate_approved_full_plan_binding(
             if not isinstance(artifact, dict) or set(artifact) != {"payload", "record_hash"}:
                 raise ValueError("delegation artifact envelope invalid")
             payload = artifact["payload"]
-            if (not isinstance(payload, dict)
-                    or set(payload) != {"schema_version", "scope", "owner_comment_id", "gate_approval_refs"}
-                    or payload["schema_version"] != "orchestration.full-plan-owner-delegation-artifact.v1"
-                    or artifact["record_hash"] != _sha(payload)
-                    or type(payload["owner_comment_id"]) is not int
-                    or payload["owner_comment_id"] <= 0):
+            if not isinstance(payload, dict) or artifact["record_hash"] != _sha(payload):
                 raise ValueError("delegation artifact payload invalid")
-            assert owner_comment_loader is not None
-            comment = owner_comment_loader(payload["owner_comment_id"])
-            verified = validate_owner_delegation(
-                comment, owner_actor_id=owner_actor_id,
-                expected_comment_id=payload["owner_comment_id"],
-                expected_scope=payload["scope"], now=datetime.now(timezone.utc),
-            )
+            if payload.get("schema_version") == "orchestration.full-plan-owner-attestation-artifact.v1":
+                if (set(payload) != {"schema_version", "scope", "owner_attestation", "gate_approval_refs"}
+                        or attestation_trust is None):
+                    raise ValueError("signed delegation trust required")
+                signed = verify_owner_attestation(
+                    payload["owner_attestation"], now=datetime.now(timezone.utc),
+                    **attestation_trust)
+                if dict(payload["owner_attestation"]["payload"]["scope"]) != dict(payload["scope"]):
+                    raise ValueError("signed delegation scope mismatch")
+                from .full_plan_owner_delegation import OwnerDelegation
+                verified = OwnerDelegation(signed.decision_id, 0, payload["scope"]["project_id"],
+                                           signed.gate_ids, signed.scope_sha256, signed.expires_at)
+            elif payload.get("schema_version") == "orchestration.full-plan-owner-delegation-artifact.v1":
+                if (set(payload) != {"schema_version", "scope", "owner_comment_id", "gate_approval_refs"}
+                        or type(payload["owner_comment_id"]) is not int
+                        or payload["owner_comment_id"] <= 0 or owner_comment_loader is None):
+                    raise ValueError("delegation artifact payload invalid")
+                comment = owner_comment_loader(payload["owner_comment_id"])
+                verified = validate_owner_delegation(
+                    comment, owner_actor_id=owner_actor_id,
+                    expected_comment_id=payload["owner_comment_id"],
+                    expected_scope=payload["scope"], now=datetime.now(timezone.utc),
+                )
+            else:
+                raise ValueError("delegation artifact schema invalid")
             bind_delegation_to_activation(verified, payload["scope"], req.to_dict())
             if (verified.project_id != str(mapping.project_id)
                     or verified.decision_id != req.approval_ref
@@ -398,7 +413,7 @@ def validate_approved_full_plan_binding(
                     ]):
                 raise ValueError("delegation Gate binding mismatch")
             decision_id = verified.decision_id
-        except (ApprovedFullPlanBindingError, DelegationError, OSError, UnicodeError,
+        except (ApprovedFullPlanBindingError, DelegationError, OwnerAttestationError, OSError, UnicodeError,
                 json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             raise ApprovedFullPlanBindingError("DELEGATED_APPROVAL_INVALID") from exc
 
