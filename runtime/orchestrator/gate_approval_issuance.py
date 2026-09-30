@@ -21,7 +21,7 @@ from .approved_full_plan_activation_contract import GateBindingRefV1
 from .approved_full_plan_binding import _validate_gate_requirement_artifacts
 from .gate_approval import seal_approval_evidence, validate_approval_evidence
 from .gate_orchestrator import load_gate_plan, namespace_root
-from .project_onboarding import OnboardingRegistry
+from .project_onboarding import OnboardingRegistry, ProjectOnboardingError, validate_alias_entry
 
 SCHEMA = "orchestration.gate-approval-issuance-request.v1"
 _FIELDS = {
@@ -142,6 +142,21 @@ class GateApprovalIssuer:
                (self.registry.root, self.mapping_root, self.state_root)):
             raise GateApprovalIssuanceError("AUTHORITY_ROOT_INVALID")
 
+    def _registered_alias(self, alias: str) -> dict[str, Any]:
+        # An unrelated registration may drift independently. Validate the exact
+        # requested alias rather than enumerating every registered project.
+        target = self.registry.root / f"{alias}.json"
+        if target.is_symlink() or not target.is_file():
+            raise GateApprovalIssuanceError("PROJECT_NOT_REGISTERED")
+        try:
+            entry = json.loads(target.read_text(encoding="utf-8"))
+            if not isinstance(entry, dict) or entry.get("alias") != alias:
+                raise GateApprovalIssuanceError("PROJECT_BINDING_INVALID")
+            validate_alias_entry(entry)
+        except (OSError, UnicodeError, json.JSONDecodeError, ProjectOnboardingError) as exc:
+            raise GateApprovalIssuanceError("PROJECT_BINDING_INVALID") from exc
+        return entry
+
     @staticmethod
     def _git(root: Path, *args: str) -> str:
         result = subprocess.run(["git", "-C", str(root), *args],
@@ -151,13 +166,8 @@ class GateApprovalIssuer:
         return result.stdout.strip()
 
     def _preflight(self, request: GateApprovalIssuanceRequest) -> tuple[dict[str, Any], str]:
-        entries = self.registry.entries()
-        entry = next((item for item in entries if item.get("alias") == request.project_alias), None)
-        if entry is None:
-            raise GateApprovalIssuanceError("PROJECT_NOT_REGISTERED")
+        entry = self._registered_alias(request.project_alias)
         root = Path(str(entry["project_root"])).resolve(strict=True)
-        if self.registry.inspect(root, request.project_alias).get("status") != "COMPATIBLE":
-            raise GateApprovalIssuanceError("PROJECT_BINDING_INVALID")
         if (self._git(root, "branch", "--show-current") != request.expected_branch
                 or self._git(root, "rev-parse", "HEAD") != request.expected_head
                 or self._git(root, "status", "--porcelain")):
