@@ -25,6 +25,7 @@ from .approved_full_plan_binding import (
 )
 from .approved_work_binding import resolve_committed_project_file
 from .full_plan_owner_delegation import (
+    FIELDS as DELEGATION_SCOPE_FIELDS,
     DelegationError, bind_delegation_to_gate, validate_owner_delegation,
 )
 from .gate_approval import load_approval_evidence, seal_approval_evidence, validate_approval_evidence
@@ -38,6 +39,7 @@ _FIELDS = {
     "issued_at", "expires_at", "mode", "preflight_digest", "owner_approval_comment_id",
     "engine_requirement_evidence", "project_requirement_evidence_by_lv",
 }
+_DELEGATION_FIELDS = {"delegation_scope", "delegation_activation", "finalize_delegation"}
 _SAFE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _HEAD = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -91,11 +93,29 @@ class GateApprovalIssuanceRequest:
     owner_approval_comment_id: int | None
     engine_requirement_evidence: Mapping[str, str] | None
     project_requirement_evidence_by_lv: list[Mapping[str, str]]
+    delegation_scope: Mapping[str, Any] | None = None
+    delegation_activation: ApprovedFullPlanActivationRequestV1 | None = None
+    finalize_delegation: bool = False
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "GateApprovalIssuanceRequest":
-        if not isinstance(raw, Mapping) or set(raw) != _FIELDS or raw.get("schema_version") != SCHEMA:
+        if (not isinstance(raw, Mapping)
+                or set(raw) not in (_FIELDS, _FIELDS | _DELEGATION_FIELDS)
+                or raw.get("schema_version") != SCHEMA):
             raise GateApprovalIssuanceError("REQUEST_FIELDS_MISMATCH")
+        delegated = set(raw) == _FIELDS | _DELEGATION_FIELDS
+        scope = None
+        activation = None
+        if delegated:
+            scope = raw["delegation_scope"]
+            if not isinstance(scope, Mapping) or set(scope) != DELEGATION_SCOPE_FIELDS:
+                raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID")
+            if type(raw["finalize_delegation"]) is not bool:
+                raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID")
+            try:
+                activation = ApprovedFullPlanActivationRequestV1.from_mapping(raw["delegation_activation"])
+            except (ValueError, TypeError) as exc:
+                raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID") from exc
         for key in ("request_id", "project_alias", "gate_id", "approval_id", "approval_ref"):
             _safe(raw[key], key)
         branch = str(raw["expected_branch"] or "")
@@ -130,10 +150,19 @@ class GateApprovalIssuanceRequest:
             })
         except ValueError as exc:
             raise GateApprovalIssuanceError("REQUIREMENT_REFERENCES_INVALID") from exc
-        return cls(**{key: raw[key] for key in _FIELDS})
+        return cls(**{key: raw[key] for key in _FIELDS},
+                   delegation_scope=dict(scope) if scope is not None else None,
+                   delegation_activation=activation,
+                   finalize_delegation=raw["finalize_delegation"] if delegated else False)
 
     def to_dict(self) -> dict[str, Any]:
-        return {key: getattr(self, key) for key in sorted(_FIELDS)}
+        result = {key: getattr(self, key) for key in sorted(_FIELDS)}
+        if self.delegation_scope is not None:
+            assert self.delegation_activation is not None
+            result.update(delegation_scope=dict(self.delegation_scope),
+                          delegation_activation=self.delegation_activation.to_dict(),
+                          finalize_delegation=self.finalize_delegation)
+        return result
 
     @property
     def request_digest(self) -> str:
