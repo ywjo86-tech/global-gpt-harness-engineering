@@ -7,6 +7,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from runtime.orchestrator.project_onboarding import OnboardingRegistry, build_alias_entry
 from runtime.orchestrator.gate_approval_issuance import (
     GateApprovalIssuer, GateApprovalIssuanceError, GateApprovalIssuanceRequest,
     _canonical, _sha,
@@ -38,6 +39,25 @@ class GateApprovalIssuanceTest(unittest.TestCase):
         self.binding = {"evidence": {"payload": {"project_id": "TEST-PROJECT"}, "record_hash": "c" * 64}}
         self.digest = _sha(self.binding)
         self.issuer._preflight = lambda _: (self.binding, self.digest)
+
+    def test_requested_alias_ignores_unrelated_ambiguous_project(self) -> None:
+        root = Path(self.temp.name)
+        project = root / "CANARY"
+        project.mkdir()
+        (project / "IMPLEMENTATION_PLAN.md").write_text("# Canary\n")
+        registry_root = root / "aliases"
+        registry_root.mkdir()
+        entry = build_alias_entry(project, "test-project")
+        (registry_root / "test-project.json").write_text(json.dumps(entry))
+        other = root / "OTHER"
+        (other / "docs").mkdir(parents=True)
+        (other / "IMPLEMENTATION_PLAN.md").write_text("# Other\n")
+        (other / "docs" / "DEVELOPMENT_PLAN.txt").write_text("Other plan\n")
+        (registry_root / "other.json").write_text(json.dumps({"alias": "other", "project_root": str(other)}))
+        self.issuer.registry = OnboardingRegistry(registry_root)
+        self.assertEqual(self.issuer._registered_alias("test-project"), entry)
+        with self.assertRaisesRegex(GateApprovalIssuanceError, "PROJECT_NOT_REGISTERED"):
+            self.issuer._registered_alias("missing")
 
     def test_preflight_has_no_write(self) -> None:
         request = GateApprovalIssuanceRequest.from_mapping(self.raw)
