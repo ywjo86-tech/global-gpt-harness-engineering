@@ -180,6 +180,19 @@ class ApprovedFullPlanBindingTests(unittest.TestCase):
         self.assertEqual(gate.project_requirement_evidence_paths_by_lv[0][1], str(self.requirement)); self.assertEqual(gate.lv_order, ("TASK-001",))
         self.assertRegex(bundle.bundle_digest, r"^[0-9a-f]{64}$")
 
+    def test_unrelated_broken_alias_does_not_block_requested_project(self):
+        unrelated = self.authority / "aliases" / "unrelated.json"
+        unrelated.write_text("{invalid", encoding="utf-8")
+        bundle = self.validate()
+        self.assertEqual(bundle.project_alias, "demo")
+        self.assertEqual(bundle.project_id, "project")
+
+    def test_requested_alias_corruption_still_blocks(self):
+        target = self.authority / "aliases" / "demo.json"
+        target.write_text("{invalid", encoding="utf-8")
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "project registry invalid"):
+            self.validate()
+
     def test_alias_without_mappings_directory_blocks_and_creates_nothing(self):
         self.mapping_path.unlink(); (self.authority / "mappings").rmdir(); before = sorted(path.relative_to(self.authority) for path in self.authority.rglob("*"))
         with self.assertRaisesRegex(ApprovedFullPlanBindingError, "EXECUTABLE_FULL_PLAN_REQUIRED"): self.validate()

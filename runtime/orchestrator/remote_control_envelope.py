@@ -13,6 +13,7 @@ from .approved_full_plan_activation_contract import (
     ApprovedFullPlanActivationContractError,
     ApprovedFullPlanActivationRequestV1,
 )
+from .gate_approval_issuance import GateApprovalIssuanceError, GateApprovalIssuanceRequest
 from .approved_work_binding import (
     ApprovedWorkActivationRequestV1,
     ApprovedWorkBindingError,
@@ -50,6 +51,7 @@ REMOTE_CONTROL_ENVELOPE_SCHEMA = "orchestration.remote-control-envelope.v1"
 HOST_INSPECTION_KIND = "HOST_INSPECTION"
 APPROVED_WORK_ACTIVATION_KIND = "APPROVED_WORK_ACTIVATION"
 APPROVED_FULL_PLAN_ACTIVATION_KIND = "APPROVED_FULL_PLAN_ACTIVATION"
+GATE_APPROVAL_ISSUE_KIND = "GATE_APPROVAL_ISSUE"
 PROJECT_ONBOARDING_KIND = "PROJECT_ONBOARDING"
 SUCCESSOR_RELEASE_STAGE_KIND = "SUCCESSOR_RELEASE_STAGE"
 LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND = "LIFECYCLE_V2_P3_PROMOTION_ADMISSION"
@@ -66,6 +68,7 @@ _TRANSPORT_FIELDS = {"adapter_id", "channel_id", "source_actor_id", "source_mess
 _INSPECTION_AUTH_FIELDS = {"inspection_policy_ref"}
 _ACTIVATION_AUTH_FIELDS = {"activation_policy_ref"}
 _FULL_PLAN_ACTIVATION_AUTH_FIELDS = {"full_plan_activation_policy_ref"}
+_GATE_APPROVAL_ISSUE_AUTH_FIELDS = {"gate_approval_issue_policy_ref"}
 _PROJECT_ONBOARDING_AUTH_FIELDS = {"project_onboarding_policy_ref"}
 _SUCCESSOR_RELEASE_STAGE_AUTH_FIELDS = {"successor_release_stage_policy_ref"}
 _LIFECYCLE_V2_P3_PROMOTION_AUTH_FIELDS = {"lifecycle_v2_p3_promotion_policy_ref"}
@@ -158,6 +161,14 @@ class RemoteFullPlanActivationAuthorization:
 
 
 @dataclass(frozen=True, slots=True)
+class RemoteGateApprovalIssueAuthorization:
+    gate_approval_issue_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.gate_approval_issue_policy_ref, "Gate approval issue policy ref")
+
+
+@dataclass(frozen=True, slots=True)
 class RemoteProjectOnboardingAuthorization:
     project_onboarding_policy_ref: str
 
@@ -210,6 +221,7 @@ RemotePayload = (
     HostInspectionRequestV1
     | ApprovedWorkActivationRequestV1
     | ApprovedFullPlanActivationRequestV1
+    | GateApprovalIssuanceRequest
     | ProjectOnboardingRequest
     | SuccessorReleaseStageRequest
     | LifecycleV2P3PromotionAdmissionRequest
@@ -221,6 +233,7 @@ RemoteAuthorization = (
     RemoteControlAuthorization
     | RemoteWorkActivationAuthorization
     | RemoteFullPlanActivationAuthorization
+    | RemoteGateApprovalIssueAuthorization
     | RemoteProjectOnboardingAuthorization
     | RemoteSuccessorReleaseStageAuthorization
     | RemoteLifecycleV2P3PromotionAuthorization
@@ -287,6 +300,15 @@ def _validated_full_plan_activation_payload(raw: object) -> ApprovedFullPlanActi
         return ApprovedFullPlanActivationRequestV1.from_mapping(raw)
     except ApprovedFullPlanActivationContractError as exc:
         raise RemoteControlEnvelopeError(f"invalid approved Full Plan activation payload: {exc}") from exc
+
+
+def _validated_gate_approval_issue_payload(raw: object) -> GateApprovalIssuanceRequest:
+    if not isinstance(raw, Mapping):
+        raise RemoteControlEnvelopeError("Gate approval issue payload must be an object")
+    try:
+        return GateApprovalIssuanceRequest.from_mapping(raw)
+    except GateApprovalIssuanceError as exc:
+        raise RemoteControlEnvelopeError(f"invalid Gate approval issue payload: {exc}") from exc
 
 
 def _validated_project_onboarding_payload(raw: object) -> ProjectOnboardingRequest:
@@ -356,6 +378,8 @@ def _validated_payload(kind: object, raw: object) -> RemotePayload:
         return _validated_activation_payload(raw)
     if kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
         return _validated_full_plan_activation_payload(raw)
+    if kind == GATE_APPROVAL_ISSUE_KIND:
+        return _validated_gate_approval_issue_payload(raw)
     if kind == PROJECT_ONBOARDING_KIND:
         return _validated_project_onboarding_payload(raw)
     if kind == SUCCESSOR_RELEASE_STAGE_KIND:
@@ -410,6 +434,7 @@ def validate_remote_control_envelope(
         HOST_INSPECTION_KIND,
         APPROVED_WORK_ACTIVATION_KIND,
         APPROVED_FULL_PLAN_ACTIVATION_KIND,
+        GATE_APPROVAL_ISSUE_KIND,
         PROJECT_ONBOARDING_KIND,
         SUCCESSOR_RELEASE_STAGE_KIND,
         LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
@@ -456,6 +481,11 @@ def validate_remote_control_envelope(
         _exact_fields(auth_raw, _FULL_PLAN_ACTIVATION_AUTH_FIELDS, "authorization")
         authorization = RemoteFullPlanActivationAuthorization(
             full_plan_activation_policy_ref=str(auth_raw["full_plan_activation_policy_ref"]),
+        )
+    elif request_kind == GATE_APPROVAL_ISSUE_KIND:
+        _exact_fields(auth_raw, _GATE_APPROVAL_ISSUE_AUTH_FIELDS, "authorization")
+        authorization = RemoteGateApprovalIssueAuthorization(
+            gate_approval_issue_policy_ref=str(auth_raw["gate_approval_issue_policy_ref"]),
         )
     elif request_kind == PROJECT_ONBOARDING_KIND:
         _exact_fields(auth_raw, _PROJECT_ONBOARDING_AUTH_FIELDS, "authorization")

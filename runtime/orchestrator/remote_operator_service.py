@@ -17,6 +17,7 @@ from .operator_control import OperatorDirectiveV1
 from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
 from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND,
+    GATE_APPROVAL_ISSUE_KIND,
     APPROVED_WORK_ACTIVATION_KIND,
     HOST_INSPECTION_KIND,
     LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
@@ -27,6 +28,7 @@ from .remote_control_envelope import (
     SUCCESSOR_RELEASE_STAGE_KIND,
     RemoteControlEnvelopeV1,
     RemoteFullPlanActivationAuthorization,
+    RemoteGateApprovalIssueAuthorization,
     RemoteLifecycleV2P3CanaryActivationAuthorization,
     RemoteLifecycleV2P3CanaryValidateAuthorization,
     RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization,
@@ -116,6 +118,9 @@ class RemoteOperatorService:
         activate_full_plan_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         full_plan_activation_enabled: bool = False,
         full_plan_activation_policy_ref: str = "",
+        issue_gate_approval_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        gate_approval_issue_enabled: bool = False,
+        gate_approval_issue_policy_ref: str = "",
         onboard_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         project_onboarding_enabled: bool = False,
         project_onboarding_policy_ref: str = "",
@@ -150,6 +155,9 @@ class RemoteOperatorService:
         self.activate_full_plan_authorized = activate_full_plan_authorized
         self.full_plan_activation_enabled = bool(full_plan_activation_enabled)
         self.full_plan_activation_policy_ref = str(full_plan_activation_policy_ref or "")
+        self.issue_gate_approval_authorized = issue_gate_approval_authorized
+        self.gate_approval_issue_enabled = bool(gate_approval_issue_enabled)
+        self.gate_approval_issue_policy_ref = str(gate_approval_issue_policy_ref or "")
         self.onboard_authorized = onboard_authorized
         self.project_onboarding_enabled = bool(project_onboarding_enabled)
         self.project_onboarding_policy_ref = str(project_onboarding_policy_ref or "")
@@ -235,6 +243,21 @@ class RemoteOperatorService:
             "activation_request_id": payload.activation_request_id,
             "project_alias": payload.project_alias,
             "request_digest": payload.request_digest,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _gate_approval_issue_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
             "result_class": str(result_class),
         }
 
@@ -390,6 +413,8 @@ class RemoteOperatorService:
                     projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_EXPIRED")
                 elif envelope.request_kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
                     projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_EXPIRED")
+                elif envelope.request_kind == GATE_APPROVAL_ISSUE_KIND:
+                    projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_EXPIRED")
                 elif envelope.request_kind == PROJECT_ONBOARDING_KIND:
                     projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_EXPIRED")
                 elif envelope.request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
@@ -452,6 +477,33 @@ class RemoteOperatorService:
                             full_plan_activated += 1
                         except Exception:
                             projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == GATE_APPROVAL_ISSUE_KIND:
+                    payload_mode = str(envelope.payload.mode)
+                    mode_allowed = (
+                        resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
+                        if payload_mode == "DRY_RUN" else resolved_mode == ControlMode.ACTIVE
+                    )
+                    if not mode_allowed:
+                        projection = self._gate_approval_issue_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.gate_approval_issue_enabled or self.issue_gate_approval_authorized is None:
+                        projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteGateApprovalIssueAuthorization)
+                        or not self.gate_approval_issue_policy_ref
+                        or envelope.authorization.gate_approval_issue_policy_ref != self.gate_approval_issue_policy_ref
+                    ):
+                        projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.issue_gate_approval_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("Gate approval issue projection is malformed")
+                        except Exception:
+                            projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_ERROR")
                             blocked += 1
                 elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:
                     if resolved_mode != ControlMode.ACTIVE:

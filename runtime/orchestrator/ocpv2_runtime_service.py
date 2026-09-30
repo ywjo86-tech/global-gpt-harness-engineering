@@ -24,6 +24,7 @@ from .approved_full_plan_binding import validate_approved_full_plan_binding
 from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
 from .full_plan_activation import FullPlanActivationStore, activate_approved_full_plan
+from .gate_approval_issuance import GateApprovalIssuer
 from .host_inspection_port import HostInspectionPort
 from .plan_activation import PlanActivationStore, activate_approved_work
 from .project_onboarding import OnboardingRegistry
@@ -72,6 +73,8 @@ _OPTIONAL_ENV = {
     "OCP_WORK_ACTIVATION_POLICY_REF",
     "OCP_FULL_PLAN_ACTIVATION_ENABLED",
     "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
+    "OCP_GATE_APPROVAL_ISSUE_ENABLED",
+    "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
     "OCP_PROJECT_ONBOARDING_POLICY_REF",
     "HARNESS_CONTRACT_MAPPING_ROOT",
@@ -102,6 +105,8 @@ class RuntimeConfig:
     activation_policy_ref: str = ""
     full_plan_activation_enabled: bool = False
     full_plan_activation_policy_ref: str = ""
+    gate_approval_issue_enabled: bool = False
+    gate_approval_issue_policy_ref: str = ""
     diagnostic_enabled: bool = False
     diagnostic_policy: DiagnosticPolicy | None = None
     project_onboarding_enabled: bool = False
@@ -158,6 +163,7 @@ def finalize_remote_control_projection(
         "orchestration.remote-inspection-status-projection.v1",
         "orchestration.remote-activation-status-projection.v1",
         "orchestration.remote-full-plan-activation-status-projection.v1",
+        "orchestration.remote-gate-approval-issue-status-projection.v1",
         "orchestration.remote-project-onboarding-status-projection.v1",
         "orchestration.remote-successor-release-stage-status-projection.v1",
         "orchestration.remote-p3-promotion-admission-status-projection.v1",
@@ -267,6 +273,10 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     full_plan_activation_policy_ref = str(environment.get("OCP_FULL_PLAN_ACTIVATION_POLICY_REF") or "").strip()
     if full_plan_activation_enabled:
         _safe_id(full_plan_activation_policy_ref, "Full Plan activation policy ref")
+    gate_approval_issue_enabled = str(environment.get("OCP_GATE_APPROVAL_ISSUE_ENABLED") or "").strip() == "1"
+    gate_approval_issue_policy_ref = str(environment.get("OCP_GATE_APPROVAL_ISSUE_POLICY_REF") or "").strip()
+    if gate_approval_issue_enabled:
+        _safe_id(gate_approval_issue_policy_ref, "Gate approval issue policy ref")
     project_onboarding_enabled = project_onboarding_enabled_from_environment(environment)
     project_onboarding_policy_ref = str(environment.get("OCP_PROJECT_ONBOARDING_POLICY_REF") or "").strip()
     if project_onboarding_enabled:
@@ -278,6 +288,8 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
         diagnostic_enabled=diagnostic_enabled, diagnostic_policy=diagnostic_policy,
         project_onboarding_enabled=project_onboarding_enabled,
         project_onboarding_policy_ref=project_onboarding_policy_ref,
+        gate_approval_issue_enabled=gate_approval_issue_enabled,
+        gate_approval_issue_policy_ref=gate_approval_issue_policy_ref,
     )
 
 
@@ -439,6 +451,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     full_plan_authority_root: Path | None = None
     full_plan_activation_store: FullPlanActivationStore | None = None
     onboarding_admission: ProjectOnboardingAdmission | None = None
+    gate_approval_issuer: GateApprovalIssuer | None = None
     if config.work_activation_enabled:
         mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
         if not mapping_root_raw:
@@ -479,6 +492,18 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         onboarding_admission = ProjectOnboardingAdmission(
             OnboardingRegistry(onboarding_root / "aliases"),
             canonical_mapping_root=onboarding_root,
+        )
+
+    if config.gate_approval_issue_enabled:
+        issue_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not issue_root_raw:
+            raise RuntimeServiceError("GATE_APPROVAL_ISSUE_REGISTRY_REQUIRED")
+        issue_root = Path(issue_root_raw).expanduser().absolute()
+        if not issue_root.is_dir() or issue_root.is_symlink() or issue_root.resolve() != issue_root:
+            raise RuntimeServiceError("GATE_APPROVAL_ISSUE_REGISTRY_UNSAFE")
+        gate_approval_issuer = GateApprovalIssuer(
+            registry_root=issue_root, mapping_root=issue_root / "mappings",
+            harness_state_root=harness_state_root,
         )
 
     def durable_acknowledged(message_id: str) -> bool:
@@ -777,6 +802,31 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             "result": result,
         }
 
+    def issue_gate_approval(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if gate_approval_issuer is None:
+            raise RuntimeServiceError("GATE_APPROVAL_ISSUE_DISABLED")
+        payload = envelope.payload
+        owner_comment = None
+        if payload.mode == "ISSUE":
+            owner_comment = next(
+                (comment for comment in rest_client.list_comments()
+                 if comment.get("id") == payload.owner_approval_comment_id), None,
+            )
+        result = gate_approval_issuer.execute(
+            payload, owner_approval_comment=owner_comment,
+            owner_actor_id=envelope.transport.source_actor_id,
+        )
+        return {
+            "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": result["status"],
+            "result": result,
+        }
+
     def after_projection_published(envelope, projection):
         if isinstance(envelope, RemoteControlEnvelopeV1):
             finalize_remote_control_projection(outbox, projection)
@@ -807,6 +857,9 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         activate_full_plan_authorized=activate_full_plan,
         full_plan_activation_enabled=config.full_plan_activation_enabled,
         full_plan_activation_policy_ref=config.full_plan_activation_policy_ref,
+        issue_gate_approval_authorized=issue_gate_approval,
+        gate_approval_issue_enabled=config.gate_approval_issue_enabled,
+        gate_approval_issue_policy_ref=config.gate_approval_issue_policy_ref,
         onboard_authorized=onboard,
         project_onboarding_enabled=config.project_onboarding_enabled,
         project_onboarding_policy_ref=config.project_onboarding_policy_ref,
