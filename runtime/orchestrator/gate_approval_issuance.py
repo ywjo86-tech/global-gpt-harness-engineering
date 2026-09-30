@@ -17,8 +17,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .contract_adapter import load_project_mapping, sha256_file, validate_mapping_sources
-from .approved_full_plan_activation_contract import GateBindingRefV1
+from .approved_full_plan_activation_contract import (
+    ApprovedFullPlanActivationRequestV1, GateBindingRefV1,
+)
 from .approved_full_plan_binding import _validate_gate_requirement_artifacts
+from .full_plan_owner_delegation import (
+    DelegationError, bind_delegation_to_gate, validate_owner_delegation,
+)
 from .gate_approval import seal_approval_evidence, validate_approval_evidence
 from .gate_orchestrator import load_gate_plan, namespace_root
 from .project_onboarding import OnboardingRegistry, ProjectOnboardingError, validate_alias_entry
@@ -242,14 +247,40 @@ class GateApprovalIssuer:
 
     def execute(self, request: GateApprovalIssuanceRequest, *,
                 owner_approval_comment: Mapping[str, Any] | None = None,
-                owner_actor_id: str = "") -> dict[str, Any]:
+                owner_actor_id: str = "",
+                delegated_full_plan_scope: Mapping[str, Any] | None = None,
+                activation_request: ApprovedFullPlanActivationRequestV1 | None = None,
+                serving_runtime_digest: str | None = None) -> dict[str, Any]:
         binding, digest = self._preflight(request)
         if request.mode == "DRY_RUN":
             return {"status": "PREFLIGHT_READY", "mutation_performed": False,
                     "preflight_digest": digest, "approval_payload_sha256": _sha(binding["evidence"])}
         if request.preflight_digest != digest or owner_approval_comment is None:
             raise GateApprovalIssuanceError("EXACT_OWNER_APPROVAL_REQUIRED")
-        self._verify_owner_comment(request, digest, owner_approval_comment, owner_actor_id)
+        delegated = (delegated_full_plan_scope is not None or activation_request is not None
+                     or serving_runtime_digest is not None)
+        if delegated:
+            if (delegated_full_plan_scope is None or not isinstance(activation_request, ApprovedFullPlanActivationRequestV1)
+                    or serving_runtime_digest is None or not owner_actor_id):
+                raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID")
+            try:
+                verified = validate_owner_delegation(
+                    owner_approval_comment, owner_actor_id=owner_actor_id,
+                    expected_comment_id=request.owner_approval_comment_id,
+                    expected_scope=delegated_full_plan_scope, now=datetime.now(timezone.utc),
+                )
+                if (request.approval_id != f"DELEGATED:{verified.decision_id}"
+                        or activation_request.project_alias != request.project_alias):
+                    raise DelegationError("delegated issue identity mismatch")
+                bind_delegation_to_gate(
+                    verified, delegated_full_plan_scope, activation_request.to_dict(),
+                    request.to_dict(), binding["evidence"]["payload"],
+                    serving_runtime_digest=serving_runtime_digest,
+                )
+            except (DelegationError, KeyError, TypeError, ValueError) as exc:
+                raise GateApprovalIssuanceError("FULL_PLAN_DELEGATION_INVALID") from exc
+        else:
+            self._verify_owner_comment(request, digest, owner_approval_comment, owner_actor_id)
         project_id = binding["evidence"]["payload"]["project_id"]
         target_root = namespace_root(self.state_root, project_id, "approval")
         cursor = self.state_root
