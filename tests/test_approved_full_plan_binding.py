@@ -83,6 +83,11 @@ def projection(plan_sha: str) -> dict:
 
 
 class ApprovedFullPlanBindingTests(unittest.TestCase):
+    def test_delegated_approval_reference_is_rejected_until_verified(self):
+        request = self.request(owner_delegation_evidence={"path": "owner-delegation.json", "sha256": "9" * 64})
+        with self.assertRaisesRegex(ApprovedFullPlanBindingError, "DELEGATED_APPROVAL_NOT_ENABLED"):
+            self.validate(request)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(); self.base = Path(self.tmp.name)
         self.root = self.base / "project"; self.root.mkdir()
