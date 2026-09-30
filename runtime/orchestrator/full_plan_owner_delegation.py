@@ -91,3 +91,43 @@ def validate_owner_delegation(comment: Mapping[str, Any], *, owner_actor_id: str
     return OwnerDelegation(scope["decision_id"], expected_comment_id,
                            scope["project_id"], tuple(scope["gate_ids"]),
                            hashlib.sha256(encoded).hexdigest(), scope["expires_at"])
+
+
+def bind_delegation_to_activation(verified: OwnerDelegation,
+                                  scope: Mapping[str, Any],
+                                  activation: Mapping[str, Any]) -> tuple[str, ...]:
+    """Check the entire activation request against the already verified scope.
+
+    The caller must first validate the original owner comment and then use the
+    ordinary Full Plan binding validator to verify these requested artifacts
+    against committed files and the serving runtime.
+    """
+    try:
+        encoded = json.dumps(scope, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False, allow_nan=False).encode("utf-8")
+        if (not isinstance(verified, OwnerDelegation)
+                or verified.scope_sha256 != hashlib.sha256(encoded).hexdigest()
+                or verified.project_id != scope["project_id"]
+                or verified.decision_id != scope["decision_id"]):
+            raise DelegationError("DELEGATION_SCOPE_MISMATCH")
+        plan = activation["approved_plan"]
+        spec = activation["approved_spec"]
+        gates = activation["gate_bindings"]
+        actual = [gate["gate_id"] for gate in gates]
+        matched = (
+            isinstance(plan, Mapping) and isinstance(spec, Mapping)
+            and isinstance(gates, list) and bool(gates)
+            and all(isinstance(gate, Mapping) for gate in gates)
+            and scope["plan_sha256"] == plan["sha256"]
+            and scope["spec_sha256"] == spec["sha256"]
+            and scope["source_head"] == activation["expected_head"]
+            and scope["runtime_sha256"] == activation["runtime_release_digest"]
+            and scope["gate_ids"] == actual
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, DelegationError):
+            raise
+        raise DelegationError("ACTIVATION_BINDING_MISMATCH") from exc
+    if not matched:
+        raise DelegationError("ACTIVATION_BINDING_MISMATCH")
+    return tuple(actual)
