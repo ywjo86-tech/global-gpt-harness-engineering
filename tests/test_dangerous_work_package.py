@@ -88,6 +88,22 @@ class DangerousWorkPackageTests(unittest.TestCase):
         ))
         self.assertIn("P6_PREDECESSOR_RETIREMENT", valid.operations)
 
+    def test_lifecycle_retirement_operations_cannot_mix_with_release_operations(self) -> None:
+        mod = self.require_module()
+        with self.assertRaises(mod.DangerousWorkPackageError):
+            mod.DangerousWorkPackageV1.from_mapping(base_package(
+                project_id="ocp-lifecycle-v2",
+                run_id="RUN-MIXED-DOMAIN",
+                operations=[
+                    "PR_MERGE",
+                    "P5_PREDECESSOR_QUIESCE",
+                    "P6_PREDECESSOR_RETIREMENT",
+                ],
+                risk_classes=["release", "control-plane-retirement"],
+                required_post_verifiers=["SUCCESSOR_HEALTH_AFTER_PREDECESSOR_QUIESCE"],
+                recovery_refs=["rollback://ocp/predecessor"],
+            ))
+
     def test_ai_office_release_and_p5_p6_retirement_are_separate_authority_packages(self) -> None:
         mod = self.require_module()
         release = mod.DangerousWorkPackageV1.from_mapping(base_package())
