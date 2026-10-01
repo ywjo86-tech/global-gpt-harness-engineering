@@ -89,9 +89,15 @@ def render_dashboard_markdown(snapshot: dict[str, Any]) -> str:
 
 
 def _assemble_dashboard_state(
-    project_root: Path, run_id: str | None = None
+    project_root: Path,
+    run_id: str | None = None,
+    *,
+    projection_only: bool = False,
 ) -> tuple[dict[str, Any], Path, list[Any], list[Any]]:
-    state_store = StateStore(project_root)
+    state_store = StateStore(
+        project_root,
+        create_runtime_dir=not projection_only,
+    )
     state = state_store.state
     run_root = _latest_run_root(project_root, state_store, run_id)
     run_manifest = _read_json(run_root / "run_manifest.json") or {}
@@ -139,7 +145,11 @@ def read_dashboard_state_projection_only(
     project_root: str | Path, run_id: str | None = None
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
-    snapshot, _, _, _ = _assemble_dashboard_state(root, run_id)
+    snapshot, _, _, _ = _assemble_dashboard_state(
+        root,
+        run_id,
+        projection_only=True,
+    )
     return snapshot
 
 

@@ -17,6 +17,13 @@ class OperationsReadModelError(ValueError):
     pass
 
 
+_STATE_ALIASES = {
+    "COMPLETE": "COMPLETED",
+    "EXECUTION_IN_PROGRESS": "RUNNING",
+    "RECOVERY_COORDINATION": "RECOVERING",
+    "BLOCKED": "STALLED",
+}
+
 _STATE_MAP = {
     "QUEUED": ("QUEUED", "대기"),
     "PLANNING": ("PLANNING", "계획 작성 중"),
@@ -33,6 +40,7 @@ _STATE_MAP = {
 
 def normalize_operations_state(raw_state: str) -> tuple[str, str]:
     state = str(raw_state or "").strip().upper()
+    state = _STATE_ALIASES.get(state, state)
     return _STATE_MAP.get(state, ("UNKNOWN", "상태 확인 필요"))
 
 
@@ -195,7 +203,7 @@ def build_operations_read_model_from_console_snapshot(
             str(snapshot.get("last_updated") or "UNKNOWN"),
         ),
     )
-    raw_state = str(snapshot.get("current_phase") or console.stage)
+    raw_state = str(console.stage or "")
     normalized_state, human_state = normalize_operations_state(raw_state)
     next_step = str(snapshot.get("next_step") or "")
     return OperationsReadModelV1(

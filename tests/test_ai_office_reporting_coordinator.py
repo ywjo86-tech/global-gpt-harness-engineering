@@ -1,4 +1,4 @@
-import tempfile, unittest
+import hashlib, tempfile, unittest
 from runtime.ai_office.reporting_coordinator import ReportingCoordinator
 from tests.reporting_fixtures import sample_report
 
@@ -7,7 +7,10 @@ class Sink:
     def save(self, request):
         self.calls+=1
         if self.fail: raise ValueError("unavailable")
-        return {"remote_ref":self.destination+":1","digest":"a"*64}
+        return {
+            "remote_ref": self.destination + ":1",
+            "digest": hashlib.sha256(request.content.encode()).hexdigest(),
+        }
 
 class CoordinatorTests(unittest.TestCase):
     def test_partial_failure_and_retry_only_pending(self):

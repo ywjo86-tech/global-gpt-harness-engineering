@@ -1,4 +1,4 @@
-import tempfile, unittest
+import hashlib, tempfile, unittest
 from runtime.ai_office.report_receipts import ReportReceiptStore
 from runtime.ai_office.report_sinks import ReportSaveRequest, save_once
 
@@ -6,7 +6,7 @@ class FakeSink:
     def __init__(self, calls): self.calls = calls
     def save(self, request):
         self.calls.append(request)
-        return {"remote_ref": "r1", "digest": "a" * 64}
+        return {"remote_ref": "r1", "digest": hashlib.sha256(request.content.encode()).hexdigest()}
 
 class ReportSinkTests(unittest.TestCase):
     def test_save_once_is_idempotent(self):

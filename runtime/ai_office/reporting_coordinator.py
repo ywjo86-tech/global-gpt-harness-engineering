@@ -39,5 +39,15 @@ class ReportingCoordinator:
             try:
                 receipt=save_once(self.sinks[destination],request,self.receipts); statuses[destination]="SAVED"; receipts.append(receipt.receipt_digest)
             except (KeyError, ValueError, OSError): pass
-        complete=all(value=="SAVED" for value in statuses.values())
-        return RecordingOutcomeV1(report.report_id,report.execution_status,report.verification_status,statuses["NOTION"],statuses["LLMWIKI"],"COMPLETE" if complete else "WAITING_REPORT",tuple(sorted(receipts)))
+        delivery_complete=all(value=="SAVED" for value in statuses.values())
+        execution_complete=(
+            report.execution_status == "SUCCESS"
+            and report.verification_status == "PASS"
+        )
+        if not delivery_complete:
+            final_status="WAITING_REPORT"
+        elif not execution_complete:
+            final_status="FAILED"
+        else:
+            final_status="COMPLETE"
+        return RecordingOutcomeV1(report.report_id,report.execution_status,report.verification_status,statuses["NOTION"],statuses["LLMWIKI"],final_status,tuple(sorted(receipts)))

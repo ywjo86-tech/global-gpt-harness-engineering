@@ -23,4 +23,6 @@ def save_once(sink: ReportSink, request: ReportSaveRequest, receipt_store):
     content_digest=hashlib.sha256(request.content.encode()).hexdigest()
     if digest and (len(digest)!=64 or any(c not in "0123456789abcdef" for c in digest)):
         raise ReportSinkError("sink digest is invalid")
+    if digest and digest != content_digest:
+        raise ReportSinkError("sink digest mismatch")
     return receipt_store.create(request, str(result.get("remote_ref") or ""), content_digest)
