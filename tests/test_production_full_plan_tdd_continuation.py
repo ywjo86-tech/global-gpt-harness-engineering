@@ -9,6 +9,7 @@ from runtime.orchestrator.implementation_continuation import (
     ExpectedRedContractV1, FailureObservationV1, LEGACY, TDD_V1,
 )
 from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
+from runtime.orchestrator.production_execution_gateway import build_effect_reconciliation_result, _digest
 
 NOW = datetime(2026, 10, 1, 1, 0, tzinfo=timezone.utc)
 
@@ -44,6 +45,37 @@ def green_boundary_context(**overrides):
         "approval_valid": True,
         "source_valid": True,
         "environment_valid": True,
+    }
+    value.update(overrides)
+    return value
+
+
+def applied_reconciliation_port(request):
+    return build_effect_reconciliation_result(
+        request, status="APPLIED", canonical_effect_id="TE-canonical",
+        canonical_receipt_ref="full-mcp://receipt/TE-canonical",
+        receipt_digest="2"*64, evidence_ref="full-mcp://evidence/TE-canonical",
+        observed_at="2026-10-01T10:00:00+00:00",
+    )
+
+
+def mismatched_reconciliation_port(request):
+    result = dict(applied_reconciliation_port(request))
+    result["effect_intent_id"] = "0"*64
+    unsigned = dict(result); unsigned.pop("result_digest")
+    result["result_digest"] = _digest(unsigned)
+    return result
+
+
+def tdd_revalidation(**overrides):
+    value = {
+        "approval_valid": True,
+        "current_source_sha": "a"*40,
+        "current_authority_digest": "b"*64,
+        "current_dependency_environment_digest": "d"*64,
+        "focused_validation_passed": False,
+        "regression_validation_passed": False,
+        "gate_evidence_valid": False,
     }
     value.update(overrides)
     return value
@@ -166,6 +198,157 @@ class ProductionFullPlanTDDContinuationTests(unittest.TestCase):
             }, "PRE_DISPATCH")
             self.assertEqual(decision.action, "WAIT_EVIDENCE")
             self.assertEqual(decision.reason, "GREEN_EFFECT_RECEIPT_REQUIRED")
+
+    def test_direct_runner_blocked_checkpoint_never_dispatches_executor(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root, continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest)
+            bad=FailureObservationV1.create(
+                project_id="proj",run_id="run",task_id="TASK-001",tdd_cycle_id="TDD-001",
+                source_sha="a"*40,authority_digest="b"*64,test_kind="FOCUSED_TDD",
+                test_selector="tests.test_x.X.test_red",test_command_digest="c"*64,
+                dependency_environment_digest="d"*64,outcome="FAILED",
+                failure_semantic_signature="0"*64,failure_count=1,error_count=0,receipt_digest="f"*64)
+            sup.record_expected_red(c,bad,now=NOW)
+            calls=root/'calls.log'
+            def executor(*_): calls.write_text(calls.read_text()+'x\n' if calls.exists() else 'x\n'); return {"status":"GATE_EXIT"}
+            result=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(result.status,"BLOCKED")
+            self.assertFalse(calls.exists())
+            self.assertNotEqual(result.state.get("state"),"COMPLETED")
+
+    def test_direct_runner_green_ready_without_revalidation_waits_and_dispatches_zero_effects(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+            calls=root/'calls.log'
+            def executor(*_): calls.write_text('effect\n'); return {"status":"GATE_EXIT"}
+            result=sup.run(executor)
+            self.assertEqual(result.status,"WAITING_EVIDENCE")
+            self.assertEqual(result.state.get("wait_reason"),"TDD_REVALIDATION_REQUIRED")
+            self.assertFalse(calls.exists())
+
+    def test_direct_runner_green_ready_invalid_revalidation_dispatches_zero_effects(self):
+        cases=(
+            {"approval_valid":False},
+            {"current_source_sha":"9"*40},
+            {"current_dependency_environment_digest":"8"*64},
+        )
+        for overrides in cases:
+            with self.subTest(overrides=overrides), tempfile.TemporaryDirectory() as d:
+                root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+                sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+                calls=root/'calls.log'
+                def executor(*_): calls.write_text('effect\n'); return {"status":"GATE_EXIT"}
+                result=sup.run(executor,tdd_revalidation=tdd_revalidation(**overrides))
+                self.assertEqual(result.status,"BLOCKED")
+                self.assertFalse(calls.exists())
+
+    def test_green_effect_runs_once_then_missing_receipt_waits_without_replay(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+            calls=root/'calls.log'
+            def executor(*_):
+                calls.write_text(calls.read_text()+'effect\n' if calls.exists() else 'effect\n')
+                return {"status":"GATE_EXIT"}
+            first=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(first.status,"WAITING_EVIDENCE")
+            running=sup.tdd_store().load()
+            self.assertEqual(running.phase,"GREEN_RUNNING")
+            second=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(second.status,"WAITING_EVIDENCE")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+            reconciled=sup.run(
+                executor,tdd_revalidation=tdd_revalidation(),
+                effect_reconciliation_port=applied_reconciliation_port)
+            self.assertEqual(reconciled.status,"WAITING_EVIDENCE")
+            self.assertEqual(sup.tdd_store().load().phase,"FOCUSED_VALIDATION")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+
+    def test_executor_local_receipt_fields_cannot_replace_full_mcp_reconciliation_port(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+            calls=root/'calls.log'
+            def executor(*_):
+                calls.write_text('effect\n')
+                running=sup.tdd_store().load()
+                return {"status":"GATE_EXIT","effect_intent_id":running.effect_step_id,
+                        "canonical_receipt_digest":"2"*64,"effect_reconciliation":"RECONCILED"}
+            result=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(result.status,"WAITING_EVIDENCE")
+            self.assertEqual(result.state.get("wait_reason"),"EFFECT_RECONCILIATION_REQUIRED")
+            self.assertEqual(sup.tdd_store().load().phase,"GREEN_RUNNING")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+
+    def test_matching_effect_receipt_advances_validation_without_parent_completion(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+            calls=root/'calls.log'
+            def executor(*_):
+                calls.write_text('effect\n')
+                return {"status":"GATE_EXIT"}
+            result=sup.run(
+                executor,tdd_revalidation=tdd_revalidation(),
+                effect_reconciliation_port=applied_reconciliation_port)
+            self.assertEqual(result.status,"WAITING_EVIDENCE")
+            self.assertEqual(sup.tdd_store().load().phase,"FOCUSED_VALIDATION")
+            self.assertNotEqual(result.state.get("state"),"COMPLETED")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+
+    def test_receipt_binding_mismatch_blocks_without_effect_replay(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+            calls=root/'calls.log'
+            def executor(*_):
+                calls.write_text(calls.read_text()+'effect\n' if calls.exists() else 'effect\n')
+                return {"status":"GATE_EXIT"}
+            first=sup.run(
+                executor,tdd_revalidation=tdd_revalidation(),
+                effect_reconciliation_port=mismatched_reconciliation_port)
+            self.assertEqual(first.status,"BLOCKED")
+            second=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(second.status,"BLOCKED")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+
+    def test_parent_completion_requires_completed_tdd_and_gate_evidence_without_reexecuting_effect(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); c=contract(); sup=self.supervisor(root,continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,observation(),now=NOW)
+            calls=root/'calls.log'
+            def executor(*_):
+                calls.write_text(calls.read_text()+'effect\n' if calls.exists() else 'effect\n')
+                return {"status":"GATE_EXIT"}
+            sup.run(
+                executor,tdd_revalidation=tdd_revalidation(),
+                effect_reconciliation_port=applied_reconciliation_port)
+            focused_wait=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(focused_wait.status,"WAITING_EVIDENCE")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+            sup.record_tdd_focused_validation(passed=True,receipt_digest="3"*64)
+            regression_wait=sup.run(executor,tdd_revalidation=tdd_revalidation())
+            self.assertEqual(regression_wait.status,"WAITING_EVIDENCE")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+            sup.record_tdd_regression_validation(passed=True,receipt_digest="4"*64,regression_delta_current_only=0)
+            waiting=sup.run(executor,tdd_revalidation=tdd_revalidation(
+                focused_validation_passed=True,regression_validation_passed=True,gate_evidence_valid=False))
+            self.assertEqual(waiting.status,"WAITING_EVIDENCE")
+            completed=sup.run(executor,tdd_revalidation=tdd_revalidation(
+                focused_validation_passed=True,regression_validation_passed=True,gate_evidence_valid=True))
+            self.assertEqual(completed.status,"COMPLETED")
+            self.assertEqual(calls.read_text().splitlines(),["effect"])
+
+    def test_legacy_direct_runner_behavior_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); sup=self.supervisor(root)
+            calls=root/'calls.log'
+            def executor(*_): calls.write_text('legacy\n'); return {"status":"GATE_EXIT"}
+            result=sup.run(executor)
+            self.assertEqual(result.status,"COMPLETED")
+            self.assertEqual(calls.read_text().splitlines(),["legacy"])
 
     def test_supervisor_does_not_turn_unexpected_failure_into_green(self):
         with tempfile.TemporaryDirectory() as d:

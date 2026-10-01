@@ -24,6 +24,9 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .durable_io import DurableIOError, atomic_write_bytes, durable_json_save, resource_snapshot
 from .production_attention import AttentionOutbox
+from .production_execution_gateway import (
+    GatewayError, build_effect_reconciliation_request, validate_effect_reconciliation_result,
+)
 from .user_interaction_policy import DEFERRED_INCIDENT, IMMEDIATE_DECISION, STALL_CONFIRMED
 from .diagnostic_context_bridge import record_failure_diagnostics
 from .durable_continuation import (
@@ -31,14 +34,14 @@ from .durable_continuation import (
 )
 from .implementation_continuation import (
     CONTINUATION_MODES, LEGACY, TDD_V1, ContinuationDecision,
-    ExpectedRedContractV1, FailureObservationV1, TDDContinuationStore,
+    ExpectedRedContractV1, FailureObservationV1, TDDContinuationError, TDDContinuationStore,
     evaluate_continuation_boundary,
 )
 
 
 SCHEMA_VERSION = "orchestration.production-full-plan.v1"
 ACTIVE_STATES = frozenset({"READY", "DISPATCHED", "RUNNING", "VERIFYING", "RECOVERING"})
-WAIT_STATES = frozenset({"WAITING_APPROVAL", "WAITING_PROVIDER", "WAITING_RESOURCE"})
+WAIT_STATES = frozenset({"WAITING_APPROVAL", "WAITING_PROVIDER", "WAITING_RESOURCE", "WAITING_EVIDENCE"})
 TERMINAL_STATES = frozenset({"BLOCKED", "FAILED", "COMPLETED", "CANCELLED"})
 ALL_STATES = ACTIVE_STATES | WAIT_STATES | TERMINAL_STATES
 QUEUE_STATES = frozenset({"READY", "DISPATCHED", "RUNNING", "COMPLETED", "BLOCKED", "CANCELLED"})
@@ -325,6 +328,195 @@ class DurableFullPlanSupervisor:
                                         changed_paths: Sequence[str], failure_class: str):
         return self._with_tdd_lock(lambda store: store.request_bounded_remediation(
             contract, changed_paths=changed_paths, failure_class=failure_class))
+
+    def _tdd_boundary_decision(
+        self, item: Mapping[str, Any], boundary: str, revalidation: Mapping[str, Any] | None,
+    ) -> tuple[ContinuationDecision, ExpectedRedContractV1 | None, Any | None]:
+        try:
+            store = self.tdd_store()
+            checkpoint = store.load()
+            contract = store.load_contract()
+        except (TDDContinuationError, FileNotFoundError, OSError, ValueError):
+            return ContinuationDecision("BLOCK", "TDD_BINDING_INVALID"), None, None
+        values = dict(revalidation or {}) if isinstance(revalidation, Mapping) else {}
+        base_valid = bool(
+            contract.project_id == self.project_id
+            and contract.run_id == self.run_id
+            and checkpoint.project_id == self.project_id
+            and checkpoint.run_id == self.run_id
+            and checkpoint.task_id == contract.task_id == str(item.get("gate_id") or "")
+            and checkpoint.contract_digest == contract.contract_digest
+            and checkpoint.authority_digest == contract.authority_digest
+            and checkpoint.source_sha == contract.source_sha
+            and checkpoint.dependency_environment_digest == contract.dependency_environment_digest
+        )
+        approval_valid = bool(
+            values.get("approval_valid") is True
+            and values.get("current_authority_digest") == contract.authority_digest
+        )
+        source_valid = values.get("current_source_sha") == contract.source_sha
+        environment_valid = (
+            values.get("current_dependency_environment_digest")
+            == contract.dependency_environment_digest
+        )
+        contract_valid = base_valid
+        if boundary == "PRE_COMPLETE":
+            contract_valid = base_valid and approval_valid and source_valid and environment_valid
+        context = {
+            "contract_valid": contract_valid,
+            "checkpoint_valid": True,
+            "phase": checkpoint.phase,
+            "block_reason": checkpoint.block_reason,
+            "approval_valid": approval_valid,
+            "source_valid": source_valid,
+            "environment_valid": environment_valid,
+            "focused_validation_passed": values.get("focused_validation_passed") is True,
+            "regression_validation_passed": values.get("regression_validation_passed") is True,
+            "gate_evidence_valid": values.get("gate_evidence_valid") is True,
+        }
+        return evaluate_continuation_boundary(context, boundary), contract, checkpoint
+
+    def _tdd_wait_evidence_locked(self, state: dict[str, Any], item: dict[str, Any], reason: str) -> dict[str, Any]:
+        item["status"] = "READY"
+        item["resume"] = True
+        item["last_error"] = reason
+        state["state"] = "WAITING_EVIDENCE"
+        state["wait_reason"] = reason
+        state["last_error"] = reason
+        state["terminal_reason"] = None
+        state["lease"] = None
+        return self._persist(state, {
+            "event": "TDD_WAITING_EVIDENCE", "gate_id": item["gate_id"], "reason": reason,
+        })
+
+    def _tdd_block_locked(self, state: dict[str, Any], item: dict[str, Any], reason: str) -> dict[str, Any]:
+        item["status"] = "BLOCKED"
+        item["last_error"] = reason
+        state["state"] = "BLOCKED"
+        state["last_error"] = reason
+        state["terminal_reason"] = "TDD_BOUNDARY_BLOCKED"
+        state["lease"] = None
+        return self._persist(state, {
+            "event": "TDD_BOUNDARY_BLOCKED", "gate_id": item["gate_id"], "reason": reason,
+        })
+
+    def _tdd_effect_reconciliation_request(
+        self, contract: ExpectedRedContractV1, checkpoint: Any,
+    ) -> dict[str, Any]:
+        return build_effect_reconciliation_request(
+            project_id=self.project_id, run_id=self.run_id, task_id=contract.task_id,
+            cycle_id=contract.tdd_cycle_id, effect_intent_id=checkpoint.effect_step_id,
+            authority_binding_digest=contract.authority_digest,
+            continuation_contract_digest=contract.contract_digest,
+            source_digest=contract.source_sha,
+            environment_digest=contract.dependency_environment_digest,
+        )
+
+    def _tdd_resume_evidence_wait_locked(
+        self, state: dict[str, Any], revalidation: Mapping[str, Any] | None = None,
+        effect_reconciliation_port: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        if state.get("state") != "WAITING_EVIDENCE":
+            return state
+        item = self._active_item(state)
+        if item is None:
+            return state
+        try:
+            store = self.tdd_store()
+            checkpoint = store.load()
+            contract = store.load_contract()
+        except (TDDContinuationError, FileNotFoundError, OSError, ValueError):
+            return self._tdd_block_locked(state, item, "TDD_BINDING_INVALID")
+        if checkpoint.phase == "BLOCKED":
+            return self._tdd_block_locked(
+                state, item, checkpoint.block_reason or "TDD_CONTINUATION_BLOCKED")
+        if checkpoint.phase == "GREEN_RUNNING":
+            values = dict(revalidation or {}) if isinstance(revalidation, Mapping) else {}
+            if effect_reconciliation_port is None:
+                return state
+            binding_valid = bool(
+                values.get("approval_valid") is True
+                and values.get("current_authority_digest") == contract.authority_digest
+                and values.get("current_source_sha") == contract.source_sha
+                and values.get("current_dependency_environment_digest")
+                    == contract.dependency_environment_digest
+            )
+            if not binding_valid:
+                return self._tdd_block_locked(
+                    state, item, "EFFECT_RECONCILIATION_BINDING_INVALID")
+            try:
+                request = self._tdd_effect_reconciliation_request(contract, checkpoint)
+                raw_result = effect_reconciliation_port(request)
+                result = validate_effect_reconciliation_result(
+                    raw_result, expected_request=request)
+            except (GatewayError, TDDContinuationError, OSError, ValueError, TypeError):
+                return self._tdd_block_locked(
+                    state, item, "EFFECT_RECONCILIATION_INVALID")
+            if result.get("status") != "APPLIED":
+                state["wait_reason"] = "EFFECT_RECONCILIATION_REQUIRED"
+                state["last_error"] = "EFFECT_RECONCILIATION_REQUIRED"
+                item["last_error"] = "EFFECT_RECONCILIATION_REQUIRED"
+                return self._persist(state, {
+                    "event": "TDD_EFFECT_RECONCILIATION_PENDING",
+                    "gate_id": item["gate_id"], "effect_intent_id": checkpoint.effect_step_id,
+                    "reconciliation_status": result.get("status"),
+                })
+            try:
+                store.reconcile_green_effect(
+                    contract, effect_step_id=checkpoint.effect_step_id,
+                    canonical_receipt_digest=str(result["receipt_digest"]),
+                    effect_reconciliation="RECONCILED",
+                )
+            except (TDDContinuationError, OSError, ValueError):
+                return self._tdd_block_locked(
+                    state, item, "EFFECT_RECEIPT_RECONCILIATION_FAILED")
+            state["wait_reason"] = "FOCUSED_VALIDATION_REQUIRED"
+            state["last_error"] = "FOCUSED_VALIDATION_REQUIRED"
+            item["last_error"] = "FOCUSED_VALIDATION_REQUIRED"
+            return self._persist(state, {
+                "event": "TDD_EFFECT_RECEIPT_RECONCILED",
+                "gate_id": item["gate_id"],
+                "effect_intent_id": checkpoint.effect_step_id,
+                "reconciliation_result_digest": result["result_digest"],
+            })
+        if checkpoint.phase not in {"GREEN_READY", "COMPLETED"}:
+            return state
+        item["status"] = "READY"
+        item["resume"] = True
+        item["last_error"] = None
+        state["state"] = "RECOVERING"
+        state["last_error"] = None
+        state.pop("wait_reason", None)
+        return self._persist(state, {
+            "event": "TDD_EVIDENCE_WAIT_RESUMED", "gate_id": item["gate_id"],
+            "tdd_phase": checkpoint.phase,
+        })
+
+    def _complete_tdd_gate_locked(self, state: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+        item["status"] = "COMPLETED"
+        item["last_error"] = None
+        if item["gate_id"] not in state["completed_gates"]:
+            state["completed_gates"].append(item["gate_id"])
+        state["lease"] = None
+        state["last_error"] = None
+        state.pop("wait_reason", None)
+        if len(state["completed_gates"]) == len(self.gates):
+            state["state"] = "COMPLETED"
+            state["current_gate"] = None
+            state["terminal_reason"] = "ALL_GATES_COMPLETED"
+            return self._persist(state, {
+                "event": "FULL_PLAN_COMPLETED", "gate_id": item["gate_id"],
+                "completion_source": "TDD_PRE_COMPLETE_GUARD",
+            })
+        next_gate = self.gates[len(state["completed_gates"])]
+        state["current_gate"] = next_gate
+        state["queue"].append(self._queue_item(next_gate, len(state["completed_gates"])))
+        state["state"] = "READY"
+        state["terminal_reason"] = None
+        return self._persist(state, {
+            "event": "TDD_GATE_COMPLETED_AND_SUCCESSOR_ENQUEUED",
+            "completed_gate": item["gate_id"], "next_gate": next_gate,
+        })
 
     def _queue_item(self, gate_id: str, sequence: int, *, attempt: int = 1, resume: bool = False) -> dict[str, Any]:
         gate_run_id = f"{self.run_id}--{gate_id.lower()}"
@@ -735,17 +927,28 @@ class DurableFullPlanSupervisor:
         return "ERROR", {"exception_type": "WorkerProcessExit", "message": f"exitcode={process.exitcode}"}
 
     def run(self, executor: Callable[[str, str, bool], Mapping[str, Any]], *,
-            preflight: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> FullPlanResult:
+            preflight: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+            tdd_revalidation: Mapping[str, Any] | None = None,
+            effect_reconciliation_port: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> FullPlanResult:
         handle = self._acquire_run_lock()
         try:
-            return self._run_locked(executor, preflight=preflight)
+            return self._run_locked(
+                executor, preflight=preflight, tdd_revalidation=tdd_revalidation,
+                effect_reconciliation_port=effect_reconciliation_port)
         finally:
             self._release_run_lock(handle)
 
     def _run_locked(self, executor: Callable[[str, str, bool], Mapping[str, Any]], *,
-                    preflight: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> FullPlanResult:
+                    preflight: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+                    tdd_revalidation: Mapping[str, Any] | None = None,
+                    effect_reconciliation_port: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> FullPlanResult:
         state, recovered = self.reconcile_startup()
         executed: list[str] = []
+        if self.continuation_mode == TDD_V1 and state.get("state") == "WAITING_EVIDENCE":
+            state = self._tdd_resume_evidence_wait_locked(
+                state, tdd_revalidation, effect_reconciliation_port)
+            if state.get("state") == "WAITING_EVIDENCE":
+                return FullPlanResult("WAITING_EVIDENCE", state, tuple(executed), recovered)
         while state["state"] not in WAIT_STATES | TERMINAL_STATES:
             item = self._active_item(state)
             if item is None:
@@ -787,6 +990,45 @@ class DurableFullPlanSupervisor:
                                                       "gate_id": item["gate_id"]})
                         self._alert("PREFLIGHT_BLOCKED", state, gate_id=item["gate_id"], reason=reason)
                     break
+            tdd_running = None
+            tdd_contract = None
+            if self.continuation_mode == TDD_V1:
+                decision, tdd_contract, checkpoint = self._tdd_boundary_decision(
+                    item, "PRE_DISPATCH", tdd_revalidation)
+                if checkpoint is not None and checkpoint.phase == "COMPLETED":
+                    complete_decision, _, _ = self._tdd_boundary_decision(
+                        item, "PRE_COMPLETE", tdd_revalidation)
+                    if complete_decision.action == "ALLOW_COMPLETE":
+                        state = self._complete_tdd_gate_locked(state, item)
+                        if state["state"] == "COMPLETED":
+                            break
+                        continue
+                    state = self._tdd_wait_evidence_locked(
+                        state, item, complete_decision.reason)
+                    break
+                if (
+                    tdd_revalidation is None
+                    and checkpoint is not None
+                    and checkpoint.phase in {"GREEN_READY", "FOCUSED_VALIDATION", "REGRESSION_VALIDATION"}
+                ):
+                    state = self._tdd_wait_evidence_locked(
+                        state, item, "TDD_REVALIDATION_REQUIRED")
+                    break
+                if decision.action == "BLOCK":
+                    state = self._tdd_block_locked(state, item, decision.reason)
+                    break
+                if decision.action in {"WAIT_EVIDENCE", "ALLOW_VALIDATION_ONLY"}:
+                    state = self._tdd_wait_evidence_locked(state, item, decision.reason)
+                    break
+                if decision.action != "ALLOW_EFFECT_ONCE" or tdd_contract is None:
+                    state = self._tdd_block_locked(state, item, "TDD_DISPATCH_NOT_AUTHORIZED")
+                    break
+                try:
+                    tdd_running = self.tdd_store().begin_green(tdd_contract)
+                except (TDDContinuationError, OSError, ValueError) as exc:
+                    state = self._tdd_block_locked(
+                        state, item, f"TDD_GREEN_INTENT_COMMIT_FAILED:{type(exc).__name__}")
+                    break
             item["status"] = "DISPATCHED"
             state["state"] = "DISPATCHED"
             state = self._persist(state, {"event": "DISPATCH_INTENT_COMMITTED", "gate_id": item["gate_id"],
@@ -794,6 +1036,10 @@ class DurableFullPlanSupervisor:
             kind, payload = self._run_gate_process(state, item, executor)
             if kind != "OK":
                 reason = str(payload.get("reason") or payload.get("message") or kind)
+                if self.continuation_mode == TDD_V1 and tdd_running is not None:
+                    state = self._tdd_wait_evidence_locked(
+                        state, item, "EFFECT_RECONCILIATION_REQUIRED")
+                    break
                 state = self._handle_failure(state, item, reason)
                 if state["state"] == "RECOVERING":
                     continue
@@ -803,6 +1049,10 @@ class DurableFullPlanSupervisor:
                                           "result_digest": _digest(payload)})
             classification, reason = self._classify_gate_result(payload)
             if classification != "COMPLETED":
+                if self.continuation_mode == TDD_V1 and tdd_running is not None:
+                    state = self._tdd_wait_evidence_locked(
+                        state, item, "EFFECT_RECONCILIATION_REQUIRED")
+                    break
                 if classification in WAIT_STATES:
                     state = self._handle_failure(state, item, reason or classification, wait_state=classification)
                 elif classification == "CANCELLED":
@@ -812,6 +1062,39 @@ class DurableFullPlanSupervisor:
                     state = self._handle_failure(state, item, reason or classification)
                 if state["state"] == "RECOVERING":
                     continue
+                break
+            if self.continuation_mode == TDD_V1 and tdd_running is not None and tdd_contract is not None:
+                executed.append(item["gate_id"])
+                if effect_reconciliation_port is None:
+                    state = self._tdd_wait_evidence_locked(
+                        state, item, "EFFECT_RECONCILIATION_REQUIRED")
+                    break
+                try:
+                    request = self._tdd_effect_reconciliation_request(
+                        tdd_contract, tdd_running)
+                    raw_result = effect_reconciliation_port(request)
+                    reconciliation_result = validate_effect_reconciliation_result(
+                        raw_result, expected_request=request)
+                except (GatewayError, TDDContinuationError, OSError, ValueError, TypeError):
+                    state = self._tdd_block_locked(
+                        state, item, "EFFECT_RECONCILIATION_INVALID")
+                    break
+                if reconciliation_result.get("status") != "APPLIED":
+                    state = self._tdd_wait_evidence_locked(
+                        state, item, "EFFECT_RECONCILIATION_REQUIRED")
+                    break
+                try:
+                    self.tdd_store().reconcile_green_effect(
+                        tdd_contract, effect_step_id=tdd_running.effect_step_id,
+                        canonical_receipt_digest=str(reconciliation_result["receipt_digest"]),
+                        effect_reconciliation="RECONCILED",
+                    )
+                except (TDDContinuationError, OSError, ValueError):
+                    state = self._tdd_block_locked(
+                        state, item, "EFFECT_RECEIPT_RECONCILIATION_FAILED")
+                    break
+                state = self._tdd_wait_evidence_locked(
+                    state, item, "FOCUSED_VALIDATION_REQUIRED")
                 break
             # Atomic handoff: Gate completion and successor dispatch intent are
             # one canonical state generation.  A crash after this write cannot

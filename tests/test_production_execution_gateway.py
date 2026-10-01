@@ -10,7 +10,9 @@ from runtime.orchestrator.production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, GatewayError, HostExecutionGateway,
     ManagedHostRunner, UnixSocketGatewayTransport, UnixSocketHostRunner,
     build_gateway_request, build_gateway_result, validate_gateway_request,
-    validate_gateway_result, resolve_gateway_socket_path, _workspace_artifact_binding,
+    validate_gateway_result, build_effect_reconciliation_request,
+    build_effect_reconciliation_result, validate_effect_reconciliation_result,
+    resolve_gateway_socket_path, _workspace_artifact_binding,
     _digest, _safe_broker_block,
 )
 from runtime.orchestrator.tool_authorization import (
@@ -30,6 +32,49 @@ def request():
 
 
 class GatewayContractTests(unittest.TestCase):
+    def test_effect_reconciliation_result_requires_full_mcp_owner_and_exact_binding(self):
+        request = build_effect_reconciliation_request(
+            project_id="p", run_id="r", task_id="TASK-1", cycle_id="C1",
+            effect_intent_id="e"*64, authority_binding_digest="a"*64,
+            continuation_contract_digest="b"*64, source_digest="c"*40,
+            environment_digest="d"*64,
+        )
+        result = build_effect_reconciliation_result(
+            request, status="APPLIED", canonical_effect_id="TE-123",
+            canonical_receipt_ref="full-mcp://receipt/TE-123",
+            receipt_digest="f"*64, evidence_ref="full-mcp://evidence/TE-123",
+            observed_at="2026-10-01T10:00:00+00:00",
+        )
+        validated = validate_effect_reconciliation_result(result, expected_request=request)
+        self.assertEqual(validated["status"], "APPLIED")
+        self.assertEqual(validated["owning_domain"], "FULL_MCP")
+        self.assertEqual(validated["receipt_digest"], "f"*64)
+        for field, value in (
+            ("owning_domain", "LOCAL"),
+            ("effect_intent_id", "0"*64),
+            ("source_digest", "1"*40),
+            ("environment_digest", "2"*64),
+        ):
+            tampered = dict(result); tampered[field] = value
+            unsigned = dict(tampered); unsigned.pop("result_digest")
+            tampered["result_digest"] = _digest(unsigned)
+            with self.subTest(field=field), self.assertRaises(GatewayError):
+                validate_effect_reconciliation_result(tampered, expected_request=request)
+
+    def test_effect_reconciliation_applied_requires_canonical_receipt(self):
+        request = build_effect_reconciliation_request(
+            project_id="p", run_id="r", task_id="TASK-1", cycle_id="C1",
+            effect_intent_id="e"*64, authority_binding_digest="a"*64,
+            continuation_contract_digest="b"*64, source_digest="c"*40,
+            environment_digest="d"*64,
+        )
+        with self.assertRaises(GatewayError):
+            build_effect_reconciliation_result(
+                request, status="APPLIED", canonical_effect_id="TE-123",
+                canonical_receipt_ref="", receipt_digest="", evidence_ref="full-mcp://evidence/TE-123",
+                observed_at="2026-10-01T10:00:00+00:00",
+            )
+
     def test_broker_block_projection_is_content_free_and_fail_closed(self):
         self.assertEqual(_safe_broker_block({
             "stage": "HANDLE", "error_class": "ToolAuthorizationError",

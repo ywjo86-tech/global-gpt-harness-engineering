@@ -29,6 +29,11 @@ from .tool_authorization import (
 )
 
 GATEWAY_CONTRACT_VERSION = "HOST-GATEWAY.v1"
+EFFECT_RECONCILIATION_REQUEST_SCHEMA = "orchestration.effect-reconciliation-request.v1"
+EFFECT_RECONCILIATION_RESULT_SCHEMA = "orchestration.effect-reconciliation-result.v1"
+_EFFECT_RECONCILIATION_STATUSES = frozenset({"NOT_FOUND", "PENDING", "APPLIED", "FAILED", "UNKNOWN"})
+_SHA40_OR_64 = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 LOCAL_CHILD = "LOCAL_CHILD"
 HOST_GATEWAY = "HOST_GATEWAY"
 SUPPORTED_BACKENDS = frozenset({LOCAL_CHILD, HOST_GATEWAY})
@@ -73,6 +78,141 @@ def _request_id(payload: Mapping[str, Any]) -> str:
 def _required(payload: Mapping[str, Any], fields: tuple[str, ...]) -> None:
     if not isinstance(payload, Mapping) or any(field not in payload for field in fields):
         raise GatewayError("gateway schema is incomplete")
+
+
+def _effect_identity(value: object, label: str) -> str:
+    text = str(value or "")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,179}", text):
+        raise GatewayError(f"effect reconciliation {label} is invalid")
+    return text
+
+
+def build_effect_reconciliation_request(
+    *, project_id: str, run_id: str, task_id: str, cycle_id: str,
+    effect_intent_id: str, authority_binding_digest: str,
+    continuation_contract_digest: str, source_digest: str, environment_digest: str,
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": EFFECT_RECONCILIATION_REQUEST_SCHEMA,
+        "project_id": _effect_identity(project_id, "project_id"),
+        "run_id": _effect_identity(run_id, "run_id"),
+        "task_id": _effect_identity(task_id, "task_id"),
+        "cycle_id": _effect_identity(cycle_id, "cycle_id"),
+        "effect_intent_id": str(effect_intent_id or ""),
+        "authority_binding_digest": str(authority_binding_digest or ""),
+        "continuation_contract_digest": str(continuation_contract_digest or ""),
+        "source_digest": str(source_digest or ""),
+        "environment_digest": str(environment_digest or ""),
+    }
+    if (
+        not _SHA256.fullmatch(payload["effect_intent_id"])
+        or not _SHA256.fullmatch(payload["authority_binding_digest"])
+        or not _SHA256.fullmatch(payload["continuation_contract_digest"])
+        or not _SHA40_OR_64.fullmatch(payload["source_digest"])
+        or not _SHA256.fullmatch(payload["environment_digest"])
+    ):
+        raise GatewayError("effect reconciliation request digest binding is invalid")
+    payload["request_digest"] = _digest(payload)
+    return payload
+
+
+def validate_effect_reconciliation_request(payload: Mapping[str, Any]) -> dict[str, Any]:
+    fields = (
+        "schema_version", "project_id", "run_id", "task_id", "cycle_id",
+        "effect_intent_id", "authority_binding_digest", "continuation_contract_digest",
+        "source_digest", "environment_digest", "request_digest",
+    )
+    _required(payload, fields)
+    expected = build_effect_reconciliation_request(
+        project_id=str(payload["project_id"]), run_id=str(payload["run_id"]),
+        task_id=str(payload["task_id"]), cycle_id=str(payload["cycle_id"]),
+        effect_intent_id=str(payload["effect_intent_id"]),
+        authority_binding_digest=str(payload["authority_binding_digest"]),
+        continuation_contract_digest=str(payload["continuation_contract_digest"]),
+        source_digest=str(payload["source_digest"]),
+        environment_digest=str(payload["environment_digest"]),
+    )
+    if payload.get("schema_version") != EFFECT_RECONCILIATION_REQUEST_SCHEMA:
+        raise GatewayError("effect reconciliation request schema mismatch")
+    if payload.get("request_digest") != expected["request_digest"]:
+        raise GatewayError("effect reconciliation request digest mismatch")
+    return dict(payload)
+
+
+def build_effect_reconciliation_result(
+    request: Mapping[str, Any], *, status: str, canonical_effect_id: str = "",
+    canonical_receipt_ref: str = "", receipt_digest: str = "",
+    evidence_ref: str = "", observed_at: str = "",
+) -> dict[str, Any]:
+    request = validate_effect_reconciliation_request(request)
+    if status not in _EFFECT_RECONCILIATION_STATUSES:
+        raise GatewayError("effect reconciliation status is invalid")
+    if status == "APPLIED":
+        if (
+            not canonical_effect_id or not canonical_receipt_ref or not evidence_ref or not observed_at
+            or not _SHA256.fullmatch(str(receipt_digest or ""))
+        ):
+            raise GatewayError("APPLIED effect reconciliation requires canonical receipt evidence")
+    payload = {
+        "schema_version": EFFECT_RECONCILIATION_RESULT_SCHEMA,
+        "owning_domain": "FULL_MCP",
+        "project_id": request["project_id"], "run_id": request["run_id"],
+        "task_id": request["task_id"], "cycle_id": request["cycle_id"],
+        "effect_intent_id": request["effect_intent_id"],
+        "authority_binding_digest": request["authority_binding_digest"],
+        "continuation_contract_digest": request["continuation_contract_digest"],
+        "source_digest": request["source_digest"],
+        "environment_digest": request["environment_digest"],
+        "request_digest": request["request_digest"],
+        "status": status,
+        "canonical_effect_id": str(canonical_effect_id or ""),
+        "canonical_receipt_ref": str(canonical_receipt_ref or ""),
+        "receipt_digest": str(receipt_digest or ""),
+        "evidence_ref": str(evidence_ref or ""),
+        "observed_at": str(observed_at or ""),
+    }
+    payload["result_digest"] = _digest(payload)
+    return payload
+
+
+def validate_effect_reconciliation_result(
+    payload: Mapping[str, Any], *, expected_request: Mapping[str, Any],
+) -> dict[str, Any]:
+    request = validate_effect_reconciliation_request(expected_request)
+    fields = (
+        "schema_version", "owning_domain", "project_id", "run_id", "task_id", "cycle_id",
+        "effect_intent_id", "authority_binding_digest", "continuation_contract_digest",
+        "source_digest", "environment_digest", "request_digest", "status",
+        "canonical_effect_id", "canonical_receipt_ref", "receipt_digest",
+        "evidence_ref", "observed_at", "result_digest",
+    )
+    _required(payload, fields)
+    if payload.get("schema_version") != EFFECT_RECONCILIATION_RESULT_SCHEMA:
+        raise GatewayError("effect reconciliation result schema mismatch")
+    if payload.get("owning_domain") != "FULL_MCP":
+        raise GatewayError("effect reconciliation owning domain mismatch")
+    for key in (
+        "project_id", "run_id", "task_id", "cycle_id", "effect_intent_id",
+        "authority_binding_digest", "continuation_contract_digest",
+        "source_digest", "environment_digest", "request_digest",
+    ):
+        if payload.get(key) != request.get(key):
+            raise GatewayError("effect reconciliation binding mismatch")
+    status = payload.get("status")
+    if status not in _EFFECT_RECONCILIATION_STATUSES:
+        raise GatewayError("effect reconciliation result status is invalid")
+    if status == "APPLIED" and (
+        not payload.get("canonical_effect_id")
+        or not payload.get("canonical_receipt_ref")
+        or not payload.get("evidence_ref")
+        or not payload.get("observed_at")
+        or not _SHA256.fullmatch(str(payload.get("receipt_digest") or ""))
+    ):
+        raise GatewayError("APPLIED effect reconciliation receipt is invalid")
+    unsigned = dict(payload); digest = unsigned.pop("result_digest")
+    if not isinstance(digest, str) or _digest(unsigned) != digest:
+        raise GatewayError("effect reconciliation result digest mismatch")
+    return dict(payload)
 
 
 def resolve_gateway_socket_path(workspace_root: str | Path, endpoint: str) -> Path:
