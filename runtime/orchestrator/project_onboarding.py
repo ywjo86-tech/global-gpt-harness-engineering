@@ -260,7 +260,7 @@ class OnboardingRegistry:
             if not git_dir.exists():
                 subprocess.run(["git", "init", "-b", "main"], cwd=root, capture_output=True, text=True, check=True)
                 initialized_git = True
-            subprocess.run(["git", "add", "--", *staged_paths], cwd=root, capture_output=True, text=True, check=True)
+            subprocess.run(["git", "add", "--force", "--", *staged_paths], cwd=root, capture_output=True, text=True, check=True)
             staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=root, capture_output=True, text=True, check=True).stdout.splitlines()
             if staged:
                 subprocess.run(["git", "-c", "user.name=Harness Bootstrap", "-c", "user.email=harness-bootstrap@localhost", "commit", "-m", "chore: bootstrap orchestration contract"], cwd=root, capture_output=True, text=True, check=True)

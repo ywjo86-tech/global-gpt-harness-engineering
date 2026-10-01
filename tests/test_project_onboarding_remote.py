@@ -86,6 +86,33 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             self.assertEqual(entry["project_root"], str(root))
             self.assertTrue((mapping_root / f"{root.name}.json").is_file())
 
+    def test_bootstrap_handles_ignored_required_contract_log(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, _ = _project(tmp_path)
+            (root / ".gitignore").write_text("logs/\n", encoding="utf-8")
+            _git(root, "add", ".gitignore")
+            _git(root, "commit", "-m", "ignore logs")
+            head = _git(root, "rev-parse", "HEAD")
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = _admission(registry_root, mapping_root)
+            dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+
+            result = admission.execute(
+                _request(
+                    root,
+                    mapping_root,
+                    head,
+                    mode="BOOTSTRAP",
+                    preflight_digest=dry_run["preflight_digest"],
+                )
+            )
+
+            self.assertEqual(result["status"], "BOOTSTRAPPED")
+            self.assertTrue((root / "logs" / "app.log").is_file())
+            self.assertTrue((mapping_root / f"{root.name}.json").is_file())
+
     def test_branch_or_head_drift_fails_closed_before_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             tmp_path = Path(temp)
