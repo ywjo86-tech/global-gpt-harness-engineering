@@ -21,7 +21,7 @@ from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupe
 
 
 class ProductionFullPlanBootTests(unittest.TestCase):
-    def job(self, root: Path, run_id: str = "run") -> Path:
+    def job(self, root: Path, run_id: str = "run", *, continuation_mode: str | None = None) -> Path:
         subprocess.run(["git", "init", "-q", str(root)], check=True)
         payload = {
             "schema_version": "orchestration.production-full-plan-job.v1",
@@ -34,10 +34,12 @@ class ProductionFullPlanBootTests(unittest.TestCase):
                        "lease_seconds": .08, "min_disk_free_bytes": 0, "min_inode_free": 0,
                        "min_memory_available_bytes": 0},
         }
+        if continuation_mode is not None:
+            payload["policy"]["continuation_mode"] = continuation_mode
         path = root / f"{run_id}.json"; path.write_text(json.dumps(payload)); return path
 
-    def registered(self, root: Path, run_id: str = "run") -> Path:
-        job = load_job(self.job(root, run_id)); return register_job(job)
+    def registered(self, root: Path, run_id: str = "run", *, continuation_mode: str | None = None) -> Path:
+        job = load_job(self.job(root, run_id, continuation_mode=continuation_mode)); return register_job(job)
 
 
     def test_discover_registered_jobs_finds_jobs_across_worktrees(self):
@@ -79,6 +81,78 @@ class ProductionFullPlanBootTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); registered = self.registered(root)
             self.assertEqual(discover_jobs(root), [registered])
+
+
+    def _arm_tdd_green(self, root: Path, registered: Path, *, running: bool):
+        from datetime import datetime, timedelta, timezone
+        from runtime.orchestrator.implementation_continuation import ExpectedRedContractV1, FailureObservationV1, TDD_V1
+        job = load_job(registered)
+        sup = DurableFullPlanSupervisor(
+            root, project_id="proj", run_id="run", gates=["G1"],
+            authority_core_sha256=job["authority_core_sha256"], **job["policy"])
+        now = datetime(2026,10,1,1,0,tzinfo=timezone.utc)
+        c = ExpectedRedContractV1.create(
+            project_id="proj", run_id="run", task_id="G1", tdd_cycle_id="TDD-001",
+            source_sha="a"*40, authority_digest=job["authority_core_sha256"], test_kind="FOCUSED_TDD",
+            test_selector="tests.test_x.X.test_red", test_command_digest="c"*64,
+            dependency_environment_digest="d"*64, expected_failure_semantic_signature="e"*64,
+            expected_failure_count=1, allowed_error_count=0, valid_until=(now+timedelta(hours=1)).isoformat(),
+            allowed_change_paths=("runtime/orchestrator/",), max_remediation_attempts=1)
+        o = FailureObservationV1.create(
+            project_id="proj", run_id="run", task_id="G1", tdd_cycle_id="TDD-001",
+            source_sha="a"*40, authority_digest=job["authority_core_sha256"], test_kind="FOCUSED_TDD",
+            test_selector="tests.test_x.X.test_red", test_command_digest="c"*64,
+            dependency_environment_digest="d"*64, outcome="FAILED", failure_semantic_signature="e"*64,
+            failure_count=1, error_count=0, receipt_digest="f"*64)
+        sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,o,now=now)
+        if running:
+            sup.tdd_store().begin_green(c)
+        return c
+
+    def test_tdd_green_running_boot_requires_reconciliation_not_blind_resume(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); registered=self.registered(root, continuation_mode="TDD_V1")
+            self._arm_tdd_green(root, registered, running=True)
+            with patch("runtime.orchestrator.production_full_plan_boot._unit_active", return_value=False):
+                result=reconcile_job(registered,launch=False)
+            self.assertEqual(result["action"],"TDD_RECONCILIATION_REQUIRED")
+            self.assertFalse(result["launched"])
+
+    def test_tdd_unexpected_failure_boot_stays_blocked_and_never_relaunches(self):
+        from datetime import datetime, timedelta, timezone
+        from runtime.orchestrator.implementation_continuation import ExpectedRedContractV1, FailureObservationV1
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); registered=self.registered(root, continuation_mode="TDD_V1")
+            job=load_job(registered)
+            sup=DurableFullPlanSupervisor(root, project_id="proj", run_id="run", gates=["G1"],
+                authority_core_sha256=job["authority_core_sha256"], **job["policy"])
+            now=datetime(2026,10,1,1,0,tzinfo=timezone.utc)
+            c=ExpectedRedContractV1.create(
+                project_id="proj",run_id="run",task_id="G1",tdd_cycle_id="TDD-FAIL",source_sha="a"*40,
+                authority_digest=job["authority_core_sha256"],test_kind="FOCUSED_TDD",
+                test_selector="tests.test_x.X.test_red",test_command_digest="c"*64,
+                dependency_environment_digest="d"*64,expected_failure_semantic_signature="e"*64,
+                expected_failure_count=1,allowed_error_count=0,valid_until=(now+timedelta(hours=1)).isoformat(),
+                allowed_change_paths=("runtime/orchestrator/",),max_remediation_attempts=1)
+            bad=FailureObservationV1.create(
+                project_id="proj",run_id="run",task_id="G1",tdd_cycle_id="TDD-FAIL",source_sha="a"*40,
+                authority_digest=job["authority_core_sha256"],test_kind="FOCUSED_TDD",
+                test_selector="tests.test_x.X.test_red",test_command_digest="c"*64,
+                dependency_environment_digest="d"*64,outcome="FAILED",failure_semantic_signature="0"*64,
+                failure_count=1,error_count=0,receipt_digest="f"*64)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest); sup.record_expected_red(c,bad,now=now)
+            with patch("runtime.orchestrator.production_full_plan_boot._unit_active",return_value=False):
+                result=reconcile_job(registered,launch=False)
+            self.assertEqual(result["action"],"TDD_BLOCKED")
+            self.assertFalse(result["launched"])
+
+    def test_tdd_green_ready_boot_remains_resume_candidate(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); registered=self.registered(root, continuation_mode="TDD_V1")
+            self._arm_tdd_green(root, registered, running=False)
+            with patch("runtime.orchestrator.production_full_plan_boot._unit_active", return_value=False):
+                result=reconcile_job(registered,launch=False)
+            self.assertEqual(result["action"],"WOULD_RESUME")
 
     def test_ready_job_would_resume_on_boot(self):
         with tempfile.TemporaryDirectory() as d:

@@ -19,6 +19,7 @@ from .durable_io import atomic_write_json
 from .production_run_authority import executor_runtime_identity
 from .harness_state_root import resolve_harness_state_root, job_state_root
 from .gate_continuation_contract import GateContinuationContract
+from .implementation_continuation import CONTINUATION_MODES, LEGACY, TDD_V1
 
 EXECUTOR_KIND = "GPT_OPERATOR_PLAN"
 RECEIPT_SCHEMA = "orchestration.operator-plan-receipt.v1"
@@ -85,6 +86,7 @@ def build_operator_plan_job(
     project_id: str, run_id: str, task_ids: Sequence[str],
     approved_plan_path: str | Path, approved_spec_path: str | Path,
     approval_ref: str, continuation_contracts_by_gate: Mapping[str, Mapping[str, Any] | GateContinuationContract] | None = None,
+    continuation_mode: str = LEGACY,
 ) -> dict[str, Any]:
     project = Path(project_root).resolve()
     runtime = Path(runtime_code_root).resolve()
@@ -115,6 +117,9 @@ def build_operator_plan_job(
         raise OperatorPlanExecutionError("operator plan Task IDs are empty or duplicated")
     if not str(approval_ref or "").strip():
         raise OperatorPlanExecutionError("approval reference is required")
+    resolved_continuation_mode = str(continuation_mode or LEGACY)
+    if resolved_continuation_mode not in CONTINUATION_MODES:
+        raise OperatorPlanExecutionError("invalid Full Plan continuation mode")
     branch = _git(project, "branch", "--show-current")
     head = _git(project, "rev-parse", "HEAD")
     common = _git(project, "rev-parse", "--git-common-dir")
@@ -162,6 +167,8 @@ def build_operator_plan_job(
                    "heartbeat_seconds": 5, "lease_seconds": 20,
                    "stall_alert_seconds": 300},
     }
+    if resolved_continuation_mode == TDD_V1:
+        job["policy"]["continuation_mode"] = TDD_V1
     if modern_state:
         job["harness_state_root"] = str(state_root)
     validate_operator_plan_job(job)
@@ -210,6 +217,12 @@ def validate_operator_plan_job(job: Mapping[str, Any]) -> None:
                 contract.require_gate(str(gate["gate_id"]))
             except ValueError as exc:
                 raise OperatorPlanExecutionError(str(exc)) from exc
+    policy = job.get("policy") or {}
+    if not isinstance(policy, Mapping):
+        raise OperatorPlanExecutionError("operator plan policy is invalid")
+    continuation_mode = str(policy.get("continuation_mode") or LEGACY)
+    if continuation_mode not in CONTINUATION_MODES:
+        raise OperatorPlanExecutionError("invalid Full Plan continuation mode")
     if not str(job.get("approval_ref") or "").strip():
         raise OperatorPlanExecutionError("approval reference is required")
 

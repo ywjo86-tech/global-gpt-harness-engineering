@@ -73,6 +73,16 @@ class FullPlanActivationTests(unittest.TestCase):
 
     def tearDown(self): self.tmp.cleanup()
 
+    def test_auto_reconcile_tdd_continuation_is_explicit_opt_in(self):
+        legacy=build_executable_full_plan_job(self.bundle,ai_context=self.context,harness_state_root=self.state)
+        self.assertNotIn("policy",legacy)
+        tdd=build_executable_full_plan_job(
+            self.bundle,ai_context=self.context,harness_state_root=self.state,continuation_mode="TDD_V1")
+        self.assertEqual(tdd["policy"]["continuation_mode"],"TDD_V1")
+        with self.assertRaisesRegex(FullPlanActivationError,"continuation mode"):
+            build_executable_full_plan_job(
+                self.bundle,ai_context=self.context,harness_state_root=self.state,continuation_mode="FUTURE")
+
     def test_builder_emits_generic_auto_reconcile_job_without_executor_kind(self):
         job=build_executable_full_plan_job(self.bundle,ai_context=self.context,harness_state_root=self.state)
         self.assertEqual(job["schema_version"],"orchestration.production-full-plan-job.v1")

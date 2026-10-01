@@ -19,6 +19,7 @@ from .execution_lifecycle_v2 import (
 )
 from .production_full_plan_entry import FullPlanJobError, canonical_job_path, load_job, preflight_job, register_job
 from .production_run_authority import AUTO_RECONCILE_OWNER, executor_runtime_identity
+from .implementation_continuation import CONTINUATION_MODES, LEGACY, TDD_V1
 
 FULL_PLAN_ACTIVATION_RESULT_SCHEMA_V1 = "orchestration.full-plan-activation-result.v1"
 FULL_PLAN_ACTIVATION_RECEIPT_SCHEMA_V1 = "orchestration.full-plan-activation-receipt.v1"
@@ -151,10 +152,14 @@ def _validate_context(bundle: ExecutableAuthorityBundleV1, context: AIFullPlanAc
 def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
                                    ai_context: AIFullPlanActivationContextV1,
                                    harness_state_root: str | Path,
-                                   lifecycle_mode: str = "V2") -> dict[str, Any]:
+                                   lifecycle_mode: str = "V2",
+                                   continuation_mode: str = LEGACY) -> dict[str, Any]:
     if not isinstance(bundle, ExecutableAuthorityBundleV1): raise FullPlanActivationError("EXECUTABLE_AUTHORITY_BUNDLE_REQUIRED")
     if not isinstance(ai_context, AIFullPlanActivationContextV1): raise FullPlanActivationError("AI_FULL_PLAN_CONTEXT_REQUIRED")
     if lifecycle_mode not in {"LEGACY", "V2"}: raise FullPlanActivationError("ACTIVATION_LIFECYCLE_MODE_INVALID")
+    resolved_continuation_mode = str(continuation_mode or LEGACY)
+    if resolved_continuation_mode not in CONTINUATION_MODES:
+        raise FullPlanActivationError("ACTIVATION_CONTINUATION_MODE_INVALID: invalid continuation mode")
     _validate_context(bundle, ai_context)
     state = Path(harness_state_root).resolve()
     if state.is_symlink() or not state.is_dir(): raise FullPlanActivationError("HARNESS_STATE_ROOT_INVALID")
@@ -173,6 +178,8 @@ def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
         "required_executables": ["git"], "executor_runtime_identity": executor_runtime_identity(bundle.runtime_code_root),
         "gates": [],
     }
+    if resolved_continuation_mode == TDD_V1:
+        job["policy"] = {"continuation_mode": TDD_V1}
     for gate in bundle.gates:
         item: dict[str, Any] = {
             "gate_id": gate.gate_id, "approval_evidence": gate.approval_evidence_path,
@@ -208,13 +215,15 @@ def build_executable_full_plan_job(bundle: ExecutableAuthorityBundleV1, *,
 def activate_approved_full_plan(bundle: ExecutableAuthorityBundleV1, *,
                                 ai_context: AIFullPlanActivationContextV1,
                                 harness_state_root: str | Path,
-                                lifecycle_mode: str = "V2") -> FullPlanActivationResultV1:
+                                lifecycle_mode: str = "V2",
+                                continuation_mode: str = LEGACY) -> FullPlanActivationResultV1:
     _validate_context(bundle, ai_context)
     job = build_executable_full_plan_job(
         bundle,
         ai_context=ai_context,
         harness_state_root=harness_state_root,
         lifecycle_mode=lifecycle_mode,
+        continuation_mode=continuation_mode,
     )
     preflight = preflight_job(job)
     if preflight.get("status") != "PASS":

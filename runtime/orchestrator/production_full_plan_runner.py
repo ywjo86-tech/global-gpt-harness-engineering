@@ -29,6 +29,10 @@ from .diagnostic_context_bridge import record_failure_diagnostics
 from .durable_continuation import (
     enter_full_plan_run_lock, exit_full_plan_run_lock, full_plan_run_lock_held,
 )
+from .implementation_continuation import (
+    CONTINUATION_MODES, LEGACY, TDD_V1, ContinuationDecision,
+    ExpectedRedContractV1, FailureObservationV1, TDDContinuationStore,
+)
 
 
 SCHEMA_VERSION = "orchestration.production-full-plan.v1"
@@ -98,7 +102,7 @@ def _seal(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _validate_state(state: Mapping[str, Any], *, project_id: str, run_id: str, gates: Sequence[str],
-                    authority_core_sha256: str = "") -> dict[str, Any]:
+                    authority_core_sha256: str = "", continuation_mode: str = LEGACY) -> dict[str, Any]:
     value = dict(state)
     if value.get("schema_version") != SCHEMA_VERSION:
         raise ProductionFullPlanError("incompatible Full Plan state schema")
@@ -108,6 +112,13 @@ def _validate_state(state: Mapping[str, Any], *, project_id: str, run_id: str, g
         raise ProductionFullPlanError("RUN_AUTHORITY_DRIFT")
     if value.get("state") not in ALL_STATES:
         raise ProductionFullPlanError("invalid Full Plan state")
+    tdd_binding = value.get("tdd_continuation")
+    if continuation_mode == TDD_V1:
+        if tdd_binding != {"mode": TDD_V1}:
+            raise ProductionFullPlanError("CONTINUATION_MODE_DRIFT")
+    elif tdd_binding is not None:
+        if not isinstance(tdd_binding, Mapping) or tdd_binding.get("mode") != LEGACY:
+            raise ProductionFullPlanError("CONTINUATION_MODE_DRIFT")
     digest = value.get("state_sha256")
     if not isinstance(digest, str) or digest != _digest(_unsigned(value)):
         raise ProductionFullPlanError("Full Plan state digest mismatch")
@@ -196,7 +207,7 @@ class DurableFullPlanSupervisor:
                  max_cpu_load_per_cpu_milli: int = 2500,
                  max_io_pressure_full_avg10_milli: int = 50000,
                  max_queue_depth: int = 64, stall_alert_seconds: float = 300.0,
-                 authority_core_sha256: str = "",
+                 authority_core_sha256: str = "", continuation_mode: str = LEGACY,
                  resource_probe: Callable[[str | Path], Mapping[str, int]] | None = None):
         root = Path(harness_root).resolve()
         if not root.is_dir() or root.is_symlink():
@@ -222,6 +233,9 @@ class DurableFullPlanSupervisor:
         self.max_queue_depth = int(max_queue_depth)
         self.stall_alert_seconds = float(stall_alert_seconds)
         self.authority_core_sha256 = str(authority_core_sha256 or "")
+        self.continuation_mode = str(continuation_mode or LEGACY)
+        if self.continuation_mode not in CONTINUATION_MODES:
+            raise ProductionFullPlanError("invalid Full Plan continuation mode")
         if self.authority_core_sha256 and (len(self.authority_core_sha256) != 64
                 or any(ch not in "0123456789abcdef" for ch in self.authority_core_sha256)):
             raise ProductionFullPlanError("invalid authority core digest")
@@ -235,6 +249,69 @@ class DurableFullPlanSupervisor:
         self.alert_path = base / "alerts.jsonl"
         self.lock_path = base / "supervisor.lock"
         self.attention_outbox = AttentionOutbox(base, project_id=self.project_id, run_id=self.run_id)
+
+    def tdd_store(self) -> TDDContinuationStore:
+        if self.continuation_mode != TDD_V1:
+            raise ProductionFullPlanError("TDD continuation requires explicit TDD_V1 opt-in")
+        return TDDContinuationStore(self.root, project_id=self.project_id, run_id=self.run_id)
+
+    def _with_tdd_lock(self, callback: Callable[[TDDContinuationStore], Any]) -> Any:
+        handle = self._acquire_run_lock()
+        try:
+            return callback(self.tdd_store())
+        finally:
+            self._release_run_lock(handle)
+
+    def arm_expected_red(self, contract: ExpectedRedContractV1):
+        if not isinstance(contract, ExpectedRedContractV1):
+            raise ProductionFullPlanError("Expected RED contract is required")
+        if not self.authority_core_sha256 or contract.authority_digest != self.authority_core_sha256:
+            raise ProductionFullPlanError("Expected RED authority binding mismatch")
+        if contract.task_id not in self.gates:
+            raise ProductionFullPlanError("Expected RED Task is outside approved Full Plan")
+        return self._with_tdd_lock(lambda store: store.arm(contract))
+
+    def begin_expected_red(self, contract_digest: str):
+        return self._with_tdd_lock(lambda store: store.begin_red(contract_digest))
+
+    def record_expected_red(self, contract: ExpectedRedContractV1, observation: FailureObservationV1, *, now: datetime):
+        return self._with_tdd_lock(lambda store: store.record_red_observation(contract, observation, now=now))
+
+    def resume_tdd(self, *, current_source_sha: str, current_authority_digest: str,
+                   current_dependency_environment_digest: str, approval_valid: bool, now: datetime) -> ContinuationDecision:
+        def resume(store: TDDContinuationStore) -> ContinuationDecision:
+            contract = store.load_contract()
+            return store.resume(
+                contract, current_source_sha=current_source_sha,
+                current_authority_digest=current_authority_digest,
+                current_dependency_environment_digest=current_dependency_environment_digest,
+                approval_valid=approval_valid, now=now,
+            )
+        return self._with_tdd_lock(resume)
+
+    def begin_tdd_green(self, contract: ExpectedRedContractV1):
+        return self._with_tdd_lock(lambda store: store.begin_green(contract))
+
+    def reconcile_tdd_green_effect(self, contract: ExpectedRedContractV1, *, effect_step_id: str,
+                                   canonical_receipt_digest: str, effect_reconciliation: str):
+        return self._with_tdd_lock(lambda store: store.reconcile_green_effect(
+            contract, effect_step_id=effect_step_id, canonical_receipt_digest=canonical_receipt_digest,
+            effect_reconciliation=effect_reconciliation))
+
+    def record_tdd_focused_validation(self, *, passed: bool, receipt_digest: str):
+        return self._with_tdd_lock(lambda store: store.record_focused_validation(
+            passed=passed, receipt_digest=receipt_digest))
+
+    def record_tdd_regression_validation(self, *, passed: bool, receipt_digest: str,
+                                         regression_delta_current_only: int):
+        return self._with_tdd_lock(lambda store: store.record_regression_validation(
+            passed=passed, receipt_digest=receipt_digest,
+            regression_delta_current_only=regression_delta_current_only))
+
+    def request_tdd_bounded_remediation(self, contract: ExpectedRedContractV1, *,
+                                        changed_paths: Sequence[str], failure_class: str):
+        return self._with_tdd_lock(lambda store: store.request_bounded_remediation(
+            contract, changed_paths=changed_paths, failure_class=failure_class))
 
     def _queue_item(self, gate_id: str, sequence: int, *, attempt: int = 1, resume: bool = False) -> dict[str, Any]:
         gate_run_id = f"{self.run_id}--{gate_id.lower()}"
@@ -276,6 +353,8 @@ class DurableFullPlanSupervisor:
             "recovery_count": 0,
             "terminal_reason": None,
         }
+        if self.continuation_mode == TDD_V1:
+            state["tdd_continuation"] = {"mode": TDD_V1}
         return _seal(state)
 
     def _load_candidate(self, path: Path) -> dict[str, Any]:
@@ -289,7 +368,7 @@ class DurableFullPlanSupervisor:
             raise ProductionFullPlanError("Full Plan state generation is not an object")
         return _validate_state(
             value, project_id=self.project_id, run_id=self.run_id, gates=self.gates,
-            authority_core_sha256=self.authority_core_sha256,
+            authority_core_sha256=self.authority_core_sha256, continuation_mode=self.continuation_mode,
         )
 
     def load(self) -> tuple[dict[str, Any], bool]:
