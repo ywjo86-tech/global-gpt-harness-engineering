@@ -13,6 +13,7 @@ from runtime.orchestrator.task_contract_compat import (
     analyze_task_stage_gate_contract,
     compatibility_block_reason,
     resolve_task_lv_projection,
+    resolve_task_project_requirement_contract,
     validate_task_lv_authority_projection,
 )
 
@@ -318,6 +319,98 @@ Required Tasks: TASK-001
         self.assertEqual(result["selected_lv"]["lv_id"], "TASK-001")
         self.assertEqual(result["selected_lv"]["owned_files"], ["app/", "backend/"])
         self.assertFalse(result["mutation_permitted"])
+
+
+    def test_recovery_read_only_requirement_contract_uses_ev_evidence_and_empty_owned_scope(self) -> None:
+        contract = """# Contract
+
+### TASK-R01 — Entry/Drift revalidation
+- 목적: Verify exact entry binding.
+- 관련: REQ-001, OPS-003.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: 없음(읽기 전용).
+- Required Capabilities: reasoning, read_only, evidence_analysis.
+- Execution Authority: READ_ONLY.
+- Evidence: EV-R01, EV-R02, EV-R03.
+- 완료 조건: unresolved drift 0.
+
+| ID | Requirement | Acceptance | Priority |
+|---|---|---|---|
+| REQ-001 | Bind approved identity. | exact identity | MUST |
+| OPS-003 | Preserve source binding. | source exact | MUST |
+
+### GATE-R01 — Entry
+Required Tasks: TASK-R01
+"""
+        digest = hashlib.sha256(contract.encode()).hexdigest()
+        projected = resolve_task_project_requirement_contract(
+            contract, project_id="task-project", canonical_plan_sha256=digest,
+            gate_id="GATE-R01", task_id="TASK-R01", owned_files=[],
+        )
+        self.assertEqual(list(projected["requirements"]), ["REQ-001", "OPS-003"])
+        for item in projected["requirements"].values():
+            self.assertEqual(item["validation_ids"], ["EV-R01", "EV-R02", "EV-R03"])
+            self.assertEqual(item["owned_files"], [])
+
+    def test_recovery_read_only_requirement_contract_rejects_read_only_prefixed_mutation_authority(self) -> None:
+        contract = """# Contract
+
+### TASK-R01 — Entry/Drift revalidation
+- 목적: Verify exact entry binding.
+- 관련: REQ-001.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: 없음(읽기 전용).
+- Required Capabilities: reasoning, read_only.
+- Execution Authority: READ_ONLY_MUTATION.
+- Evidence: EV-R01.
+- 완료 조건: unresolved drift 0.
+
+| ID | Requirement | Acceptance | Priority |
+|---|---|---|---|
+| REQ-001 | Bind approved identity. | exact identity | MUST |
+
+### GATE-R01 — Entry
+Required Tasks: TASK-R01
+"""
+        digest = hashlib.sha256(contract.encode()).hexdigest()
+        with self.assertRaises(TaskContractProjectionError):
+            resolve_task_project_requirement_contract(
+                contract, project_id="task-project", canonical_plan_sha256=digest,
+                gate_id="GATE-R01", task_id="TASK-R01", owned_files=[],
+            )
+
+    def test_recovery_mutation_requirement_contract_uses_ev_evidence_fallback(self) -> None:
+        contract = """# Contract
+
+### TASK-R02 — Deterministic validation profile
+- 목적: Separate validation intent from environment accident.
+- 관련: NFR-004, OPS-005.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: CMP-R01 명시 파일.
+- Required Capabilities: implementation, filesystem_write, shell, test.
+- Execution Authority: STATE_CHANGING.
+- Evidence: EV-R04, EV-R05, EV-R06.
+- 완료 조건: deterministic validation PASS.
+
+### 4.1 CMP-R01 — Validation Profile Fixture
+
+| ID | Requirement | Acceptance | Priority |
+|---|---|---|---|
+| NFR-004 | Validation is deterministic. | same profile gives same result | MUST |
+| OPS-005 | Validation evidence is durable. | evidence recorded | MUST |
+
+### GATE-R02 — Foundation
+Required Tasks: TASK-R02
+"""
+        digest = hashlib.sha256(contract.encode()).hexdigest()
+        projected = resolve_task_project_requirement_contract(
+            contract, project_id="task-project", canonical_plan_sha256=digest,
+            gate_id="GATE-R02", task_id="TASK-R02",
+            owned_files=["runtime/orchestrator/validation_toolchain.py"],
+        )
+        for item in projected["requirements"].values():
+            self.assertEqual(item["validation_ids"], ["EV-R04", "EV-R05", "EV-R06"])
+            self.assertEqual(item["owned_files"], ["runtime/orchestrator/validation_toolchain.py"])
 
 
 if __name__ == "__main__":

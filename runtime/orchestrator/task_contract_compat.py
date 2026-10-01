@@ -519,12 +519,16 @@ def resolve_task_project_requirement_contract(
         definitions[requirement_id] = value
 
     completion = _field_any(section, ("Completion Condition", "완료 조건"))
-    validation_ids = _ids(_field_any(section, ("Validation", "검증")), "TEST-")
+    validation_ids = _task_validation_ids(section, task_id=task_id)
     purpose = _field_any(section, ("Purpose", "목적"))
     if not completion or not validation_ids or not purpose:
         raise TaskContractProjectionError(f"TASK execution requirement fields are incomplete: {task_id}")
+    execution_authority = (_field_any(section, ("Execution Authority", "실행 권한")) or "").strip().rstrip(".").upper()
+    recovery_read_only = task_id.startswith("TASK-R") and (
+        execution_authority == "READ_ONLY" or execution_authority.startswith("READ_ONLY ")
+    )
     safe_owned = [_safe_owned_path(value) for value in owned_files]
-    if not safe_owned or len(safe_owned) != len(set(safe_owned)):
+    if len(safe_owned) != len(set(safe_owned)) or (not safe_owned and not recovery_read_only):
         raise TaskContractProjectionError(f"TASK execution owned scope is missing or duplicated: {task_id}")
 
     requirements: dict[str, dict[str, Any]] = {}
