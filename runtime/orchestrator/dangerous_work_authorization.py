@@ -115,6 +115,8 @@ def approval_coverage_for_package(
     now: datetime,
 ) -> ApprovalCoverageEvidence:
     now_utc = _aware_utc(now, "now")
+    if not approval.issuer_identity.startswith("oauth:"):
+        raise DangerousWorkAuthorizationError("dangerous-work approval must come from OAuth-authenticated user authority")
     if approval.project_id != package.project_id:
         raise DangerousWorkAuthorizationError("approval project_id does not match package")
     if approval.run_id != package.run_id:
