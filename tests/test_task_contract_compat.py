@@ -179,6 +179,71 @@ class TaskContractCompatibilityTests(unittest.TestCase):
         self.assertIn("filesystem_write", resolved[0]["required_capabilities"])
         self.assertEqual(resolved[0]["capability_contract"]["mode"], "DECLARED_NONE")
 
+    def test_legacy_projection_does_not_infer_dependency_type_from_prose(self) -> None:
+        contract = """# Contract
+
+## TASK-001 — bootstrap
+Purpose: Bootstrap safely.
+Dependencies: NONE, SEQUENTIAL
+Change Targets: CT-001
+Required Capabilities: reasoning, filesystem_write
+Validation: TEST-001
+Completion Condition: Bootstrap passes.
+
+## SOURCE Change Targets
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | app/ | CREATE | TASK-001 | PLANNED_NEW |
+
+## GATE-001 — first
+Required Tasks: TASK-001
+"""
+        plan_sha = hashlib.sha256(contract.encode()).hexdigest()
+        value = projection(plan_sha)
+        value["change_targets"] = {
+            "CT-001": {"source_expression": "app/", "owned_files": ["app/"]},
+        }
+        with self.assertRaisesRegex(TaskContractProjectionError, "dependency type is missing"):
+            resolve_task_lv_projection(
+                contract, value, project_id="task-project",
+                canonical_plan_sha256=plan_sha, gate_id="GATE-001",
+            )
+
+    def test_legacy_projection_does_not_use_evidence_as_validation(self) -> None:
+        contract = """# Contract
+
+## TASK-001 — bootstrap
+Purpose: Bootstrap safely.
+Dependencies: NONE
+Change Targets: CT-001
+Required Capabilities: reasoning, filesystem_write
+Evidence: EV-R01
+Completion Condition: Bootstrap passes.
+
+## SOURCE Change Targets
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | app/ | CREATE | TASK-001 | PLANNED_NEW |
+
+## SOURCE Task Dependencies
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-001 | SEQUENTIAL | NONE | Entry |
+
+## GATE-001 — first
+Required Tasks: TASK-001
+"""
+        plan_sha = hashlib.sha256(contract.encode()).hexdigest()
+        value = projection(plan_sha)
+        value["change_targets"] = {
+            "CT-001": {"source_expression": "app/", "owned_files": ["app/"]},
+        }
+        with self.assertRaisesRegex(TaskContractProjectionError, "runtime authority fields are incomplete"):
+            resolve_task_lv_projection(
+                contract, value, project_id="task-project",
+                canonical_plan_sha256=plan_sha, gate_id="GATE-001",
+            )
+
     def test_projection_rejects_plan_sha_source_drift_and_unsafe_scope(self) -> None:
         plan_sha = hashlib.sha256(PROJECTABLE_CONTRACT.encode()).hexdigest()
         value = projection(plan_sha)
@@ -453,3 +518,112 @@ class TaskContractRecoveryAmendmentCompatibilityTests(unittest.TestCase):
         self.assertEqual(entry["lv_order"], ["TASK-R01"])
         self.assertEqual(mutation_gate["status"], "BLOCKED")
         self.assertIn("no approved TASK-to-LV authority projection", mutation_gate["reason"])
+
+    def test_recovery_mutation_gate_resolves_cmp_authority_projection(self) -> None:
+        contract = self.RECOVERY_AMENDMENT_CONTRACT.replace(
+            "### GATE-R01 — 설계/소스 진입",
+            """### TASK-R03 — D2 Canonical Registry 복구
+
+- 목적: 기존 binding을 결정적으로 검증한다.
+- 의존성: TASK-R01. TASK-R02와 파일 비중복 확인 시 PARALLEL_SAFE.
+- 변경 대상: CMP-R02 명시 파일.
+- Required Capabilities: implementation, filesystem_write, shell, test, evidence_analysis.
+- Execution Authority: STATE_CHANGING(개발 worktree 내부만).
+- Evidence: EV-R07, EV-R08.
+- 완료 조건: 대상 검증과 전체 감사가 분리되어 PASS.
+
+### 4.1 CMP-R01 — Validation Profile Fixture (D1)
+
+### 4.2 CMP-R02 — Canonical Plan Binding & Registry Isolation (D2)
+
+### GATE-R01 — 설계/소스 진입""",
+        ).replace(
+            "- 완료 조건: resolver 분기 테스트 각각 PASS.",
+            "- Evidence: EV-R04, EV-R05, EV-R06.\n- 완료 조건: resolver 분기 테스트 각각 PASS.",
+        ).replace(
+            "### GATE-R02 — D1/D2 기반 복구\n\n- GO:",
+            "### GATE-R02 — D1/D2 기반 복구\n\nRequired Tasks: TASK-R02, TASK-R03\n\n- GO:",
+        )
+        plan_sha = hashlib.sha256(contract.encode()).hexdigest()
+        value = {
+            "schema_version": "orchestration.task-lv-authority-projection.v1",
+            "project_id": "task-project",
+            "canonical_plan_sha256": plan_sha,
+            "contract_shape": "TASK_STAGE_GATE",
+            "projection_policy": projection(plan_sha)["projection_policy"],
+            "change_targets": {
+                "CMP-R01": {
+                    "source_expression": "CMP-R01",
+                    "owned_files": [
+                        "runtime/orchestrator/validation_toolchain.py",
+                        "tests/test_validation_toolchain.py",
+                    ],
+                },
+                "CMP-R02": {
+                    "source_expression": "CMP-R02",
+                    "owned_files": [
+                        "runtime/orchestrator/project_onboarding.py",
+                        "runtime/orchestrator/read_only_inspector.py",
+                        "tests/test_project_onboarding_remote.py",
+                    ],
+                },
+            },
+        }
+        resolved = resolve_task_lv_projection(
+            contract, value, project_id="task-project",
+            canonical_plan_sha256=plan_sha, gate_id="GATE-R02",
+        )
+        self.assertEqual([item["lv_id"] for item in resolved], ["TASK-R02", "TASK-R03"])
+        self.assertEqual(resolved[0]["execution"], "SEQUENTIAL")
+        self.assertEqual(resolved[1]["execution"], "PARALLEL_SAFE")
+        self.assertEqual(resolved[0]["tests"], ["EV-R04", "EV-R05", "EV-R06"])
+        self.assertEqual(resolved[1]["tests"], ["EV-R07", "EV-R08"])
+        self.assertIn("runtime/orchestrator/validation_toolchain.py", resolved[0]["owned_files"])
+        self.assertIn("runtime/orchestrator/project_onboarding.py", resolved[1]["owned_files"])
+
+    def test_bound_projection_preserves_read_only_recovery_entry_gate(self) -> None:
+        contract = """# Contract
+
+### TASK-R01 — Entry
+- 목적: Verify entry.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: 없음(읽기 전용).
+- Required Capabilities: reasoning, read_only, evidence_analysis.
+- Execution Authority: READ_ONLY 검증(격리 환경); 실제 운영 effect 금지.
+- 완료 조건: drift 0.
+
+### TASK-R02 — Mutate
+- 목적: Change safely.
+- 의존성: TASK-R01, SEQUENTIAL.
+- 변경 대상: CMP-R01 명시 파일.
+- Required Capabilities: implementation, filesystem_write, test.
+- Execution Authority: STATE_CHANGING.
+- Evidence: EV-R04.
+- 완료 조건: focused PASS.
+
+### 4.1 CMP-R01 — Scope
+
+### GATE-R01 — entry
+Required Tasks: TASK-R01
+
+### GATE-R02 — mutate
+Required Tasks: TASK-R02
+"""
+        plan_sha = hashlib.sha256(contract.encode()).hexdigest()
+        value = {
+            "schema_version": "orchestration.task-lv-authority-projection.v1",
+            "project_id": "task-project",
+            "canonical_plan_sha256": plan_sha,
+            "contract_shape": "TASK_STAGE_GATE",
+            "projection_policy": projection(plan_sha)["projection_policy"],
+            "change_targets": {
+                "CMP-R01": {"source_expression": "CMP-R01", "owned_files": ["runtime/example.py"]},
+            },
+        }
+        resolved = resolve_task_lv_projection(
+            contract, value, project_id="task-project",
+            canonical_plan_sha256=plan_sha, gate_id="GATE-R01",
+        )
+        self.assertEqual([item["lv_id"] for item in resolved], ["TASK-R01"])
+        self.assertEqual(resolved[0]["execution"], "READ_ONLY")
+        self.assertEqual(resolved[0]["owned_files"], [])

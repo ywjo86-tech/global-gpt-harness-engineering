@@ -1,0 +1,54 @@
+{
+  "canonical_plan_sha256": "1482bf20ea9479403be6f333c96b4e89a8d1bc226670a9a9519e2a78205350f0",
+  "change_targets": {
+    "CMP-R01": {
+      "owned_files": [
+        "tests/test_lv_execution_package.py",
+        "tests/support/lv_preview_fixture.py",
+        "runtime/orchestrator/validation_toolchain.py",
+        "tests/test_validation_toolchain.py"
+      ],
+      "source_expression": "CMP-R01"
+    },
+    "CMP-R02": {
+      "owned_files": [
+        "runtime/orchestrator/project_onboarding.py",
+        "runtime/orchestrator/read_only_inspector.py",
+        "tests/test_project_onboarding_remote.py"
+      ],
+      "source_expression": "CMP-R02"
+    },
+    "CMP-R03": {
+      "owned_files": [
+        "runtime/orchestrator/production_full_plan_runner.py",
+        "runtime/orchestrator/production_full_plan_boot.py",
+        "runtime/orchestrator/production_full_plan_entry.py",
+        "runtime/orchestrator/production_execution_gateway.py",
+        "tests/test_full_plan_tdd_continuation.py",
+        "tests/test_production_full_plan_tdd_continuation.py",
+        "tests/test_production_execution_gateway.py"
+      ],
+      "source_expression": "CMP-R03"
+    },
+    "CMP-R04": {
+      "owned_files": [
+        "runtime/orchestrator/implementation_continuation.py",
+        "runtime/orchestrator/durable_io.py",
+        "tests/test_durable_continuation_failure_injection.py"
+      ],
+      "source_expression": "CMP-R04"
+    }
+  },
+  "contract_shape": "TASK_STAGE_GATE",
+  "project_id": "FULL-PLAN-TDD-CONTINUATION-V1-20261001",
+  "projection_policy": {
+    "completion_criteria": "CANONICAL_TASK_COMPLETION_CONDITION_PLUS_VALIDATION",
+    "dependencies": "CANONICAL_TASK_DEPENDENCIES",
+    "execution": "CANONICAL_TASK_DEPENDENCY_TYPE",
+    "gate_membership": "CANONICAL_GATE_REQUIRED_TASKS",
+    "lv_identity": "TASK_ID",
+    "operational_capability": "DECLARED_NONE",
+    "provider_capabilities": "CANONICAL_TASK_REQUIRED_CAPABILITIES"
+  },
+  "schema_version": "orchestration.task-lv-authority-projection.v1"
+}
