@@ -182,26 +182,189 @@ class GenerationalContinuationStore:
         return payload
 
     def _load_commit(self, generation_id: str) -> dict[str, Any]:
-        value, _ = durable_json_load(self._commit_path(generation_id))
+        generation_id = _safe_id(generation_id, "generation_id")
+        try:
+            value, recovered = durable_json_load(self._commit_path(generation_id))
+        except (DurableIOError, FileNotFoundError, OSError, ValueError) as exc:
+            raise TDDContinuationError("generation commit unavailable") from exc
+        if recovered:
+            raise TDDContinuationError("generation commit primary is invalid")
         if value.get("schema_version") != GENERATION_COMMIT_SCHEMA:
             raise TDDContinuationError("generation commit schema mismatch")
+        if (
+            value.get("project_id") != self.project_id
+            or value.get("run_id") != self.run_id
+            or value.get("task_id") != self.task_id
+            or value.get("cycle_id") != self.cycle_id
+            or value.get("generation_id") != generation_id
+        ):
+            raise TDDContinuationError("generation commit binding mismatch")
         digest = str(value.get("commit_digest") or "")
         unsigned = {key: item for key, item in value.items() if key != "commit_digest"}
         if digest != _digest(unsigned):
             raise TDDContinuationError("generation commit digest mismatch")
         return value
 
+    def _load_generation(self, commit: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        generation_id = _safe_id(str(commit.get("generation_id") or ""), "generation_id")
+        generation_dir = self._generation_dir(generation_id)
+        try:
+            checkpoint, checkpoint_recovered = durable_json_load(generation_dir / "checkpoint.json")
+            manifest, manifest_recovered = durable_json_load(generation_dir / "manifest.json")
+        except (DurableIOError, FileNotFoundError, OSError, ValueError) as exc:
+            raise TDDContinuationError("committed generation artifact unavailable") from exc
+        if checkpoint_recovered or manifest_recovered:
+            raise TDDContinuationError("committed generation primary artifact is invalid")
+
+        checkpoint_digest = str(checkpoint.get("checkpoint_digest") or "")
+        checkpoint_unsigned = {key: item for key, item in checkpoint.items() if key != "checkpoint_digest"}
+        if (
+            checkpoint.get("schema_version") != CHECKPOINT_SCHEMA
+            or checkpoint.get("project_id") != self.project_id
+            or checkpoint.get("run_id") != self.run_id
+            or checkpoint.get("task_id") != self.task_id
+            or checkpoint.get("cycle_id") != self.cycle_id
+            or checkpoint.get("generation_id") != generation_id
+            or checkpoint_digest != _digest(checkpoint_unsigned)
+        ):
+            raise TDDContinuationError("committed checkpoint validation failed")
+
+        manifest_digest = str(manifest.get("manifest_digest") or "")
+        manifest_unsigned = {key: item for key, item in manifest.items() if key != "manifest_digest"}
+        if (
+            manifest.get("schema_version") != GENERATION_MANIFEST_SCHEMA
+            or manifest.get("continuation_contract_version") != TDD_V1
+            or manifest.get("project_id") != self.project_id
+            or manifest.get("run_id") != self.run_id
+            or manifest.get("task_id") != self.task_id
+            or manifest.get("cycle_id") != self.cycle_id
+            or manifest.get("generation_id") != generation_id
+            or manifest.get("previous_generation_id") != commit.get("previous_committed_generation_id")
+            or manifest.get("checkpoint_digest") != checkpoint_digest
+            or manifest_digest != _digest(manifest_unsigned)
+        ):
+            raise TDDContinuationError("committed manifest validation failed")
+        if (
+            commit.get("manifest_digest") != manifest_digest
+            or commit.get("checkpoint_digest") != checkpoint_digest
+        ):
+            raise TDDContinuationError("committed generation digest binding mismatch")
+        return manifest, checkpoint
+
+    def _prepared_generation_ids(self) -> tuple[str, ...]:
+        if not self.generations.is_dir():
+            return ()
+        values: list[str] = []
+        for path in sorted(self.generations.iterdir()):
+            if path.is_symlink() or not path.is_dir():
+                continue
+            if not self._commit_path(path.name).exists() and (
+                (path / "checkpoint.json").exists() or (path / "manifest.json").exists()
+            ):
+                values.append(path.name)
+        return tuple(values)
+
+    def _analyze_committed_chain(self) -> dict[str, Any]:
+        commit_paths = tuple(sorted(self.commits.glob("*.json"))) if self.commits.is_dir() else ()
+        if not commit_paths:
+            prepared = self._prepared_generation_ids()
+            return {"status": "PREPARED" if prepared else "EMPTY", "prepared_generation_ids": list(prepared)}
+
+        commits: dict[str, dict[str, Any]] = {}
+        manifests: dict[str, dict[str, Any]] = {}
+        for path in commit_paths:
+            if path.is_symlink() or not path.is_file():
+                return {"status": "ORPHAN", "reason": "unsafe commit artifact"}
+            try:
+                commit = self._load_commit(path.stem)
+                manifest, _ = self._load_generation(commit)
+            except (TDDContinuationError, ValueError) as exc:
+                return {"status": "ORPHAN", "reason": str(exc), "generation_id": path.stem}
+            generation_id = commit["generation_id"]
+            if generation_id in commits:
+                return {"status": "ORPHAN", "reason": "duplicate generation commit", "generation_id": generation_id}
+            commits[generation_id] = commit
+            manifests[generation_id] = manifest
+
+        roots: list[str] = []
+        children: dict[str, list[str]] = {}
+        for generation_id, commit in commits.items():
+            previous = commit.get("previous_committed_generation_id")
+            if previous is None:
+                if commit.get("previous_commit_digest") not in {None, ""}:
+                    return {"status": "ORPHAN", "reason": "root previous commit digest is not empty", "generation_id": generation_id}
+                roots.append(generation_id)
+                continue
+            if previous not in commits:
+                return {"status": "ORPHAN", "reason": "previous committed generation is missing", "generation_id": generation_id}
+            if commit.get("previous_commit_digest") != commits[previous].get("commit_digest"):
+                return {"status": "ORPHAN", "reason": "previous commit digest chain mismatch", "generation_id": generation_id}
+            children.setdefault(previous, []).append(generation_id)
+
+        if any(len(values) > 1 for values in children.values()):
+            return {"status": "FORKED", "reason": "multiple commits share one previous generation"}
+        if len(roots) != 1:
+            return {"status": "ORPHAN", "reason": "commit chain root is not unique"}
+
+        visited: list[str] = []
+        current = roots[0]
+        while True:
+            if current in visited:
+                return {"status": "ORPHAN", "reason": "commit chain cycle detected"}
+            visited.append(current)
+            next_values = children.get(current, [])
+            if not next_values:
+                break
+            current = next_values[0]
+        if len(visited) != len(commits):
+            return {"status": "ORPHAN", "reason": "commit chain is disconnected"}
+        return {
+            "status": "VALID",
+            "tip": commits[current],
+            "tip_manifest": manifests[current],
+            "commit_count": len(commits),
+            "prepared_generation_ids": list(self._prepared_generation_ids()),
+        }
+
+    def _read_latest_pointer(self) -> tuple[dict[str, Any], bool]:
+        try:
+            value, recovered = durable_json_load(self.latest_path)
+        except (DurableIOError, FileNotFoundError, OSError, ValueError) as exc:
+            raise TDDContinuationError("latest pointer unavailable") from exc
+        digest = str(value.get("latest_digest") or "")
+        unsigned = {key: item for key, item in value.items() if key != "latest_digest"}
+        if (
+            value.get("schema_version") != GENERATION_LATEST_SCHEMA
+            or value.get("project_id") != self.project_id
+            or value.get("run_id") != self.run_id
+            or value.get("task_id") != self.task_id
+            or value.get("cycle_id") != self.cycle_id
+            or not isinstance(value.get("generation_id"), str)
+            or digest != _digest(unsigned)
+        ):
+            raise TDDContinuationError("latest pointer binding mismatch")
+        return value, recovered
+
+    def inspect_state(self) -> dict[str, Any]:
+        analysis = self._analyze_committed_chain()
+        if analysis["status"] != "VALID":
+            return analysis
+        tip = analysis["tip"]
+        try:
+            latest, recovered = self._read_latest_pointer()
+        except TDDContinuationError as exc:
+            return {"status": "POINTER_STALE", "reason": str(exc), "generation_id": tip["generation_id"]}
+        if recovered or any(latest.get(key) != tip.get(key) for key in (
+            "generation_id", "commit_digest", "manifest_digest", "checkpoint_digest"
+        )):
+            return {"status": "POINTER_STALE", "reason": "latest does not reference committed tip", "generation_id": tip["generation_id"]}
+        return {"status": "COMMITTED", "generation_id": tip["generation_id"], "commit_digest": tip["commit_digest"]}
+
     def _commit_tip(self) -> dict[str, Any]:
-        commits: list[dict[str, Any]] = []
-        for path in sorted(self.commits.glob("*.json")) if self.commits.is_dir() else ():
-            commits.append(self._load_commit(path.stem))
-        if not commits:
-            raise TDDContinuationError("continuation commit chain is empty")
-        previous = {item.get("previous_committed_generation_id") for item in commits if item.get("previous_committed_generation_id")}
-        tips = [item for item in commits if item["generation_id"] not in previous]
-        if len(tips) != 1:
-            raise TDDContinuationError("continuation commit chain forked")
-        return tips[0]
+        analysis = self._analyze_committed_chain()
+        if analysis["status"] != "VALID":
+            raise TDDContinuationError(f"CONTINUATION_RECOVERY_BLOCKED: {analysis['status']}: {analysis.get('reason', '')}")
+        return analysis["tip"]
 
     def commit_generation(
         self,
@@ -218,15 +381,30 @@ class GenerationalContinuationStore:
         effect_receipt_ref: str | None,
     ) -> dict[str, Any]:
         generation_id = _safe_id(generation_id, "generation_id")
-        previous_commit_digest = ""
-        if previous_generation_id is not None:
-            previous_commit = self._load_commit(previous_generation_id)
-            previous_commit_digest = previous_commit["commit_digest"]
         generation_dir = self._generation_dir(generation_id)
+        commit_path = self._commit_path(generation_id)
+        if generation_dir.exists() or commit_path.exists():
+            raise TDDContinuationError("generation id already exists; rewrite is forbidden")
+
+        chain = self._analyze_committed_chain()
+        previous_commit_digest = ""
+        if chain["status"] == "VALID":
+            state = self.inspect_state()
+            if state["status"] != "COMMITTED":
+                raise TDDContinuationError("CONTINUATION_RECOVERY_REQUIRED before next generation")
+            tip = chain["tip"]
+            if previous_generation_id != tip["generation_id"]:
+                raise TDDContinuationError("continuation commit fork blocked")
+            previous_commit_digest = tip["commit_digest"]
+        elif chain["status"] in {"ORPHAN", "FORKED"}:
+            raise TDDContinuationError(f"CONTINUATION_RECOVERY_BLOCKED: {chain['status']}")
+        elif previous_generation_id is not None:
+            raise TDDContinuationError("previous committed generation is unavailable")
+
         checkpoint_payload = self._checkpoint_payload(generation_id, checkpoint)
         durable_json_save(generation_dir / "checkpoint.json", checkpoint_payload)
-        saved_checkpoint, _ = durable_json_load(generation_dir / "checkpoint.json")
-        if saved_checkpoint.get("checkpoint_digest") != checkpoint_payload["checkpoint_digest"]:
+        saved_checkpoint, checkpoint_recovered = durable_json_load(generation_dir / "checkpoint.json")
+        if checkpoint_recovered or saved_checkpoint.get("checkpoint_digest") != checkpoint_payload["checkpoint_digest"]:
             raise TDDContinuationError("checkpoint write verification failed")
         manifest = self._manifest_payload(
             generation_id=generation_id,
@@ -241,8 +419,8 @@ class GenerationalContinuationStore:
             effect_receipt_ref=effect_receipt_ref,
         )
         durable_json_save(generation_dir / "manifest.json", manifest)
-        saved_manifest, _ = durable_json_load(generation_dir / "manifest.json")
-        if saved_manifest.get("manifest_digest") != manifest["manifest_digest"]:
+        saved_manifest, manifest_recovered = durable_json_load(generation_dir / "manifest.json")
+        if manifest_recovered or saved_manifest.get("manifest_digest") != manifest["manifest_digest"]:
             raise TDDContinuationError("manifest write verification failed")
         commit = {
             "schema_version": GENERATION_COMMIT_SCHEMA,
@@ -257,8 +435,19 @@ class GenerationalContinuationStore:
             "previous_commit_digest": previous_commit_digest,
         }
         commit["commit_digest"] = _digest(commit)
-        durable_json_save(self._commit_path(generation_id), commit)
-        self._load_commit(generation_id)
+        durable_json_save(commit_path, commit)
+        try:
+            committed = self._load_commit(generation_id)
+            self._load_generation(committed)
+        except (DurableIOError, TDDContinuationError, FileNotFoundError, OSError, ValueError) as exc:
+            chain_after_commit = self._analyze_committed_chain()
+            if (chain_after_commit.get("status") == "VALID"
+                    and chain_after_commit["tip"].get("generation_id") == generation_id):
+                return {"status": "COMMITTED_POINTER_STALE", **commit}
+            raise TDDContinuationError(
+                f"CONTINUATION_RECOVERY_BLOCKED: {chain_after_commit.get('status', 'UNKNOWN')}"
+            ) from exc
+
         latest = {
             "schema_version": GENERATION_LATEST_SCHEMA,
             "project_id": self.project_id,
@@ -271,33 +460,39 @@ class GenerationalContinuationStore:
             "checkpoint_digest": checkpoint_payload["checkpoint_digest"],
         }
         latest["latest_digest"] = _digest(latest)
-        durable_json_save(self.latest_path, latest)
-        loaded = self.load_latest()
+        try:
+            durable_json_save(self.latest_path, latest)
+            loaded = self.load_latest()
+        except (DurableIOError, TDDContinuationError, FileNotFoundError, OSError, ValueError) as exc:
+            chain_after_pointer = self._analyze_committed_chain()
+            if (chain_after_pointer.get("status") == "VALID"
+                    and chain_after_pointer["tip"].get("generation_id") == generation_id):
+                return {"status": "COMMITTED_POINTER_STALE", **commit}
+            raise TDDContinuationError(
+                f"CONTINUATION_RECOVERY_BLOCKED: {chain_after_pointer.get('status', 'UNKNOWN')}"
+            ) from exc
         if loaded["generation_id"] != generation_id:
             return {"status": "COMMITTED_POINTER_STALE", **commit}
         return {"status": "COMMITTED", **commit}
 
     def load_latest(self) -> dict[str, Any]:
-        value, _ = durable_json_load(self.latest_path)
-        digest = str(value.get("latest_digest") or "")
-        unsigned = {key: item for key, item in value.items() if key != "latest_digest"}
-        if (
-            value.get("schema_version") != GENERATION_LATEST_SCHEMA
-            or value.get("project_id") != self.project_id
-            or value.get("run_id") != self.run_id
-            or value.get("task_id") != self.task_id
-            or value.get("cycle_id") != self.cycle_id
-            or digest != _digest(unsigned)
-        ):
-            raise TDDContinuationError("latest pointer binding mismatch")
+        state = self.inspect_state()
+        if state["status"] != "COMMITTED":
+            if state["status"] == "POINTER_STALE":
+                raise TDDContinuationError("latest pointer is stale")
+            raise TDDContinuationError(f"CONTINUATION_RECOVERY_BLOCKED: {state['status']}: {state.get('reason', '')}")
+        value, recovered = self._read_latest_pointer()
+        if recovered:
+            raise TDDContinuationError("latest pointer is stale")
         commit = self._load_commit(str(value["generation_id"]))
-        for key in ("commit_digest", "manifest_digest", "checkpoint_digest"):
-            if value.get(key) != commit.get(key):
-                raise TDDContinuationError("latest pointer commit mismatch")
+        self._load_generation(commit)
         return value
 
     def recover_latest(self) -> dict[str, Any]:
-        tip = self._commit_tip()
+        analysis = self._analyze_committed_chain()
+        if analysis["status"] != "VALID":
+            raise TDDContinuationError(f"CONTINUATION_RECOVERY_BLOCKED: {analysis['status']}: {analysis.get('reason', '')}")
+        tip = analysis["tip"]
         latest = {
             "schema_version": GENERATION_LATEST_SCHEMA,
             "project_id": self.project_id,
@@ -310,8 +505,14 @@ class GenerationalContinuationStore:
             "checkpoint_digest": tip["checkpoint_digest"],
         }
         latest["latest_digest"] = _digest(latest)
-        durable_json_save(self.latest_path, latest)
-        self.load_latest()
+        try:
+            durable_json_save(self.latest_path, latest)
+            self.load_latest()
+        except (DurableIOError, TDDContinuationError, FileNotFoundError, OSError, ValueError) as exc:
+            raise TDDContinuationError("CONTINUATION_RECOVERY_BLOCKED: latest repair failed") from exc
+        manifest = analysis["tip_manifest"]
+        if manifest.get("phase") == "GREEN_RUNNING" and not manifest.get("effect_receipt_ref"):
+            raise TDDContinuationError("EFFECT_RECONCILIATION_REQUIRED")
         return {"status": "COMMITTED_RECOVERED", **tip}
 
 
