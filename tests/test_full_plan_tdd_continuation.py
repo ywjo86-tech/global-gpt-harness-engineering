@@ -10,6 +10,7 @@ from runtime.orchestrator.implementation_continuation import (
     FailureObservationV1,
     TDDContinuationError,
     TDDContinuationStore,
+    evaluate_continuation_boundary,
 )
 
 
@@ -51,6 +52,51 @@ def observation(**overrides):
 
 
 class FullPlanTDDContinuationTests(unittest.TestCase):
+    def test_boundary_guard_blocks_effect_replay_and_completion_without_evidence(self):
+        green_ready = evaluate_continuation_boundary({
+            "contract_valid": True,
+            "checkpoint_valid": True,
+            "phase": "GREEN_READY",
+            "approval_valid": True,
+            "source_valid": True,
+            "environment_valid": True,
+        }, "PRE_DISPATCH")
+        self.assertEqual(green_ready.action, "ALLOW_EFFECT_ONCE")
+
+        green_running = evaluate_continuation_boundary({
+            "contract_valid": True,
+            "checkpoint_valid": True,
+            "phase": "GREEN_RUNNING",
+            "approval_valid": True,
+            "source_valid": True,
+            "environment_valid": True,
+        }, "PRE_DISPATCH")
+        self.assertEqual(green_running.action, "WAIT_EVIDENCE")
+        self.assertEqual(green_running.reason, "GREEN_EFFECT_RECEIPT_REQUIRED")
+
+        incomplete = evaluate_continuation_boundary({
+            "contract_valid": True,
+            "checkpoint_valid": True,
+            "phase": "COMPLETED",
+            "focused_validation_passed": True,
+            "regression_validation_passed": False,
+            "gate_evidence_valid": True,
+        }, "PRE_COMPLETE")
+        self.assertEqual(incomplete.action, "BLOCK")
+        self.assertEqual(incomplete.reason, "COMPLETION_EVIDENCE_INCOMPLETE")
+
+    def test_boundary_guard_fails_closed_on_damaged_binding(self):
+        result = evaluate_continuation_boundary({
+            "contract_valid": True,
+            "checkpoint_valid": False,
+            "phase": "GREEN_READY",
+            "approval_valid": True,
+            "source_valid": True,
+            "environment_valid": True,
+        }, "PRE_DISPATCH")
+        self.assertEqual(result.action, "BLOCK")
+        self.assertEqual(result.reason, "CHECKPOINT_INVALID")
+
     def test_exact_expected_red_moves_to_green_ready(self):
         with tempfile.TemporaryDirectory() as d:
             store = TDDContinuationStore(Path(d), project_id="P", run_id="R")

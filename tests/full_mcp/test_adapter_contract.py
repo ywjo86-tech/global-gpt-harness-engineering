@@ -10,9 +10,18 @@ import time
 import unittest
 from pathlib import Path
 
-from mcp.client.stdio import StdioServerParameters
+from tests.full_mcp import mcp_available
 
-from runtime.orchestrator.full_mcp_backend_adapter import AdapterToolCall, FullMCPBackendAdapter
+try:
+    from mcp.client.stdio import StdioServerParameters
+except ModuleNotFoundError:
+    StdioServerParameters = None
+
+if mcp_available():
+    from runtime.orchestrator.full_mcp_backend_adapter import AdapterToolCall, FullMCPBackendAdapter
+else:
+    AdapterToolCall = None
+    FullMCPBackendAdapter = None
 from runtime.orchestrator.production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, UnixSocketGatewayTransport, UnixSocketHostRunner,
     build_gateway_request, validate_gateway_request,
@@ -25,7 +34,10 @@ from runtime.orchestrator.public_execution_contract import (
 from runtime.mprf.execution_client import PublicExecutionClient
 from runtime.full_mcp.contracts import InvocationContext, scope_digest
 from runtime.full_mcp.runtime import build_default_runtime, operation_definitions
-from runtime.full_mcp.stdio_entrypoint import run_stdio
+if mcp_available():
+    from runtime.full_mcp.stdio_entrypoint import run_stdio
+else:
+    run_stdio = None
 from runtime.full_mcp.validation_profiles import default_validation_catalog
 
 PLAN_SHA = "a" * 64
@@ -107,6 +119,7 @@ def build_adapter(root: Path, request: dict) -> FullMCPBackendAdapter:
     )
 
 
+@unittest.skipIf(StdioServerParameters is None, "optional mcp package is not installed")
 class PublicExecutionBoundaryTests(unittest.TestCase):
     def test_public_dto_roundtrip_and_client_binding(self) -> None:
         request = PublicExecutionRequestV1(
@@ -156,6 +169,7 @@ class PublicExecutionBoundaryTests(unittest.TestCase):
         self.assertNotIn("provider_router", client_source)
 
 
+@unittest.skipIf(StdioServerParameters is None, "optional mcp package is not installed")
 class AdapterContractTests(unittest.TestCase):
     def test_gateway_wire_contract_is_unchanged_and_adapter_is_dependency_inverted(self) -> None:
         with tempfile.TemporaryDirectory() as td:

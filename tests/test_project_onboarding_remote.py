@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.orchestrator.project_onboarding import OnboardingRegistry
+from runtime.orchestrator.project_onboarding import OnboardingRegistry, build_alias_entry
 from runtime.orchestrator.project_onboarding_remote import (
     ProjectOnboardingAdmission,
     ProjectOnboardingRemoteError,
@@ -182,6 +182,44 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             result = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
             self.assertEqual(result["binding"]["mapping_root"], str(mapping_root.resolve()))
             self.assertFalse(mapping_root.exists())
+
+    def test_existing_registered_canonical_plan_wins_over_additional_plan_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, head = _project(tmp_path)
+            registry_root = tmp_path / "registry"
+            mapping_root = tmp_path / "mappings"
+            admission = _admission(registry_root, mapping_root)
+            dry_run = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+            admission.execute(_request(root, mapping_root, head, mode="BOOTSTRAP", preflight_digest=dry_run["preflight_digest"]))
+            (root / "docs").mkdir(exist_ok=True)
+            (root / "docs" / "DEVELOPMENT_PLAN.txt").write_text("# Alternate plan\n", encoding="utf-8")
+            _git(root, "add", "docs/DEVELOPMENT_PLAN.txt")
+            _git(root, "commit", "-m", "add alternate plan")
+            head = _git(root, "rev-parse", "HEAD")
+
+            result = admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+
+            self.assertEqual(result["status"], "COMPATIBLE")
+            self.assertEqual(result["inspection"]["entry"]["canonical_plan"], "IMPLEMENTATION_PLAN.md")
+
+    def test_target_inspect_isolated_from_other_project_plan_digest_damage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, _ = _project(tmp_path, name="healthy-project")
+            damaged, _ = _project(tmp_path, name="damaged-project")
+            registry_root = tmp_path / "registry"
+            registry_root.mkdir()
+            healthy = build_alias_entry(root, "healthy")
+            broken = build_alias_entry(damaged, "damaged")
+            broken["canonical_plan_sha256"] = "0" * 64
+            (registry_root / "healthy.json").write_text(json.dumps(healthy, sort_keys=True), encoding="utf-8")
+            (registry_root / "damaged.json").write_text(json.dumps(broken, sort_keys=True), encoding="utf-8")
+
+            result = OnboardingRegistry(registry_root).inspect(root, "healthy")
+
+            self.assertEqual(result["status"], "COMPATIBLE")
+            self.assertEqual(result["entry"]["alias"], "healthy")
 
 
 if __name__ == "__main__":

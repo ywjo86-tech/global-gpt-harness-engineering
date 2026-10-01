@@ -389,3 +389,67 @@ Required Tasks: TASK-002~003
         self.assertEqual(resolved[0]["dependencies"], ["TASK-001"])
         self.assertEqual(resolved[0]["tests"], ["TEST-002", "TEST-003"])
         self.assertEqual(resolved[0]["required_capabilities"], ["reasoning", "implementation", "filesystem_write"])
+
+
+class TaskContractRecoveryAmendmentCompatibilityTests(unittest.TestCase):
+    RECOVERY_AMENDMENT_CONTRACT = """# Contract
+
+### TASK-R01 — Entry/Drift 재검증
+
+- 목적: 승인 계획과 worktree 적용 대상을 고정한다.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: 없음(읽기 전용).
+- Required Capabilities: reasoning, read_only, evidence_analysis, version_control.
+- Execution Authority: READ_ONLY.
+- 완료 조건: 승인 의미에 영향을 주는 미해결 drift 0; 아니면 NO_GO.
+
+### TASK-R02 — D1 결정적 검증 프로필
+
+- 목적: 환경 우연과 검증 의도를 분리한다.
+- 의존성: TASK-R01, SEQUENTIAL.
+- 변경 대상: CMP-R01 명시 파일.
+- Required Capabilities: implementation, filesystem_write, shell, test.
+- Execution Authority: STATE_CHANGING(개발 worktree 내부만).
+- 완료 조건: resolver 분기 테스트 각각 PASS.
+
+| Evidence | 생성자 | 검증자 | 주요 binding | Acceptance / Gate |
+|---|---|---|---|---|
+| EV-R01~03 | TASK-R01 owner | Design/Entry reviewer | plan/design/root/HEAD/runtime/run digest | drift 0 / R01 |
+| EV-R04~06 | TASK-R02 owner | Validation reviewer | candidate HEAD, env manifest, profile, collection | deterministic profile / R02 |
+
+### GATE-R01 — 설계/소스 진입
+
+- GO: 승인 identity 일치, drift 해결, worktree 변경 소유권 명확.
+- NO_GO: 승인 문서·root·branch/HEAD 적용 대상 불명확.
+
+### GATE-R02 — D1/D2 기반 복구
+
+- GO: RT-01~05 PASS.
+- NO_GO: invalid 대상 실행 가능.
+"""
+
+    def test_r_prefixed_recovery_tasks_and_gates_are_contract_shape(self) -> None:
+        analysis = analyze_task_stage_gate_contract(self.RECOVERY_AMENDMENT_CONTRACT, "GATE-R01")
+        self.assertIsNotNone(analysis)
+        self.assertNotIn("requested Stage Gate is absent: GATE-R01", analysis["blockers"])
+        self.assertEqual(analysis["requested_gate_tasks"], ["TASK-R01"])
+
+    def test_read_only_recovery_entry_gate_dry_run_does_not_need_mutation_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "task-project"; root.mkdir()
+            plan = root / "docs" / "DEVELOPMENT_PLAN.txt"; plan.parent.mkdir(parents=True)
+            plan.write_text(self.RECOVERY_AMENDMENT_CONTRACT, encoding="utf-8")
+            plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
+            mapping = SimpleNamespace(
+                project_id="task-project",
+                canonical_source=plan,
+                canonical_sha256=plan_sha,
+                task_lv_projection_path=None,
+            )
+            with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=mapping):
+                entry = compatibility_dry_run(root, "GATE-R01")
+                mutation_gate = compatibility_dry_run(root, "GATE-R02")
+        self.assertEqual(entry["status"], "COMPATIBLE")
+        self.assertEqual(entry["lv_order"], ["TASK-R01"])
+        self.assertEqual(mutation_gate["status"], "BLOCKED")
+        self.assertIn("no approved TASK-to-LV authority projection", mutation_gate["reason"])

@@ -104,7 +104,7 @@ def load_contract(
     if host_role and not _is_engine_host(root):
         raise ContractLoadError(["engine-host identity or anchors are not verified"])
     paths = ProjectPaths.from_root(root)
-    mapping = load_project_mapping(root)
+    mapping = None if host_role else load_project_mapping(root)
     required_keys = ["orchestration_state_md"] if host_role else REQUIRED_FILE_KEYS
     mapping_summary: dict[str, object] = {}
     if mapping is not None:

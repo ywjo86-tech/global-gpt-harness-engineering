@@ -3,7 +3,8 @@ from pathlib import Path
 
 class CurrentStateProjectionTests(unittest.TestCase):
  def test_projection_precedes_historical_contract_and_evidence_digests_match(self):
-  text=Path('docs/DEVELOPMENT_PLAN.txt').read_text(); self.assertLess(text.index('CURRENT_OPERATIONAL_STATE'),text.index('FULL PLAN EXECUTION CONTRACT'))
+  archive=next(Path('docs/history/upgrades/2026-10-01-<approved-upgrade-sequence>').glob('DEVELOPMENT_PLAN.pre-D1.5-activation.*.txt'))
+  text=archive.read_text(); self.assertLess(text.index('CURRENT_OPERATIONAL_STATE'),text.index('FULL PLAN EXECUTION CONTRACT'))
   expected=(
    'CURRENT_OPERATIONAL_STATE: AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE',
    'FINAL_EDP: ALL_PASS','AI_OFFICE_STABLE_BASELINE: DECLARED',

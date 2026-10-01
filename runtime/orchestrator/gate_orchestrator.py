@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state
 from .task_contract_compat import (
     analyze_task_stage_gate_contract, compatibility_block_reason, resolve_task_lv_projection,
-    resolve_task_project_requirement_contract,
+    resolve_read_only_task_gate, resolve_task_project_requirement_contract,
 )
 from .lv_execution_package import canonical_json_bytes
 from .lv_preview import _declared_owned_files, _gate_section, _tables
@@ -322,6 +322,21 @@ def load_gate_plan(project_root: str | Path, gate_id: str, *, mapping_root: str 
         ]
         if not lvs:
             raise GateOrchestrationError("TASK-to-LV authority projection resolved an empty Gate")
+        return GatePlan(project_id, str(root), gate_id, plan.relative_to(root).as_posix(), mapping.canonical_sha256, lvs)
+
+    try:
+        resolved_read_only = resolve_read_only_task_gate(plan_text, gate_id=gate_id)
+    except Exception:
+        resolved_read_only = []
+    if resolved_read_only:
+        lvs = [
+            GateLV(
+                gate_id, item["lv_id"], order, item["purpose"], item["dependencies"],
+                item["owned_files"], item["completion_criteria"], item["execution"], item["tests"],
+                item["capability_contract"], item["required_capabilities"],
+            )
+            for order, item in enumerate(resolved_read_only, 1)
+        ]
         return GatePlan(project_id, str(root), gate_id, plan.relative_to(root).as_posix(), mapping.canonical_sha256, lvs)
 
     section = _gate_section(plan_text, gate_id)

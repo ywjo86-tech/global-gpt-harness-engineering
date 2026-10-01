@@ -36,6 +36,19 @@ def observation():
     )
 
 
+def green_boundary_context(**overrides):
+    value = {
+        "contract_valid": True,
+        "checkpoint_valid": True,
+        "phase": "GREEN_READY",
+        "approval_valid": True,
+        "source_valid": True,
+        "environment_valid": True,
+    }
+    value.update(overrides)
+    return value
+
+
 class ProductionFullPlanTDDContinuationTests(unittest.TestCase):
     def supervisor(self, root, **kw):
         return DurableFullPlanSupervisor(
@@ -108,12 +121,24 @@ class ProductionFullPlanTDDContinuationTests(unittest.TestCase):
                 approval_valid=True, now=NOW)
             self.assertEqual(decision.action, "RUN_GREEN")
 
+    def test_supervisor_requires_boundary_guard_before_green_effect(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = contract(); sup = self.supervisor(d, continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest)
+            sup.record_expected_red(c, observation(), now=NOW)
+            with self.assertRaisesRegex(ProductionFullPlanError, "TDD boundary guard"):
+                sup.begin_tdd_green(c)
+            with self.assertRaisesRegex(ProductionFullPlanError, "APPROVAL_INVALID"):
+                sup.begin_tdd_green(c, boundary_context=green_boundary_context(approval_valid=False))
+            running = sup.begin_tdd_green(c, boundary_context=green_boundary_context())
+            self.assertEqual(running.phase, "GREEN_RUNNING")
+
     def test_supervisor_owns_all_tdd_mutating_transitions_under_existing_run_lock(self):
         with tempfile.TemporaryDirectory() as d:
             c = contract(); sup = self.supervisor(d, continuation_mode=TDD_V1)
             sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest)
             sup.record_expected_red(c, observation(), now=NOW)
-            running = sup.begin_tdd_green(c)
+            running = sup.begin_tdd_green(c, boundary_context=green_boundary_context())
             self.assertEqual(running.phase, "GREEN_RUNNING")
             focused = sup.reconcile_tdd_green_effect(
                 c, effect_step_id=running.effect_step_id, canonical_receipt_digest="2"*64,
@@ -124,6 +149,23 @@ class ProductionFullPlanTDDContinuationTests(unittest.TestCase):
             completed = sup.record_tdd_regression_validation(
                 passed=True, receipt_digest="4"*64, regression_delta_current_only=0)
             self.assertEqual(completed.phase, "COMPLETED")
+
+    def test_supervisor_exposes_common_boundary_guard_under_tdd_lock(self):
+        with tempfile.TemporaryDirectory() as d:
+            c = contract(); sup = self.supervisor(d, continuation_mode=TDD_V1)
+            sup.arm_expected_red(c); sup.begin_expected_red(c.contract_digest)
+            sup.record_expected_red(c, observation(), now=NOW)
+            sup.begin_tdd_green(c, boundary_context=green_boundary_context())
+            decision = sup.evaluate_tdd_boundary({
+                "contract_valid": True,
+                "checkpoint_valid": True,
+                "phase": "GREEN_RUNNING",
+                "approval_valid": True,
+                "source_valid": True,
+                "environment_valid": True,
+            }, "PRE_DISPATCH")
+            self.assertEqual(decision.action, "WAIT_EVIDENCE")
+            self.assertEqual(decision.reason, "GREEN_EFFECT_RECEIPT_REQUIRED")
 
     def test_supervisor_does_not_turn_unexpected_failure_into_green(self):
         with tempfile.TemporaryDirectory() as d:

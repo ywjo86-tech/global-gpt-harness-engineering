@@ -21,11 +21,17 @@ CONTRACT_SCHEMA = "orchestration.expected-red-contract.v1"
 OBSERVATION_SCHEMA = "orchestration.tdd-failure-observation.v1"
 CHECKPOINT_SCHEMA = "orchestration.tdd-continuation-checkpoint.v1"
 POINTER_SCHEMA = "orchestration.tdd-continuation-pointer.v1"
+GENERATION_MANIFEST_SCHEMA = "orchestration.tdd-continuation-generation-manifest.v1"
+GENERATION_COMMIT_SCHEMA = "orchestration.tdd-continuation-generation-commit.v1"
+GENERATION_LATEST_SCHEMA = "orchestration.tdd-continuation-latest.v1"
 
 LEGACY = "LEGACY"
 TDD_V1 = "TDD_V1"
 CONTINUATION_MODES = frozenset({LEGACY, TDD_V1})
 FOCUSED_TDD = "FOCUSED_TDD"
+PRE_DISPATCH = "PRE_DISPATCH"
+PRE_COMPLETE = "PRE_COMPLETE"
+BOUNDARIES = frozenset({PRE_DISPATCH, PRE_COMPLETE})
 
 PHASES = frozenset({
     "RED_ARMED", "RED_RUNNING", "GREEN_READY", "GREEN_RUNNING",
@@ -87,6 +93,265 @@ def _safe_scope(value: object) -> str:
 def _scope_contains(scope: str, path: str) -> bool:
     base = scope.rstrip("/")
     return path == base or path.startswith(base + "/")
+
+
+class GenerationalContinuationStore:
+    def __init__(
+        self,
+        state_root: str | Path,
+        *,
+        project_id: str,
+        run_id: str,
+        task_id: str,
+        cycle_id: str,
+    ) -> None:
+        root = Path(state_root).resolve()
+        if not root.is_dir() or root.is_symlink():
+            raise TDDContinuationError("continuation state root is unsafe")
+        self.project_id = _safe_id(project_id, "project_id")
+        self.run_id = _safe_id(run_id, "run_id")
+        self.task_id = _safe_id(task_id, "task_id")
+        self.cycle_id = _safe_id(cycle_id, "tdd_cycle_id")
+        self.base = (
+            root / "_workspace" / "full-plan-tdd-continuation-v2"
+            / self.project_id / self.run_id / self.task_id / self.cycle_id
+        )
+        self.generations = self.base / "generations"
+        self.commits = self.base / "commits"
+        self.latest_path = self.base / "latest.json"
+
+    def _generation_dir(self, generation_id: str) -> Path:
+        return self.generations / _safe_id(generation_id, "generation_id")
+
+    def _commit_path(self, generation_id: str) -> Path:
+        return self.commits / f"{_safe_id(generation_id, 'generation_id')}.json"
+
+    def _checkpoint_payload(self, generation_id: str, checkpoint: Mapping[str, Any]) -> dict[str, Any]:
+        payload = {
+            "schema_version": CHECKPOINT_SCHEMA,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "task_id": self.task_id,
+            "cycle_id": self.cycle_id,
+            "generation_id": _safe_id(generation_id, "generation_id"),
+            "checkpoint": dict(checkpoint),
+        }
+        payload["checkpoint_digest"] = _digest(payload)
+        return payload
+
+    def _manifest_payload(
+        self,
+        *,
+        generation_id: str,
+        previous_generation_id: str | None,
+        phase: str,
+        checkpoint_digest: str,
+        approval_digest: str,
+        spec_digest: str,
+        source_digest: str,
+        environment_digest: str,
+        effect_intent_id: str,
+        effect_receipt_ref: str | None,
+    ) -> dict[str, Any]:
+        if phase not in PHASES:
+            raise TDDContinuationError("invalid continuation phase")
+        payload = {
+            "schema_version": GENERATION_MANIFEST_SCHEMA,
+            "continuation_contract_version": TDD_V1,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "task_id": self.task_id,
+            "cycle_id": self.cycle_id,
+            "generation_id": _safe_id(generation_id, "generation_id"),
+            "previous_generation_id": (
+                _safe_id(previous_generation_id, "previous_generation_id")
+                if previous_generation_id is not None else None
+            ),
+            "phase": phase,
+            "checkpoint_digest": _sha(checkpoint_digest, "checkpoint_digest"),
+            "approval_digest": _sha(approval_digest, "approval_digest"),
+            "spec_digest": _sha(spec_digest, "spec_digest"),
+            "source_digest": _sha(source_digest, "source_digest"),
+            "environment_digest": _sha(environment_digest, "environment_digest"),
+            "effect_intent_id": str(effect_intent_id or ""),
+            "effect_receipt_ref": effect_receipt_ref,
+            "created_at": _canonical_timestamp(datetime.now(timezone.utc)),
+            "writer": {"authority": "TDD_V1_GENERATIONAL_STORE"},
+        }
+        payload["manifest_digest"] = _digest(payload)
+        return payload
+
+    def _load_commit(self, generation_id: str) -> dict[str, Any]:
+        value, _ = durable_json_load(self._commit_path(generation_id))
+        if value.get("schema_version") != GENERATION_COMMIT_SCHEMA:
+            raise TDDContinuationError("generation commit schema mismatch")
+        digest = str(value.get("commit_digest") or "")
+        unsigned = {key: item for key, item in value.items() if key != "commit_digest"}
+        if digest != _digest(unsigned):
+            raise TDDContinuationError("generation commit digest mismatch")
+        return value
+
+    def _commit_tip(self) -> dict[str, Any]:
+        commits: list[dict[str, Any]] = []
+        for path in sorted(self.commits.glob("*.json")) if self.commits.is_dir() else ():
+            commits.append(self._load_commit(path.stem))
+        if not commits:
+            raise TDDContinuationError("continuation commit chain is empty")
+        previous = {item.get("previous_committed_generation_id") for item in commits if item.get("previous_committed_generation_id")}
+        tips = [item for item in commits if item["generation_id"] not in previous]
+        if len(tips) != 1:
+            raise TDDContinuationError("continuation commit chain forked")
+        return tips[0]
+
+    def commit_generation(
+        self,
+        *,
+        generation_id: str,
+        previous_generation_id: str | None,
+        phase: str,
+        checkpoint: Mapping[str, Any],
+        approval_digest: str,
+        spec_digest: str,
+        source_digest: str,
+        environment_digest: str,
+        effect_intent_id: str,
+        effect_receipt_ref: str | None,
+    ) -> dict[str, Any]:
+        generation_id = _safe_id(generation_id, "generation_id")
+        previous_commit_digest = ""
+        if previous_generation_id is not None:
+            previous_commit = self._load_commit(previous_generation_id)
+            previous_commit_digest = previous_commit["commit_digest"]
+        generation_dir = self._generation_dir(generation_id)
+        checkpoint_payload = self._checkpoint_payload(generation_id, checkpoint)
+        durable_json_save(generation_dir / "checkpoint.json", checkpoint_payload)
+        saved_checkpoint, _ = durable_json_load(generation_dir / "checkpoint.json")
+        if saved_checkpoint.get("checkpoint_digest") != checkpoint_payload["checkpoint_digest"]:
+            raise TDDContinuationError("checkpoint write verification failed")
+        manifest = self._manifest_payload(
+            generation_id=generation_id,
+            previous_generation_id=previous_generation_id,
+            phase=phase,
+            checkpoint_digest=checkpoint_payload["checkpoint_digest"],
+            approval_digest=approval_digest,
+            spec_digest=spec_digest,
+            source_digest=source_digest,
+            environment_digest=environment_digest,
+            effect_intent_id=effect_intent_id,
+            effect_receipt_ref=effect_receipt_ref,
+        )
+        durable_json_save(generation_dir / "manifest.json", manifest)
+        saved_manifest, _ = durable_json_load(generation_dir / "manifest.json")
+        if saved_manifest.get("manifest_digest") != manifest["manifest_digest"]:
+            raise TDDContinuationError("manifest write verification failed")
+        commit = {
+            "schema_version": GENERATION_COMMIT_SCHEMA,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "task_id": self.task_id,
+            "cycle_id": self.cycle_id,
+            "generation_id": generation_id,
+            "previous_committed_generation_id": previous_generation_id,
+            "manifest_digest": manifest["manifest_digest"],
+            "checkpoint_digest": checkpoint_payload["checkpoint_digest"],
+            "previous_commit_digest": previous_commit_digest,
+        }
+        commit["commit_digest"] = _digest(commit)
+        durable_json_save(self._commit_path(generation_id), commit)
+        self._load_commit(generation_id)
+        latest = {
+            "schema_version": GENERATION_LATEST_SCHEMA,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "task_id": self.task_id,
+            "cycle_id": self.cycle_id,
+            "generation_id": generation_id,
+            "commit_digest": commit["commit_digest"],
+            "manifest_digest": manifest["manifest_digest"],
+            "checkpoint_digest": checkpoint_payload["checkpoint_digest"],
+        }
+        latest["latest_digest"] = _digest(latest)
+        durable_json_save(self.latest_path, latest)
+        loaded = self.load_latest()
+        if loaded["generation_id"] != generation_id:
+            return {"status": "COMMITTED_POINTER_STALE", **commit}
+        return {"status": "COMMITTED", **commit}
+
+    def load_latest(self) -> dict[str, Any]:
+        value, _ = durable_json_load(self.latest_path)
+        digest = str(value.get("latest_digest") or "")
+        unsigned = {key: item for key, item in value.items() if key != "latest_digest"}
+        if (
+            value.get("schema_version") != GENERATION_LATEST_SCHEMA
+            or value.get("project_id") != self.project_id
+            or value.get("run_id") != self.run_id
+            or value.get("task_id") != self.task_id
+            or value.get("cycle_id") != self.cycle_id
+            or digest != _digest(unsigned)
+        ):
+            raise TDDContinuationError("latest pointer binding mismatch")
+        commit = self._load_commit(str(value["generation_id"]))
+        for key in ("commit_digest", "manifest_digest", "checkpoint_digest"):
+            if value.get(key) != commit.get(key):
+                raise TDDContinuationError("latest pointer commit mismatch")
+        return value
+
+    def recover_latest(self) -> dict[str, Any]:
+        tip = self._commit_tip()
+        latest = {
+            "schema_version": GENERATION_LATEST_SCHEMA,
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "task_id": self.task_id,
+            "cycle_id": self.cycle_id,
+            "generation_id": tip["generation_id"],
+            "commit_digest": tip["commit_digest"],
+            "manifest_digest": tip["manifest_digest"],
+            "checkpoint_digest": tip["checkpoint_digest"],
+        }
+        latest["latest_digest"] = _digest(latest)
+        durable_json_save(self.latest_path, latest)
+        self.load_latest()
+        return {"status": "COMMITTED_RECOVERED", **tip}
+
+
+def promote_legacy_checkpoint_generation(
+    legacy_store: "TDDContinuationStore",
+    generation_store: GenerationalContinuationStore,
+    *,
+    generation_id: str,
+    approval_digest: str,
+    spec_digest: str,
+) -> dict[str, Any]:
+    try:
+        generation_id = _safe_id(generation_id, "generation_id")
+        existing = generation_store._load_commit(generation_id)
+        return {"status": "ALREADY_PROMOTED", **existing}
+    except (TDDContinuationError, FileNotFoundError):
+        pass
+    try:
+        checkpoint = legacy_store.load()
+    except TDDContinuationError as exc:
+        raise TDDContinuationError("legacy checkpoint promotion blocked") from exc
+    if (
+        checkpoint.project_id != generation_store.project_id
+        or checkpoint.run_id != generation_store.run_id
+        or checkpoint.task_id != generation_store.task_id
+        or checkpoint.tdd_cycle_id != generation_store.cycle_id
+    ):
+        raise TDDContinuationError("legacy checkpoint promotion blocked")
+    return generation_store.commit_generation(
+        generation_id=generation_id,
+        previous_generation_id=None,
+        phase=checkpoint.phase,
+        checkpoint=checkpoint.to_mapping(),
+        approval_digest=approval_digest,
+        spec_digest=spec_digest,
+        source_digest=checkpoint.source_sha.rjust(64, "0"),
+        environment_digest=checkpoint.dependency_environment_digest,
+        effect_intent_id=checkpoint.effect_step_id,
+        effect_receipt_ref=checkpoint.latest_effect_receipt_digest or None,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +536,68 @@ class ContinuationDecision:
     reason: str
 
 
+def _context_flag(context: Mapping[str, Any], key: str) -> bool:
+    return context.get(key) is True
+
+
+def evaluate_continuation_boundary(context: Mapping[str, Any], boundary: str) -> ContinuationDecision:
+    """Fail-closed continuation boundary guard for Full Plan TDD handoffs.
+
+    The guard authorizes only the next TDD category at pre-dispatch or
+    pre-completion boundaries. It deliberately does not select providers,
+    models, tools, or worker processes.
+    """
+    if not isinstance(context, Mapping):
+        return ContinuationDecision("BLOCK", "CONTEXT_INVALID")
+    if boundary not in BOUNDARIES:
+        return ContinuationDecision("BLOCK", "BOUNDARY_INVALID")
+    if not _context_flag(context, "contract_valid"):
+        return ContinuationDecision("BLOCK", "CONTRACT_INVALID")
+    if not _context_flag(context, "checkpoint_valid"):
+        return ContinuationDecision("BLOCK", "CHECKPOINT_INVALID")
+
+    phase = str(context.get("phase") or "")
+    if phase not in PHASES:
+        return ContinuationDecision("BLOCK", "PHASE_INVALID")
+    if phase == "BLOCKED":
+        return ContinuationDecision("BLOCK", str(context.get("block_reason") or "BLOCKED_PHASE"))
+
+    if boundary == PRE_COMPLETE:
+        if phase != "COMPLETED":
+            return ContinuationDecision("BLOCK", "PHASE_NOT_COMPLETE")
+        if (
+            _context_flag(context, "focused_validation_passed")
+            and _context_flag(context, "regression_validation_passed")
+            and _context_flag(context, "gate_evidence_valid")
+        ):
+            return ContinuationDecision("ALLOW_COMPLETE", "COMPLETION_EVIDENCE_VALID")
+        return ContinuationDecision("BLOCK", "COMPLETION_EVIDENCE_INCOMPLETE")
+
+    if phase == "COMPLETED":
+        return ContinuationDecision("BLOCK", "EFFECT_ALREADY_COMPLETE")
+    if phase == "GREEN_RUNNING":
+        return ContinuationDecision("WAIT_EVIDENCE", "GREEN_EFFECT_RECEIPT_REQUIRED")
+    if phase == "RED_RUNNING":
+        return ContinuationDecision("ALLOW_VALIDATION_ONLY", "RED_RESULT_SETTLEMENT_ONLY")
+
+    if phase in {"GREEN_READY", "FOCUSED_VALIDATION", "REGRESSION_VALIDATION"}:
+        for key, reason in (
+            ("approval_valid", "APPROVAL_INVALID"),
+            ("source_valid", "SOURCE_INVALID"),
+            ("environment_valid", "ENVIRONMENT_INVALID"),
+        ):
+            if not _context_flag(context, key):
+                return ContinuationDecision("BLOCK", reason)
+
+    if phase == "RED_ARMED":
+        return ContinuationDecision("ALLOW_VALIDATION_ONLY", "RED_VALIDATION_ONLY")
+    if phase == "GREEN_READY":
+        return ContinuationDecision("ALLOW_EFFECT_ONCE", "GREEN_READY")
+    if phase in {"FOCUSED_VALIDATION", "REGRESSION_VALIDATION"}:
+        return ContinuationDecision("ALLOW_VALIDATION_ONLY", phase)
+    return ContinuationDecision("BLOCK", "PHASE_BLOCKED")
+
+
 @dataclass(frozen=True, slots=True)
 class TDDContinuationCheckpointV1:
     schema_version: str
@@ -296,6 +623,9 @@ class TDDContinuationCheckpointV1:
         value = asdict(self)
         value.pop("checkpoint_digest")
         return value
+
+    def to_mapping(self) -> dict[str, Any]:
+        return asdict(self)
 
     def validate(self) -> None:
         if self.schema_version != CHECKPOINT_SCHEMA or self.phase not in PHASES:

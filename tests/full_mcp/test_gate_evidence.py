@@ -6,7 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mcp.types import LATEST_PROTOCOL_VERSION
+try:
+    from mcp.types import LATEST_PROTOCOL_VERSION
+except ModuleNotFoundError:
+    LATEST_PROTOCOL_VERSION = ""
 from runtime.full_mcp import qualification as q
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +80,7 @@ def workspace_state(unauthorized: int = 0) -> dict:
     }
     record["state_digest"] = q.workspace_state_digest(record)
     return record
+@unittest.skipIf(not LATEST_PROTOCOL_VERSION, "optional mcp package is not installed")
 class GateEvidenceBootstrapTests(unittest.TestCase):
     def test_sdk_protocol_and_dependency_lock(self) -> None:
         self.assertEqual(importlib.metadata.version("mcp"), "2.2.0")

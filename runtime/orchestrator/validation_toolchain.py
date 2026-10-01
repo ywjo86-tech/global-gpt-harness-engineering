@@ -139,7 +139,14 @@ def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
     raise ValidationToolchainError(f"unsupported backend package manager: {name}")
 
 
-def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow_deferred: bool = False, python_executable: str | Path | None = None) -> ValidationCommandSet:
+def resolve_validation_commands(
+    root: Path,
+    owned_files: Sequence[str],
+    *,
+    allow_deferred: bool = False,
+    python_executable: str | Path | None = None,
+    validation_profile: str | None = None,
+) -> ValidationCommandSet:
     documentation_only = bool(owned_files) and all(
         isinstance(path, str) and (path == "docs/" or path.startswith("docs/"))
         for path in owned_files
@@ -192,8 +199,14 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
 
     py_tests = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     if python_scope and not android and not node:
+        if validation_profile not in {None, "PYTEST_PROFILE", "EXTERNAL_UNITTEST_PROFILE", "RESOLVER_SELECTION"}:
+            raise ValidationToolchainError("unknown validation profile")
         project_interpreter = root / ".venv" / "bin" / "python"
         external_interpreter: Path | None = None
+        explicit_pytest = validation_profile == "PYTEST_PROFILE"
+        explicit_external = validation_profile == "EXTERNAL_UNITTEST_PROFILE"
+        if explicit_external and python_executable is None:
+            raise ValidationToolchainError("explicit external unittest profile requires approved interpreter")
         if python_executable is not None:
             candidate = Path(str(python_executable))
             if not candidate.is_absolute() or not candidate.is_file() or not os.access(candidate, os.X_OK):
@@ -208,22 +221,24 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
             if not resolved.is_file() or resolved.stat().st_mode & 0o022:
                 raise ValidationToolchainError("approved external Python interpreter is unsafe")
             external_interpreter = candidate.absolute()
-        elif not project_interpreter.is_file():
+        elif not project_interpreter.is_file() and not explicit_pytest:
             active_python = Path(sys.executable)
             if sys.prefix != sys.base_prefix and active_python.is_file() and os.access(active_python, os.X_OK):
                 external_interpreter = active_python.absolute()
 
         if py_tests:
             py_owned = [path for path in owned_files if path.endswith(".py")]
-            if project_interpreter.is_file() and external_interpreter is None:
-                profiles.append("PYTHON_PYTEST")
+            if (project_interpreter.is_file() or explicit_pytest) and external_interpreter is None:
+                profiles.append("PYTEST_PROFILE" if explicit_pytest else "PYTHON_PYTEST")
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
                 full.append((".venv/bin/python", "-m", "pytest", "-q"))
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
+                if explicit_pytest and not project_interpreter.is_file():
+                    deferred = True
             elif external_interpreter is not None:
                 modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
                 runner = str(external_interpreter)
-                profiles.append("PYTHON_UNITTEST_EXTERNAL")
+                profiles.append("EXTERNAL_UNITTEST_PROFILE" if explicit_external else "PYTHON_UNITTEST_EXTERNAL")
                 focused.append((runner, "-m", "unittest", "-v", *modules))
                 full.append((runner, "-m", "unittest", "discover", "-s", "tests", "-v"))
                 compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))

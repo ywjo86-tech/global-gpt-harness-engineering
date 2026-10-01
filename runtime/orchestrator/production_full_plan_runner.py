@@ -32,6 +32,7 @@ from .durable_continuation import (
 from .implementation_continuation import (
     CONTINUATION_MODES, LEGACY, TDD_V1, ContinuationDecision,
     ExpectedRedContractV1, FailureObservationV1, TDDContinuationStore,
+    evaluate_continuation_boundary,
 )
 
 
@@ -289,8 +290,20 @@ class DurableFullPlanSupervisor:
             )
         return self._with_tdd_lock(resume)
 
-    def begin_tdd_green(self, contract: ExpectedRedContractV1):
-        return self._with_tdd_lock(lambda store: store.begin_green(contract))
+    def begin_tdd_green(self, contract: ExpectedRedContractV1, *, boundary_context: Mapping[str, Any] | None = None):
+        if boundary_context is None:
+            raise ProductionFullPlanError("TDD boundary guard context is required before GREEN effect")
+
+        def begin(store: TDDContinuationStore):
+            decision = evaluate_continuation_boundary(boundary_context, "PRE_DISPATCH")
+            if decision.action != "ALLOW_EFFECT_ONCE":
+                raise ProductionFullPlanError(f"TDD boundary guard blocked GREEN effect: {decision.reason}")
+            return store.begin_green(contract)
+
+        return self._with_tdd_lock(begin)
+
+    def evaluate_tdd_boundary(self, context: Mapping[str, Any], boundary: str) -> ContinuationDecision:
+        return self._with_tdd_lock(lambda _store: evaluate_continuation_boundary(context, boundary))
 
     def reconcile_tdd_green_effect(self, contract: ExpectedRedContractV1, *, effect_step_id: str,
                                    canonical_receipt_digest: str, effect_reconciliation: str):

@@ -43,6 +43,15 @@ def _plan(root: Path) -> Path | None:
     return found[0] if found else None
 
 
+def _registered_plan(root: Path, relative_plan: object) -> Path:
+    if not isinstance(relative_plan, str) or relative_plan not in _PLAN_CANDIDATES:
+        raise ProjectOnboardingError("canonical plan binding is not allowed")
+    plan = root / relative_plan
+    if not plan.is_file() or plan.is_symlink():
+        raise ProjectOnboardingError("canonical plan binding is missing or unsafe")
+    return plan
+
+
 def build_alias_entry(project_root: str | Path, alias: str) -> dict[str, Any]:
     root = _verified_project(project_root)
     if not _ID.fullmatch(alias):
@@ -80,9 +89,7 @@ def validate_alias_entry(entry: dict[str, Any], project_root: str | Path | None 
     root = _verified_project(project_root or entry["project_root"])
     if str(root) != entry["project_root"] or root.name != entry["project_id"]:
         raise ProjectOnboardingError("alias entry project binding mismatch")
-    plan = _plan(root)
-    if plan is None or plan.relative_to(root).as_posix() != entry["canonical_plan"]:
-        raise ProjectOnboardingError("canonical plan binding mismatch")
+    plan = _registered_plan(root, entry["canonical_plan"])
     if hashlib.sha256(plan.read_bytes()).hexdigest() != entry["canonical_plan_sha256"]:
         raise ProjectOnboardingError("canonical plan SHA drift")
 
@@ -119,12 +126,43 @@ class OnboardingRegistry:
             aliases.add(alias); projects[entry["project_id"]] = alias; values.append(entry)
         return values
 
+    def _raw_entries(self) -> list[dict[str, Any]]:
+        if not self.root.exists():
+            return []
+        values: list[dict[str, Any]] = []
+        aliases: set[str] = set()
+        projects: dict[str, str] = {}
+        for path in sorted(self.root.glob("*.json")):
+            if path.is_symlink():
+                raise ProjectOnboardingError("symlinked registry entry is forbidden")
+            try:
+                entry = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ProjectOnboardingError("registry entry is unreadable") from exc
+            if not isinstance(entry, dict) or set(entry) != _ENTRY_FIELDS or entry.get("schema_version") != "orchestration.project.alias.v1":
+                raise ProjectOnboardingError("alias entry field or schema mismatch")
+            alias = entry.get("alias")
+            project_id = entry.get("project_id")
+            if not isinstance(alias, str) or not _ID.fullmatch(alias) or not isinstance(project_id, str) or not _ID.fullmatch(project_id):
+                raise ProjectOnboardingError("unsafe alias entry identity")
+            if path.name != f"{alias}.json" or alias in aliases:
+                raise ProjectOnboardingError("alias collision in registry")
+            prior = projects.get(project_id)
+            if prior is not None and prior != alias:
+                raise ProjectOnboardingError("project has conflicting aliases")
+            aliases.add(alias); projects[project_id] = alias; values.append(entry)
+        return values
+
     def inspect(self, project_root: str | Path, alias: str) -> dict[str, Any]:
         root = _verified_project(project_root)
-        existing = self.entries()
+        existing = self._raw_entries()
         collision = next((item for item in existing if item["alias"] == alias and item["project_id"] != root.name), None)
         if collision:
             return {"status": "ONBOARDING_BLOCKED", "reason": "alias collision", "mutation_performed": False}
+        match = next((item for item in existing if item["alias"] == alias), None)
+        if match is not None:
+            validate_alias_entry(match, root)
+            return {"status": "COMPATIBLE", "entry": match, "mutation_performed": False}
         plan = _plan(root)
         if plan is None:
             return {
@@ -132,10 +170,6 @@ class OnboardingRegistry:
                 "canonical_plan_synthesized": False, "mutation_performed": False,
             }
         candidate = build_alias_entry(root, alias)
-        match = next((item for item in existing if item["alias"] == alias), None)
-        if match is not None:
-            validate_alias_entry(match, root)
-            return {"status": "COMPATIBLE", "entry": match, "mutation_performed": False}
         return {"status": "REGISTRATION_READY", "entry": candidate, "mutation_performed": False}
 
     def register(self, project_root: str | Path, alias: str) -> dict[str, Any]:

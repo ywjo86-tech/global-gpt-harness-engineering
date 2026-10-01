@@ -3,6 +3,7 @@ import tempfile
 import threading
 import subprocess
 import time
+import sys
 from pathlib import Path
 
 from runtime.orchestrator.production_execution_gateway import (
@@ -173,6 +174,24 @@ class GatewayContractTests(unittest.TestCase):
     def test_managed_host_runner_exposes_one_shot_socket_without_background_daemon(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); sock = root / "runtime" / "managed.sock"; ledger = root / "ledger"
+            probe = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import socket, sys; "
+                        "s=socket.socket(socket.AF_UNIX); "
+                        "s.bind(sys.argv[1]); "
+                        "s.close()"
+                    ),
+                    str(sock),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if probe.returncode != 0:
+                self.skipTest("subprocess UDS bind is unavailable in this environment")
+            sock.unlink(missing_ok=True)
             manager = ManagedHostRunner(sock, ledger, workspace_root=root, timeout=2)
             with manager as transport:
                 self.assertIsInstance(transport, UnixSocketGatewayTransport)

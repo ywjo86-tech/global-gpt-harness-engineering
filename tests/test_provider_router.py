@@ -5,7 +5,8 @@ import unittest
 from runtime.orchestrator.provider_router import (
     ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, LEGACY_REQUEST_SOURCE_V1,
     ROUTER_REQUEST_SCHEMA_V2, ProviderEligibilitySnapshotV1, ProviderRouterContractError,
-    RouterRequestV2, normalize_legacy_hybrid_request, route_provider, route_request,
+    RouterRequestV2, d15_recovery_nvidia_read_only_request,
+    normalize_legacy_hybrid_request, route_provider, route_request,
 )
 
 
@@ -203,6 +204,39 @@ class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
         self.assertEqual(request1.request_digest, request2.request_digest)
         self.assertEqual(decision1.decision_digest, decision2.decision_digest)
         self.assertIn("eligibility-evidence", decision1.eligibility_evidence_refs)
+
+    def test_d15_recovery_read_only_uses_nvidia_only_snapshot_to_minimize_codex(self):
+        request = d15_recovery_nvidia_read_only_request(
+            request_id="D15-R01-NVIDIA",
+            project_id="FULL-PLAN-TDD-CONTINUATION-V1-20261001",
+            run_id="D15-RECOVERY",
+            task_id="TASK-R01",
+            task_execution_id="TASK-R01-READONLY",
+            directive_digest="9" * 64,
+            model_ref="nvidia/d15-read-only",
+            evidence_refs=("GATE-R01-COMPATIBLE", "D15-HYBRID-READONLY"),
+        )
+        decision = route_request(request)
+        self.assertTrue(decision.eligible)
+        self.assertEqual(decision.provider_ref, "nvidia")
+        self.assertEqual(decision.model_ref, "nvidia/d15-read-only")
+        self.assertEqual(request.eligibility_snapshot.provider_eligible, {"nvidia": True, "codex": False})
+        self.assertEqual(set(request.eligibility_snapshot.model_refs), {"nvidia"})
+        self.assertEqual(set(request.eligibility_snapshot.provider_capabilities or {}), {"nvidia"})
+
+    def test_d15_recovery_nvidia_helper_rejects_state_changing_capabilities(self):
+        with self.assertRaisesRegex(ProviderRouterContractError, "read-only"):
+            d15_recovery_nvidia_read_only_request(
+                request_id="D15-R02-BLOCKED",
+                project_id="FULL-PLAN-TDD-CONTINUATION-V1-20261001",
+                run_id="D15-RECOVERY",
+                task_id="TASK-R02",
+                task_execution_id="TASK-R02-ACTION",
+                directive_digest="8" * 64,
+                model_ref="nvidia/d15-read-only",
+                evidence_refs=("GATE-R01-COMPATIBLE",),
+                required_capabilities=("reasoning", "read_only", "filesystem_write"),
+            )
 
 
 

@@ -41,6 +41,36 @@ def _required_contract_files_valid(contract: Any, role: str) -> bool:
 
 def inspect_read_only(project_root: str | Path, *, role: str = MANAGED_PROJECT_ROLE) -> dict[str, Any]:
     root = Path(project_root).resolve()
+    if role == ENGINE_HOST_ROLE:
+        contract = load_contract(root, strict=True, role=role)
+        return {
+            "inspection_mode": "read_only_no_write",
+            "write_operations_performed": False,
+            "contract_mapping": {"configured": False, "valid": True, "inspector_id": "engine-host.self"},
+            "project_static_inspect": {
+                "project_id": root.name,
+                "current_phase": contract.current_phase,
+                "required_contract_files_valid": _required_contract_files_valid(contract, role),
+            },
+            "business_lv_approval_state": {
+                "namespace": "business_lv_gate_approval",
+                "status": "not_applicable_engine_host",
+                "validation": "static_only",
+                "reused_as_runtime_approval": False,
+            },
+            "business_gate_state": {
+                "namespace": "business_gate_state",
+                "status": "not_applicable_engine_host",
+                "validation": "static_only",
+                "transition_authorized": False,
+            },
+            "codex_runtime_sandbox_approval_state": {
+                "namespace": "codex_runtime_sandbox_approval",
+                "status": "not_requested_read_only",
+                "business_approval_reused": False,
+                "runtime_mutation_authorized": False,
+            },
+        }
     mapping = load_project_mapping(root)
     # Generic onboarding contracts use the shared structural inspector; the
     # Wallet business approval parser is retained only for legacy mappings.
