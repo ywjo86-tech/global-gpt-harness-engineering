@@ -154,16 +154,19 @@ class DangerousWorkAuthorizationTests(unittest.TestCase):
         self.assertTrue(p5.allowed)
         with self.assertRaises(mod.DangerousWorkAuthorizationError):
             mod.authorize_protected_operation(
-                requested_operation="P6_PREDECESSOR_RETIREMENT", post_verifier_results={}, **common
+                requested_operation="P6_PREDECESSOR_RETIREMENT", post_verifier_results={},
+                completed_operations={"P5_PREDECESSOR_QUIESCE"}, **common
             )
         with self.assertRaises(mod.DangerousWorkAuthorizationError):
             mod.authorize_protected_operation(
                 requested_operation="P6_PREDECESSOR_RETIREMENT",
-                post_verifier_results={"SUCCESSOR_HEALTH_AFTER_PREDECESSOR_QUIESCE": "FAIL"}, **common
+                post_verifier_results={"SUCCESSOR_HEALTH_AFTER_PREDECESSOR_QUIESCE": "FAIL"},
+                completed_operations={"P5_PREDECESSOR_QUIESCE"}, **common
             )
         p6 = mod.authorize_protected_operation(
             requested_operation="P6_PREDECESSOR_RETIREMENT",
-            post_verifier_results={"SUCCESSOR_HEALTH_AFTER_PREDECESSOR_QUIESCE": "PASS"}, **common
+            post_verifier_results={"SUCCESSOR_HEALTH_AFTER_PREDECESSOR_QUIESCE": "PASS"},
+            completed_operations={"P5_PREDECESSOR_QUIESCE"}, **common
         )
         self.assertTrue(p6.allowed)
 
