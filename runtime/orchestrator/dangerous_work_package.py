@@ -23,6 +23,7 @@ PROTECTED_OPERATIONS = frozenset({
 })
 P5_OPERATION = "P5_PREDECESSOR_QUIESCE"
 P6_OPERATION = "P6_PREDECESSOR_RETIREMENT"
+LIFECYCLE_RETIREMENT_OPERATIONS = frozenset({P5_OPERATION, P6_OPERATION})
 POST_P5_SUCCESSOR_HEALTH = "SUCCESSOR_HEALTH_AFTER_PREDECESSOR_QUIESCE"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA1 = re.compile(r"[0-9a-f]{40}\Z")
@@ -116,6 +117,12 @@ class DangerousWorkPackageV1:
         unknown_operations = [op for op in operations if op not in PROTECTED_OPERATIONS]
         if unknown_operations:
             raise DangerousWorkPackageError(f"unknown protected operation: {unknown_operations[0]}")
+        has_lifecycle_retirement = any(op in LIFECYCLE_RETIREMENT_OPERATIONS for op in operations)
+        has_other_protected_operation = any(op not in LIFECYCLE_RETIREMENT_OPERATIONS for op in operations)
+        if has_lifecycle_retirement and has_other_protected_operation:
+            raise DangerousWorkPackageError(
+                "lifecycle retirement operations must use a separate rollback-domain package"
+            )
         risk_classes = _ordered_unique_strings(raw["risk_classes"], "risk_classes")
         precondition_evidence = _ordered_unique_strings(raw["precondition_evidence"], "precondition_evidence")
         required_post_verifiers = _ordered_unique_strings(
