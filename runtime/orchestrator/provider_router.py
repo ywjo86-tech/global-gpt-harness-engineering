@@ -302,7 +302,7 @@ def d15_recovery_nvidia_read_only_request(
         model_refs={NVIDIA_PROVIDER: str(model_ref)},
         evidence_refs=tuple(str(ref) for ref in evidence_refs),
         provider_capabilities={
-            NVIDIA_PROVIDER: ("reasoning", "read_only", "evidence_analysis", "review", "diagnostics"),
+            NVIDIA_PROVIDER: ("reasoning", "read_only", "evidence_analysis", "review", "diagnostics", "version_control"),
         },
     )
     return RouterRequestV2(

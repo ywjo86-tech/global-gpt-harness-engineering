@@ -215,6 +215,7 @@ class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
             directive_digest="9" * 64,
             model_ref="nvidia/d15-read-only",
             evidence_refs=("GATE-R01-COMPATIBLE", "D15-HYBRID-READONLY"),
+            required_capabilities=("reasoning", "read_only", "evidence_analysis", "version_control"),
         )
         decision = route_request(request)
         self.assertTrue(decision.eligible)
