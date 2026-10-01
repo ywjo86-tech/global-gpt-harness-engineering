@@ -77,6 +77,25 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.focused[0],(str(external),'-m','unittest','-v','tests.test_a'))
             validate_profile_resolution(['EXTERNAL_UNITTEST_PROFILE'],plan.profile_ids)
 
+    def test_explicit_pytest_profile_is_deterministic_across_python_environments(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            expected=(".venv/bin/python","-m","pytest","-q","tests/test_a.py")
+            system=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+            self.assertEqual(system.focused[0],expected)
+            self.assertTrue(system.deferred)
+            (root/".venv/bin").mkdir(parents=True); (root/".venv/bin/python").write_text("")
+            project=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+            self.assertEqual(project.focused[0],expected)
+            self.assertFalse(project.deferred)
+            with tempfile.TemporaryDirectory() as e:
+                active=Path(e)/"bin/python"; active.parent.mkdir(); active.write_text(""); active.chmod(0o755)
+                with patch("runtime.orchestrator.validation_toolchain.sys.executable",str(active)), patch("runtime.orchestrator.validation_toolchain.sys.prefix",str(active.parent.parent)), patch("runtime.orchestrator.validation_toolchain.sys.base_prefix","/usr"):
+                    temporary=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+            self.assertEqual(temporary.focused[0],expected)
+            self.assertFalse(temporary.deferred)
+
     def test_android_node_manifest_resolves_without_guessing_package_manager(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'gradlew').write_text('#!/bin/sh\n'); (root/'backend').mkdir()

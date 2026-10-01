@@ -203,6 +203,19 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             self.assertEqual(result["status"], "COMPATIBLE")
             self.assertEqual(result["inspection"]["entry"]["canonical_plan"], "IMPLEMENTATION_PLAN.md")
 
+    def test_new_registration_with_two_plan_candidates_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path=Path(temp)
+            root, head=_project(tmp_path)
+            (root/"docs").mkdir(); (root/"docs/DEVELOPMENT_PLAN.txt").write_text("# Alternate plan\n",encoding="utf-8")
+            _git(root,"add","docs/DEVELOPMENT_PLAN.txt"); _git(root,"commit","-m","add ambiguous plan")
+            head=_git(root,"rev-parse","HEAD")
+            registry_root=tmp_path/"registry"; mapping_root=tmp_path/"mappings"
+            admission=_admission(registry_root,mapping_root)
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError,"ambiguous"):
+                admission.execute(_request(root,mapping_root,head,mode="DRY_RUN"))
+            self.assertFalse(registry_root.exists()); self.assertFalse(mapping_root.exists())
+
     def test_target_inspect_isolated_from_other_project_plan_digest_damage(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             tmp_path = Path(temp)
@@ -220,6 +233,10 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "COMPATIBLE")
             self.assertEqual(result["entry"]["alias"], "healthy")
+            with self.assertRaisesRegex(Exception, "canonical plan SHA drift"):
+                OnboardingRegistry(registry_root).inspect(damaged, "damaged")
+            with self.assertRaisesRegex(Exception, "canonical plan SHA drift"):
+                OnboardingRegistry(registry_root).entries()
 
 
 if __name__ == "__main__":
