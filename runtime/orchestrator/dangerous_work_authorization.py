@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from runtime.orchestrator.dangerous_work_package import (
     DangerousWorkPackageV1,
+    P5_OPERATION,
     P6_OPERATION,
     POST_P5_SUCCESSOR_HEALTH,
 )
@@ -149,6 +150,7 @@ def authorize_protected_operation(
     now: datetime,
     satisfied_preconditions: set[str] | frozenset[str] | tuple[str, ...],
     post_verifier_results: Mapping[str, str],
+    completed_operations: set[str] | frozenset[str] | tuple[str, ...] = (),
     current_source_head: str | None = None,
     current_target_ref: str | None = None,
     dangerous_reexecution: bool = False,
@@ -175,6 +177,8 @@ def authorize_protected_operation(
         raise DangerousWorkAuthorizationError("dangerous reexecution lacks safe effect reconciliation")
 
     if requested_operation == P6_OPERATION:
+        if P5_OPERATION not in set(completed_operations):
+            raise DangerousWorkAuthorizationError("P6 requires recorded P5 completion")
         if post_verifier_results.get(POST_P5_SUCCESSOR_HEALTH) != "PASS":
             raise DangerousWorkAuthorizationError("P6 requires successful post-P5 successor health verification")
 
