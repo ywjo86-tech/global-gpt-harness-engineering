@@ -18,6 +18,15 @@ STALL_CONFIRMED = "STALL_CONFIRMED"
 DELIVERY_CLASSES = frozenset({DEFERRED_INCIDENT, IMMEDIATE_DECISION, STALL_CONFIRMED})
 SAFE_EFFECT_RECONCILIATION = frozenset({"NO_EFFECT", "RECONCILED"})
 SUPPRESSED_TERMINAL_STATES = frozenset({"COMPLETED", "CANCELLED"})
+IMPLEMENTATION_SCOPE_OPERATIONS = frozenset({
+    "READ_REASON", "BOUNDED_WRITE", "TEST", "BOUNDED_REMEDIATION",
+    "LOCAL_COMMIT", "FEATURE_BRANCH_PUSH", "PR_CI_PREPARATION", "QUALIFICATION",
+})
+DANGEROUS_WORK_OPERATIONS = frozenset({
+    "PROTECTED_PUSH", "PR_MERGE", "TAG_RELEASE", "RUNTIME_CURRENT_SWITCH",
+    "PRODUCTION_ACTIVATION", "SERVICE_RESTART", "BOUNDED_REBOOT",
+    "P5_PREDECESSOR_QUIESCE", "P6_PREDECESSOR_RETIREMENT",
+})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -46,6 +55,15 @@ def classify_continuation_directive(
     if durable_job_registered:
         return ContinuationDirectiveAssessment("RESUME_FULL_PLAN", "approved durable Full Plan already exists")
     return ContinuationDirectiveAssessment("PROMOTE_TO_FULL_PLAN", "approved Harness work requires durable Full Plan tracking")
+
+
+def classify_operation_authority(operation: str) -> str:
+    """Return which of the two user actions owns a known operation."""
+    if operation in IMPLEMENTATION_SCOPE_OPERATIONS:
+        return "IMPLEMENTATION_APPROVAL"
+    if operation in DANGEROUS_WORK_OPERATIONS:
+        return "DANGEROUS_WORK_APPROVAL"
+    raise ValueError("unknown Full Plan operation authority")
 
 
 @dataclass(frozen=True, slots=True)
