@@ -321,6 +321,76 @@ Required Tasks: TASK-001
         self.assertFalse(result["mutation_permitted"])
 
 
+    def test_recovery_requirement_contract_expands_compact_related_requirement_ids(self) -> None:
+        contract = """# Contract
+
+### TASK-R05 — Guard
+- 목적: Verify compact requirement projection.
+- 관련: REQ-010/015/017~018, NFR-001~003/006, SEC-003/005, OPS-004/008/009.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: CMP-R03 명시 파일.
+- Required Capabilities: implementation, test.
+- Execution Authority: STATE_CHANGING.
+- Evidence: EV-R12, EV-R13, EV-R14.
+- 완료 조건: guard PASS.
+
+| ID | Requirement | Acceptance | Priority |
+|---|---|---|---|
+| REQ-010 | r10 | a | MUST |
+| REQ-015 | r15 | a | MUST |
+| REQ-017 | r17 | a | MUST |
+| REQ-018 | r18 | a | MUST |
+| NFR-001 | n1 | a | MUST |
+| NFR-002 | n2 | a | MUST |
+| NFR-003 | n3 | a | MUST |
+| NFR-006 | n6 | a | MUST |
+| SEC-003 | s3 | a | MUST |
+| SEC-005 | s5 | a | MUST |
+| OPS-004 | o4 | a | MUST |
+| OPS-008 | o8 | a | MUST |
+| OPS-009 | o9 | a | MUST |
+
+### GATE-R04 — Guard
+Required Tasks: TASK-R05
+"""
+        digest = hashlib.sha256(contract.encode()).hexdigest()
+        projected = resolve_task_project_requirement_contract(
+            contract, project_id="task-project", canonical_plan_sha256=digest,
+            gate_id="GATE-R04", task_id="TASK-R05", owned_files=["runtime/guard.py"],
+        )
+        self.assertEqual(list(projected["requirements"]), [
+            "REQ-010", "REQ-015", "REQ-017", "REQ-018",
+            "NFR-001", "NFR-002", "NFR-003", "NFR-006",
+            "SEC-003", "SEC-005", "OPS-004", "OPS-008", "OPS-009",
+        ])
+
+    def test_recovery_requirement_contract_rejects_descending_compact_range(self) -> None:
+        contract = """# Contract
+
+### TASK-R05 — Guard
+- 목적: Verify fail closed.
+- 관련: REQ-010~008.
+- 의존성: 없음, SEQUENTIAL.
+- 변경 대상: CMP-R03 명시 파일.
+- Required Capabilities: implementation.
+- Execution Authority: STATE_CHANGING.
+- Evidence: EV-R12.
+- 완료 조건: blocked.
+
+| ID | Requirement | Acceptance | Priority |
+|---|---|---|---|
+| REQ-010 | r10 | a | MUST |
+
+### GATE-R04 — Guard
+Required Tasks: TASK-R05
+"""
+        digest = hashlib.sha256(contract.encode()).hexdigest()
+        with self.assertRaises(TaskContractProjectionError):
+            resolve_task_project_requirement_contract(
+                contract, project_id="task-project", canonical_plan_sha256=digest,
+                gate_id="GATE-R04", task_id="TASK-R05", owned_files=["runtime/guard.py"],
+            )
+
     def test_recovery_read_only_requirement_contract_uses_ev_evidence_and_empty_owned_scope(self) -> None:
         contract = """# Contract
 

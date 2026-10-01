@@ -103,6 +103,66 @@ def _ids(value: str | None, prefix: str) -> list[str]:
     return resolved
 
 
+def _related_requirement_ids(value: str | None) -> list[str]:
+    """Expand the bounded compact requirement syntax used by recovery TASKs.
+
+    Accepted requirement families are REQ/NFR/SEC/OPS only. A comma-delimited
+    group may inherit its family across slash-separated IDs and use an
+    inclusive same-family numeric range, for example ``REQ-010/015/017~019``.
+    Other reference families (for example GATE-004/005) are intentionally
+    ignored, preserving the previous projection boundary.
+    """
+    if not value:
+        return []
+    accepted = ("REQ", "NFR", "SEC", "OPS")
+    resolved: list[str] = []
+    for raw_group in re.split(r"[,\n]+", value):
+        group = raw_group.strip().strip("`").rstrip(".").strip()
+        if not group:
+            continue
+        lead = re.match(r"^(REQ|NFR|SEC|OPS)-", group)
+        if lead is None:
+            continue
+        family = lead.group(1)
+        for index, raw_part in enumerate(group.split("/")):
+            part = raw_part.strip().strip("`").rstrip(".").strip()
+            if not part:
+                raise TaskContractProjectionError(f"empty compact requirement ID segment: {group}")
+            if index == 0:
+                match = re.fullmatch(
+                    rf"{family}-(\d{{3}})(?:~(?:(REQ|NFR|SEC|OPS)-)?(\d{{3}}))?",
+                    part,
+                )
+                if match is None:
+                    raise TaskContractProjectionError(f"invalid compact requirement ID: {part}")
+                start = int(match.group(1))
+                end_family = match.group(2)
+                end = int(match.group(3)) if match.group(3) else start
+            else:
+                match = re.fullmatch(
+                    r"(?:(REQ|NFR|SEC|OPS)-)?(\d{3})(?:~(?:(REQ|NFR|SEC|OPS)-)?(\d{3}))?",
+                    part,
+                )
+                if match is None:
+                    raise TaskContractProjectionError(f"invalid compact requirement ID: {part}")
+                explicit_family = match.group(1)
+                start = int(match.group(2))
+                end_family = match.group(3)
+                end = int(match.group(4)) if match.group(4) else start
+                if explicit_family is not None and explicit_family != family:
+                    raise TaskContractProjectionError(f"compact requirement family mismatch: {part}")
+            if end_family is not None and end_family != family:
+                raise TaskContractProjectionError(f"compact requirement range family mismatch: {part}")
+            if end < start:
+                raise TaskContractProjectionError(f"descending compact requirement range is invalid: {part}")
+            for number in range(start, end + 1):
+                item = f"{family}-{number:03d}"
+                if item in resolved:
+                    raise TaskContractProjectionError(f"duplicate compact requirement ID: {item}")
+                resolved.append(item)
+    return resolved
+
+
 def _items(value: str | None) -> list[str]:
     if not value:
         return []
@@ -499,10 +559,15 @@ def resolve_task_project_requirement_contract(
     related = _field_any(section, ("Related Requirements", "관련"))
     if not related:
         raise TaskContractProjectionError(f"TASK Related Requirements are missing: {task_id}")
-    if "~" in related:
-        raise TaskContractProjectionError(f"TASK Related Requirements must use explicit IDs: {task_id}")
-    requirement_ids = re.findall(r"\b(?:REQ|NFR|SEC|OPS)-\d{3}\b", related)
-    if not requirement_ids or len(requirement_ids) != len(set(requirement_ids)):
+    if task_id.startswith("TASK-R"):
+        requirement_ids = _related_requirement_ids(related)
+    else:
+        if "~" in related:
+            raise TaskContractProjectionError(f"TASK Related Requirements must use explicit IDs: {task_id}")
+        requirement_ids = re.findall(r"\b(?:REQ|NFR|SEC|OPS)-\d{3}\b", related)
+        if len(requirement_ids) != len(set(requirement_ids)):
+            raise TaskContractProjectionError(f"TASK Related Requirements are missing or duplicated: {task_id}")
+    if not requirement_ids:
         raise TaskContractProjectionError(f"TASK Related Requirements are missing or duplicated: {task_id}")
 
     definitions: dict[str, dict[str, str]] = {}
