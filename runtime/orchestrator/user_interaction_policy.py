@@ -89,6 +89,13 @@ class UserDecisionAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class TwoActionDecisionAssessment:
+    action: str
+    decision_type: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class AttentionDeliveryAssessment:
     eligible: bool
     delivery_class: str
@@ -114,6 +121,36 @@ def evaluate_user_decision(*, approval_coverage: ApprovalCoverageEvidence | None
             "dangerous reexecution lacks safe effect reconciliation",
         )
     return UserDecisionAssessment(False, "NONE", "existing approval coverage remains valid")
+
+
+def evaluate_two_action_user_decision(*, approval_coverage: ApprovalCoverageEvidence | None,
+                                      material_contract_change: bool, requested_risk_class: str,
+                                      requested_operation: str, dangerous_reexecution: bool,
+                                      final_dangerous_approval_granted: bool,
+                                      effect_reconciliation: str = "UNKNOWN") -> TwoActionDecisionAssessment:
+    """Adapt legacy decision semantics to a strict two-user-action Full Plan run.
+
+    Before the final dangerous-work approval, protected/risk work may request
+    that single remaining approval.  After it is granted, any uncovered or
+    stale work fails closed instead of creating a third user-decision point.
+    """
+    legacy = evaluate_user_decision(
+        approval_coverage=approval_coverage,
+        material_contract_change=material_contract_change,
+        requested_risk_class=requested_risk_class,
+        requested_operation=requested_operation,
+        dangerous_reexecution=dangerous_reexecution,
+        effect_reconciliation=effect_reconciliation,
+    )
+    if not legacy.required:
+        return TwoActionDecisionAssessment("CONTINUE", legacy.decision_type, legacy.reason)
+    if final_dangerous_approval_granted:
+        return TwoActionDecisionAssessment("FAIL_CLOSED", legacy.decision_type, legacy.reason)
+    if legacy.decision_type == "INITIAL_EXECUTION_APPROVAL":
+        return TwoActionDecisionAssessment("REQUEST_IMPLEMENTATION_APPROVAL", legacy.decision_type, legacy.reason)
+    if legacy.decision_type in {"RISK_ESCALATION", "AMBIGUOUS_DANGEROUS_EFFECT"}:
+        return TwoActionDecisionAssessment("REQUEST_DANGEROUS_APPROVAL", legacy.decision_type, legacy.reason)
+    return TwoActionDecisionAssessment("FAIL_CLOSED", legacy.decision_type, legacy.reason)
 
 
 def infer_delivery_class(event: Mapping[str, Any]) -> str:
