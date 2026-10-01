@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
+import runtime.orchestrator.user_interaction_policy as user_policy
 from runtime.orchestrator.user_interaction_policy import (
     ApprovalCoverageEvidence,
     classify_continuation_directive,
@@ -122,6 +123,36 @@ class UserDecisionPolicyTests(unittest.TestCase):
         self.assertFalse(out.required)
         self.assertEqual(out.decision_type, "NONE")
 
+    def test_two_action_policy_requests_dangerous_approval_before_final_approval(self) -> None:
+        self.assertTrue(hasattr(user_policy, "evaluate_two_action_user_decision"))
+        out = user_policy.evaluate_two_action_user_decision(
+            approval_coverage=coverage(), material_contract_change=False,
+            requested_risk_class="dangerous", requested_operation="PR_MERGE",
+            dangerous_reexecution=False, final_dangerous_approval_granted=False,
+        )
+        self.assertEqual(out.action, "REQUEST_DANGEROUS_APPROVAL")
+        self.assertEqual(out.decision_type, "RISK_ESCALATION")
+
+    def test_two_action_policy_fails_closed_instead_of_requesting_third_approval(self) -> None:
+        self.assertTrue(hasattr(user_policy, "evaluate_two_action_user_decision"))
+        out = user_policy.evaluate_two_action_user_decision(
+            approval_coverage=coverage(risks=("dangerous",), operations=("PR_MERGE",)),
+            material_contract_change=False,
+            requested_risk_class="dangerous", requested_operation="RUNTIME_CURRENT_SWITCH",
+            dangerous_reexecution=False, final_dangerous_approval_granted=True,
+        )
+        self.assertEqual(out.action, "FAIL_CLOSED")
+        self.assertEqual(out.decision_type, "RISK_ESCALATION")
+
+    def test_two_action_policy_preserves_legacy_risk_escalation_semantics(self) -> None:
+        legacy = evaluate_user_decision(
+            approval_coverage=coverage(), material_contract_change=False,
+            requested_risk_class="dangerous", requested_operation="PR_MERGE",
+            dangerous_reexecution=False,
+        )
+        self.assertTrue(legacy.required)
+        self.assertEqual(legacy.decision_type, "RISK_ESCALATION")
+
     def test_immediate_decision_attention_bypasses_delay(self) -> None:
         now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
         event = {"kind": "WAITING_APPROVAL", "delivery_class": "IMMEDIATE_DECISION",
@@ -192,7 +223,6 @@ class UserDecisionPolicyTests(unittest.TestCase):
                      "last_semantic_progress_at": running["last_semantic_progress_at"]}
         self.assertTrue(evaluate_attention_delivery(event, running, now=now).eligible)
         self.assertFalse(evaluate_attention_delivery(event, cancelled, now=now).eligible)
-
 
     def test_recovered_stall_and_resolved_decision_are_suppressed(self) -> None:
         created = datetime(2026, 9, 19, 8, 5, tzinfo=UTC)
