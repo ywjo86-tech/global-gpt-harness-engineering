@@ -770,6 +770,33 @@ class LVReviewTest(unittest.TestCase):
                 _assert_canonical_binding(root, manifest, canonical_state_override=override)
             historical.assert_not_called()
 
+    def test_preflight_attestation_preserves_canonical_state_override(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            package_root = base / "runs" / "project" / "gate" / "task"
+            source_root = package_root / "preflight"
+            source_root.mkdir(parents=True)
+            source = canonical_json_bytes({"schema_version": "orchestration.lv_preflight.evidence.v1"})
+            (source_root / "preflight.evidence.json").write_bytes(source)
+            (source_root / "preflight.evidence.sha256").write_text(_sha256(source), encoding="ascii")
+            (package_root / "package.manifest.json").write_bytes(canonical_json_bytes({}))
+            override = {"project_id": "SEALED-PROJECT"}
+
+            def reject_after_binding(*args: object, **kwargs: object) -> dict[str, object]:
+                self.assertIs(kwargs.get("canonical_state_override"), override)
+                raise LVReviewError("sentinel")
+
+            with patch("runtime.orchestrator.lv_review._preflight", side_effect=reject_after_binding):
+                result = publish_gate_preflight_attestation(
+                    RUN_ID,
+                    package_root=package_root,
+                    source_root=source_root,
+                    result_path=package_root / "worker.result.json",
+                    canonical_state_override=override,
+                )
+            self.assertEqual(result["status"], "REJECTED")
+            self.assertTrue(result["producer_contract_error"])
+
     def test_canonical_binding_allows_empty_owned_scope_for_exit_review(self) -> None:
         with TemporaryDirectory() as directory:
             root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
