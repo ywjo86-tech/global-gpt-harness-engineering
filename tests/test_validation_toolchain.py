@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,41 +20,24 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.focused[0][:4],('.venv/bin/python','-m','pytest','-q'))
 
     def test_explicit_pytest_profile_is_not_changed_by_active_external_venv(self):
-        with tempfile.TemporaryDirectory() as d:
-            from unittest.mock import patch
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
             root=Path(d)
-            external_root=Path(d).parent/'active-validation-venv'; external_root.mkdir(exist_ok=True)
-            active=external_root/'python'; active.write_text(''); active.chmod(0o755)
-            try:
-                with patch('runtime.orchestrator.validation_toolchain.sys.executable', str(active)), \
-                     patch('runtime.orchestrator.validation_toolchain.sys.prefix', str(external_root)), \
-                     patch('runtime.orchestrator.validation_toolchain.sys.base_prefix', '/usr'):
-                    plan=resolve_validation_commands(
-                        root,['tests/test_a.py'],allow_deferred=True,validation_profile='PYTEST_PROFILE'
-                    )
-                self.assertTrue(plan.deferred)
-                self.assertEqual(plan.profile_ids,('PYTEST_PROFILE',))
-                self.assertEqual(plan.focused[0],('.venv/bin/python','-m','pytest','-q','tests/test_a.py'))
-            finally:
-                active.unlink(missing_ok=True); external_root.rmdir()
+            with patch.dict(os.environ, {'VIRTUAL_ENV': e}):
+                plan=resolve_validation_commands(
+                    root,['tests/test_a.py'],allow_deferred=True,validation_profile='PYTEST_PROFILE'
+                )
+            self.assertTrue(plan.deferred)
+            self.assertEqual(plan.profile_ids,('PYTEST_PROFILE',))
+            self.assertEqual(plan.focused[0],('.venv/bin/python','-m','pytest','-q','tests/test_a.py'))
 
-    def test_active_approved_venv_can_resolve_python_scope_without_project_local_venv(self):
-        with tempfile.TemporaryDirectory() as d:
-            from unittest.mock import patch
+    def test_active_venv_is_not_implicit_python_validation_intent(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
             root=Path(d)
-            external_root=Path(d).parent/'approved-validation-venv'; external_root.mkdir(exist_ok=True)
-            active=external_root/'python'; active.write_text(''); active.chmod(0o755)
-            try:
-                with patch('runtime.orchestrator.validation_toolchain.sys.executable', str(active)), \
-                     patch('runtime.orchestrator.validation_toolchain.sys.prefix', str(external_root)), \
-                     patch('runtime.orchestrator.validation_toolchain.sys.base_prefix', '/usr'):
-                    plan=resolve_validation_commands(root,['tests/test_a.py'],allow_deferred=False)
-                self.assertFalse(plan.deferred)
-                self.assertEqual(plan.profile_ids,('PYTHON_UNITTEST_EXTERNAL',))
-                self.assertEqual(plan.focused[0],(str(active),'-m','unittest','-v','tests.test_a'))
-                self.assertEqual(plan.full[0],(str(active),'-m','unittest','discover','-s','tests','-v'))
-            finally:
-                active.unlink(missing_ok=True); external_root.rmdir()
+            with patch.dict(os.environ, {'VIRTUAL_ENV': e}):
+                with self.assertRaisesRegex(ValidationToolchainError,'project venv or approved external interpreter'):
+                    resolve_validation_commands(root,['tests/test_a.py'],allow_deferred=False)
 
     def test_explicit_external_python_is_exactly_bound_and_must_be_outside_project(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
@@ -79,25 +63,25 @@ class ValidationToolchainTests(unittest.TestCase):
 
     def test_explicit_pytest_profile_is_deterministic_across_python_environments(self):
         from unittest.mock import patch
+        expected={
+            "profile_ids":["PYTEST_PROFILE"],
+            "focused":[[".venv/bin/python","-m","pytest","-q","tests/test_a.py"]],
+            "full":[[".venv/bin/python","-m","pytest","-q"]],
+            "compile":[[".venv/bin/python","-m","compileall","-q","tests/test_a.py"]],
+            "deferred":True,
+        }
         with tempfile.TemporaryDirectory() as d:
-            root=Path(d)
-            system=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-            (root/".venv/bin").mkdir(parents=True); (root/".venv/bin/python").write_text("")
-            project=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-            with tempfile.TemporaryDirectory() as e:
-                active=Path(e)/"bin/python"; active.parent.mkdir(); active.write_text(""); active.chmod(0o755)
-                with patch("runtime.orchestrator.validation_toolchain.sys.executable",str(active)), patch("runtime.orchestrator.validation_toolchain.sys.prefix",str(active.parent.parent)), patch("runtime.orchestrator.validation_toolchain.sys.base_prefix","/usr"):
-                    temporary=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-            expected={
-                "profile_ids":["PYTEST_PROFILE"],
-                "focused":[[".venv/bin/python","-m","pytest","-q","tests/test_a.py"]],
-                "full":[[".venv/bin/python","-m","pytest","-q"]],
-                "compile":[[".venv/bin/python","-m","compileall","-q","tests/test_a.py"]],
-                "deferred":True,
-            }
-            self.assertEqual(system.to_dict(),expected)
-            self.assertEqual(project.to_dict(),expected)
-            self.assertEqual(temporary.to_dict(),expected)
+            system=resolve_validation_commands(Path(d),["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+        with tempfile.TemporaryDirectory() as d:
+            project_root=Path(d); (project_root/".venv/bin").mkdir(parents=True); (project_root/".venv/bin/python").write_text("")
+            project=resolve_validation_commands(project_root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
+            temporary_root=Path(d)
+            with patch.dict(os.environ, {"VIRTUAL_ENV": e}):
+                temporary=resolve_validation_commands(temporary_root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+        self.assertEqual(system.to_dict(),expected)
+        self.assertEqual(project.to_dict(),expected)
+        self.assertEqual(temporary.to_dict(),expected)
 
     def test_explicit_pytest_profile_respects_non_deferred_intent(self):
         with tempfile.TemporaryDirectory() as d:
@@ -195,9 +179,11 @@ class ValidationToolchainTests(unittest.TestCase):
     def test_sealed_deferred_profiles_must_resolve_without_expansion(self):
         validate_profile_resolution(['ANDROID_GRADLE_BOOTSTRAP','NODE_PACKAGE_MANIFEST'],['ANDROID_GRADLE_WRAPPER','NODE_NPM'])
         validate_profile_resolution(['PYTEST_PROFILE'],['PYTEST_PROFILE'])
+        validate_profile_resolution(['EXTERNAL_UNITTEST_PROFILE'],['EXTERNAL_UNITTEST_PROFILE'])
+        with self.assertRaises(ValidationToolchainError):
+            validate_profile_resolution(['EXTERNAL_UNITTEST_PROFILE'],['PYTHON_UNITTEST_EXTERNAL'])
         with self.assertRaises(ValidationToolchainError):
             validate_profile_resolution(['ANDROID_GRADLE_BOOTSTRAP'],['ANDROID_GRADLE_WRAPPER','NODE_NPM'])
-
 
     def test_documentation_only_scope_does_not_inherit_project_toolchain(self):
         with tempfile.TemporaryDirectory() as d:

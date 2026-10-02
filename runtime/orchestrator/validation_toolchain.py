@@ -4,7 +4,6 @@ import json
 import os
 import re
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
@@ -221,10 +220,6 @@ def resolve_validation_commands(
             if not resolved.is_file() or resolved.stat().st_mode & 0o022:
                 raise ValidationToolchainError("approved external Python interpreter is unsafe")
             external_interpreter = candidate.absolute()
-        elif not project_interpreter.is_file() and not explicit_pytest:
-            active_python = Path(sys.executable)
-            if sys.prefix != sys.base_prefix and active_python.is_file() and os.access(active_python, os.X_OK):
-                external_interpreter = active_python.absolute()
 
         if py_tests:
             py_owned = [path for path in owned_files if path.endswith(".py")]
