@@ -289,7 +289,7 @@ def resolve_validation_commands(
         ):
             profiles.append("PYTHON_PROJECT_EVIDENCE")
             pytest_command = [".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
-            focused.append(tuple(pytest_command))
+            focused_command = list(pytest_command)
             full_command = list(pytest_command)
             if defer_evidence_manifest_integrity:
                 evidence_test = root / "tests" / "evidence" / "test_manifest.py"
@@ -299,7 +299,9 @@ def resolve_validation_commands(
                     or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
                 ):
                     raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                focused_command.append("--ignore=tests/evidence/test_manifest.py")
                 full_command.append("--ignore=tests/evidence/test_manifest.py")
+            focused.append(tuple(focused_command))
             full.append(tuple(full_command))
             compile_target = "src" if source_root.is_dir() and not source_root.is_symlink() else "tests"
             compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", compile_target))

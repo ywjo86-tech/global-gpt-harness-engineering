@@ -186,7 +186,7 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.profile_ids,('PYTHON_PROJECT_EVIDENCE',))
             self.assertEqual(
                 plan.focused[0],
-                ('.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider'),
+                ('.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider','--ignore=tests/evidence/test_manifest.py'),
             )
             self.assertEqual(
                 plan.full[0],
