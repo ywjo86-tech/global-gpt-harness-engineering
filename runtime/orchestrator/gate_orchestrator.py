@@ -1778,8 +1778,12 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if prior:
             package_root = state.get("package_root")
             if isinstance(package_root, Path):
-                published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json", project_root=root,
-                                  allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")))
+                published = preflight_run(
+                    run_id, package_root=package_root, result_path=package_root / "worker.result.json",
+                    project_root=root,
+                    allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")),
+                    canonical_state_override=_.get("canonical_state_override"),
+                )
                 if isinstance(published.get("status"), dict) and published["status"].get("status") == "READY":
                     state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
             return prior
@@ -1791,8 +1795,12 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         # create a smaller gate-local READY document first: that would make
         # preflight_run treat it as an idempotent result and drop interpreter
         # fingerprints from the persisted evidence.
-        published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json", project_root=root,
-                                  allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")))
+        published = preflight_run(
+            run_id, package_root=package_root, result_path=package_root / "worker.result.json",
+            project_root=root,
+            allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")),
+            canonical_state_override=_.get("canonical_state_override"),
+        )
         if published.get("status") != "READY" and not (isinstance(published.get("status"), dict) and published["status"].get("status") == "READY"):
             raise GateControllerError(f"PREFLIGHT publication failed: {published}")
         state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
@@ -2067,6 +2075,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             result_path=Path(state["worker_result_path"]),
             review_request_path=review_request_path,
             project_root=root,
+            canonical_state_override=context.get("canonical_state_override"),
         )
         if publication.get("status") != "READY":
             raise GateControllerError(f"REVIEW preflight publication blocked: {publication}")
@@ -2082,6 +2091,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             package_root=Path(state["package_root"]),
             result_path=Path(state["worker_result_path"]), results_root=review_root,
             project_root=root,
+            canonical_state_override=context.get("canonical_state_override"),
         )
         if review_result.get("status") not in {"PASS", "FAIL"}:
             raise GateControllerError(f"REVIEW blocked: {review_result}")

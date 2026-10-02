@@ -550,11 +550,29 @@ def _project_task_execution_binding(
     return projected
 
 
-def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
+def _assert_canonical_binding(
+    root: Path, manifest: dict[str, Any], *,
+    canonical_state_override: Mapping[str, Any] | None = None,
+) -> None:
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVReviewError("project contract mapping is required")
-    state = evaluate_canonical_state(mapping)
+    state = (dict(canonical_state_override)
+             if canonical_state_override is not None else evaluate_canonical_state(mapping))
+    if canonical_state_override is not None:
+        if state.get("project_id") != mapping.project_id:
+            raise LVReviewError("canonical binding mismatch: project_id")
+        canonical_sha = getattr(mapping, "canonical_sha256", None)
+        if isinstance(canonical_sha, str) and state.get("plan_sha256") != canonical_sha:
+            raise LVReviewError("canonical binding mismatch: canonical_plan_sha256")
+        canonical_source = getattr(mapping, "canonical_source", None)
+        if isinstance(canonical_source, Path):
+            try:
+                selected = Path(state.get("selected_source", "")).resolve()
+            except (OSError, TypeError, ValueError) as exc:
+                raise LVReviewError("canonical binding mismatch: canonical_plan_path") from exc
+            if selected != canonical_source.resolve():
+                raise LVReviewError("canonical binding mismatch: canonical_plan_path")
     ledger = _ledger_binding(root, mapping, state)
     state = _project_task_execution_binding(root, mapping, state, manifest)
     transition = manifest.get("production_transition")
@@ -711,6 +729,7 @@ def _preflight(
     review_attempt: int = 1,
     project_root: Path | None = None,
     allow_safe_descendant_source: bool = False,
+    canonical_state_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _safe_run_id(run_id)
     package_root = package_root or _package_root(run_id)
@@ -718,7 +737,7 @@ def _preflight(
     project_id = str(manifest.get("project_id", ""))
     root = (_validate_execution_root(project_root, project_id)
             if project_root is not None else _project_root_for(project_id))
-    _assert_canonical_binding(root, manifest)
+    _assert_canonical_binding(root, manifest, canonical_state_override=canonical_state_override)
     _assert_source_snapshot(root, manifest, source, require_clean=not allow_worker_changes,
                             allow_safe_descendant_source=allow_safe_descendant_source)
     result_path = result_path or _result_path(run_id)
@@ -833,7 +852,8 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None,
-                  project_root: Path | None = None, allow_safe_descendant_source: bool = False) -> dict[str, Any]:
+                  project_root: Path | None = None, allow_safe_descendant_source: bool = False,
+                  canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if project_root is not None and package_root is not None:
         try:
             package_manifest = _canonical_json(Path(package_root) / "package.manifest.json")
@@ -862,7 +882,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
     try:
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
                              review_attempt=1, project_root=project_root,
-                             allow_safe_descendant_source=allow_safe_descendant_source)
+                             allow_safe_descendant_source=allow_safe_descendant_source,
+                             canonical_state_override=canonical_state_override)
         # A package-scoped invocation must seal into that package's namespace;
         # falling back to the run-root preflight would collide with a prior LV.
         if package_root is not None:
@@ -1186,7 +1207,8 @@ def _worker_request_path_for_result(package_root: Path, worker_payload: Mapping[
 
 def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, source_root: Path,
                                           result_path: Path, review_request_path: Path,
-                                          project_root: Path | None = None) -> dict[str, Any]:
+                                          project_root: Path | None = None,
+                                          canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Resolve a derived publication without ever treating legacy as READY."""
     try:
         request_raw = review_request_path.read_bytes()
@@ -1240,7 +1262,9 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
             raise LVReviewError("production review request binding is invalid")
         execution_root = (_validate_execution_root(project_root, str(manifest["project_id"]))
                           if project_root is not None else _project_root_for(str(manifest["project_id"])))
-        _assert_canonical_binding(execution_root, manifest)
+        _assert_canonical_binding(
+            execution_root, manifest, canonical_state_override=canonical_state_override,
+        )
         source_raw = _read_publication_bytes(source_root)
         source_evidence = json.loads(source_raw["preflight.evidence.json"])
         source_status = json.loads(source_raw["preflight.status"])
@@ -2593,6 +2617,7 @@ def review_run(
     prior_review_contract: dict[str, str] | None = None,
     prior_attempt_contract: dict[str, str] | None = None,
     project_root: Path | None = None,
+    canonical_state_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
         review_attempt = parse_review_attempt(attempt)
@@ -2609,6 +2634,7 @@ def review_run(
             check_result_absent=False,
             review_attempt=review_attempt,
             project_root=project_root,
+            canonical_state_override=canonical_state_override,
         )
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
