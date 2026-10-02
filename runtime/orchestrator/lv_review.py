@@ -1467,16 +1467,26 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
     if payload.get("completion_mode") == "READ_ONLY_EXECUTION":
         authority = payload.get("verification_authority")
         executor = payload.get("executor")
+        commands = payload.get("commands")
+        worker = commands.get("worker") if isinstance(commands, Mapping) else None
+        command = worker.get("command") if isinstance(worker, Mapping) else None
+        provider = authority.get("provider") if isinstance(authority, Mapping) else None
+        executor_identity = executor.get("identity") if isinstance(executor, Mapping) else None
+        valid_executor_identity = (
+            executor_identity == "provider-router-production"
+            or (executor_identity == "nvidia-router-production" and provider == "nvidia")
+        )
         if (
             not isinstance(authority, Mapping)
             or authority.get("execution_obligation") != "READ_ONLY_EXECUTION"
-            or authority.get("provider") != "nvidia"
+            or not isinstance(provider, str) or not provider
             or not isinstance(authority.get("router_decision_digest"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", authority["router_decision_digest"])
             or not isinstance(authority.get("canonical_authority_binding_digest"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", authority["canonical_authority_binding_digest"])
-            or not isinstance(executor, Mapping)
-            or executor.get("identity") != "nvidia-router-production"
+            or not valid_executor_identity
+            or not isinstance(command, list) or len(command) < 3
+            or command[0] != "provider-read" or command[1] != provider
             or payload.get("changed_files") != []
             or payload.get("governed_effect_evidence") != []
         ):
