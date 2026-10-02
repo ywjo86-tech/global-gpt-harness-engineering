@@ -287,11 +287,15 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             focused={"exit_code":1,"timeout":False,"test_exit_semantics":"COLLECTION_FAILED",
                      "collection_failure_phase":"PROJECT_MODULE_IMPORT",
                      "import_failure_family":"PROJECT_LOCAL_MODULE",
-                     "dependency_presence_class":"MISSING"}
+                     "dependency_presence_class":"MISSING",
+                     "_transient_validation_feedback":
+                         "ERROR: test_x | TRACE tests/test_x.py line 1 | "
+                         "LVPreviewValidationError: mapping mismatch | api_key=secret-material-value"}
             passing={"exit_code":0,"timeout":False}
-            probes=iter((focused, focused, passing, passing, passing, focused, focused))
+            probes=iter((dict(focused), dict(focused), dict(passing), dict(passing), dict(passing),
+                         dict(focused), dict(focused)))
             with patch("runtime.orchestrator.production_worker_executor._command",
-                       side_effect=lambda *args, **kwargs: next(probes)):
+                       side_effect=lambda *args, **kwargs: dict(next(probes))):
                 with self.assertRaises(ProductionWorkerError):
                     execute_production_worker(request,executor=runner)
             process=json.loads((root/"out/executor.process.json").read_text())
@@ -299,6 +303,10 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             self.assertEqual(process["import_failure_family"], "PROJECT_LOCAL_MODULE")
             self.assertEqual(process["dependency_presence_class"], "MISSING")
             self.assertEqual(process["focused_process_exit_class"], "NONZERO")
+            failure = process["validation_failure_evidence"]
+            self.assertEqual(failure["failure_step"], "FOCUSED_TEST_EXECUTION")
+            self.assertIn("LVPreviewValidationError", json.dumps(failure))
+            self.assertNotIn("secret-material-value", json.dumps(failure))
             self.assertFalse(any(key in process for key in ("focused_command", "focused_output", "focused_error")))
     def test_search_provenance_distinguishes_filesystem_and_stdin(self):
         with tempfile.TemporaryDirectory() as directory:
