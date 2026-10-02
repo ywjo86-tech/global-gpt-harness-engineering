@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -172,6 +173,102 @@ def parse_lv_definition(
     )
 
 
+def _validate_sealed_project_authority_state(
+    root: Path,
+    mapping: Any,
+    gate_id: str,
+    lv_id: str,
+    canonical_state: Mapping[str, Any],
+) -> None:
+    from .gate_approval import GateApprovalError, load_approval_evidence, validate_approval_evidence
+    if canonical_state.get("project_id") != mapping.project_id:
+        raise LVPreviewValidationError("sealed project authority project binding mismatch")
+    if canonical_state.get("state") != "GATE1_RESUME_READY":
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if canonical_state.get("transition_authorized") is not True or canonical_state.get("gate_1_started") is not True:
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if canonical_state.get("gate_id") != gate_id or canonical_state.get("active_scope") != [lv_id]:
+        raise LVPreviewValidationError("sealed project authority Gate/LV binding mismatch")
+    approval_id = canonical_state.get("approval_id")
+    record_hash = canonical_state.get("approval_record_hash")
+    requirements_sha256 = canonical_state.get("requirements_sha256")
+    head = canonical_state.get("head")
+    branch = canonical_state.get("branch")
+    checkpoint = canonical_state.get("checkpoint_commit")
+    if not isinstance(approval_id, str) or not approval_id:
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if not isinstance(record_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", record_hash):
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if not isinstance(requirements_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", requirements_sha256):
+        raise LVPreviewValidationError("sealed project authority requirements binding is malformed")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head) or checkpoint != head:
+        raise LVPreviewValidationError("sealed project authority HEAD binding is malformed")
+    if not isinstance(branch, str) or not branch:
+        raise LVPreviewValidationError("sealed project authority branch binding is malformed")
+
+    current_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    current_branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if head != current_head or branch != current_branch:
+        raise LVPreviewValidationError("sealed project authority source binding drift")
+
+    evidence_value = canonical_state.get("approval_evidence_path")
+    if not isinstance(evidence_value, (str, os.PathLike)):
+        raise LVPreviewValidationError("sealed project authority approval evidence path is missing")
+    evidence_path = Path(evidence_value)
+    if not evidence_path.is_absolute() or evidence_path.is_symlink() or not evidence_path.is_file():
+        raise LVPreviewValidationError("sealed project authority approval evidence path is unsafe")
+    parts = evidence_path.resolve().parts
+    expected_tail = ("_workspace", "global-gate", mapping.project_id, "approval")
+    if len(parts) < 5 or tuple(parts[-5:-1]) != expected_tail:
+        raise LVPreviewValidationError("sealed project authority approval evidence namespace mismatch")
+
+    projection_path = getattr(mapping, "task_lv_projection_path", None)
+    projection_sha = getattr(mapping, "task_lv_projection_sha256", None)
+    if (
+        projection_path is None
+        or projection_sha is None
+        or projection_path.is_symlink()
+        or not projection_path.is_file()
+        or sha256_file(projection_path) != projection_sha
+    ):
+        raise LVPreviewValidationError("sealed project authority TASK projection binding is invalid")
+    try:
+        projection = json.loads(projection_path.read_text(encoding="utf-8"))
+        projected = resolve_task_lv_projection(
+            mapping.canonical_source.read_text(encoding="utf-8"),
+            projection,
+            project_id=mapping.project_id,
+            canonical_plan_sha256=mapping.canonical_sha256,
+            gate_id=gate_id,
+        )
+        lv_order = [item["lv_id"] for item in projected]
+        owned_files_by_lv = {item["lv_id"]: list(item["owned_files"]) for item in projected}
+        envelope = load_approval_evidence(evidence_path)
+        payload = validate_approval_evidence(
+            envelope,
+            project_id=mapping.project_id,
+            gate_id=gate_id,
+            requirements_sha256=requirements_sha256,
+            plan_sha256=mapping.canonical_sha256,
+            branch=branch,
+            head=head,
+            lv_order=lv_order,
+            owned_files_by_lv=owned_files_by_lv,
+        )
+    except (GateApprovalError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise LVPreviewValidationError(f"sealed project authority approval validation failed: {exc}") from exc
+    if payload.get("approval_id") != approval_id or envelope.get("record_hash") != record_hash:
+        raise LVPreviewValidationError("sealed project authority approval identity mismatch")
+    if canonical_state.get("owned_files") != owned_files_by_lv.get(lv_id):
+        raise LVPreviewValidationError("sealed project authority owned scope mismatch")
+
+
 def preview_lv_read_only(
     project_root: str | Path,
     gate_id: str,
@@ -228,17 +325,7 @@ def preview_lv_read_only(
         raise LVPreviewValidationError("canonical implementation plan hash mismatch")
 
     if sealed_project_authority:
-        approval_record_hash = canonical_state.get("approval_record_hash")
-        if (
-            canonical_state.get("state") != "GATE1_RESUME_READY"
-            or canonical_state.get("transition_authorized") is not True
-            or canonical_state.get("gate_1_started") is not True
-            or not isinstance(canonical_state.get("approval_id"), str)
-            or not canonical_state["approval_id"]
-            or not isinstance(approval_record_hash, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", approval_record_hash)
-        ):
-            raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+        _validate_sealed_project_authority_state(root, mapping, gate_id, lv_id, canonical_state)
         inspection = {
             "business_gate_state": {
                 "namespace": "business_gate_state",

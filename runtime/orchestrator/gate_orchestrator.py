@@ -1103,8 +1103,13 @@ def _sealed_project_gate_authority(
         raise GateOrchestrationError("requested LV is outside sealed Gate approval scope")
     return auth, {
         "state": "GATE1_RESUME_READY",
+        "project_id": plan.project_id,
         "selected_source": mapping.canonical_source,
         "checkpoint_commit": head,
+        "head": head,
+        "branch": branch,
+        "requirements_sha256": requirements_sha256,
+        "approval_evidence_path": str(Path(approval_evidence).resolve()),
         "transition_authorized": True,
         "gate_1_started": True,
         "gate_id": plan.gate_id,
