@@ -139,7 +139,20 @@ class GateOrchestratorTests(unittest.TestCase):
             gate_state_ledger_path=self.root / "docs" / "harness" / "d15-gate-anchor.json",
         )
         anchor.gate_state_ledger_path.parent.mkdir(parents=True, exist_ok=True)
-        anchor.gate_state_ledger_path.write_text("{}")
+        same_project_ledger = {
+            "schema_version": "orchestration.canonical-gate-state.v2",
+            "project_id": self.plan.project_id,
+            "gate_id": "GATE-1",
+            "phase": "TEST",
+            "plan_sha256": self.plan_hash,
+            "gate_status": "READY_FOR_APPROVAL",
+            "closure_status": "CLOSED",
+            "approval_record_hash": None,
+        }
+        anchor.gate_state_ledger_path.write_text(
+            "# Gate State Ledger\n\n```json\n" + json.dumps(same_project_ledger, indent=2) + "\n```\n",
+            encoding="utf-8",
+        )
         envelope = json.loads(self.approval_evidence("sealed-project-gate.json").read_text())
         with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
              patch("runtime.orchestrator.gate_orchestrator.evaluate_canonical_state",
@@ -156,6 +169,60 @@ class GateOrchestratorTests(unittest.TestCase):
         self.assertEqual(state["approval_id"], "APR-G1-TEST")
         self.assertEqual(state["approval_record_hash"], envelope["record_hash"])
         self.assertEqual(state["ledger_path"], "docs/harness/d15-gate-anchor.json")
+
+    def test_sealed_project_gate_authority_accepts_only_committed_foreign_v2_anchor(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import _sealed_project_gate_authority
+        anchor = SimpleNamespace(
+            project_id=self.plan.project_id,
+            canonical_source=self.plan_path,
+            canonical_sha256=self.plan_hash,
+            task_lv_projection_path=self.root / "docs" / "harness" / "task-lv.json",
+            gate_state_ledger_path=self.root / "docs" / "GATE_STATE.md",
+        )
+        anchor.task_lv_projection_path.parent.mkdir(parents=True, exist_ok=True)
+        anchor.task_lv_projection_path.write_text("{}", encoding="utf-8")
+        anchor.gate_state_ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger = {
+            "schema_version": "orchestration.canonical-gate-state.v2",
+            "project_id": "MULTI_PROVIDER_FOUNDATION",
+            "gate_id": "GATE-010",
+            "phase": "FINAL_CLOSURE",
+            "plan_sha256": "d" * 64,
+            "gate_status": "READY_FOR_TRANSITION",
+            "closure_status": "CLOSED",
+            "approval_record_hash": "e" * 64,
+        }
+        anchor.gate_state_ledger_path.write_text(
+            "# Gate State Ledger\n\n```json\n" + json.dumps(ledger, indent=2) + "\n```\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "-C", str(self.root), "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "docs/GATE_STATE.md"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "test anchor"], check=True, capture_output=True)
+        approval = self.approval_evidence("foreign-anchor-approval.json")
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
+             patch("runtime.orchestrator.gate_orchestrator.evaluate_canonical_state") as legacy:
+            auth, state = _sealed_project_gate_authority(
+                self.root, self.plan, "G1-LV3-1",
+                approval_evidence=approval, requirements_sha256="b" * 64,
+                branch="main", head="c" * 40, full_plan_opt_in=True,
+                project_final_validation=True,
+            )
+        legacy.assert_not_called()
+        self.assertEqual(auth.authorization_id, "APR-G1-TEST")
+        self.assertEqual(state["ledger_path"], "docs/GATE_STATE.md")
+        anchor.gate_state_ledger_path.write_text(anchor.gate_state_ledger_path.read_text() + "\n")
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
+             self.assertRaisesRegex(GateOrchestrationError, "not committed at HEAD"):
+            _sealed_project_gate_authority(
+                self.root, self.plan, "G1-LV3-1",
+                approval_evidence=approval, requirements_sha256="b" * 64,
+                branch="main", head="c" * 40, full_plan_opt_in=True,
+                project_final_validation=True,
+            )
 
     def test_project_requirement_full_plan_never_calls_legacy_authorization_loader(self) -> None:
         from runtime.orchestrator.gate_orchestrator import execute_gate

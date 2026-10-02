@@ -13,7 +13,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, MutableMapping, Sequence
 from types import SimpleNamespace
 
-from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state
+from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state, _ledger_payload
+from .canonical_transition import validate_canonical_gate_state
 from .task_contract_compat import (
     analyze_task_stage_gate_contract, compatibility_block_reason, resolve_task_lv_projection,
     resolve_read_only_task_gate, resolve_task_project_requirement_contract,
@@ -1009,6 +1010,63 @@ def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode:
     return auth
 
 
+def _inactive_project_gate_anchor(
+    root: Path, mapping: Any, plan: GatePlan,
+) -> dict[str, Any]:
+    """Validate one committed Gate ledger without borrowing foreign execution authority."""
+    ledger_path = mapping.gate_state_ledger_path
+    if ledger_path is None or ledger_path.is_symlink() or not ledger_path.is_file():
+        raise GateOrchestrationError("sealed project Gate authority anchor is missing or unsafe")
+    try:
+        relative = ledger_path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError as exc:
+        raise GateOrchestrationError("sealed project Gate authority anchor escapes project root") from exc
+    try:
+        payload = _ledger_payload(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise GateOrchestrationError("sealed project Gate authority anchor is malformed") from exc
+
+    ledger_project_id = str(payload.get("project_id") or "")
+    if ledger_project_id == plan.project_id:
+        anchor = evaluate_canonical_state(mapping)
+        if anchor.get("state") != "GATE1_APPROVAL_READY" or anchor.get("transition_authorized") is not False:
+            raise GateOrchestrationError("sealed project Gate authority requires an inactive canonical anchor")
+        return anchor
+
+    ledger_gate_id = str(payload.get("gate_id") or "")
+    if (
+        payload.get("schema_version") != "orchestration.canonical-gate-state.v2"
+        or not _PROJECT_ID.fullmatch(ledger_project_id)
+        or not _GATE_ID.fullmatch(ledger_gate_id)
+    ):
+        raise GateOrchestrationError("sealed project Gate authority foreign anchor is invalid")
+    try:
+        validate_canonical_gate_state(
+            payload,
+            project_id=ledger_project_id,
+            gate_id=ledger_gate_id,
+            phase=str(payload.get("phase") or ""),
+            plan_sha256=str(payload.get("plan_sha256") or ""),
+            approval_record_hash=payload.get("approval_record_hash"),
+        )
+    except ValueError as exc:
+        raise GateOrchestrationError("sealed project Gate authority foreign anchor is invalid") from exc
+
+    committed = subprocess.run(
+        ["git", "-C", str(root), "show", f"HEAD:{relative}"],
+        capture_output=True, check=False, timeout=30,
+    )
+    if committed.returncode != 0 or committed.stdout != ledger_path.read_bytes():
+        raise GateOrchestrationError("sealed project Gate authority foreign anchor is not committed at HEAD")
+    return {
+        "state": "HISTORICAL_FOREIGN_GATE_ANCHOR",
+        "transition_authorized": False,
+        "historical_project_id": ledger_project_id,
+        "historical_gate_id": ledger_gate_id,
+        "ledger_path": relative,
+    }
+
+
 def _sealed_project_gate_authority(
     project_root: str | Path, plan: GatePlan, lv_id: str, *,
     approval_evidence: str | Path, requirements_sha256: str, branch: str, head: str,
@@ -1026,12 +1084,8 @@ def _sealed_project_gate_authority(
         raise GateOrchestrationError("sealed project Gate authority requires TASK projection authority")
     if mapping.project_id != plan.project_id or mapping.canonical_sha256 != plan.canonical_plan_sha256:
         raise GateOrchestrationError("sealed project Gate authority mapping mismatch")
-    anchor = evaluate_canonical_state(mapping)
-    if anchor.get("state") != "GATE1_APPROVAL_READY" or anchor.get("transition_authorized") is not False:
-        raise GateOrchestrationError("sealed project Gate authority requires an inactive canonical anchor")
+    anchor = _inactive_project_gate_anchor(root, mapping, plan)
     ledger_path = mapping.gate_state_ledger_path
-    if ledger_path is None or ledger_path.is_symlink() or not ledger_path.is_file():
-        raise GateOrchestrationError("sealed project Gate authority anchor is missing or unsafe")
 
     envelope = load_approval_evidence(approval_evidence)
     payload = validate_approval_evidence(
