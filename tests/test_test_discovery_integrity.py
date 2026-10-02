@@ -34,10 +34,10 @@ class TestDiscoveryIntegrityTest(unittest.TestCase):
     def test_lv_preview_retains_exact_original_test_methods_once(self) -> None:
         module = importlib.import_module("tests.test_lv_preview")
         names = unittest.TestLoader().getTestCaseNames(module.LVPreviewTest)
-        self.assertEqual(len(names), 13)
+        self.assertEqual(len(names), 14)
         suite = unittest.TestLoader().loadTestsFromTestCase(module.LVPreviewTest)
         ids = [case.id() for case in _flatten(suite)]
-        self.assertEqual(len(ids), 13)
+        self.assertEqual(len(ids), 14)
         self.assertEqual(len(ids), len(set(ids)))
 
 
