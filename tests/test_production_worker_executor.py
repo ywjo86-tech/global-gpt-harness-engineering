@@ -21,6 +21,7 @@ from runtime.orchestrator.production_worker_executor import (
     _search_provenance, _search_record_matches,
     _independent_verification_steps,
     _independent_verification_provenance, _independent_verification_failure,
+    _bounded_validation_failure_evidence,
     _focused_execution_metadata, _sealed_external_validation_python,
     _validation_command_env,
     _test_runner_metadata, _bounded_validation_feedback,
@@ -166,6 +167,40 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
         self.assertEqual(steps[1]["verification_step_status"], "BLOCK")
         self.assertEqual(steps[1]["verification_step_failure_category"], "COMMAND_NONZERO")
         self.assertNotIn("command", steps[1])
+
+    def test_validation_failure_evidence_is_bounded_redacted_and_stage_bound(self):
+        valid = {"exit_code": 0, "timeout": False}
+        commands = {
+            "focused_test": {"exit_code": 1, "timeout": False},
+            "full_regression": valid,
+            "compile_import": valid,
+            "git_diff_check": valid,
+        }
+        evidence = _bounded_validation_failure_evidence(
+            commands,
+            [
+                "ERROR: test_case | TRACE tests/test_x.py line 7 | AssertionError: mismatch | api_key=secret-material-value",
+                "ERROR: test_case | TRACE tests/test_x.py line 7 | AssertionError: mismatch | api_key=secret-material-value",
+            ],
+        )
+        self.assertEqual(evidence["schema_version"], "orchestration.validation-failure-evidence.v1")
+        self.assertEqual(evidence["failure_step"], "FOCUSED_TEST_EXECUTION")
+        self.assertEqual(evidence["failure_category"], "NONZERO_EXIT")
+        self.assertEqual(evidence["exception_bucket"], "PROCESS")
+        serialized = json.dumps(evidence)
+        self.assertIn("TRACE tests/test_x.py line 7", serialized)
+        self.assertNotIn("secret-material-value", serialized)
+        self.assertLessEqual(sum(len(item) for item in evidence["feedback"]), 4096)
+
+    def test_validation_failure_evidence_is_absent_on_pass(self):
+        valid = {"exit_code": 0, "timeout": False}
+        commands = {
+            "focused_test": valid,
+            "full_regression": valid,
+            "compile_import": valid,
+            "git_diff_check": valid,
+        }
+        self.assertEqual(_bounded_validation_failure_evidence(commands, ["unused"]), {})
 
     def test_issue060_independent_verification_failure_taxonomy_is_bounded(self):
         valid = {"exit_code": 0, "timeout": False}

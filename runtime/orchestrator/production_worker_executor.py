@@ -2440,6 +2440,37 @@ def _independent_verification_provenance(commands: Mapping[str, Any]) -> dict[st
     }
 
 
+def _bounded_validation_failure_evidence(
+    commands: Mapping[str, Any], feedback: Sequence[str],
+) -> dict[str, Any]:
+    """Persist only bounded, redacted validation diagnostics for failed verification."""
+    provenance = _independent_verification_provenance(commands)
+    if provenance["worker_verification_failure_step"] == "NONE":
+        return {}
+    selected: list[str] = []
+    remaining = MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS
+    for raw in feedback:
+        item = _redact(str(raw)).strip()
+        if not item or item in selected:
+            continue
+        bounded = item[:remaining]
+        if not bounded:
+            break
+        selected.append(bounded)
+        remaining -= len(bounded)
+        if remaining <= 0:
+            break
+    if not selected:
+        selected = ["validation command failed without classified exception text"]
+    return {
+        "schema_version": "orchestration.validation-failure-evidence.v1",
+        "failure_step": provenance["worker_verification_failure_step"],
+        "failure_category": provenance["worker_verification_failure_category"],
+        "exception_bucket": provenance["worker_verification_exception_bucket"],
+        "feedback": selected,
+    }
+
+
 def _provider_action_candidate_focused_validator(
     *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
 ) -> Callable[[Mapping[str, Any]], str]:
@@ -3570,6 +3601,11 @@ def execute_production_worker(request: WorkerRequest, *,
     process_evidence.update(_independent_verification_metadata(commands, len(request.task.validation_criteria)))
     process_evidence["independent_verification_steps"] = _independent_verification_steps(commands)
     process_evidence.update(_independent_verification_provenance(commands))
+    failure_evidence = _bounded_validation_failure_evidence(commands, validation_feedback)
+    if failure_evidence:
+        process_evidence["validation_failure_evidence"] = failure_evidence
+    else:
+        process_evidence.pop("validation_failure_evidence", None)
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     validation_events = ["VALIDATION_STARTED"]
     validation_events.extend("VALIDATION_REMEDIATION_COMPLETED" for _ in range(validation_remediation_attempts))
