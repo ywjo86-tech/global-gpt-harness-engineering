@@ -77,6 +77,7 @@ class LVReviewTest(unittest.TestCase):
             (package / "provider-action-proposal.json").write_text("{}\n", encoding="utf-8")
             (package / "provider-action-effects").mkdir()
             (package / "provider-action-response-evidence").mkdir()
+            (package / "validation-remediation").mkdir()
             _assert_package(package, RUN_ID)
 
             effects = package / "provider-action-effects"
@@ -95,9 +96,13 @@ class LVReviewTest(unittest.TestCase):
             ledger.mkdir()
             evidence = ledger / "exec-1.json"
             evidence.write_text("first", encoding="utf-8")
+            remediation = root / "validation-remediation"
+            remediation.mkdir()
+            (remediation / "attempt-01.json").write_text("sealed", encoding="utf-8")
 
             first = _directory_snapshot(root)
             self.assertIn("host-gateway-ledger/exec-1.json", first)
+            self.assertIn("validation-remediation/attempt-01.json", first)
             evidence.write_text("second", encoding="utf-8")
             self.assertNotEqual(first, _directory_snapshot(root))
 

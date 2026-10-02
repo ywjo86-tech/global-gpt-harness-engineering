@@ -1950,6 +1950,7 @@ _RUNTIME_OUTPUT_DIRS = frozenset({
     "provider-action-effects",
     "provider-action-response-evidence",
     "host-gateway-ledger",
+    "validation-remediation",
 })
 
 
