@@ -125,6 +125,60 @@ class LVPreviewTest(unittest.TestCase):
                 preview = preview_lv_read_only(root, "GATE-1", "G1-LV3-1")
             self.assertEqual(preview["selected_lv"]["lv_id"], "G1-LV3-1")
 
+    def test_sealed_project_authority_does_not_reuse_historical_static_approval(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir = self._fixture(Path(directory))
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                mapping = load_project_mapping(root)
+                state = dict(evaluate_canonical_state(mapping))
+            state.update(
+                state="GATE1_RESUME_READY",
+                transition_authorized=True,
+                gate_1_started=True,
+                approval_id="SEALED-APPROVAL",
+                approval_record_hash="a" * 64,
+            )
+            static_failure = ReadOnlyValidationError(
+                {
+                    "business_gate_state": {"status": "not_evaluated"},
+                    "business_lv_approval_state": {"status": "invalid_static_evidence"},
+                    "codex_runtime_sandbox_approval_state": {"business_approval_reused": False},
+                }
+            )
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), \
+                 patch("runtime.orchestrator.lv_preview.inspect_read_only", side_effect=static_failure):
+                with self.assertRaises(ReadOnlyValidationError):
+                    preview_lv_read_only(root, "GATE-1", "G1-LV3-1", canonical_state_override=state)
+                preview = preview_lv_read_only(
+                    root,
+                    "GATE-1",
+                    "G1-LV3-1",
+                    canonical_state_override=state,
+                    sealed_project_authority=True,
+                )
+            self.assertEqual(
+                preview["business_gate_state"]["status"],
+                "historical_static_not_execution_authority",
+            )
+            self.assertEqual(
+                preview["business_lv_approval_state"]["status"],
+                "historical_static_not_execution_authority",
+            )
+            self.assertFalse(preview["business_lv_approval_state"]["reused_as_runtime_approval"])
+
+            invalid = dict(state)
+            invalid["approval_record_hash"] = "not-a-digest"
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), \
+                 patch("runtime.orchestrator.lv_preview.inspect_read_only", side_effect=static_failure), \
+                 self.assertRaisesRegex(LVPreviewValidationError, "sealed project authority state"):
+                preview_lv_read_only(
+                    root,
+                    "GATE-1",
+                    "G1-LV3-1",
+                    canonical_state_override=invalid,
+                    sealed_project_authority=True,
+                )
+
     def test_other_lv_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:
             root, mapping_dir = self._fixture(Path(directory))

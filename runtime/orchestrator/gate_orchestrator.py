@@ -1375,6 +1375,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
                          canonical_worker_authority_provider: Any | None = None,
+                         sealed_project_authority: bool = False,
                          provider_route_envelope: Mapping[str, Any] | None = None,
                          manual_action_package: Mapping[str, Any] | None = None,
                          manual_action_authorization: Mapping[str, Any] | None = None) -> GateControllerAdapters:
@@ -1648,6 +1649,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     output_root=package_root.parent, output_dir=package_root,
                     canonical_state_override=context.get("canonical_state_override"),
                     canonical_owned_files=expected_owned,
+                    sealed_project_authority=sealed_project_authority,
                 )
             except Exception:
                 if callable(package_transition):
@@ -2674,6 +2676,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 root, plan, auth, lv_id, lv_run_id, harness_root,
                 recovery=incident_recovery, diagnostic_run_id=run_id,
                 canonical_worker_authority_provider=production_provider,
+                sealed_project_authority=sealed_project_authority,
                 provider_route_envelope=provider_route_envelope,
                 manual_action_package=(manual_action_packages_by_lv or {}).get(lv_id),
                 manual_action_authorization=(manual_action_authorizations_by_lv or {}).get(lv_id),

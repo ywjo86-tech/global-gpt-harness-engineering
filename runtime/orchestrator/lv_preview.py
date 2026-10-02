@@ -172,7 +172,14 @@ def parse_lv_definition(
     )
 
 
-def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def preview_lv_read_only(
+    project_root: str | Path,
+    gate_id: str,
+    lv_id: str,
+    *,
+    canonical_state_override: Mapping[str, Any] | None = None,
+    sealed_project_authority: bool = False,
+) -> dict[str, Any]:
     if not gate_id:
         raise LVPreviewValidationError("gate_id is required")
     if not lv_id:
@@ -181,9 +188,18 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVPreviewValidationError("a project contract mapping is required for LV preview")
+    if sealed_project_authority and canonical_state_override is None:
+        raise LVPreviewValidationError("sealed project authority requires an explicit canonical state")
 
-    inspection = inspect_read_only(root)
-    canonical_state = dict(canonical_state_override) if canonical_state_override is not None else evaluate_canonical_state(mapping)
+    if sealed_project_authority:
+        canonical_state = dict(canonical_state_override)
+    else:
+        inspection = inspect_read_only(root)
+        canonical_state = (
+            dict(canonical_state_override)
+            if canonical_state_override is not None
+            else evaluate_canonical_state(mapping)
+        )
     state = canonical_state.get("state")
     if not isinstance(state, str) or not (state.endswith("_ACTIVE") or state == "GATE1_RESUME_READY"):
         raise LVPreviewValidationError("LV preview requires an active canonical Gate state")
@@ -211,6 +227,38 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
     if sha256_file(mapping.canonical_source) != mapping.canonical_sha256:
         raise LVPreviewValidationError("canonical implementation plan hash mismatch")
 
+    if sealed_project_authority:
+        approval_record_hash = canonical_state.get("approval_record_hash")
+        if (
+            canonical_state.get("state") != "GATE1_RESUME_READY"
+            or canonical_state.get("transition_authorized") is not True
+            or canonical_state.get("gate_1_started") is not True
+            or not isinstance(canonical_state.get("approval_id"), str)
+            or not canonical_state["approval_id"]
+            or not isinstance(approval_record_hash, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", approval_record_hash)
+        ):
+            raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+        inspection = {
+            "business_gate_state": {
+                "namespace": "business_gate_state",
+                "status": "historical_static_not_execution_authority",
+                "validation": "sealed_project_gate_authority",
+                "transition_authorized": False,
+            },
+            "business_lv_approval_state": {
+                "namespace": "business_lv_gate_approval",
+                "status": "historical_static_not_execution_authority",
+                "validation": "sealed_project_gate_authority",
+                "reused_as_runtime_approval": False,
+            },
+            "codex_runtime_sandbox_approval_state": {
+                "namespace": "codex_runtime_sandbox_approval",
+                "status": "not_requested_read_only",
+                "business_approval_reused": False,
+                "runtime_mutation_authorized": False,
+            },
+        }
     owned = canonical_state.get("owned_files")
     if not isinstance(owned, list):
         raise LVPreviewValidationError("approved owned files are missing")
