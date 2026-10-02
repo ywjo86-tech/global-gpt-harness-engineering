@@ -222,6 +222,21 @@ class LVReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
             _validate_production_provenance(payload)
 
+    def test_read_only_no_owned_scope_marks_python_tests_not_applicable(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, error = _run_tests(
+                root, Path(sys.executable), [], allow_no_test_scope=True,
+            )
+            self.assertIsNone(error)
+            self.assertEqual(len(results), 3)
+            self.assertTrue(all(item.get("not_applicable") is True for item in results))
+            self.assertTrue(all(item.get("exit_code") == 0 for item in results))
+
+            blocked, blocked_error = _run_tests(root, Path(sys.executable), [])
+            self.assertEqual(blocked, [])
+            self.assertEqual(blocked_error, "owned Python test/module scope is missing")
+
     def test_verification_only_test_scope_runs_without_product_import_target(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

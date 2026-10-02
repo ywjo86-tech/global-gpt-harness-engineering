@@ -1849,7 +1849,8 @@ def _owned_python_test_files(root: Path, owned_files: list[str], changed_files: 
 
 def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest",
                allow_test_only: bool = False, expected_profiles: list[str] | None = None,
-               changed_files: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+               changed_files: list[str] | None = None,
+               allow_no_test_scope: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     expected_profiles = list(expected_profiles or [])
     native_requested = bool(expected_profiles and expected_profiles not in (["PYTHON_PYTEST"], ["PYTHON_UNITTEST_EXTERNAL"]))
     if native_requested:
@@ -1871,6 +1872,13 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
             if result.get("timeout") or result.get("exit_code") != 0:
                 return results, f"independent project-native validation failed (exit={result.get('exit_code')})"
         return results, None
+
+    if allow_no_test_scope and not owned_files and not (changed_files or []):
+        return [
+            {"exit_code": 0, "timeout": False, "not_applicable": True},
+            {"exit_code": 0, "timeout": False, "not_applicable": True},
+            {"exit_code": 0, "timeout": False, "not_applicable": True},
+        ], None
 
     changed_test_targets = [
         path for path in (changed_files or [])
@@ -2833,13 +2841,15 @@ def review_run(
             context["project_root"], list(context["manifest"]["owned_files"]), list(actual["changed_files"])
         )
         verification_only = is_production and payload.get("completion_mode") == "VERIFICATION_ONLY"
+        read_only_execution = is_production and payload.get("completion_mode") == "READ_ONLY_EXECUTION"
+        read_only_no_test_scope = read_only_execution and not owned_scopes and not expected_profiles
         test_only_owned_scope = bool(owned_scopes) and all(
             isinstance(scope, str)
             and scope.startswith("tests/")
             and (scope.endswith(".py") or scope.endswith("/"))
             for scope in owned_scopes
         )
-        if not native_validation and ((not (verification_only or test_only_owned_scope) and not owned_test_files) or any(
+        if not native_validation and not read_only_no_test_scope and ((not (verification_only or test_only_owned_scope) and not owned_test_files) or any(
             not (context["project_root"] / path).is_file()
             or (context["project_root"] / path).is_symlink()
             for path in owned_test_files
@@ -2864,12 +2874,18 @@ def review_run(
             allow_test_only=verification_only or test_only_owned_scope,
             expected_profiles=expected_profiles,
             changed_files=list(actual["changed_files"]),
+            allow_no_test_scope=read_only_no_test_scope,
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
             result = tests[index] if index < len(tests) else {"exit_code": None, "timeout": False}
             passed = result.get("exit_code") == 0 and not result.get("timeout")
-            independent_checks.append(_check(identifier, passed, "independent command passed" if passed else "independent command failed", exit_code=result.get("exit_code")))
+            summary = (
+                "not applicable for read-only task without owned test scope"
+                if result.get("not_applicable") else
+                "independent command passed" if passed else "independent command failed"
+            )
+            independent_checks.append(_check(identifier, passed, summary, exit_code=result.get("exit_code")))
         if context.get("interpreter_probe_required", True):
             try:
                 interpreter_after = (_validate_external_interpreter(context["interpreter"])
