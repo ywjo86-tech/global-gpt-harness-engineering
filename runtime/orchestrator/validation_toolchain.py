@@ -272,6 +272,38 @@ def resolve_validation_commands(
         else:
             raise ValidationToolchainError("Python owned scope requires owned focused tests")
 
+    evidence_only = bool(owned_files) and all(
+        isinstance(path, str) and path.startswith("evidence/")
+        for path in owned_files
+    )
+    if not profiles and evidence_only:
+        project_config = root / "pyproject.toml"
+        project_interpreter = root / ".venv" / "bin" / "python"
+        tests_root = root / "tests"
+        source_root = root / "src"
+        if (
+            _safe_regular_file(root, project_config)
+            and project_interpreter.is_file()
+            and tests_root.is_dir()
+            and not tests_root.is_symlink()
+        ):
+            profiles.append("PYTHON_PROJECT_EVIDENCE")
+            pytest_command = [".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+            focused.append(tuple(pytest_command))
+            full_command = list(pytest_command)
+            if defer_evidence_manifest_integrity:
+                evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                if (
+                    not evidence_test.is_file() or evidence_test.is_symlink()
+                    or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                ):
+                    raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                full_command.append("--ignore=tests/evidence/test_manifest.py")
+            full.append(tuple(full_command))
+            compile_target = "src" if source_root.is_dir() and not source_root.is_symlink() else "tests"
+            compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", compile_target))
+
     if not profiles:
         if not owned_files:
             return ValidationCommandSet((), (), (), (), False)

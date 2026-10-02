@@ -168,6 +168,39 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertTrue(plan.deferred)
             self.assertEqual(plan.profile_ids,('ANDROID_GRADLE_BOOTSTRAP','NODE_PACKAGE_MANIFEST'))
 
+    def test_python_project_evidence_scope_uses_full_project_validation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'tests/evidence').mkdir(parents=True)
+            (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): pass\n')
+            (root/'evidence/implementation').mkdir(parents=True)
+            (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            (root/'src').mkdir()
+            (root/'pyproject.toml').write_text('[project]\nname="fixture"\n')
+            plan=resolve_validation_commands(
+                root,['evidence/v0_4_0/readiness.json'],
+                defer_evidence_manifest_integrity=True,
+            )
+            self.assertEqual(plan.profile_ids,('PYTHON_PROJECT_EVIDENCE',))
+            self.assertEqual(
+                plan.focused[0],
+                ('.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider'),
+            )
+            self.assertEqual(
+                plan.full[0],
+                ('.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider','--ignore=tests/evidence/test_manifest.py'),
+            )
+            self.assertEqual(plan.compile[0],('.venv/bin/python','-m','compileall','-q','src'))
+            self.assertFalse(plan.deferred)
+
+    def test_evidence_scope_without_python_project_markers_remains_fail_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            with self.assertRaisesRegex(ValidationToolchainError,'no project-native validation toolchain'):
+                resolve_validation_commands(root,['evidence/readiness.json'])
+
     def test_cross_cutting_scope_uses_existing_project_manifests(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'gradlew').write_text('#!/bin/sh\n'); (root/'backend').mkdir()
