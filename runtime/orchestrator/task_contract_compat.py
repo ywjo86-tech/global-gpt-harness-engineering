@@ -166,7 +166,15 @@ def _related_requirement_ids(value: str | None) -> list[str]:
 def _items(value: str | None) -> list[str]:
     if not value:
         return []
-    return [item.strip().strip("`") for item in re.split(r"[,\n]+", value) if item.strip()]
+    resolved: list[str] = []
+    for item in re.split(r"[,\n]+", value):
+        clean = item.strip()
+        if not clean:
+            continue
+        clean = clean.removesuffix(".").rstrip().strip("`")
+        if clean:
+            resolved.append(clean)
+    return resolved
 
 
 def _task_titles(text: str) -> dict[str, str]:

@@ -2579,7 +2579,11 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         if adapters is None:
             from .execution_contract import READY
             from .provider_runtime_binding import ProviderRuntimeBindingError, collect_production_provider_eligibility
-            from .provider_router import normalize_legacy_hybrid_request, route_request as route_provider_request
+            from .provider_router import (
+                d15_recovery_nvidia_read_only_request,
+                normalize_legacy_hybrid_request,
+                route_request as route_provider_request,
+            )
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
 
             selected_lv = plan.lvs[lv_index]
@@ -2599,23 +2603,44 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 )
             except ProviderRuntimeBindingError as exc:
                 raise GateOrchestrationError(f"PROVIDER_ROUTE_BLOCKED:provider_runtime_binding:{exc}") from exc
-            route_request_value = normalize_legacy_hybrid_request(
-                required_capabilities=selected_lv.required_capabilities,
-                eligibility_snapshot=eligibility,
-                request_id=f"{lv_run_id}-{lv_id}-provider-route",
-                project_id=plan.project_id,
-                run_id=lv_run_id,
-                task_id=lv_id,
-                task_execution_id=f"{lv_run_id}-{lv_id}-worker",
-                directive_digest=_canonical_hash({
-                    "project_id": plan.project_id,
-                    "gate_id": gate_id,
-                    "lv_id": lv_id,
-                    "run_id": lv_run_id,
-                    "plan_sha256": plan.canonical_plan_sha256,
-                    "required_capabilities": list(selected_lv.required_capabilities),
-                }),
+            directive_digest = _canonical_hash({
+                "project_id": plan.project_id,
+                "gate_id": gate_id,
+                "lv_id": lv_id,
+                "run_id": lv_run_id,
+                "plan_sha256": plan.canonical_plan_sha256,
+                "required_capabilities": list(selected_lv.required_capabilities),
+            })
+            nvidia_model = str(eligibility.model_refs.get("nvidia", "")).strip()
+            d15_version_control_read = (
+                selected_lv.execution == "READ_ONLY"
+                and "version_control" in selected_lv.required_capabilities
+                and bool(eligibility.provider_eligible.get("nvidia", False))
+                and bool(nvidia_model)
             )
+            if d15_version_control_read:
+                route_request_value = d15_recovery_nvidia_read_only_request(
+                    request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                    project_id=plan.project_id,
+                    run_id=lv_run_id,
+                    task_id=lv_id,
+                    task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                    directive_digest=directive_digest,
+                    model_ref=nvidia_model,
+                    evidence_refs=eligibility.evidence_refs,
+                    required_capabilities=selected_lv.required_capabilities,
+                )
+            else:
+                route_request_value = normalize_legacy_hybrid_request(
+                    required_capabilities=selected_lv.required_capabilities,
+                    eligibility_snapshot=eligibility,
+                    request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                    project_id=plan.project_id,
+                    run_id=lv_run_id,
+                    task_id=lv_id,
+                    task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                    directive_digest=directive_digest,
+                )
             route_decision_value = route_provider_request(route_request_value)
             provider_route_envelope = {
                 "request": route_request_value.to_dict(),

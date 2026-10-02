@@ -751,7 +751,7 @@ class TaskContractRecoveryAmendmentCompatibilityTests(unittest.TestCase):
 - 목적: Verify entry.
 - 의존성: 없음, SEQUENTIAL.
 - 변경 대상: 없음(읽기 전용).
-- Required Capabilities: reasoning, read_only, evidence_analysis.
+- Required Capabilities: reasoning, read_only, evidence_analysis, version_control.
 - Execution Authority: READ_ONLY 검증(격리 환경); 실제 운영 effect 금지.
 - 완료 조건: drift 0.
 
@@ -790,3 +790,7 @@ Required Tasks: TASK-R02
         self.assertEqual([item["lv_id"] for item in resolved], ["TASK-R01"])
         self.assertEqual(resolved[0]["execution"], "READ_ONLY")
         self.assertEqual(resolved[0]["owned_files"], [])
+        self.assertEqual(
+            resolved[0]["required_capabilities"],
+            ["reasoning", "read_only", "evidence_analysis", "version_control"],
+        )
