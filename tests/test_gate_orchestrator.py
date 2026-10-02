@@ -125,6 +125,63 @@ class GateOrchestratorTests(unittest.TestCase):
         self.assertEqual(result["status"], "VALIDATED")
         loader.assert_called_once_with(self.root.resolve(), "GATE-1", mapping_root=mapping_root)
 
+    def test_sealed_project_gate_authority_does_not_reuse_legacy_canonical_gate_state(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _sealed_project_gate_authority
+        full_auth = create_gate_authorization(
+            self.plan, "APR-G1-TEST", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        anchor = SimpleNamespace(
+            project_id=self.plan.project_id,
+            canonical_source=self.plan_path,
+            canonical_sha256=self.plan_hash,
+            task_lv_projection_path=self.root / "docs" / "harness" / "task-lv.json",
+            gate_state_ledger_path=self.root / "docs" / "harness" / "d15-gate-anchor.json",
+        )
+        anchor.gate_state_ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        anchor.gate_state_ledger_path.write_text("{}")
+        envelope = json.loads(self.approval_evidence("sealed-project-gate.json").read_text())
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
+             patch("runtime.orchestrator.gate_orchestrator.evaluate_canonical_state",
+                   return_value={"state": "GATE1_APPROVAL_READY", "transition_authorized": False}):
+            auth, state = _sealed_project_gate_authority(
+                self.root, self.plan, "G1-LV3-1",
+                approval_evidence=self.root.parent / "sealed-project-gate.json",
+                requirements_sha256="b" * 64, branch="main", head="c" * 40,
+                full_plan_opt_in=True, project_final_validation=True,
+            )
+        self.assertEqual(auth.authorization_id, full_auth.authorization_id)
+        self.assertEqual(state["gate_id"], "GATE-1")
+        self.assertEqual(state["active_scope"], ["G1-LV3-1"])
+        self.assertEqual(state["approval_id"], "APR-G1-TEST")
+        self.assertEqual(state["approval_record_hash"], envelope["record_hash"])
+        self.assertEqual(state["ledger_path"], "docs/harness/d15-gate-anchor.json")
+
+    def test_project_requirement_full_plan_never_calls_legacy_authorization_loader(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        full_auth = create_gate_authorization(
+            self.plan, "APR-G1-TEST", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        sealed_state = {"gate_id": "GATE-1", "active_scope": ["G1-LV3-1"]}
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan", return_value=self.plan), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_global_gate_bindings"), \
+             patch("runtime.orchestrator.gate_orchestrator._sealed_project_gate_authority",
+                   return_value=(full_auth, sealed_state)) as sealed, \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization") as legacy, \
+             self.assertRaisesRegex(GateOrchestrationError, "TEST_ONLY"):
+            execute_gate(
+                self.root, "GATE-1", "run-sealed-project", harness_root=self.root.parent,
+                approval_evidence=self.approval_evidence("sealed-project-execute.json"),
+                requirements_sha256="b" * 64, branch="main", head="c" * 40,
+                mode=FULL_PLAN, full_plan_opt_in=True, project_final_validation=True,
+                project_requirement_evidence_by_lv={"G1-LV3-1": {"REQ-001": {"status": "PENDING"}}},
+                capability_requirements={}, capability_prerequisite=lambda *_: None,
+                capability_checkpoints={}, dry_run_capability_resolution=True,
+            )
+        self.assertTrue(sealed.called)
+        legacy.assert_not_called()
+
     def test_manual_action_request_is_create_once_and_preserves_provider_request(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _persist_manual_action_request
         from runtime.orchestrator.gate_controller import GateControllerError

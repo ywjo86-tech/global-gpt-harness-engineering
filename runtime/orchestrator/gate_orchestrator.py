@@ -1009,6 +1009,61 @@ def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode:
     return auth
 
 
+def _sealed_project_gate_authority(
+    project_root: str | Path, plan: GatePlan, lv_id: str, *,
+    approval_evidence: str | Path, requirements_sha256: str, branch: str, head: str,
+    full_plan_opt_in: bool, project_final_validation: bool,
+) -> tuple[GateAuthorization, dict[str, Any]]:
+    """Project-scoped Full Plan authority derived from the sealed Gate approval.
+
+    The project Gate ledger remains a committed, non-active authority anchor.
+    Per-Gate execution authority comes only from the exact sealed approval that
+    was already bound into the approved Full Plan activation.
+    """
+    root, _ = _safe_project(project_root)
+    mapping = load_project_mapping(root)
+    if mapping is None or mapping.task_lv_projection_path is None:
+        raise GateOrchestrationError("sealed project Gate authority requires TASK projection authority")
+    if mapping.project_id != plan.project_id or mapping.canonical_sha256 != plan.canonical_plan_sha256:
+        raise GateOrchestrationError("sealed project Gate authority mapping mismatch")
+    anchor = evaluate_canonical_state(mapping)
+    if anchor.get("state") != "GATE1_APPROVAL_READY" or anchor.get("transition_authorized") is not False:
+        raise GateOrchestrationError("sealed project Gate authority requires an inactive canonical anchor")
+    ledger_path = mapping.gate_state_ledger_path
+    if ledger_path is None or ledger_path.is_symlink() or not ledger_path.is_file():
+        raise GateOrchestrationError("sealed project Gate authority anchor is missing or unsafe")
+
+    envelope = load_approval_evidence(approval_evidence)
+    payload = validate_approval_evidence(
+        envelope, project_id=plan.project_id, gate_id=plan.gate_id,
+        requirements_sha256=requirements_sha256, plan_sha256=plan.canonical_plan_sha256,
+        branch=branch, head=head, lv_order=[item.lv_id for item in plan.lvs],
+        owned_files_by_lv={item.lv_id: item.owned_files for item in plan.lvs},
+    )
+    auth = create_gate_authorization(
+        plan, str(payload["approval_id"]), mode=FULL_PLAN,
+        full_plan_opt_in=full_plan_opt_in, project_final_validation=project_final_validation,
+    )
+    validate_authorization(plan, auth)
+    if lv_id not in auth.approved_lvs:
+        raise GateOrchestrationError("requested LV is outside sealed Gate approval scope")
+    return auth, {
+        "state": "GATE1_RESUME_READY",
+        "selected_source": mapping.canonical_source,
+        "checkpoint_commit": head,
+        "transition_authorized": True,
+        "gate_1_started": True,
+        "gate_id": plan.gate_id,
+        "approval_id": payload["approval_id"],
+        "approval_record_hash": envelope["record_hash"],
+        "canonical_plan": mapping.canonical_source.relative_to(root).as_posix(),
+        "plan_sha256": plan.canonical_plan_sha256,
+        "active_scope": [lv_id],
+        "owned_files": list(auth.owned_files_by_lv[lv_id]),
+        "ledger_path": ledger_path.relative_to(root).as_posix(),
+    }
+
+
 def activate_first_gate(project_root: str | Path, gate_id: str, approval_evidence: str | Path, *,
                         mapping_root: str | Path | None = None) -> dict[str, Any]:
     """Receive a sealed first-Gate approval at the project boundary.
@@ -2131,10 +2186,19 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
     validate_global_gate_bindings(root, gate_id, requirements_sha256=requirements_sha256,
                                   approval_evidence=approval_evidence, branch=branch, head=head,
                                   harness_root=harness_root)
-    auth = load_approved_authorization(
-        root, gate_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
-        project_final_validation=project_final_validation,
-    )
+    sealed_project_authority = mode == FULL_PLAN and project_requirement_evidence_by_lv is not None
+    if sealed_project_authority:
+        auth, _ = _sealed_project_gate_authority(
+            root, plan, plan.lvs[0].lv_id,
+            approval_evidence=approval_evidence, requirements_sha256=requirements_sha256,
+            branch=branch, head=head, full_plan_opt_in=full_plan_opt_in,
+            project_final_validation=project_final_validation,
+        )
+    else:
+        auth = load_approved_authorization(
+            root, gate_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
+            project_final_validation=project_final_validation,
+        )
     if any(value is not None for value in (capability_requirements, capability_prerequisite, capability_checkpoints)):
         if mode != FULL_PLAN or not dry_run_capability_resolution:
             raise GateOrchestrationError("operational capability wiring requires explicit FULL_PLAN dry-run context")
@@ -2442,7 +2506,15 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                    "remaining_plan_items": [item.lv_id for item in plan.lvs[lv_index + 1:]]}
         task_mapping = load_project_mapping(root)
         if task_mapping is not None and getattr(task_mapping, "task_lv_projection_path", None) is not None:
-            context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
+            if sealed_project_authority:
+                _, context["canonical_state_override"] = _sealed_project_gate_authority(
+                    root, plan, lv_id,
+                    approval_evidence=approval_evidence, requirements_sha256=requirements_sha256,
+                    branch=branch, head=head, full_plan_opt_in=full_plan_opt_in,
+                    project_final_validation=project_final_validation,
+                )
+            else:
+                context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
         if adapters is None:
             from .execution_contract import READY
             from .provider_runtime_binding import ProviderRuntimeBindingError, collect_production_provider_eligibility
