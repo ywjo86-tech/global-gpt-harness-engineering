@@ -22,6 +22,7 @@ from runtime.orchestrator.production_worker_executor import (
     _independent_verification_steps,
     _independent_verification_provenance, _independent_verification_failure,
     _focused_execution_metadata, _sealed_external_validation_python,
+    _validation_command_env,
     _test_runner_metadata, _bounded_validation_feedback,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
@@ -55,6 +56,13 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             },
         })
         self.assertIsNone(_sealed_external_validation_python(request))
+
+    def test_validation_environment_does_not_inherit_active_contract_mapping_root(self):
+        with patch.dict(os.environ, {"HARNESS_CONTRACT_MAPPING_ROOT": "/tmp/live-mapping"}):
+            validation_env = _validation_command_env()
+        self.assertNotIn("HARNESS_CONTRACT_MAPPING_ROOT", validation_env)
+        if "PATH" in os.environ:
+            self.assertEqual(validation_env.get("PATH"), os.environ["PATH"])
 
     def test_provider_action_security_scan_normalizes_structured_broker_results(self):
         self.assertTrue(_provider_action_security_scan({"status": "COMPLETED"}))

@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .lv_execution_package import canonical_json_bytes
+from .contract_adapter import MAPPING_ROOT_ENV
 from .nvidia_adapter import run_nvidia_reasoning_task
 from .git_provenance import GitProvenanceError, touched_paths_between
 from .provider_router import (
@@ -2326,6 +2327,13 @@ def _command(root: Path, argv: list[str], timeout: int = 900, *,
                 "stderr_sha256": hashlib.sha256(b"").hexdigest()}
 
 
+def _validation_command_env() -> dict[str, str]:
+    """Remove Full Plan control-plane mapping state from product validation."""
+    env = dict(os.environ)
+    env.pop(MAPPING_ROOT_ENV, None)
+    return env
+
+
 def _skipped_command(label: str) -> dict[str, Any]:
     return {"command": [label], "exit_code": 0, "timeout": False, "skipped": True,
             "stdout_sha256": hashlib.sha256(b"").hexdigest(),
@@ -3429,7 +3437,8 @@ def execute_production_worker(request: WorkerRequest, *,
             if normalized and normalized[0] == ".venv/bin/python":
                 normalized[0] = str(command_root / ".venv" / "bin" / "python")
             result = _command(
-                command_root, normalized, classify_collection=_is_test_runner(normalized),
+                command_root, normalized, env=_validation_command_env(),
+                classify_collection=_is_test_runner(normalized),
                 capture_feedback=feedback_sink is not None,
             )
             transient = result.pop("_transient_validation_feedback", "")
