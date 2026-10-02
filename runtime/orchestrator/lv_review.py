@@ -905,7 +905,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
 def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, source_root: Path,
                                        result_path: Path, successor_lineage: dict[str, str] | None = None,
                                        review_attempt: int = 1,
-                                       project_root: Path | None = None) -> dict[str, Any]:
+                                       project_root: Path | None = None,
+                                       canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Publish a derived LV-review attestation for an immutable Gate preflight."""
     source_file = source_root / "preflight.evidence.json"
     sidecar = source_root / "preflight.evidence.sha256"
@@ -920,7 +921,8 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
                              results_root=package_root / ".publication-validation",
                              allow_worker_changes=True, check_result_absent=False, review_attempt=1,
-                             project_root=project_root)
+                             project_root=project_root,
+                             canonical_state_override=canonical_state_override)
     except (LVReviewError, LVExecutionPackageError) as exc:
         # Preserve the strict failure, but expose only the safe field-level
         # contract detail needed for remediation.  Never include payloads,
@@ -1314,10 +1316,12 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
         lineage = {"predecessor_artifact_sha256": legacy[0][1]["evidence_sha256"],
                    "source_evidence_sha256": source_digest,
                    "review_request_sha256": _sha256(request_raw)}
-    published = publish_gate_preflight_attestation(run_id, package_root=package_root, source_root=source_root,
-                                                   result_path=result_path, successor_lineage=lineage,
-                                                   review_attempt=request["review_attempt"],
-                                                   project_root=project_root)
+    published = publish_gate_preflight_attestation(
+        run_id, package_root=package_root, source_root=source_root,
+        result_path=result_path, successor_lineage=lineage,
+        review_attempt=request["review_attempt"], project_root=project_root,
+        canonical_state_override=canonical_state_override,
+    )
     if published.get("status") == "READY" and legacy:
         published = {**published, "classification": "LEGACY_STATUS_UPGRADABLE",
                      "legacy_completion_eligible": False, "review_request_sha256": _sha256(request_raw),
