@@ -22,11 +22,30 @@ class HarnessLifecycleV2Gate14SuccessorReleaseTest(unittest.TestCase):
         actual_head = self._git(repo, "rev-parse", "HEAD")
         expected_head = str(os.environ.get("HARNESS_G14_EXPECTED_HEAD") or actual_head).strip()
         self.assertEqual(actual_head, expected_head)
-        self.assertEqual(self._git(repo, "status", "--porcelain=v1", "-uall"), "")
 
         expected_tree = self._git(repo, "rev-parse", f"{expected_head}^{{tree}}")
         with tempfile.TemporaryDirectory() as directory:
-            manifest = build_runtime_release(repo, Path(directory) / "releases", source_ref=expected_head)
+            clean_repo = Path(directory) / "source"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--no-hardlinks", str(repo), str(clean_repo)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "-C", str(clean_repo), "checkout", "--quiet", "--detach", expected_head],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            )
+            self.assertEqual(self._git(clean_repo, "status", "--porcelain=v1", "-uall"), "")
+            manifest = build_runtime_release(
+                clean_repo, Path(directory) / "releases", source_ref=expected_head
+            )
             self.assertEqual(manifest.schema_version, "gch.runtime-release.v2")
             self.assertEqual(manifest.source_head, expected_head)
             self.assertEqual(manifest.publication_head, expected_head)

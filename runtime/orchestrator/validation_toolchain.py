@@ -233,8 +233,8 @@ def resolve_validation_commands(
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
                 full.append((".venv/bin/python", "-m", "pytest", "-q"))
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
-                if explicit_pytest and not project_interpreter.is_file():
-                    deferred = True
+                if explicit_pytest:
+                    deferred = bool(allow_deferred)
             elif external_interpreter is not None:
                 modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
                 runner = str(external_interpreter)

@@ -81,20 +81,30 @@ class ValidationToolchainTests(unittest.TestCase):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
-            expected=(".venv/bin/python","-m","pytest","-q","tests/test_a.py")
             system=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-            self.assertEqual(system.focused[0],expected)
-            self.assertTrue(system.deferred)
             (root/".venv/bin").mkdir(parents=True); (root/".venv/bin/python").write_text("")
             project=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-            self.assertEqual(project.focused[0],expected)
-            self.assertFalse(project.deferred)
             with tempfile.TemporaryDirectory() as e:
                 active=Path(e)/"bin/python"; active.parent.mkdir(); active.write_text(""); active.chmod(0o755)
                 with patch("runtime.orchestrator.validation_toolchain.sys.executable",str(active)), patch("runtime.orchestrator.validation_toolchain.sys.prefix",str(active.parent.parent)), patch("runtime.orchestrator.validation_toolchain.sys.base_prefix","/usr"):
                     temporary=resolve_validation_commands(root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-            self.assertEqual(temporary.focused[0],expected)
-            self.assertFalse(temporary.deferred)
+            expected={
+                "profile_ids":["PYTEST_PROFILE"],
+                "focused":[[".venv/bin/python","-m","pytest","-q","tests/test_a.py"]],
+                "full":[[".venv/bin/python","-m","pytest","-q"]],
+                "compile":[[".venv/bin/python","-m","compileall","-q","tests/test_a.py"]],
+                "deferred":True,
+            }
+            self.assertEqual(system.to_dict(),expected)
+            self.assertEqual(project.to_dict(),expected)
+            self.assertEqual(temporary.to_dict(),expected)
+
+    def test_explicit_pytest_profile_respects_non_deferred_intent(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'.venv/bin').mkdir(parents=True); (root/'.venv/bin/python').write_text('')
+            plan=resolve_validation_commands(root,['tests/test_a.py'],allow_deferred=False,validation_profile='PYTEST_PROFILE')
+            self.assertFalse(plan.deferred)
+            self.assertEqual(plan.profile_ids,('PYTEST_PROFILE',))
 
     def test_android_node_manifest_resolves_without_guessing_package_manager(self):
         with tempfile.TemporaryDirectory() as d:
