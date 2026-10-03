@@ -816,6 +816,7 @@ def build_production_canonical_worker_authority_provider(
     codex_auth_readiness: CodexAuthReadinessEvidence | None,
     readiness_recheck_probes: ReadinessProbeSet | None,
     router_decision: RouterDecisionV2 | None = None,
+    satisfied_recertification: Mapping[str, object] | None = None,
     verify_git_provenance: bool = True,
 ):
     """Compose production canonical authority without collecting readiness."""
@@ -851,8 +852,11 @@ def build_production_canonical_worker_authority_provider(
             and STATE_CHANGING_CAPABILITIES.intersection(router_decision.required_capabilities)
         )
         codex_readiness_required = (
-            router_decision is None
-            or router_decision.execution_profile == EXECUTION_PROFILE_NATIVE_TOOL
+            satisfied_recertification is None
+            and (
+                router_decision is None
+                or router_decision.execution_profile == EXECUTION_PROFILE_NATIVE_TOOL
+            )
         )
         if codex_readiness_required:
             if codex_auth_readiness is None:
@@ -931,6 +935,29 @@ def build_production_canonical_worker_authority_provider(
                 reason_taxonomy="PRODUCTION_CANONICAL_TOOL_TASK_BINDING_MISSING",
             )
         if worker_task_id != DEC007_WORKER_TASK_ID:
+            recertification = None
+            if satisfied_recertification is not None:
+                candidate = dict(satisfied_recertification)
+                unsigned = {k: v for k, v in candidate.items() if k != "record_sha256"}
+                expected_digest = hashlib.sha256(canonical_json_bytes(unsigned)).hexdigest()
+                if (
+                    candidate.get("schema_version") != "orchestration.historical-lv-recertification.v1"
+                    or candidate.get("project_id") != project_id
+                    or candidate.get("gate_id") != gate_id
+                    or candidate.get("lv_id") != lv_id
+                    or candidate.get("plan_sha256") != canonical_plan_sha256
+                    or candidate.get("current_approval_id") != authority_manifest.get("approval_id")
+                    or candidate.get("current_head") != authority_manifest.get("source_head")
+                    or candidate.get("owned_files") != authority_manifest.get("owned_files")
+                    or not isinstance(candidate.get("checkpoint_commit"), str)
+                    or not isinstance(candidate.get("current_head"), str)
+                    or candidate.get("record_sha256") != expected_digest
+                ):
+                    raise ProductionCanonicalAuthorityError(
+                        "historical satisfied recertification binding mismatch",
+                        reason_taxonomy="PRODUCTION_CANONICAL_SATISFIED_RECERTIFICATION_INVALID",
+                    )
+                recertification = candidate
             binding_seed = {
                 "project_id": project_id,
                 "gate_id": gate_id,
@@ -953,7 +980,11 @@ def build_production_canonical_worker_authority_provider(
                 "contract_activation_digest": seed_digest,
                 "worker_task_id": worker_task_id,
                 "criterion_set_digest": seed_digest,
-                "execution_obligation": "READ_ONLY_EXECUTION" if provider_read_only else "MUTATION_REQUIRED",
+                "execution_obligation": (
+                    "NONE_SATISFIED" if recertification is not None
+                    else "READ_ONLY_EXECUTION" if provider_read_only
+                    else "MUTATION_REQUIRED"
+                ),
                 "preflight_evidence_digest": seed_digest,
                 "codex_auth_readiness_ref": (
                     f"not-applicable://provider-action#{seed_digest}" if provider_action
@@ -969,6 +1000,8 @@ def build_production_canonical_worker_authority_provider(
                 "launch_authorization_digest": seed_digest,
                 "migration_authority_ref": f"migration-authority://dynamic-lv#{seed_digest}",
             }
+            if recertification is not None:
+                binding["satisfied_recertification"] = recertification
             return {
                 "active_tool_authorization_contracts": list(
                     authority_manifest.get("active_tool_authorization_contracts", [])

@@ -1939,7 +1939,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                            "allow_verification_only": execution_obligation == "NONE_SATISFIED",
                            "allow_read_only_execution": bool(route_read_only),
                            "provider_route": dict(provider_route_envelope or {}),
-                           "change_target_count":len(manifest.get("owned_files", [])),
+                           "change_target_count":(
+                               0 if execution_obligation == "NONE_SATISFIED"
+                               else len(manifest.get("owned_files", []))
+                           ),
                            "package_manifest_sha256": package_sha,
                            "preflight_evidence_sha256": state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"),
                            "attempt": 1,
@@ -2379,6 +2382,200 @@ def _sealed_completed_lv_lineage(
     if len(matches) != 1:
         raise GateOrchestrationError("completed LV source lineage is missing or ambiguous")
     return matches[0]
+
+
+def _verified_historical_satisfied_recertification(
+    project_root: str | Path,
+    harness_root: str | Path,
+    plan: GatePlan,
+    current_auth: GateAuthorization,
+    *,
+    lv_id: str,
+    current_run_id: str,
+    current_head: str,
+) -> dict[str, Any] | None:
+    """Recertify a sealed historical LV already contained in current HEAD."""
+    root = Path(project_root).resolve()
+    harness = Path(harness_root).resolve()
+    actual_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if current_head != actual_head:
+        raise GateOrchestrationError("historical LV recertification current HEAD mismatch")
+    if subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip():
+        raise GateOrchestrationError("historical LV recertification requires a clean worktree")
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    selected = next((item for item in plan.lvs if item.lv_id == lv_id), None)
+    if selected is None or lv_id not in current_auth.approved_lvs:
+        raise GateOrchestrationError("historical LV recertification LV is outside current authority")
+    expected_owned = list(current_auth.owned_files_by_lv.get(lv_id, []))
+    if expected_owned != list(selected.owned_files):
+        raise GateOrchestrationError("historical LV recertification current scope mismatch")
+    expected_tests = list(selected.completion_criteria)
+    artifact_root = namespace_root(harness, plan.project_id, "artifact")
+    approval_root = namespace_root(harness, plan.project_id, "approval")
+    candidates: list[dict[str, Any]] = []
+
+    for handoff_path in sorted(artifact_root.glob("*.handoff.json")):
+        if handoff_path.is_symlink() or not handoff_path.is_file():
+            continue
+        try:
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            not isinstance(handoff, Mapping)
+            or handoff.get("project") != plan.project_id
+            or handoff.get("gate") != plan.gate_id
+            or handoff.get("lv") != lv_id
+            or handoff.get("canonical_plan_sha256") != plan.canonical_plan_sha256
+            or handoff.get("branch") != branch
+            or handoff.get("owned_files") != expected_owned
+            or handoff.get("tests") != expected_tests
+            or handoff.get("hard_stop") is not True
+            or not isinstance(handoff.get("review"), Mapping)
+            or handoff["review"].get("status") != "PASS"
+        ):
+            continue
+        historical_run_id = str(handoff.get("run_id") or "")
+        if not historical_run_id or historical_run_id == current_run_id:
+            continue
+        worker_path = (
+            harness / "_workspace" / "orchestration-runs"
+            / historical_run_id / lv_id / "worker.result.json"
+        )
+        if worker_path.is_symlink() or not worker_path.is_file():
+            continue
+        try:
+            worker = json.loads(worker_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        checkpoint = str(worker.get("checkpoint_commit") or "")
+        if (
+            not re.fullmatch(r"[0-9a-f]{40}", checkpoint)
+            or worker.get("status") != "completed"
+            or worker.get("project_id") != plan.project_id
+            or worker.get("gate_id") != plan.gate_id
+            or worker.get("lv_id") != lv_id
+            or worker.get("run_id") != historical_run_id
+            or worker.get("plan_sha256") != plan.canonical_plan_sha256
+            or worker.get("owned_files") != expected_owned
+            or worker.get("tests") != expected_tests
+            or worker.get("review_verdict") != "PASS"
+            or worker.get("hard_stop") is not True
+        ):
+            continue
+        if subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, current_head],
+            capture_output=True, text=True, check=False,
+        ).returncode != 0:
+            continue
+        later_owned = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", f"{checkpoint}..{current_head}", "--", *expected_owned],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        if later_owned:
+            continue
+
+        authorization = handoff.get("authorization")
+        historical_approval_id = (
+            str(authorization.get("id") or "") if isinstance(authorization, Mapping) else ""
+        )
+        recovery_checkpoint = handoff.get("recovery_checkpoint")
+        checkpoint_payload = (
+            recovery_checkpoint.get("payload")
+            if isinstance(recovery_checkpoint, Mapping) else None
+        )
+        historical_binding = (
+            checkpoint_payload.get("binding")
+            if isinstance(checkpoint_payload, Mapping) else None
+        )
+        historical_requirements = (
+            str(historical_binding.get("requirements_sha256") or "")
+            if isinstance(historical_binding, Mapping) else ""
+        )
+        if (
+            not historical_approval_id
+            or not re.fullmatch(r"[0-9a-f]{64}", historical_requirements)
+        ):
+            continue
+
+        approval_matches: list[Mapping[str, Any]] = []
+        for approval_path in sorted(approval_root.glob("*.json")):
+            try:
+                envelope = load_approval_evidence(approval_path)
+            except Exception:
+                continue
+            payload = envelope.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            if (
+                payload.get("approval_id") == historical_approval_id
+                and payload.get("project_id") == plan.project_id
+                and payload.get("gate_id") == plan.gate_id
+                and payload.get("plan_sha256") == plan.canonical_plan_sha256
+                and payload.get("requirements_sha256") == historical_requirements
+                and payload.get("branch") == branch
+                and payload.get("head") == handoff.get("head")
+                and payload.get("scope") == {
+                    "lv_order": [item.lv_id for item in plan.lvs],
+                    "owned_files_by_lv": {
+                        item.lv_id: list(item.owned_files) for item in plan.lvs
+                    },
+                }
+            ):
+                approval_matches.append(envelope)
+        if len(approval_matches) != 1:
+            continue
+
+        historical_auth = create_gate_authorization(
+            plan, historical_approval_id, mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        validate_authorization(plan, historical_auth)
+        try:
+            lineage = _sealed_completed_lv_lineage(
+                root, harness, plan, historical_auth,
+                lv_id=lv_id, run_id=historical_run_id, current_head=checkpoint,
+            )
+        except GateOrchestrationError:
+            continue
+
+        record = {
+            "schema_version": "orchestration.historical-lv-recertification.v1",
+            "project_id": plan.project_id,
+            "gate_id": plan.gate_id,
+            "lv_id": lv_id,
+            "plan_sha256": plan.canonical_plan_sha256,
+            "current_approval_id": current_auth.authorization_id,
+            "historical_run_id": historical_run_id,
+            "historical_approval_id": historical_approval_id,
+            "historical_approval_record_hash": str(
+                approval_matches[0].get("record_hash") or ""
+            ),
+            "checkpoint_commit": checkpoint,
+            "current_head": current_head,
+            "handoff_sha256": str(lineage["handoff_sha256"]),
+            "exit_evidence_sha256": str(lineage["predecessor_digest"]),
+            "owned_files": expected_owned,
+        }
+        record["record_sha256"] = hashlib.sha256(
+            canonical_json_bytes(record)
+        ).hexdigest()
+        candidates.append(record)
+
+    if not candidates:
+        return None
+    if len(candidates) != 1:
+        raise GateOrchestrationError("historical LV recertification is ambiguous")
+    return candidates[0]
 
 
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
@@ -2838,100 +3035,125 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             )
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
 
-            resolved_codex_readiness, resolved_codex_probes = _resolve_lv_codex_readiness(
-                project_id=plan.project_id, gate_id=gate_id, lv_id=lv_id, run_id=lv_run_id,
-                existing=codex_auth_readiness, probes=codex_readiness_recheck_probes,
-            )
-            codex_override = _codex_eligibility_override(resolved_codex_readiness)
-            try:
-                eligibility = collect_production_provider_eligibility(
-                    root, lv_run_id, required_capabilities=selected_lv.required_capabilities,
-                    codex_ready_override=False if codex_override is None else codex_override,
-                    extra_evidence_refs=(
-                        "production-full-plan",
-                        "codex-readiness:ready" if codex_override is True else "codex-readiness:unavailable",
-                    ),
+            satisfied_recertification = None
+            if (
+                sealed_project_authority
+                and selected_lv.execution != "READ_ONLY"
+                and "filesystem_write" in selected_lv.required_capabilities
+            ):
+                current_head = subprocess.run(
+                    ["git", "-C", str(root), "rev-parse", "HEAD"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.strip()
+                satisfied_recertification = _verified_historical_satisfied_recertification(
+                    root, harness_root, plan, auth,
+                    lv_id=lv_id, current_run_id=lv_run_id, current_head=current_head,
                 )
-            except ProviderRuntimeBindingError as exc:
-                raise GateOrchestrationError(f"PROVIDER_ROUTE_BLOCKED:provider_runtime_binding:{exc}") from exc
-            directive_digest = _canonical_hash({
-                "project_id": plan.project_id,
-                "gate_id": gate_id,
-                "lv_id": lv_id,
-                "run_id": lv_run_id,
-                "plan_sha256": plan.canonical_plan_sha256,
-                "required_capabilities": list(selected_lv.required_capabilities),
-            })
-            nvidia_model = str(eligibility.model_refs.get("nvidia", "")).strip()
-            d15_version_control_read = (
-                selected_lv.execution == "READ_ONLY"
-                and "version_control" in selected_lv.required_capabilities
-                and bool(eligibility.provider_eligible.get("nvidia", False))
-                and bool(nvidia_model)
-            )
-            if d15_version_control_read:
-                route_request_value = d15_recovery_nvidia_read_only_request(
-                    request_id=f"{lv_run_id}-{lv_id}-provider-route",
-                    project_id=plan.project_id,
-                    run_id=lv_run_id,
-                    task_id=lv_id,
-                    task_execution_id=f"{lv_run_id}-{lv_id}-worker",
-                    directive_digest=directive_digest,
-                    model_ref=nvidia_model,
-                    evidence_refs=eligibility.evidence_refs,
-                    required_capabilities=selected_lv.required_capabilities,
+
+            if satisfied_recertification is not None:
+                resolved_codex_readiness = resolved_codex_probes = None
+                provider_route_envelope = None
+                production_provider = build_production_canonical_worker_authority_provider(
+                    codex_auth_readiness=None,
+                    readiness_recheck_probes=None,
+                    router_decision=None,
+                    satisfied_recertification=satisfied_recertification,
                 )
             else:
-                route_request_value = normalize_legacy_hybrid_request(
-                    required_capabilities=selected_lv.required_capabilities,
-                    eligibility_snapshot=eligibility,
-                    request_id=f"{lv_run_id}-{lv_id}-provider-route",
-                    project_id=plan.project_id,
-                    run_id=lv_run_id,
-                    task_id=lv_id,
-                    task_execution_id=f"{lv_run_id}-{lv_id}-worker",
-                    directive_digest=directive_digest,
+                resolved_codex_readiness, resolved_codex_probes = _resolve_lv_codex_readiness(
+                    project_id=plan.project_id, gate_id=gate_id, lv_id=lv_id, run_id=lv_run_id,
+                    existing=codex_auth_readiness, probes=codex_readiness_recheck_probes,
                 )
-            route_decision_value = route_provider_request(route_request_value)
-            provider_route_envelope = {
-                "request": route_request_value.to_dict(),
-                "decision": route_decision_value.to_dict(),
-            }
-            manual_route_authorized = (
-                route_decision_value.stage == "ACTION"
-                and (manual_action_packages_by_lv or {}).get(lv_id) is not None
-                and (manual_action_authorizations_by_lv or {}).get(lv_id) is not None
-            )
-            if not route_decision_value.eligible and not manual_route_authorized:
-                from .wait_recovery import record_provider_wait_recovery_evidence
-                record_provider_wait_recovery_evidence(
-                    harness_root, project_id=plan.project_id, gate_run_id=run_id,
-                    gate_id=gate_id, lv_id=lv_id, lv_run_id=lv_run_id,
-                    project_root=root, source_head=head,
-                    router_request=route_request_value.to_dict(),
-                    router_decision=route_decision_value.to_dict(),
-                    output_contract={
-                        "purpose": selected_lv.purpose,
-                        "owned_files": list(selected_lv.owned_files),
-                    },
-                    validation_contract={
-                        "completion_criteria": list(selected_lv.completion_criteria),
-                        "tests": list(selected_lv.tests),
-                    },
-                    risk_contract={
-                        "stage": route_request_value.stage,
-                        "state_change_required": route_request_value.state_change_required,
-                        "required_capabilities": list(route_request_value.required_capabilities),
-                    },
+                codex_override = _codex_eligibility_override(resolved_codex_readiness)
+                try:
+                    eligibility = collect_production_provider_eligibility(
+                        root, lv_run_id, required_capabilities=selected_lv.required_capabilities,
+                        codex_ready_override=False if codex_override is None else codex_override,
+                        extra_evidence_refs=(
+                            "production-full-plan",
+                            "codex-readiness:ready" if codex_override is True else "codex-readiness:unavailable",
+                        ),
+                    )
+                except ProviderRuntimeBindingError as exc:
+                    raise GateOrchestrationError(f"PROVIDER_ROUTE_BLOCKED:provider_runtime_binding:{exc}") from exc
+                directive_digest = _canonical_hash({
+                    "project_id": plan.project_id,
+                    "gate_id": gate_id,
+                    "lv_id": lv_id,
+                    "run_id": lv_run_id,
+                    "plan_sha256": plan.canonical_plan_sha256,
+                    "required_capabilities": list(selected_lv.required_capabilities),
+                })
+                nvidia_model = str(eligibility.model_refs.get("nvidia", "")).strip()
+                d15_version_control_read = (
+                    selected_lv.execution == "READ_ONLY"
+                    and "version_control" in selected_lv.required_capabilities
+                    and bool(eligibility.provider_eligible.get("nvidia", False))
+                    and bool(nvidia_model)
                 )
-                raise GateOrchestrationError(
-                    f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
+                if d15_version_control_read:
+                    route_request_value = d15_recovery_nvidia_read_only_request(
+                        request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                        project_id=plan.project_id,
+                        run_id=lv_run_id,
+                        task_id=lv_id,
+                        task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                        directive_digest=directive_digest,
+                        model_ref=nvidia_model,
+                        evidence_refs=eligibility.evidence_refs,
+                        required_capabilities=selected_lv.required_capabilities,
+                    )
+                else:
+                    route_request_value = normalize_legacy_hybrid_request(
+                        required_capabilities=selected_lv.required_capabilities,
+                        eligibility_snapshot=eligibility,
+                        request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                        project_id=plan.project_id,
+                        run_id=lv_run_id,
+                        task_id=lv_id,
+                        task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                        directive_digest=directive_digest,
+                    )
+                route_decision_value = route_provider_request(route_request_value)
+                provider_route_envelope = {
+                    "request": route_request_value.to_dict(),
+                    "decision": route_decision_value.to_dict(),
+                }
+                manual_route_authorized = (
+                    route_decision_value.stage == "ACTION"
+                    and (manual_action_packages_by_lv or {}).get(lv_id) is not None
+                    and (manual_action_authorizations_by_lv or {}).get(lv_id) is not None
                 )
-            production_provider = build_production_canonical_worker_authority_provider(
-                codex_auth_readiness=resolved_codex_readiness,
-                readiness_recheck_probes=resolved_codex_probes,
-                router_decision=route_decision_value,
-            )
+                if not route_decision_value.eligible and not manual_route_authorized:
+                    from .wait_recovery import record_provider_wait_recovery_evidence
+                    record_provider_wait_recovery_evidence(
+                        harness_root, project_id=plan.project_id, gate_run_id=run_id,
+                        gate_id=gate_id, lv_id=lv_id, lv_run_id=lv_run_id,
+                        project_root=root, source_head=head,
+                        router_request=route_request_value.to_dict(),
+                        router_decision=route_decision_value.to_dict(),
+                        output_contract={
+                            "purpose": selected_lv.purpose,
+                            "owned_files": list(selected_lv.owned_files),
+                        },
+                        validation_contract={
+                            "completion_criteria": list(selected_lv.completion_criteria),
+                            "tests": list(selected_lv.tests),
+                        },
+                        risk_contract={
+                            "stage": route_request_value.stage,
+                            "state_change_required": route_request_value.state_change_required,
+                            "required_capabilities": list(route_request_value.required_capabilities),
+                        },
+                    )
+                    raise GateOrchestrationError(
+                        f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
+                    )
+                production_provider = build_production_canonical_worker_authority_provider(
+                    codex_auth_readiness=resolved_codex_readiness,
+                    readiness_recheck_probes=resolved_codex_probes,
+                    router_decision=route_decision_value,
+                )
             incident_recovery = None
             if lv_resume:
                 incident_root = canonical_lv_path(
