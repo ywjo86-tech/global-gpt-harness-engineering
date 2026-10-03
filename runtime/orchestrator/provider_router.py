@@ -94,6 +94,8 @@ LEGACY_CAPABILITY_ALIASES_V2 = {
     "test": "test_execution",
     "implementation": "implementation_apply",
 }
+READ_ONLY_HOST_VALIDATION_CAPABILITIES = frozenset({"shell", "test_execution", "integration"})
+READ_ONLY_PROVIDER_ALIASES_V2 = {"independent_review": "review"}
 
 
 class ProviderRouterContractError(ValueError):
@@ -113,6 +115,23 @@ def normalize_capabilities_v2(required_capabilities: Iterable[str] | None) -> tu
             continue
         normalized.add(LEGACY_CAPABILITY_ALIASES_V2.get(capability, capability))
     return tuple(sorted(normalized))
+
+
+def project_read_only_provider_capabilities(
+    required_capabilities: Iterable[str] | None,
+) -> tuple[str, ...]:
+    """Project a read-only LV onto model capabilities without granting host effects."""
+    projected = {"read_only", "reasoning"}
+    for capability in normalize_capabilities_v2(required_capabilities):
+        if capability in READ_ONLY_HOST_VALIDATION_CAPABILITIES:
+            continue
+        capability = READ_ONLY_PROVIDER_ALIASES_V2.get(capability, capability)
+        if capability in STATE_CHANGING_CAPABILITIES:
+            raise ProviderRouterContractError(
+                "read-only provider projection contains state-changing capability"
+            )
+        projected.add(capability)
+    return tuple(sorted(projected))
 
 
 @dataclass(frozen=True, slots=True)

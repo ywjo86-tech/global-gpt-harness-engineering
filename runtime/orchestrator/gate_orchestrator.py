@@ -3153,6 +3153,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             from .provider_router import (
                 d15_recovery_nvidia_read_only_request,
                 normalize_legacy_hybrid_request,
+                project_read_only_provider_capabilities,
                 route_request as route_provider_request,
             )
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
@@ -3212,13 +3213,12 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     "required_capabilities": list(selected_lv.required_capabilities),
                 })
                 nvidia_model = str(eligibility.model_refs.get("nvidia", "")).strip()
-                d15_version_control_read = (
+                d15_read_only = (
                     selected_lv.execution == "READ_ONLY"
-                    and "version_control" in selected_lv.required_capabilities
                     and bool(eligibility.provider_eligible.get("nvidia", False))
                     and bool(nvidia_model)
                 )
-                if d15_version_control_read:
+                if d15_read_only:
                     route_request_value = d15_recovery_nvidia_read_only_request(
                         request_id=f"{lv_run_id}-{lv_id}-provider-route",
                         project_id=plan.project_id,
@@ -3228,7 +3228,9 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                         directive_digest=directive_digest,
                         model_ref=nvidia_model,
                         evidence_refs=eligibility.evidence_refs,
-                        required_capabilities=selected_lv.required_capabilities,
+                        required_capabilities=project_read_only_provider_capabilities(
+                            selected_lv.required_capabilities
+                        ),
                     )
                 else:
                     route_request_value = normalize_legacy_hybrid_request(

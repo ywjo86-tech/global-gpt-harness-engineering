@@ -6,7 +6,8 @@ from runtime.orchestrator.provider_router import (
     ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, LEGACY_REQUEST_SOURCE_V1,
     ROUTER_REQUEST_SCHEMA_V2, ProviderEligibilitySnapshotV1, ProviderRouterContractError,
     RouterRequestV2, d15_recovery_nvidia_read_only_request,
-    normalize_legacy_hybrid_request, route_provider, route_request,
+    normalize_legacy_hybrid_request, project_read_only_provider_capabilities,
+    route_provider, route_request,
 )
 
 
@@ -224,6 +225,37 @@ class ProviderRouterV2ContractQualificationTest(unittest.TestCase):
         self.assertEqual(request.eligibility_snapshot.provider_eligible, {"nvidia": True, "codex": False})
         self.assertEqual(set(request.eligibility_snapshot.model_refs), {"nvidia"})
         self.assertEqual(set(request.eligibility_snapshot.provider_capabilities or {}), {"nvidia"})
+
+    def test_d15_read_only_validation_projection_separates_host_validation_effects(self):
+        projected = project_read_only_provider_capabilities(
+            ("shell", "test", "integration", "evidence_analysis", "independent_review")
+        )
+        self.assertEqual(
+            projected,
+            ("evidence_analysis", "read_only", "reasoning", "review"),
+        )
+        request = d15_recovery_nvidia_read_only_request(
+            request_id="D15-R05-VERIFY",
+            project_id="FULL-PLAN-TDD-CONTINUATION-V1-20261001",
+            run_id="D15-RECOVERY",
+            task_id="TASK-R06",
+            task_execution_id="TASK-R06-READONLY",
+            directive_digest="7" * 64,
+            model_ref="nvidia/d15-read-only",
+            evidence_refs=("GATE-R04-COMPLETE",),
+            required_capabilities=projected,
+        )
+        decision = route_request(request)
+        self.assertTrue(decision.eligible)
+        self.assertEqual(request.stage, "PREPARE")
+        self.assertFalse(request.state_change_required)
+        self.assertEqual(decision.provider_ref, "nvidia")
+
+    def test_d15_read_only_validation_projection_rejects_real_mutation_capability(self):
+        with self.assertRaisesRegex(ProviderRouterContractError, "state-changing"):
+            project_read_only_provider_capabilities(
+                ("evidence_analysis", "filesystem_write")
+            )
 
     def test_d15_recovery_nvidia_helper_rejects_state_changing_capabilities(self):
         with self.assertRaisesRegex(ProviderRouterContractError, "read-only"):

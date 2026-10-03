@@ -27,6 +27,7 @@ from .provider_router import (
     ProviderRouterContractError,
     STATE_CHANGING_CAPABILITIES,
     normalize_capabilities_v2,
+    project_read_only_provider_capabilities,
     validate_router_envelope,
 )
 from .schemas import WorkerRequest
@@ -2809,7 +2810,12 @@ def _read_only_execution_authorized(request: WorkerRequest) -> bool:
         routed_request, decision = validate_router_envelope(route)
     except ProviderRouterContractError:
         return False
-    capabilities = normalize_capabilities_v2(request.task.required_capabilities)
+    try:
+        capabilities = project_read_only_provider_capabilities(
+            request.task.required_capabilities
+        )
+    except ProviderRouterContractError:
+        return False
     return (
         decision.eligible
         and decision.stage in {"PREPARE", "VERIFY", "REVIEW"}
