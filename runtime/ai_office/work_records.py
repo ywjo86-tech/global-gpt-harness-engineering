@@ -64,8 +64,9 @@ def build_report_data(verified_result: Mapping[str, object], verification: Mappi
     if progress is not None and (isinstance(progress, bool) or not isinstance(progress, int) or not 0 <= progress <= 100):
         raise ValueError("report progress is invalid")
     facts = {key: verified_result.get(key) for key in sorted(verified_result)}
+    normalized_evidence_refs = tuple(sorted(set(str(item) for item in evidence_refs)))
     identity = {"report_type": report_type, "facts": facts, "verification": dict(verification),
-                "evidence_refs": sorted(set(evidence_refs))}
+                "evidence_refs": list(normalized_evidence_refs)}
     report_id = "RPT-" + hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()[:24]
     return ReportDataV1(
         report_id, REPORT_DATA_SCHEMA_V1, report_type, str(verified_result["target"]),
@@ -75,6 +76,6 @@ def build_report_data(verified_result: Mapping[str, object], verification: Mappi
         _tuple(verified_result.get("issues")), str(verified_result["impact"]),
         str(verified_result["user_action"]), _tuple(verified_result.get("next_actions")),
         str(verified_result["final_state"]), _tuple(verified_result.get("technical_references")),
-        tuple(sorted(set(str(item) for item in evidence_refs))),
+        normalized_evidence_refs,
         str(verified_result.get("execution_status") or "UNKNOWN"), verification_status,
     )
