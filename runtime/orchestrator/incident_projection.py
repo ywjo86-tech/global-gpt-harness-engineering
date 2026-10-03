@@ -75,20 +75,17 @@ def project_incidents(
         row_state_ref = str(row.get("current_state_ref") or "").strip()
         canonical_state_ref = str(current_state_ref or "").strip()
 
-        unresolved_current_ref = (
-            explicit_unresolved
-            and bool(canonical_state_ref)
-            and row_state_ref == canonical_state_ref
-        )
+        same_generation = bool(canonical_state_ref) and row_state_ref == canonical_state_ref
+        unresolved_current_ref = explicit_unresolved and same_generation
 
         terminal_states = {"RESOLVED", "SUPERSEDED", "HISTORICAL"}
         live_states = {"OPEN", "ACKNOWLEDGED", "RECOVERING"}
 
         if explicit_state in terminal_states:
             projected_state = explicit_state
-        elif state_now == "RECOVERING":
+        elif state_now == "RECOVERING" and (same_generation or not stale):
             projected_state = "RECOVERING"
-        elif state_now in _CURRENT_INCIDENT_STATES:
+        elif state_now in _CURRENT_INCIDENT_STATES and (same_generation or not stale):
             projected_state = (
                 explicit_state if explicit_state in live_states else "OPEN"
             )
