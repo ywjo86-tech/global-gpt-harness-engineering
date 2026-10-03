@@ -1,4 +1,7 @@
 import unittest
+from types import SimpleNamespace
+
+from runtime.orchestrator.schemas import CandidateEvaluationState
 
 from runtime.orchestrator.external_capability_binding import qualify_external_binding
 
@@ -39,6 +42,24 @@ class ExternalCapabilityBindingTests(unittest.TestCase):
             effect_policy="READ_ONLY",
         ).to_dict()
         self.assertFalse({"final_assignee", "provider", "model"}.intersection(payload))
+
+    def test_binding_accepts_evaluator_enum_and_evidence_reference(self):
+        evaluation = SimpleNamespace(
+            evaluation_state=CandidateEvaluationState.SAFE_FOR_CONSIDERATION,
+            evidence_reference="evidence:validated",
+        )
+        binding = qualify_external_binding(
+            evaluation=evaluation,
+            binding_kind="LOCAL_SKILL",
+            endpoint_ref="",
+            requested_capabilities=("read_only",),
+            allowed_capabilities=("read_only",),
+            blocked_capabilities=(),
+            effect_policy="READ_ONLY",
+            local_skill_asset_id="local-skill:test",
+        )
+        self.assertEqual(binding.evaluation_evidence_ref, "evidence:validated")
+
 
 
 if __name__ == "__main__":
