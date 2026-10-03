@@ -15,7 +15,9 @@ from typing import Any, Mapping, Sequence
 
 from .contract_adapter import evaluate_canonical_state, load_project_mapping, sha256_file
 from .lv_preview import LVPreviewValidationError, preview_lv_read_only
-from .validation_toolchain import ValidationToolchainError, resolve_validation_commands
+from .validation_toolchain import (
+    ValidationToolchainError, resolve_validation_commands, should_defer_evidence_manifest_integrity,
+)
 from .tool_authorization import (
     DEC007_CONTRACT_IDS, DEC007_DECISION_REF, ToolAuthorizationContract,
     activate_contract, build_dec007_approved_contracts, owned_scope_digest,
@@ -304,9 +306,13 @@ def _manifest_payload(
     policy_id = getattr(mapping, "interpreter_policy_id", None) or "PROJECT_VENV_READ_ONLY"
     source_head = source_snapshot["source_head"]
     try:
+        owned_files = list(preview["approved_owned_files"])
         validation_toolchain = resolve_validation_commands(
-            root, list(preview["approved_owned_files"]), allow_deferred=True,
+            root, owned_files, allow_deferred=True,
             python_executable=(sys.executable if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER" else None),
+            defer_evidence_manifest_integrity=should_defer_evidence_manifest_integrity(
+                root, owned_files, list(selected["completion_criteria"]),
+            ),
         ).to_dict()
     except ValidationToolchainError as exc:
         raise LVExecutionPackageError(f"project-native validation contract is invalid: {exc}") from exc
