@@ -964,6 +964,7 @@ def build_production_canonical_worker_authority_provider(
                     )
                 if recertification_schema == "orchestration.approved-baseline-lv-recertification.v1":
                     changed = candidate.get("witness_changed_files")
+                    later = candidate.get("post_witness_owned_commits", [])
                     if (
                         candidate.get("source_kind") != "APPROVED_BASELINE_WITNESS"
                         or not isinstance(candidate.get("approval_head"), str)
@@ -971,6 +972,9 @@ def build_production_canonical_worker_authority_provider(
                         or not isinstance(changed, list)
                         or not changed
                         or any(not isinstance(item, str) or not item for item in changed)
+                        or not isinstance(later, list)
+                        or any(not isinstance(item, str) or not re.fullmatch(r"[0-9a-f]{40}", item) for item in later)
+                        or (later and candidate.get("approval_head") != candidate.get("current_head"))
                     ):
                         raise ProductionCanonicalAuthorityError(
                             "approved baseline satisfied recertification binding mismatch",

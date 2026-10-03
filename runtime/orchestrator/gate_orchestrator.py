@@ -2623,11 +2623,35 @@ def _verified_approved_baseline_satisfied_recertification(
         return None
 
     safe_owned = [_safe_scope(item) for item in expected_owned]
-    witness = subprocess.run(
-        ["git", "-C", str(root), "log", "-1", "--format=%H", approval_head, "--", *safe_owned],
+    exact_only = all(not scope.endswith("/") for scope in safe_owned)
+
+    def within_owned(path: str) -> bool:
+        return any(
+            path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope))
+            for scope in safe_owned
+        )
+
+    witness = ""
+    changed: list[str] = []
+    history = subprocess.run(
+        ["git", "-C", str(root), "log", "--format=%H", approval_head, "--", *safe_owned],
         capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    if not re.fullmatch(r"[0-9a-f]{40}", witness):
+    ).stdout.splitlines()
+    for candidate in history:
+        if not re.fullmatch(r"[0-9a-f]{40}", candidate):
+            continue
+        candidate_changed = [
+            item for item in subprocess.run(
+                ["git", "-C", str(root), "diff-tree", "--root", "--no-commit-id",
+                 "--name-only", "-r", candidate],
+                capture_output=True, text=True, check=True,
+            ).stdout.splitlines() if item
+        ]
+        if candidate_changed and all(within_owned(path) for path in candidate_changed):
+            witness = candidate
+            changed = candidate_changed
+            break
+    if not witness:
         return None
     if subprocess.run(
         ["git", "-C", str(root), "merge-base", "--is-ancestor", witness, approval_head],
@@ -2635,28 +2659,27 @@ def _verified_approved_baseline_satisfied_recertification(
     ).returncode != 0:
         return None
 
-    changed = [
+    later_owned_commits = [
         item for item in subprocess.run(
-            ["git", "-C", str(root), "diff-tree", "--root", "--no-commit-id",
-             "--name-only", "-r", witness],
+            ["git", "-C", str(root), "log", "--format=%H", f"{witness}..{current_head}",
+             "--", *safe_owned],
             capture_output=True, text=True, check=True,
         ).stdout.splitlines() if item
     ]
-    def within_owned(path: str) -> bool:
-        return any(
-            path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope))
-            for scope in safe_owned
-        )
-    if not changed or any(not within_owned(path) for path in changed):
-        return None
-
-    later_owned_commits = subprocess.run(
-        ["git", "-C", str(root), "log", "--format=%H", f"{witness}..{current_head}",
-         "--", *safe_owned],
-        capture_output=True, text=True, check=True,
-    ).stdout.splitlines()
     if later_owned_commits:
-        return None
+        # Later edits are eligible only when they are already inside the exact
+        # user-approved baseline.  This never admits post-approval drift.
+        if current_head != approval_head or not exact_only:
+            return None
+        for scope in safe_owned:
+            target = root / scope
+            if target.is_symlink() or not target.is_file():
+                return None
+            if subprocess.run(
+                ["git", "-C", str(root), "cat-file", "-e", f"{approval_head}:{scope}"],
+                capture_output=True, text=True, check=False,
+            ).returncode != 0:
+                return None
 
     record = {
         "schema_version": "orchestration.approved-baseline-lv-recertification.v1",
@@ -2670,6 +2693,7 @@ def _verified_approved_baseline_satisfied_recertification(
         "current_head": current_head,
         "owned_files": expected_owned,
         "witness_changed_files": sorted(changed),
+        "post_witness_owned_commits": later_owned_commits,
         "source_kind": "APPROVED_BASELINE_WITNESS",
     }
     record["record_sha256"] = hashlib.sha256(canonical_json_bytes(record)).hexdigest()

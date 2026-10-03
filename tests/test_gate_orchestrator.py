@@ -714,6 +714,55 @@ class GateOrchestratorTests(unittest.TestCase):
         drifted, *_ = run_case(post_approval_owned_change=True)
         self.assertIsNone(drifted)
 
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project-refined"; project.mkdir()
+            subprocess.run(["git", "-C", str(project), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.com"], check=True)
+            (project / "PLAN.md").write_text("plan\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "PLAN.md"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "baseline"], check=True, capture_output=True)
+            (project / "app").mkdir()
+            (project / "app/model.py").write_text("VALUE = 1\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "app/model.py"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "task implementation"], check=True, capture_output=True)
+            witness = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            (project / "app/model.py").write_text("VALUE = 2\n", encoding="utf-8")
+            (project / "repair-test.py").write_text("repair\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "approved repair"], check=True, capture_output=True)
+            repair = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            (project / "governance.txt").write_text("approved\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "governance.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "approval baseline"], check=True, capture_output=True)
+            approval_head = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            lv = GateLV(
+                "GATE-R04", "TASK-R05", 1, "runner", [], ["app/model.py"],
+                ["focused pass"], "STATE_CHANGING", ["focused pass"],
+                required_capabilities=["implementation", "filesystem_write"],
+            )
+            plan = GatePlan(project.name, str(project), "GATE-R04", str(project / "PLAN.md"), "2" * 64, [lv])
+            auth = create_gate_authorization(
+                plan, "AUTH-R05", mode=FULL_PLAN,
+                full_plan_opt_in=True, project_final_validation=True,
+            )
+            refined = _verified_approved_baseline_satisfied_recertification(
+                project, plan, auth, lv_id="TASK-R05",
+                current_head=approval_head, approval_head=approval_head,
+            )
+            self.assertIsNotNone(refined)
+            self.assertEqual(refined["checkpoint_commit"], witness)
+            self.assertEqual(refined["post_witness_owned_commits"], [repair])
+
     def test_sealed_completed_lv_lineage_uses_handoff_baseline_and_worker_checkpoint(self) -> None:
         import subprocess
         from runtime.orchestrator.gate_orchestrator import (
