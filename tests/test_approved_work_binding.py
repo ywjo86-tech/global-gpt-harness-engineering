@@ -93,6 +93,13 @@ class ApprovedWorkBindingTests(unittest.TestCase):
         self.assertEqual(binding.runtime_code_root, str(self.runtime_root))
         self.assertEqual(len(binding.binding_digest), 64)
 
+    def test_unrelated_registry_plan_drift_does_not_poison_target_binding(self):
+        other = self.base / "other"; other.mkdir()
+        (other / "IMPLEMENTATION_PLAN.md").write_text("# other\n", encoding="utf-8")
+        self.assertEqual(self.registry.register(other, "other")["status"], "REGISTERED")
+        (other / "IMPLEMENTATION_PLAN.md").write_text("# changed\n", encoding="utf-8")
+        self.assertEqual(self.validate().project_id, "project")
+
     def test_unknown_alias_and_missing_approval_fail_closed(self):
         with self.assertRaisesRegex(ApprovedWorkBindingError, "PROJECT_NOT_REGISTERED"):
             self.validate(self.request(project_alias="missing"))

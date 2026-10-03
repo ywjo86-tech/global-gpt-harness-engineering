@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json
+import json, os, tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from .report_consistency import validate_report_consistency
@@ -26,7 +26,16 @@ class ReportingCoordinator:
         return path
     def _persist(self, report):
         self.records.mkdir(parents=True,exist_ok=True); path=self._path(report.report_id)
-        payload=asdict(report); tmp=path.with_suffix(".tmp"); tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n"); tmp.replace(path)
+        payload=json.dumps(asdict(report),sort_keys=True,indent=2)+"\n"
+        fd,tmp_name=tempfile.mkstemp(prefix=f".{report.report_id}.",suffix=".tmp",dir=self.records)
+        try:
+            with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                handle.write(payload); handle.flush(); os.fsync(handle.fileno())
+            os.replace(tmp_name,path)
+        except Exception:
+            try: os.unlink(tmp_name)
+            except OSError: pass
+            raise
     def _load(self, report_id):
         raw=json.loads(self._path(report_id).read_text())
         for key in ("summary","completed","in_progress","issues","next_actions","technical_references","evidence_refs"): raw[key]=tuple(raw[key])

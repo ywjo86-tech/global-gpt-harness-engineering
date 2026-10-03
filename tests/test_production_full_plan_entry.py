@@ -18,6 +18,7 @@ from runtime.orchestrator.production_full_plan_entry import (
     register_job,
     run_job,
     transient_systemd_command,
+    _source_lineage_for_context,
 )
 
 
@@ -265,6 +266,14 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
                 "queue_item": {"gate_id": "G2", "gate_run_id": "run--g2", "resume": False},
             }
             self.assertEqual(preflight_job(job, resume_context=context)["status"], "PASS")
+            lineage = _source_lineage_for_context(job, context, checkpoint)
+            self.assertEqual(lineage, {
+                "lineage_kind": "SEALED_PREVIOUS_GATE",
+                "current_head": checkpoint,
+                "predecessor_digest": handoff["handoff_sha256"],
+                "predecessor_lv": lv_id,
+                "predecessor_run_id": gate_run_id,
+            })
 
             (project / "drift.txt").write_text("drift\n")
             subprocess.run(["git", "-C", str(project), "add", "drift.txt"], check=True)

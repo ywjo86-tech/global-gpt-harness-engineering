@@ -44,21 +44,21 @@ class HostInspectionPort:
         return OnboardingRegistry(self.registry_root / "aliases")
 
     def _resolve_registered_project(self, alias: str) -> Path:
+        registry = self._registry()
         try:
-            entries = self._registry().entries()
+            entry = registry.resolve_alias(alias, require_unique_project=False)
         except ProjectOnboardingError as exc:
             raise HostInspectionError("PROJECT_BINDING_INVALID") from exc
-        entry = next((item for item in entries if item.get("alias") == alias), None)
         if entry is None:
             raise HostInspectionError("PROJECT_NOT_REGISTERED")
         try:
             root = Path(str(entry["project_root"]))
-            report = self._registry().inspect(root, alias)
-        except (KeyError, ProjectOnboardingError, OSError, ValueError) as exc:
+            canonical = root.resolve(strict=True)
+        except (KeyError, OSError, ValueError) as exc:
             raise HostInspectionError("PROJECT_BINDING_INVALID") from exc
-        if report.get("status") != "COMPATIBLE" or report.get("entry") != entry:
+        if canonical != root or root.is_symlink():
             raise HostInspectionError("PROJECT_BINDING_INVALID")
-        return root.resolve(strict=True)
+        return canonical
 
     @staticmethod
     def _blocked(request: HostInspectionRequestV1, code: str) -> HostInspectionResultV1:

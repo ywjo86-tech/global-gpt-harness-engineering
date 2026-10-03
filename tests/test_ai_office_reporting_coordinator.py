@@ -1,4 +1,4 @@
-import hashlib, tempfile, unittest
+import hashlib, tempfile, threading, unittest
 from dataclasses import replace
 from pathlib import Path
 from runtime.ai_office.reporting_coordinator import ReportingCoordinator
@@ -34,6 +34,25 @@ class CoordinatorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "escapes report-records"):
                 coordinator.record(report)
             self.assertEqual(outside.read_text(), "sentinel")
+
+    def test_concurrent_record_uses_unique_atomic_temp_files_and_single_sink_delivery(self):
+        with tempfile.TemporaryDirectory() as root:
+            notion=Sink("NOTION"); wiki=Sink("LLMWIKI")
+            coordinator=ReportingCoordinator(root, {"NOTION":notion,"LLMWIKI":wiki})
+            report=sample_report(); barrier=threading.Barrier(3); outcomes=[]; errors=[]
+            def worker():
+                try:
+                    barrier.wait()
+                    outcomes.append(coordinator.record(report))
+                except Exception as exc:
+                    errors.append(exc)
+            first=threading.Thread(target=worker); second=threading.Thread(target=worker)
+            first.start(); second.start(); barrier.wait(); first.join(5); second.join(5)
+            self.assertEqual(errors, [])
+            self.assertEqual(len(outcomes), 2)
+            self.assertTrue(all(item.final_completion_status=="COMPLETE" for item in outcomes))
+            self.assertEqual(notion.calls, 1)
+            self.assertEqual(wiki.calls, 1)
 
 
 if __name__ == "__main__": unittest.main()

@@ -620,17 +620,11 @@ class SuccessorReleaseStager:
         self, request: SuccessorReleaseStageRequest
     ) -> SuccessorWorkspaceIdentity:
         try:
-            matches = [
-                entry
-                for entry in self.registry.entries()
-                if entry.get("alias") == request.project_alias
-            ]
-            if len(matches) != 1:
+            entry = self.registry.resolve_alias(request.project_alias)
+            if entry is None:
                 raise SuccessorReleaseStageError(
                     "successor alias must resolve to exactly one registry entry"
                 )
-            entry = matches[0]
-            validate_alias_entry(entry)
         except ProjectOnboardingError as exc:
             raise SuccessorReleaseStageError("successor registry binding is invalid") from exc
 

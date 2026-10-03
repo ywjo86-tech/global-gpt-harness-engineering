@@ -193,6 +193,27 @@ class OCPv2SuccessorReleaseStagingTests(unittest.TestCase):
         replay = api.SuccessorReleaseStageRequest.from_mapping(dict(BASE_REQUEST))
         self.assertEqual(first.phase_request_digest, replay.phase_request_digest)
 
+    def test_unrelated_registry_plan_drift_does_not_poison_target_successor(self):
+        api = successor_api()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry, project, base, release = self._fixture(root)
+            stale = root / "stale-project"; stale.mkdir()
+            (stale / "IMPLEMENTATION_PLAN.md").write_text("# stale\n", encoding="utf-8")
+            registry.register(stale, "stale")
+            (stale / "IMPLEMENTATION_PLAN.md").write_text("# changed\n", encoding="utf-8")
+            full_mcp = RecordingFullMcp(
+                branch="stable", head=base, remote_heads=[release], object_present=False,
+            )
+            stager = api.SuccessorReleaseStager(
+                registry,
+                full_mcp=full_mcp,
+                lifecycle_identity_provider=self._safe_lifecycle(api, root),
+            )
+            result = stager.execute(self._request(api, base, release))
+            self.assertEqual(result["status"], "STAGE_READY")
+            self.assertFalse(result["mutation_performed"])
+
     def test_dirty_successor_worktree_fails_before_mutation(self):
         api = successor_api()
         with tempfile.TemporaryDirectory() as td:

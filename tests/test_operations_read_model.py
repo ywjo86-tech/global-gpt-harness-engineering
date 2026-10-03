@@ -89,8 +89,11 @@ class OperationsReadModelContractTests(unittest.TestCase):
         expected = {
             "NEW": "QUEUED",
             "INTAKE_READY": "PLANNING",
+            "INTAKE_BLOCKED": "STALLED",
             "CONTEXT_READY": "PLANNING",
+            "SOURCE_BINDING_BLOCKED": "STALLED",
             "PLAN_COORDINATED": "PLANNING",
+            "PLAN_HANDOFF_BLOCKED": "STALLED",
             "EXECUTION_PENDING": "QUEUED",
             "WAITING_STATE_CHANGE_AUTHORITY": "WAITING_DEPENDENCY",
             "EXECUTION_IN_PROGRESS": "RUNNING",

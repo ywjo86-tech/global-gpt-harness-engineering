@@ -223,12 +223,11 @@ class ApprovedWorkBindingV1:
 
 def _resolve_registered_project(registry: OnboardingRegistry, alias: str) -> tuple[dict[str, Any], Path]:
     try:
-        entries = registry.entries()
+        entry = registry.resolve_alias(alias)
     except ProjectOnboardingError as exc:
         if "canonical plan SHA drift" in str(exc):
             raise ApprovedWorkBindingError("COMMITTED_EVIDENCE_REQUIRED: approved plan") from exc
         raise ApprovedWorkBindingError("APPROVED_BINDING_REQUIRED: registry invalid") from exc
-    entry = next((item for item in entries if item.get("alias") == alias), None)
     if entry is None:
         raise ApprovedWorkBindingError("PROJECT_NOT_REGISTERED")
     try:

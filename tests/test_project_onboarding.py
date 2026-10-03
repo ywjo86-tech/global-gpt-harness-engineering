@@ -65,6 +65,18 @@ class ProjectOnboardingTests(unittest.TestCase):
             self.assertFalse(report["mutation_performed"])
             self.assertEqual(len(registry.entries()), 1)
 
+    def test_targeted_alias_resolution_ignores_unrelated_plan_sha_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); registry = OnboardingRegistry(base / "registry")
+            healthy = self.project(base, "healthy"); stale = self.project(base, "stale")
+            registry.register(healthy, "healthy")
+            registry.register(stale, "stale")
+            (stale / "IMPLEMENTATION_PLAN.md").write_text("changed", encoding="utf-8")
+            resolved = registry.resolve_alias("healthy")
+            self.assertEqual(resolved["alias"], "healthy")
+            with self.assertRaisesRegex(ProjectOnboardingError, "SHA drift"):
+                registry.entries()
+
     def test_plan_sha_drift_and_immutable_entry_are_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory); registry = OnboardingRegistry(base / "registry")

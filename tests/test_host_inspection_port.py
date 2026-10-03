@@ -83,6 +83,29 @@ class HostInspectionPortTests(unittest.TestCase):
                 self.assertEqual(result.status, "BLOCKED")
                 self.assertTrue(result.error_code)
 
+    def test_read_only_alias_lookup_tolerates_duplicate_project_id_worktrees(self) -> None:
+        other_parent = self.base / "other-parent"; other_parent.mkdir()
+        duplicate = other_parent / self.project.name; duplicate.mkdir()
+        (duplicate / "IMPLEMENTATION_PLAN.md").write_text("# duplicate\n", encoding="utf-8")
+        from runtime.orchestrator.project_onboarding import build_alias_entry
+        entry = build_alias_entry(duplicate, "duplicate")
+        (self.registry_root / "aliases" / "duplicate.json").write_text(
+            json.dumps(entry), encoding="utf-8"
+        )
+        result = self.port.inspect(self.request("git.status"))
+        self.assertEqual(result.status, "OK")
+        self.assertTrue(result.data["clean"])
+
+    def test_unrelated_registered_plan_drift_does_not_poison_host_inspection(self) -> None:
+        stale = self.base / "stale-project"; stale.mkdir()
+        (stale / "IMPLEMENTATION_PLAN.md").write_text("# stale\n", encoding="utf-8")
+        registry = OnboardingRegistry(self.registry_root / "aliases")
+        registry.register(stale, "stale")
+        (stale / "IMPLEMENTATION_PLAN.md").write_text("# changed\n", encoding="utf-8")
+        result = self.port.inspect(self.request("git.status"))
+        self.assertEqual(result.status, "OK")
+        self.assertTrue(result.data["clean"])
+
     def test_tampered_or_missing_project_binding_fails_closed(self) -> None:
         entry = self.registry_root / "aliases" / "demo.json"
         original = entry.read_text(encoding="utf-8")

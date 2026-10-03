@@ -423,16 +423,16 @@ def _verified_completed_gate_lineage_head(
     job: Mapping[str, Any],
     resume_context: Mapping[str, Any] | None,
     current_head: str,
-) -> bool:
+) -> dict[str, str] | None:
     """Accept a successor Gate only at the exact sealed terminal HEAD of the prior Gate."""
     if not isinstance(resume_context, Mapping):
-        return False
+        return None
     queue_item = resume_context.get("queue_item")
     state = resume_context.get("state")
     if not isinstance(queue_item, Mapping) or not isinstance(state, Mapping):
-        return False
+        return None
     if queue_item.get("resume") is True:
-        return False
+        return None
 
     completed = state.get("completed_gates")
     gate_ids = [str(item.get("gate_id") or "") for item in job.get("gates", []) if isinstance(item, Mapping)]
@@ -441,14 +441,14 @@ def _verified_completed_gate_lineage_head(
         or completed != gate_ids[:len(completed)]
         or len(completed) >= len(gate_ids)
     ):
-        return False
+        return None
     current_gate = gate_ids[len(completed)]
     previous_gate = completed[-1]
     if (
         str(queue_item.get("gate_id") or "") != current_gate
         or str(state.get("current_gate") or "") != current_gate
     ):
-        return False
+        return None
 
     project_id = str(job.get("project_id") or "")
     full_run_id = str(job.get("run_id") or "")
@@ -463,7 +463,7 @@ def _verified_completed_gate_lineage_head(
         or not _HEAD.fullmatch(expected_head)
         or not expected_branch
     ):
-        return False
+        return None
 
     project = Path(str(job["project_root"])).resolve()
     ancestry = subprocess.run(
@@ -475,14 +475,14 @@ def _verified_completed_gate_lineage_head(
         capture_output=True, text=True, check=False, timeout=10,
     )
     if ancestry.returncode != 0 or dirty.returncode != 0 or dirty.stdout.strip():
-        return False
+        return None
 
     state_root = job_state_root(job)
     artifact_root = state_root / "_workspace" / "global-gate" / project_id / "artifact"
     run_root = state_root / "_workspace" / "orchestration-runs"
     resume_root = state_root / "_workspace" / "global-gate-resume"
     if any(path.is_symlink() or not path.is_dir() for path in (artifact_root, run_root, resume_root)):
-        return False
+        return None
 
     def has_symlink_component(base: Path, target: Path) -> bool:
         try:
@@ -494,10 +494,10 @@ def _verified_completed_gate_lineage_head(
             cursor = cursor / part
             if cursor.is_symlink():
                 return True
-        return False
+        return None
 
     previous_gate_run_id = f"{full_run_id}--{previous_gate.lower()}"
-    matches = 0
+    candidates: list[dict[str, str]] = []
     for handoff_path in sorted(artifact_root.glob(f"{previous_gate_run_id}*.handoff.json")):
         if (
             handoff_path.is_symlink() or not handoff_path.is_file()
@@ -648,8 +648,14 @@ def _verified_completed_gate_lineage_head(
             verified = True
             break
         if verified:
-            matches += 1
-    return matches == 1
+            candidates.append({
+                "lineage_kind": "SEALED_PREVIOUS_GATE",
+                "current_head": current_head,
+                "predecessor_digest": handoff_sha,
+                "predecessor_lv": lv_id,
+                "predecessor_run_id": run_id,
+            })
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _source_lineage_for_context(
@@ -692,47 +698,11 @@ def _source_lineage_for_context(
             return candidates[0]
         return None
 
-    if _verified_completed_gate_lineage_head(job, resume_context, current_head):
-        state = dict((resume_context or {}).get("state") or {})
-        completed = list(state.get("completed_gates") or [])
-        if not completed:
-            return None
-        previous_gate = str(completed[-1])
-        full_run_id = str(job.get("run_id") or "")
-        artifact_root = (
-            job_state_root(job) / "_workspace" / "global-gate"
-            / str(job.get("project_id") or "") / "artifact"
-        )
-        prefix = f"{full_run_id}--{previous_gate.lower()}"
-        candidates: list[dict[str, str]] = []
-        for handoff_path in sorted(artifact_root.glob(f"{prefix}*.handoff.json")):
-            if handoff_path.is_symlink() or not handoff_path.is_file():
-                continue
-            try:
-                handoff = _load_json(handoff_path)
-            except FullPlanJobError:
-                continue
-            unsigned = {key: value for key, value in handoff.items() if key != "handoff_sha256"}
-            handoff_sha = hashlib.sha256(
-                json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-            ).hexdigest()
-            if (
-                handoff.get("project") != job.get("project_id")
-                or handoff.get("gate") != previous_gate
-                or handoff.get("head") != current_head
-                or handoff.get("handoff_sha256") != handoff_sha
-                or handoff.get("hard_stop") is not True
-            ):
-                continue
-            candidates.append({
-                "lineage_kind": "SEALED_PREVIOUS_GATE",
-                "current_head": current_head,
-                "predecessor_digest": handoff_sha,
-                "predecessor_lv": str(handoff.get("lv") or ""),
-                "predecessor_run_id": str(handoff.get("run_id") or ""),
-            })
-        if len(candidates) == 1:
-            return candidates[0]
+    completed_gate_lineage = _verified_completed_gate_lineage_head(
+        job, resume_context, current_head
+    )
+    if completed_gate_lineage is not None:
+        return completed_gate_lineage
     return None
 
 

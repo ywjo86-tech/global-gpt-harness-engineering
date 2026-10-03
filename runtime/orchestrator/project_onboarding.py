@@ -126,12 +126,11 @@ class OnboardingRegistry:
             aliases.add(alias); projects[entry["project_id"]] = alias; values.append(entry)
         return values
 
-    def _raw_entries(self) -> list[dict[str, Any]]:
+    def _structural_entries(self) -> list[dict[str, Any]]:
         if not self.root.exists():
             return []
         values: list[dict[str, Any]] = []
         aliases: set[str] = set()
-        projects: dict[str, str] = {}
         for path in sorted(self.root.glob("*.json")):
             if path.is_symlink():
                 raise ProjectOnboardingError("symlinked registry entry is forbidden")
@@ -139,28 +138,79 @@ class OnboardingRegistry:
                 entry = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, json.JSONDecodeError) as exc:
                 raise ProjectOnboardingError("registry entry is unreadable") from exc
-            if not isinstance(entry, dict) or set(entry) != _ENTRY_FIELDS or entry.get("schema_version") != "orchestration.project.alias.v1":
+            if (
+                not isinstance(entry, dict)
+                or set(entry) != _ENTRY_FIELDS
+                or entry.get("schema_version") != "orchestration.project.alias.v1"
+            ):
                 raise ProjectOnboardingError("alias entry field or schema mismatch")
             alias = entry.get("alias")
             project_id = entry.get("project_id")
-            if not isinstance(alias, str) or not _ID.fullmatch(alias) or not isinstance(project_id, str) or not _ID.fullmatch(project_id):
+            if (
+                not isinstance(alias, str) or not _ID.fullmatch(alias)
+                or not isinstance(project_id, str) or not _ID.fullmatch(project_id)
+            ):
                 raise ProjectOnboardingError("unsafe alias entry identity")
             if path.name != f"{alias}.json" or alias in aliases:
                 raise ProjectOnboardingError("alias collision in registry")
+            aliases.add(alias)
+            values.append(entry)
+        return values
+
+    def resolve_alias(
+        self, alias: str, *, require_unique_project: bool = True
+    ) -> dict[str, Any] | None:
+        if not isinstance(alias, str) or not _ID.fullmatch(alias):
+            raise ProjectOnboardingError("unsafe alias")
+        entries = self._structural_entries()
+        matches = [entry for entry in entries if entry["alias"] == alias]
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise ProjectOnboardingError("alias collision in registry")
+        entry = matches[0]
+        if require_unique_project and any(
+            other["alias"] != alias and other["project_id"] == entry["project_id"]
+            for other in entries
+        ):
+            raise ProjectOnboardingError("project has conflicting aliases")
+        validate_alias_entry(entry)
+        return entry
+
+    def _raw_entries(self) -> list[dict[str, Any]]:
+        values = self._structural_entries()
+        projects: dict[str, str] = {}
+        for entry in values:
+            alias = entry["alias"]
+            project_id = entry["project_id"]
             prior = projects.get(project_id)
             if prior is not None and prior != alias:
                 raise ProjectOnboardingError("project has conflicting aliases")
-            aliases.add(alias); projects[project_id] = alias; values.append(entry)
+            projects[project_id] = alias
         return values
 
     def inspect(self, project_root: str | Path, alias: str) -> dict[str, Any]:
         root = _verified_project(project_root)
-        existing = self._raw_entries()
+        existing = self._structural_entries()
         collision = next((item for item in existing if item["alias"] == alias and item["project_id"] != root.name), None)
         if collision:
             return {"status": "ONBOARDING_BLOCKED", "reason": "alias collision", "mutation_performed": False}
         match = next((item for item in existing if item["alias"] == alias), None)
         if match is not None:
+            conflict = next(
+                (
+                    item for item in existing
+                    if item["alias"] != alias and item["project_id"] == match["project_id"]
+                ),
+                None,
+            )
+            if conflict is not None:
+                return {
+                    "status": "ONBOARDING_BLOCKED",
+                    "reason": "project binding collision",
+                    "bound_alias": conflict["alias"],
+                    "mutation_performed": False,
+                }
             validate_alias_entry(match, root)
             return {"status": "COMPATIBLE", "entry": match, "mutation_performed": False}
         project_binding = next((item for item in existing if item["project_id"] == root.name), None)
