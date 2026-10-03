@@ -1961,6 +1961,27 @@ def _file_snapshot(path: Path) -> tuple[int, int, int, int, str]:
     return current.st_dev, current.st_ino, current.st_mode, current.st_size, _sha256(path.read_bytes())
 
 
+def _snapshot_runtime_output_tree(
+    path: Path, *, relative: str,
+    snapshots: dict[str, tuple[int, int, int, int, str]],
+) -> None:
+    current = path.lstat()
+    if path.is_symlink():
+        raise LVReviewError("immutable input directory contains an unsafe entry")
+    if stat.S_ISREG(current.st_mode):
+        snapshots[relative] = _file_snapshot(path)
+        return
+    if not stat.S_ISDIR(current.st_mode):
+        raise LVReviewError("immutable input directory contains an unsafe entry")
+    snapshots[relative + "/"] = (
+        current.st_dev, current.st_ino, current.st_mode, current.st_size, "DIR"
+    )
+    for child in sorted(path.iterdir(), key=lambda item: item.name):
+        _snapshot_runtime_output_tree(
+            child, relative=f"{relative}/{child.name}", snapshots=snapshots
+        )
+
+
 def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]:
     if not root.is_dir() or root.is_symlink():
         raise LVReviewError("immutable input directory is missing or unsafe")
@@ -1975,10 +1996,9 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
         if path.name in _RUNTIME_OUTPUT_DIRS:
             if path.is_symlink() or not path.is_dir():
                 raise LVReviewError("immutable input directory contains an unsafe entry")
-            for child in path.iterdir():
-                if child.is_symlink() or not child.is_file():
-                    raise LVReviewError("immutable input directory contains an unsafe entry")
-                snapshots[f"{path.name}/{child.name}"] = _file_snapshot(child)
+            _snapshot_runtime_output_tree(
+                path, relative=path.name, snapshots=snapshots
+            )
             continue
         if path.is_symlink() or not path.is_file():
             raise LVReviewError("immutable input directory contains an unsafe entry")

@@ -88,7 +88,7 @@ class LVReviewTest(unittest.TestCase):
             with self.assertRaisesRegex(LVReviewError, "sealed package"):
                 _assert_package(package, RUN_ID)
 
-    def test_directory_snapshot_hashes_known_runtime_output_files_and_rejects_unsafe_children(self) -> None:
+    def test_directory_snapshot_hashes_nested_runtime_outputs_and_rejects_symlinks(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "package.manifest.json").write_text("manifest", encoding="utf-8")
@@ -96,18 +96,23 @@ class LVReviewTest(unittest.TestCase):
             ledger.mkdir()
             evidence = ledger / "exec-1.json"
             evidence.write_text("first", encoding="utf-8")
+            tool_effects = ledger / "tool-effects"
+            tool_effects.mkdir()
+            effect = tool_effects / "TE-1.receipt.json"
+            effect.write_text("sealed", encoding="utf-8")
             remediation = root / "validation-remediation"
             remediation.mkdir()
             (remediation / "attempt-01.json").write_text("sealed", encoding="utf-8")
 
             first = _directory_snapshot(root)
             self.assertIn("host-gateway-ledger/exec-1.json", first)
+            self.assertIn("host-gateway-ledger/tool-effects/TE-1.receipt.json", first)
             self.assertIn("validation-remediation/attempt-01.json", first)
             evidence.write_text("second", encoding="utf-8")
             self.assertNotEqual(first, _directory_snapshot(root))
 
-            unsafe = ledger / "nested"
-            unsafe.mkdir()
+            unsafe = tool_effects / "unsafe-link"
+            unsafe.symlink_to(effect)
             with self.assertRaisesRegex(LVReviewError, "unsafe entry"):
                 _directory_snapshot(root)
 
