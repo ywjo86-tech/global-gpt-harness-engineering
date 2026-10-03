@@ -96,6 +96,46 @@ class IncidentProjectionTests(unittest.TestCase):
         self.assertEqual(incidents[0].state, "HISTORICAL")
         self.assertFalse(incidents[0].user_action_required)
 
+    def test_stale_open_from_prior_generation_is_not_revived_by_new_failure(self):
+        rows = ({
+            "incident_id": "STALL-OLD",
+            "kind": "STALL_CONFIRMED",
+            "opened_at": "2026-09-24T00:00:00+00:00",
+            "last_observed_at": "2026-09-24T00:01:00+00:00",
+            "state": "OPEN",
+            "current_state_ref": "run:R-old:failed",
+            "evidence_ref": "evidence:stall-old",
+        },)
+        incidents = project_incidents(
+            current_state="FAILED",
+            current_state_ref="run:R-new:failed",
+            evidence_rows=rows,
+            now=datetime(2026, 9, 24, 1, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(incidents[0].state, "HISTORICAL")
+        self.assertFalse(incidents[0].user_action_required)
+
+    def test_stale_open_same_generation_remains_live_during_failure(self):
+        ref = "run:R-same:failed"
+        rows = ({
+            "incident_id": "STALL-SAME",
+            "kind": "STALL_CONFIRMED",
+            "opened_at": "2026-09-24T00:00:00+00:00",
+            "last_observed_at": "2026-09-24T00:01:00+00:00",
+            "state": "OPEN",
+            "current_state_ref": ref,
+            "evidence_ref": "evidence:stall-same",
+        },)
+        incidents = project_incidents(
+            current_state="FAILED",
+            current_state_ref=ref,
+            evidence_rows=rows,
+            now=datetime(2026, 9, 24, 1, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(incidents[0].state, "OPEN")
+        self.assertTrue(incidents[0].user_action_required)
+
+
 
 if __name__ == "__main__":
     unittest.main()
