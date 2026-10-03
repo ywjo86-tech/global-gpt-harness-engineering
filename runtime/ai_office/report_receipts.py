@@ -1,5 +1,6 @@
 from __future__ import annotations
-import hashlib, json
+import fcntl, hashlib, json
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,9 +14,20 @@ class ReportSaveReceiptV1:
 
 class ReportReceiptStore:
     def __init__(self, root): self.root=Path(root).resolve()/"report-receipts"
+    def _key(self, request):
+        return hashlib.sha256(f"{request.report_id}\0{request.destination}\0{request.destination_key}".encode()).hexdigest()
     def _path(self, request):
-        key=hashlib.sha256(f"{request.report_id}\0{request.destination}\0{request.destination_key}".encode()).hexdigest()
-        return self.root/f"{key}.json"
+        return self.root/f"{self._key(request)}.json"
+    @contextmanager
+    def lock(self, request):
+        self.root.mkdir(parents=True, exist_ok=True)
+        path=self.root/f"{self._key(request)}.lock"
+        with path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     def load(self, request):
         path=self._path(request)
         if not path.exists(): return None
