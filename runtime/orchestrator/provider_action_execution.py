@@ -28,6 +28,8 @@ _PROVIDER_ERROR_CLASS_ALIASES = {
     "nvidia_server_error": "PROVIDER_SERVER_ERROR",
     "nvidia_network_error": "NETWORK_FAILURE",
     "nvidia_auth_error": "AUTH_FAILURE",
+    "nvidia_invalid_response": "INVALID_RESPONSE",
+    "nvidia_client_error": "MODEL_FAILURE",
     "provider_failure": "PROVIDER_FAILURE",
 }
 _PROVIDER_NEUTRAL_FAILURE_CLASSES = frozenset({
@@ -37,6 +39,7 @@ _PROVIDER_NEUTRAL_FAILURE_CLASSES = frozenset({
 })
 _RETRYABLE_PROVIDER_ERRORS = frozenset({
     "PROVIDER_TIMEOUT", "RATE_LIMIT", "PROVIDER_SERVER_ERROR", "NETWORK_FAILURE",
+    "INVALID_RESPONSE", "MODEL_FAILURE",
 })
 MAX_CONTEXT_FILES = DEFAULT_MAX_FILES
 MAX_CONTEXT_BYTES = DEFAULT_MAX_TOTAL_BYTES
@@ -553,6 +556,12 @@ def _persist_provider_response_evidence(
         "response_keys": sorted(str(key) for key in result.keys()),
         "raw_response_sha256": hashlib.sha256(raw).hexdigest(),
         "sanitized_summary": _sanitize_provider_response_text(result.get("summary", "")),
+        "provider_error_class": str(result.get("provider_error_class", "")),
+        "provider_http_status": result.get("provider_http_status") if isinstance(result.get("provider_http_status"), int) else None,
+        "model_failover_used": bool(result.get("model_failover_used", False)),
+        "model_failover_trace": result.get("model_failover_trace", []),
+        "model_attempts": result.get("model_attempts", {}),
+        "errors": [_sanitize_provider_response_text(item) for item in (result.get("errors") or [])][:8],
     }
     evidence_dir.mkdir(parents=True, exist_ok=True)
     for ordinal in range(1, 1000):
@@ -736,7 +745,7 @@ def execute_provider_action_proposal(
     exact_bindings = [(file_id, path) for file_id, path in bindings.items() if not path.endswith("/")]
     all_exact = len(exact_bindings) == len(bindings)
     all_missing = bool(exact_bindings) and all(not (Path(request.project_root) / path).exists() for _, path in exact_bindings)
-    segmented = len(exact_bindings) > 1 and all_exact and (all_missing or bool(str(validation_feedback or "").strip()))
+    segmented = len(exact_bindings) > 1 and all_exact and all_missing
     proposal: dict[str, Any]
     result: Mapping[str, Any] = {}
     total_generation_attempts = 0

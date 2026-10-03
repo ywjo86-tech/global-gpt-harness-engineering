@@ -3182,6 +3182,9 @@ def execute_production_worker(request: WorkerRequest, *,
                     request, decision=route_decision, baseline=baseline, owned=owned,
                     output_dir=output, provider_runner=provider_action_runner,
                     security_scan=_provider_action_security_scan, timeout=timeout,
+                    candidate_validator=_provider_action_candidate_focused_validator(
+                        root=root, baseline=baseline, owned=owned, request=request, timeout=timeout,
+                    ),
                 )
             except ProviderActionExecutionError as exc:
                 raise ProductionWorkerError(str(exc)) from exc

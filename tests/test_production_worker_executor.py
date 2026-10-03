@@ -1,4 +1,4 @@
-import os, json, hashlib, subprocess, tempfile, unittest
+import ast, inspect, os, json, hashlib, subprocess, tempfile, unittest
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -64,6 +64,18 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
         self.assertNotIn("HARNESS_CONTRACT_MAPPING_ROOT", validation_env)
         if "PATH" in os.environ:
             self.assertEqual(validation_env.get("PATH"), os.environ["PATH"])
+
+    def test_initial_and_remediation_provider_action_calls_both_validate_candidates_before_effect(self):
+        tree = ast.parse(inspect.getsource(execute_production_worker))
+        calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "execute_provider_action_proposal"
+        ]
+        self.assertGreaterEqual(len(calls), 2)
+        for call in calls:
+            self.assertIn("candidate_validator", {item.arg for item in call.keywords})
 
     def test_provider_action_security_scan_normalizes_structured_broker_results(self):
         self.assertTrue(_provider_action_security_scan({"status": "COMPLETED"}))
