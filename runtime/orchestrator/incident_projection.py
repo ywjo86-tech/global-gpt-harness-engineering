@@ -92,12 +92,12 @@ def project_incidents(
             projected_state = (
                 explicit_state if explicit_state in live_states else "OPEN"
             )
+        elif stale:
+            projected_state = "HISTORICAL"
         elif unresolved_current_ref:
             projected_state = (
                 explicit_state if explicit_state in live_states else "OPEN"
             )
-        elif stale:
-            projected_state = "HISTORICAL"
         elif explicit_state in live_states:
             projected_state = explicit_state
         elif explicit_unresolved:

@@ -76,7 +76,7 @@ class IncidentProjectionTests(unittest.TestCase):
         self.assertEqual(incidents[0].state, "HISTORICAL")
         self.assertFalse(incidents[0].user_action_required)
 
-    def test_stale_unresolved_bound_to_current_state_ref_remains_open(self):
+    def test_stale_unresolved_bound_to_current_state_ref_is_historical_when_current_state_healthy(self):
         ref = "run:R5:incident:STALL-R5"
         rows = ({
             "incident_id": "STALL-R5",
@@ -93,7 +93,7 @@ class IncidentProjectionTests(unittest.TestCase):
             evidence_rows=rows,
             now=datetime(2026, 9, 24, 1, 0, tzinfo=timezone.utc),
         )
-        self.assertEqual(incidents[0].state, "OPEN")
+        self.assertEqual(incidents[0].state, "HISTORICAL")
         self.assertFalse(incidents[0].user_action_required)
 
 
