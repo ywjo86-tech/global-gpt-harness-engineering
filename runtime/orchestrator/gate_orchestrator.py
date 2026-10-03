@@ -110,6 +110,39 @@ def _test_only_crash_after_production_stage(stage: str) -> None:
         raise InjectedCrash(f"injected crash after persisted production stage: {stage}")
 
 
+def _restore_runtime_selection(selection_payload: Mapping[str, Any] | None):
+    if not isinstance(selection_payload, Mapping):
+        return None
+    required = (
+        "asset_id", "skill_id", "installed_target", "artifact_digest",
+        "attestation_evidence_reference", "use_authorization_evidence_reference",
+        "capability_requirement", "project_id", "gate_id", "lv_id",
+        "canonical_plan_sha256", "source",
+    )
+    if not set(required).issubset(selection_payload):
+        return None
+    from .operational_capability import RuntimeSelection
+    values = {key: selection_payload[key] for key in required}
+    for field in ("simulated", "execution_allowed_in_dry_run"):
+        if field in selection_payload:
+            if not isinstance(selection_payload[field], bool):
+                raise GateControllerError("persisted runtime selection boolean field is invalid")
+            values[field] = selection_payload[field]
+    lineage_fields = (
+        "capability_contract_id", "capability_contract_version", "endpoint_version"
+    )
+    lineage = {key: str(selection_payload.get(key) or "") for key in lineage_fields}
+    epoch = selection_payload.get("activation_epoch", 0)
+    lineage_active = any(lineage.values()) or epoch not in (0, None, "")
+    if lineage_active:
+        if (not all(lineage.values()) or isinstance(epoch, bool)
+                or not isinstance(epoch, int) or epoch < 1):
+            raise GateControllerError("persisted runtime selection lineage is incomplete")
+        values.update(lineage)
+        values["activation_epoch"] = epoch
+    return RuntimeSelection(**values)
+
+
 def _safe_project(root: str | Path) -> tuple[Path, str]:
     supplied = Path(root)
     if not supplied.is_dir() or supplied.absolute() != supplied.resolve():
@@ -3388,16 +3421,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                             verified_checkpoints[str(payload.get("stage"))] = dict(payload)
                 if isinstance(persisted_payload, Mapping) and isinstance(persisted_payload.get("projection"), Mapping):
                     projection = dict(persisted_payload["projection"])
-                    restored_selection = None
                     selection_payload = projection.get("runtime_selection")
-                    if isinstance(selection_payload, Mapping):
-                        from .operational_capability import RuntimeSelection
-                        required_selection = {"asset_id", "skill_id", "installed_target", "artifact_digest",
-                                              "attestation_evidence_reference", "use_authorization_evidence_reference",
-                                              "capability_requirement", "project_id", "gate_id", "lv_id",
-                                              "canonical_plan_sha256", "source"}
-                        if required_selection.issubset(selection_payload):
-                            restored_selection = RuntimeSelection(**{key: selection_payload[key] for key in required_selection})
+                    restored_selection = _restore_runtime_selection(selection_payload)
                     capability_result = SimpleNamespace(
                         status="DISCOVERED_CAPABILITY_READY",
                         worker_prerequisites_satisfied=True,
