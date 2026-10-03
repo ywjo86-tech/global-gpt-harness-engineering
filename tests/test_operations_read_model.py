@@ -85,6 +85,24 @@ class OperationsReadModelContractTests(unittest.TestCase):
         self.assertEqual(human, "사용자 승인 대기")
         self.assertEqual(normalize_progress(None, ""), (None, ""))
 
+    def test_all_ai_office_workflow_states_map_to_bounded_operations_states(self):
+        expected = {
+            "NEW": "QUEUED",
+            "INTAKE_READY": "PLANNING",
+            "CONTEXT_READY": "PLANNING",
+            "PLAN_COORDINATED": "PLANNING",
+            "EXECUTION_PENDING": "QUEUED",
+            "WAITING_STATE_CHANGE_AUTHORITY": "WAITING_DEPENDENCY",
+            "EXECUTION_IN_PROGRESS": "RUNNING",
+            "REVIEW_PENDING": "RUNNING",
+            "RECOVERY_COORDINATION": "RECOVERING",
+            "COMPLETE": "COMPLETED",
+        }
+        for workflow_state, operations_state in expected.items():
+            with self.subTest(workflow_state=workflow_state):
+                normalized, _ = normalize_operations_state(workflow_state)
+                self.assertEqual(normalized, operations_state)
+
     def test_old_source_is_stale(self):
         source = SourceIdentityV1(
             "HARNESS", "v1", "a" * 40, "2026-09-23T23:00:00+00:00"
