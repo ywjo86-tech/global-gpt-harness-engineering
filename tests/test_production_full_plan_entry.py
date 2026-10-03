@@ -244,7 +244,7 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             handoff = {
                 "schema_version": "orchestration.gate.handoff.v2",
                 "project": "proj", "gate": "G1", "lv": lv_id, "run_id": gate_run_id,
-                "canonical_plan_sha256": plan_sha, "branch": branch, "head": checkpoint,
+                "canonical_plan_sha256": plan_sha, "branch": branch, "head": baseline,
                 "artifact_sha256": result_sha,
                 "review": {"status": "PASS", "worker_result_sha256": result_sha},
                 "remaining_plan_items": [], "completed_plan_items": [lv_id],

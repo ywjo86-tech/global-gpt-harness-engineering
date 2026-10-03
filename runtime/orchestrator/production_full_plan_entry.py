@@ -520,7 +520,6 @@ def _verified_completed_gate_lineage_head(
             or handoff.get("project") != project_id
             or handoff.get("gate") != previous_gate
             or handoff.get("branch") != expected_branch
-            or handoff.get("head") != current_head
             or handoff.get("remaining_plan_items") != []
             or handoff.get("hard_stop") is not True
             or not safe_id.fullmatch(lv_id)
@@ -556,6 +555,8 @@ def _verified_completed_gate_lineage_head(
         ):
             continue
         result_sha = sha256_file(result_path)
+        if handoff.get("head") != baseline:
+            continue
         if handoff.get("artifact_sha256") != result_sha:
             continue
         if isinstance(handoff.get("review"), Mapping) and handoff["review"].get("worker_result_sha256") != result_sha:
