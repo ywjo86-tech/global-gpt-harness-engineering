@@ -238,6 +238,52 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "canonical plan SHA drift"):
                 OnboardingRegistry(registry_root).entries()
 
+    def test_existing_binding_audit_isolates_ai_office_other_pass_and_damaged_block(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            ai_office, _ = _project(tmp_path, name="AI-OFFICE-HARNESS-UPGRADE-OCP-20260924")
+            other, _ = _project(tmp_path, name="normal-project")
+            damaged, _ = _project(tmp_path, name="damaged-project")
+            registry_root = tmp_path / "registry"
+            registry_root.mkdir()
+            ai_office_entry = build_alias_entry(ai_office, "ai-office")
+            other_entry = build_alias_entry(other, "normal")
+            damaged_entry = build_alias_entry(damaged, "damaged")
+            damaged_entry["canonical_plan_sha256"] = "0" * 64
+            (registry_root / "ai-office.json").write_text(json.dumps(ai_office_entry, sort_keys=True), encoding="utf-8")
+            (registry_root / "normal.json").write_text(json.dumps(other_entry, sort_keys=True), encoding="utf-8")
+            (registry_root / "damaged.json").write_text(json.dumps(damaged_entry, sort_keys=True), encoding="utf-8")
+            registry = OnboardingRegistry(registry_root)
+
+            ai_office_result = registry.inspect(ai_office, "ai-office")
+            other_result = registry.inspect(other, "normal")
+
+            self.assertEqual(ai_office_result["status"], "COMPATIBLE")
+            self.assertEqual(ai_office_result["entry"]["project_id"], ai_office.name)
+            self.assertEqual(other_result["status"], "COMPATIBLE")
+            self.assertEqual(other_result["entry"]["project_id"], other.name)
+            with self.assertRaisesRegex(Exception, "canonical plan SHA drift"):
+                registry.inspect(damaged, "damaged")
+            with self.assertRaisesRegex(Exception, "canonical plan SHA drift"):
+                registry.entries()
+
+    def test_existing_project_binding_blocks_second_alias_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, _ = _project(tmp_path, name="bound-project")
+            registry_root = tmp_path / "registry"
+            registry_root.mkdir()
+            entry = build_alias_entry(root, "canonical-alias")
+            (registry_root / "canonical-alias.json").write_text(json.dumps(entry, sort_keys=True), encoding="utf-8")
+
+            result = OnboardingRegistry(registry_root).inspect(root, "alternate-alias")
+
+            self.assertEqual(result["status"], "ONBOARDING_BLOCKED")
+            self.assertEqual(result["reason"], "project binding collision")
+            self.assertEqual(result["bound_alias"], "canonical-alias")
+            self.assertFalse(result["mutation_performed"])
+            self.assertFalse((registry_root / "alternate-alias.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

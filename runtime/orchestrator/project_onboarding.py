@@ -163,6 +163,14 @@ class OnboardingRegistry:
         if match is not None:
             validate_alias_entry(match, root)
             return {"status": "COMPATIBLE", "entry": match, "mutation_performed": False}
+        project_binding = next((item for item in existing if item["project_id"] == root.name), None)
+        if project_binding is not None:
+            return {
+                "status": "ONBOARDING_BLOCKED",
+                "reason": "project binding collision",
+                "bound_alias": project_binding["alias"],
+                "mutation_performed": False,
+            }
         plan = _plan(root)
         if plan is None:
             return {
