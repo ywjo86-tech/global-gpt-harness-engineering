@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.orchestrator.validation_toolchain import (
     ValidationToolchainError,
@@ -20,7 +21,6 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.focused[0][:4],('.venv/bin/python','-m','pytest','-q'))
 
     def test_explicit_pytest_profile_is_not_changed_by_active_external_venv(self):
-        from unittest.mock import patch
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
             root=Path(d)
             with patch.dict(os.environ, {'VIRTUAL_ENV': e}):
@@ -32,7 +32,6 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.focused[0],('.venv/bin/python','-m','pytest','-q','tests/test_a.py'))
 
     def test_active_venv_is_not_implicit_python_validation_intent(self):
-        from unittest.mock import patch
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
             root=Path(d)
             with patch.dict(os.environ, {'VIRTUAL_ENV': e}):
@@ -62,7 +61,6 @@ class ValidationToolchainTests(unittest.TestCase):
             validate_profile_resolution(['EXTERNAL_UNITTEST_PROFILE'],plan.profile_ids)
 
     def test_explicit_pytest_profile_is_deterministic_across_python_environments(self):
-        from unittest.mock import patch
         expected={
             "profile_ids":["PYTEST_PROFILE"],
             "focused":[[".venv/bin/python","-m","pytest","-q","tests/test_a.py"]],
@@ -70,18 +68,35 @@ class ValidationToolchainTests(unittest.TestCase):
             "compile":[[".venv/bin/python","-m","compileall","-q","tests/test_a.py"]],
             "deferred":True,
         }
+        cases=[]
         with tempfile.TemporaryDirectory() as d:
-            system=resolve_validation_commands(Path(d),["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+            cases.append(resolve_validation_commands(Path(d),["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE"))
         with tempfile.TemporaryDirectory() as d:
             project_root=Path(d); (project_root/".venv/bin").mkdir(parents=True); (project_root/".venv/bin/python").write_text("")
-            project=resolve_validation_commands(project_root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
+            cases.append(resolve_validation_commands(project_root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE"))
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
             temporary_root=Path(d)
             with patch.dict(os.environ, {"VIRTUAL_ENV": e}):
-                temporary=resolve_validation_commands(temporary_root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE")
-        self.assertEqual(system.to_dict(),expected)
-        self.assertEqual(project.to_dict(),expected)
-        self.assertEqual(temporary.to_dict(),expected)
+                cases.append(resolve_validation_commands(temporary_root,["tests/test_a.py"],allow_deferred=True,validation_profile="PYTEST_PROFILE"))
+        for plan in cases:
+            with self.subTest(profile_ids=plan.profile_ids):
+                self.assertEqual(plan.to_dict(),expected)
+
+    def test_resolver_selection_keeps_environment_resolution_separate_from_explicit_profiles(self):
+        with tempfile.TemporaryDirectory() as d:
+            deferred=resolve_validation_commands(Path(d),['tests/test_a.py'],allow_deferred=True,validation_profile='RESOLVER_SELECTION')
+        self.assertEqual(deferred.profile_ids,('PYTHON_PYTEST',))
+        self.assertTrue(deferred.deferred)
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'.venv/bin').mkdir(parents=True); (root/'.venv/bin/python').write_text('')
+            project=resolve_validation_commands(root,['tests/test_a.py'],validation_profile='RESOLVER_SELECTION')
+        self.assertEqual(project.profile_ids,('PYTHON_PYTEST',))
+        self.assertFalse(project.deferred)
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
+            root=Path(d); external=Path(e)/'python'; external.write_text(''); external.chmod(0o755)
+            external_plan=resolve_validation_commands(root,['tests/test_a.py'],python_executable=external,validation_profile='RESOLVER_SELECTION')
+        self.assertEqual(external_plan.profile_ids,('PYTHON_UNITTEST_EXTERNAL',))
+        self.assertFalse(external_plan.deferred)
 
     def test_explicit_pytest_profile_respects_non_deferred_intent(self):
         with tempfile.TemporaryDirectory() as d:
@@ -128,7 +143,6 @@ class ValidationToolchainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); tool=Path(d).parent/'trusted-gradle-test-bin'; tool.write_text('#!/bin/sh\n')
             try:
-                from unittest.mock import patch
                 with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=str(tool)):
                     plan=resolve_validation_commands(root,['settings.gradle.kts','android-app/'])
                 self.assertEqual(plan.profile_ids,('ANDROID_GRADLE_SYSTEM_BOOTSTRAP',))
@@ -139,7 +153,6 @@ class ValidationToolchainTests(unittest.TestCase):
 
     def test_bootstrap_can_defer_missing_project_native_manifests(self):
         with tempfile.TemporaryDirectory() as d:
-            from unittest.mock import patch
             with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=None):
                 plan=resolve_validation_commands(Path(d),['android-app/','backend/'],allow_deferred=True)
             self.assertTrue(plan.deferred)
@@ -156,7 +169,6 @@ class ValidationToolchainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); tool=root.parent/'trusted-gradle-doc-only'; tool.write_text('#!/bin/sh\n')
             try:
-                from unittest.mock import patch
                 with patch('runtime.orchestrator.validation_toolchain.shutil.which', return_value=str(tool)):
                     plan=resolve_validation_commands(
                         root, ['docs/history/upgrades/PROJECT/'], allow_deferred=True

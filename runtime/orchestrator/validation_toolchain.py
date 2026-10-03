@@ -31,6 +31,26 @@ class ValidationCommandSet:
         }
 
 
+@dataclass(frozen=True)
+class _PythonValidationIntent:
+    branch: str
+    profile_id: str | None
+    explicit: bool
+
+
+_PYTHON_VALIDATION_PROFILES = {None, "PYTEST_PROFILE", "EXTERNAL_UNITTEST_PROFILE", "RESOLVER_SELECTION"}
+
+
+def _python_validation_intent(validation_profile: str | None) -> _PythonValidationIntent:
+    if validation_profile not in _PYTHON_VALIDATION_PROFILES:
+        raise ValidationToolchainError("unknown validation profile")
+    if validation_profile == "PYTEST_PROFILE":
+        return _PythonValidationIntent("pytest", "PYTEST_PROFILE", True)
+    if validation_profile == "EXTERNAL_UNITTEST_PROFILE":
+        return _PythonValidationIntent("external_unittest", "EXTERNAL_UNITTEST_PROFILE", True)
+    return _PythonValidationIntent("resolver", None, False)
+
+
 def _scope_flags(owned_files: Sequence[str]) -> tuple[bool, bool, bool]:
     android = any(
         path in {"settings.gradle.kts", "gradle/libs.versions.toml"}
@@ -198,13 +218,10 @@ def resolve_validation_commands(
 
     py_tests = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     if python_scope and not android and not node:
-        if validation_profile not in {None, "PYTEST_PROFILE", "EXTERNAL_UNITTEST_PROFILE", "RESOLVER_SELECTION"}:
-            raise ValidationToolchainError("unknown validation profile")
+        python_intent = _python_validation_intent(validation_profile)
         project_interpreter = root / ".venv" / "bin" / "python"
         external_interpreter: Path | None = None
-        explicit_pytest = validation_profile == "PYTEST_PROFILE"
-        explicit_external = validation_profile == "EXTERNAL_UNITTEST_PROFILE"
-        if explicit_external and python_executable is None:
+        if python_intent.branch == "external_unittest" and python_executable is None:
             raise ValidationToolchainError("explicit external unittest profile requires approved interpreter")
         if python_executable is not None:
             candidate = Path(str(python_executable))
@@ -223,17 +240,17 @@ def resolve_validation_commands(
 
         if py_tests:
             py_owned = [path for path in owned_files if path.endswith(".py")]
-            if (project_interpreter.is_file() or explicit_pytest) and external_interpreter is None:
-                profiles.append("PYTEST_PROFILE" if explicit_pytest else "PYTHON_PYTEST")
+            if (project_interpreter.is_file() or python_intent.branch == "pytest") and external_interpreter is None:
+                profiles.append(python_intent.profile_id or "PYTHON_PYTEST")
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
                 full.append((".venv/bin/python", "-m", "pytest", "-q"))
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
-                if explicit_pytest:
+                if python_intent.explicit:
                     deferred = bool(allow_deferred)
             elif external_interpreter is not None:
                 modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
                 runner = str(external_interpreter)
-                profiles.append("EXTERNAL_UNITTEST_PROFILE" if explicit_external else "PYTHON_UNITTEST_EXTERNAL")
+                profiles.append(python_intent.profile_id or "PYTHON_UNITTEST_EXTERNAL")
                 focused.append((runner, "-m", "unittest", "-v", *modules))
                 full.append((runner, "-m", "unittest", "discover", "-s", "tests", "-v"))
                 compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
