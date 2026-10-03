@@ -94,6 +94,7 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             (project / "base.txt").write_text("base\n")
             subprocess.run(["git", "-C", str(project), "add", "base.txt"], check=True)
             subprocess.run(["git", "-C", str(project), "commit", "-qm", "base"], check=True)
+            subprocess.run(["git", "-C", str(project), "branch", "-M", "main"], check=True)
             ancestor = subprocess.check_output(
                 ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
             ).strip()
