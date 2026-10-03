@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -940,8 +941,12 @@ def build_production_canonical_worker_authority_provider(
                 candidate = dict(satisfied_recertification)
                 unsigned = {k: v for k, v in candidate.items() if k != "record_sha256"}
                 expected_digest = hashlib.sha256(canonical_json_bytes(unsigned)).hexdigest()
+                recertification_schema = candidate.get("schema_version")
                 if (
-                    candidate.get("schema_version") != "orchestration.historical-lv-recertification.v1"
+                    recertification_schema not in {
+                        "orchestration.historical-lv-recertification.v1",
+                        "orchestration.approved-baseline-lv-recertification.v1",
+                    }
                     or candidate.get("project_id") != project_id
                     or candidate.get("gate_id") != gate_id
                     or candidate.get("lv_id") != lv_id
@@ -957,6 +962,20 @@ def build_production_canonical_worker_authority_provider(
                         "historical satisfied recertification binding mismatch",
                         reason_taxonomy="PRODUCTION_CANONICAL_SATISFIED_RECERTIFICATION_INVALID",
                     )
+                if recertification_schema == "orchestration.approved-baseline-lv-recertification.v1":
+                    changed = candidate.get("witness_changed_files")
+                    if (
+                        candidate.get("source_kind") != "APPROVED_BASELINE_WITNESS"
+                        or not isinstance(candidate.get("approval_head"), str)
+                        or not re.fullmatch(r"[0-9a-f]{40}", candidate["approval_head"])
+                        or not isinstance(changed, list)
+                        or not changed
+                        or any(not isinstance(item, str) or not item for item in changed)
+                    ):
+                        raise ProductionCanonicalAuthorityError(
+                            "approved baseline satisfied recertification binding mismatch",
+                            reason_taxonomy="PRODUCTION_CANONICAL_SATISFIED_RECERTIFICATION_INVALID",
+                        )
                 recertification = candidate
             binding_seed = {
                 "project_id": project_id,

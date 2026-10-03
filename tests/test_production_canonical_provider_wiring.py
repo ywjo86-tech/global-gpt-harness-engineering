@@ -136,6 +136,72 @@ class ProductionCanonicalProviderWiringTests(unittest.TestCase):
             binding["satisfied_recertification"]["checkpoint_commit"], "a" * 40
         )
 
+    def test_dynamic_provider_accepts_approved_baseline_satisfied_recertification(self):
+        unsigned = {
+            "schema_version": "orchestration.approved-baseline-lv-recertification.v1",
+            "project_id": "PROJECT",
+            "gate_id": "GATE-R03",
+            "lv_id": "TASK-R04",
+            "plan_sha256": "1" * 64,
+            "current_approval_id": "new-approval",
+            "checkpoint_commit": "a" * 40,
+            "approval_head": "b" * 40,
+            "current_head": "c" * 40,
+            "owned_files": ["runtime/orchestrator/x.py"],
+            "witness_changed_files": ["runtime/orchestrator/x.py"],
+            "source_kind": "APPROVED_BASELINE_WITNESS",
+        }
+        recert = dict(unsigned)
+        recert["record_sha256"] = hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest()
+        provider = build_production_canonical_worker_authority_provider(
+            codex_auth_readiness=None,
+            readiness_recheck_probes=None,
+            router_decision=None,
+            satisfied_recertification=recert,
+            verify_git_provenance=False,
+        )
+        manifest = {
+            "approval_id": "new-approval",
+            "source_head": "c" * 40,
+            "tool_authorization_projection": {
+                "operation_class_ids": ["PROJECT_OWNED_FILE_WRITE"],
+                "worker_task_id": "TASK-R04",
+                "package_binding_sha256": "5" * 64,
+            },
+            "tool_authorization_projection_sha256": "6" * 64,
+            "active_tool_authorization_contracts": [],
+            "owned_files": ["runtime/orchestrator/x.py"],
+        }
+        approved = SimpleNamespace(allowed_capabilities=("PROJECT_OWNED_FILE_WRITE",))
+        with patch(
+            "runtime.orchestrator.production_canonical_authority.derive_approved_task_from_lv_manifest",
+            return_value=approved,
+        ):
+            value = provider(
+                mode="normal",
+                project_root=Path("/tmp/project"),
+                harness_root=Path("/tmp/harness"),
+                package_root=Path("/tmp/package"),
+                parent_package_root=Path("/tmp/package"),
+                manifest=manifest,
+                recovery_package=None,
+                recovery_preflight=None,
+                requirements_sha256="7" * 64,
+                project_id="PROJECT",
+                gate_id="GATE-R03",
+                lv_id="TASK-R04",
+                run_id="new-run",
+                canonical_plan_sha256="1" * 64,
+            )
+        binding = value["canonical_authority_binding"]
+        self.assertEqual(binding["execution_obligation"], "NONE_SATISFIED")
+        self.assertEqual(
+            binding["satisfied_recertification"]["source_kind"],
+            "APPROVED_BASELINE_WITNESS",
+        )
+
     def test_provider_missing_readiness_fails_before_any_probe(self):
         provider = build_production_canonical_worker_authority_provider(
             codex_auth_readiness=None,

@@ -2578,6 +2578,104 @@ def _verified_historical_satisfied_recertification(
     return candidates[0]
 
 
+def _verified_approved_baseline_satisfied_recertification(
+    project_root: str | Path,
+    plan: GatePlan,
+    current_auth: GateAuthorization,
+    *,
+    lv_id: str,
+    current_head: str,
+    approval_head: str,
+) -> dict[str, Any] | None:
+    """Recertify an already-satisfied mutating LV from the approved baseline.
+
+    This is a fail-closed fallback for recovery plans whose implementation is
+    already contained in the approved baseline but has no sealed historical
+    worker/handoff.  It never declares completion by itself: it only permits
+    the existing NONE_SATISFIED verification-only worker path, which reruns
+    the sealed focused/full/compile checks before review.
+    """
+    root = Path(project_root).resolve()
+    actual_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if current_head != actual_head:
+        raise GateOrchestrationError("baseline satisfied recertification current HEAD mismatch")
+    if subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip():
+        raise GateOrchestrationError("baseline satisfied recertification requires a clean worktree")
+
+    selected = next((item for item in plan.lvs if item.lv_id == lv_id), None)
+    if selected is None or lv_id not in current_auth.approved_lvs:
+        raise GateOrchestrationError("baseline satisfied recertification LV is outside current authority")
+    expected_owned = list(current_auth.owned_files_by_lv.get(lv_id, []))
+    if not expected_owned or expected_owned != list(selected.owned_files):
+        raise GateOrchestrationError("baseline satisfied recertification current scope mismatch")
+    if not re.fullmatch(r"[0-9a-f]{40}", approval_head):
+        raise GateOrchestrationError("baseline satisfied recertification approval HEAD is invalid")
+    if subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", approval_head, current_head],
+        capture_output=True, text=True, check=False,
+    ).returncode != 0:
+        return None
+
+    safe_owned = [_safe_scope(item) for item in expected_owned]
+    witness = subprocess.run(
+        ["git", "-C", str(root), "log", "-1", "--format=%H", approval_head, "--", *safe_owned],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", witness):
+        return None
+    if subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", witness, approval_head],
+        capture_output=True, text=True, check=False,
+    ).returncode != 0:
+        return None
+
+    changed = [
+        item for item in subprocess.run(
+            ["git", "-C", str(root), "diff-tree", "--root", "--no-commit-id",
+             "--name-only", "-r", witness],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines() if item
+    ]
+    def within_owned(path: str) -> bool:
+        return any(
+            path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope))
+            for scope in safe_owned
+        )
+    if not changed or any(not within_owned(path) for path in changed):
+        return None
+
+    later_owned_commits = subprocess.run(
+        ["git", "-C", str(root), "log", "--format=%H", f"{witness}..{current_head}",
+         "--", *safe_owned],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    if later_owned_commits:
+        return None
+
+    record = {
+        "schema_version": "orchestration.approved-baseline-lv-recertification.v1",
+        "project_id": plan.project_id,
+        "gate_id": plan.gate_id,
+        "lv_id": lv_id,
+        "plan_sha256": plan.canonical_plan_sha256,
+        "current_approval_id": current_auth.authorization_id,
+        "checkpoint_commit": witness,
+        "approval_head": approval_head,
+        "current_head": current_head,
+        "owned_files": expected_owned,
+        "witness_changed_files": sorted(changed),
+        "source_kind": "APPROVED_BASELINE_WITNESS",
+    }
+    record["record_sha256"] = hashlib.sha256(canonical_json_bytes(record)).hexdigest()
+    return record
+
+
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
@@ -3049,6 +3147,11 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     root, harness_root, plan, auth,
                     lv_id=lv_id, current_run_id=lv_run_id, current_head=current_head,
                 )
+                if satisfied_recertification is None:
+                    satisfied_recertification = _verified_approved_baseline_satisfied_recertification(
+                        root, plan, auth,
+                        lv_id=lv_id, current_head=current_head, approval_head=head,
+                    )
 
             if satisfied_recertification is not None:
                 resolved_codex_readiness = resolved_codex_probes = None
