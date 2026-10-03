@@ -23,7 +23,7 @@ from runtime.orchestrator.production_worker_executor import (
     _independent_verification_provenance, _independent_verification_failure,
     _bounded_validation_failure_evidence,
     _focused_execution_metadata, _sealed_external_validation_python,
-    _validation_command_env,
+    _validation_command_env, _should_defer_evidence_manifest_integrity_for_request,
     _test_runner_metadata, _bounded_validation_feedback,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
@@ -1725,6 +1725,23 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             self.assertEqual(set(result["changed_files"]),{"app/x.py","tests/test_x.py"})
             self.assertEqual(result["validation_events"], ["VALIDATION_STARTED", "FOCUSED_TEST_COMPLETED", "FULL_REGRESSION_COMPLETED", "WORKER_RESULT_SEALED"])
             self.assertFalse(subprocess.check_output(["git","-C",root,"status","--porcelain"],text=True))
+
+    def test_satisfied_recertification_defers_legacy_final_manifest_even_when_criteria_says_full_regression(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "tests/evidence").mkdir(parents=True)
+            (root / "tests/evidence/test_manifest.py").write_text("def test_manifest(): pass\n")
+            (root / "evidence/implementation").mkdir(parents=True)
+            (root / "evidence/implementation/MANIFEST_SHA256.json").write_text("{}")
+            task = SimpleNamespace(validation_criteria=["full regression remains green"])
+            normal = SimpleNamespace(extra_context={}, task=task)
+            recert = SimpleNamespace(
+                extra_context={"canonical_authority_binding": {"satisfied_recertification": {"lv_id": "TASK-001"}}},
+                task=task,
+            )
+            owned = ["tests/contracts/test_v031_baseline_immutability.py"]
+            self.assertFalse(_should_defer_evidence_manifest_integrity_for_request(normal, root, owned))
+            self.assertTrue(_should_defer_evidence_manifest_integrity_for_request(recert, root, owned))
 
     def test_verification_only_authority_allows_zero_delta_after_independent_checks(self):
         with tempfile.TemporaryDirectory() as d:

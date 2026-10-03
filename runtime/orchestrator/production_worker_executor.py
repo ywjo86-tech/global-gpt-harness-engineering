@@ -2792,6 +2792,17 @@ def _verification_only_authorized(request: WorkerRequest) -> bool:
     )
 
 
+def _should_defer_evidence_manifest_integrity_for_request(
+    request: WorkerRequest, root: Path, owned: list[str],
+) -> bool:
+    """Historical satisfied recertification must not re-seal legacy final evidence."""
+    binding = request.extra_context.get("canonical_authority_binding")
+    criteria = request.task.validation_criteria
+    if isinstance(binding, Mapping) and isinstance(binding.get("satisfied_recertification"), Mapping):
+        criteria = ()
+    return should_defer_evidence_manifest_integrity(root, owned, criteria)
+
+
 def _read_only_execution_authorized(request: WorkerRequest) -> bool:
     """Permit NVIDIA execution only for a sealed, non-mutating Router decision."""
     binding = request.extra_context.get("canonical_authority_binding")
@@ -3072,8 +3083,8 @@ def execute_production_worker(request: WorkerRequest, *,
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
     pre_result_partial_recovery = request.extra_context.get("pre_result_partial_recovery") is True
-    defer_evidence_manifest_integrity = should_defer_evidence_manifest_integrity(
-        root, owned, request.task.validation_criteria,
+    defer_evidence_manifest_integrity = _should_defer_evidence_manifest_integrity_for_request(
+        request, root, owned,
     )
     if pre_result_partial_recovery:
         if int(request.extra_context.get("attempt", 0)) <= 1 or not pending_paths:
