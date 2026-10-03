@@ -240,13 +240,12 @@ def resolve_validation_commands(
 
         if py_tests:
             py_owned = [path for path in owned_files if path.endswith(".py")]
-            if (project_interpreter.is_file() or python_intent.branch == "pytest") and external_interpreter is None:
-                profiles.append(python_intent.profile_id or "PYTHON_PYTEST")
+            if python_intent.branch == "pytest":
+                profiles.append("PYTEST_PROFILE")
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
                 full.append((".venv/bin/python", "-m", "pytest", "-q"))
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
-                if python_intent.explicit:
-                    deferred = bool(allow_deferred)
+                deferred = bool(allow_deferred)
             elif external_interpreter is not None:
                 modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
                 runner = str(external_interpreter)
@@ -254,6 +253,11 @@ def resolve_validation_commands(
                 focused.append((runner, "-m", "unittest", "-v", *modules))
                 full.append((runner, "-m", "unittest", "discover", "-s", "tests", "-v"))
                 compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
+            elif project_interpreter.is_file():
+                profiles.append("PYTHON_PYTEST")
+                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
+                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
             elif allow_deferred:
                 profiles.append("PYTHON_PYTEST")
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))

@@ -82,6 +82,16 @@ class ValidationToolchainTests(unittest.TestCase):
             with self.subTest(profile_ids=plan.profile_ids):
                 self.assertEqual(plan.to_dict(),expected)
 
+    def test_explicit_pytest_profile_ignores_bound_external_interpreter(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
+            root=Path(d); external=Path(e)/'python'; external.write_text(''); external.chmod(0o755)
+            plan=resolve_validation_commands(
+                root,['tests/test_a.py'],allow_deferred=True,
+                python_executable=external,validation_profile='PYTEST_PROFILE',
+            )
+        self.assertEqual(plan.profile_ids,('PYTEST_PROFILE',))
+        self.assertEqual(plan.focused[0],('.venv/bin/python','-m','pytest','-q','tests/test_a.py'))
+
     def test_resolver_selection_keeps_environment_resolution_separate_from_explicit_profiles(self):
         with tempfile.TemporaryDirectory() as d:
             deferred=resolve_validation_commands(Path(d),['tests/test_a.py'],allow_deferred=True,validation_profile='RESOLVER_SELECTION')
