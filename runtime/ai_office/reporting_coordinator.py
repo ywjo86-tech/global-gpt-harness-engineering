@@ -18,7 +18,12 @@ class ReportingCoordinator:
     def __init__(self, root, sinks):
         self.root=Path(root).resolve(); self.records=self.root/"report-records"; self.sinks=dict(sinks)
         self.receipts=ReportReceiptStore(self.root)
-    def _path(self, report_id): return self.records/f"{report_id}.json"
+    def _path(self, report_id):
+        base=self.records.resolve()
+        path=(self.records/f"{report_id}.json").resolve()
+        if path.parent != base:
+            raise ValueError("report id escapes report-records")
+        return path
     def _persist(self, report):
         self.records.mkdir(parents=True,exist_ok=True); path=self._path(report.report_id)
         payload=asdict(report); tmp=path.with_suffix(".tmp"); tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n"); tmp.replace(path)
