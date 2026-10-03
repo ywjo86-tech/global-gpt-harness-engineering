@@ -37,4 +37,3 @@ Update the reconciled spec and implementation plans, rerun plan lint/coverage/se
 ## Resume Validation Note
 
 The first focused baseline regression command stopped before tests ran because the host exposes `python3` but not a `python` executable. This is a command/interpreter alias mismatch, not a source/test failure. The validation is resumed with `python3` and the implementation plans use `python3` for host-level verification commands where interpreter identity matters.
-
