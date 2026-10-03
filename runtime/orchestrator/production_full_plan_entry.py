@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -418,6 +419,227 @@ def _verified_resume_checkpoint_head(
     return matches == 1
 
 
+def _verified_completed_gate_lineage_head(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> bool:
+    """Accept a successor Gate only at the exact sealed terminal HEAD of the prior Gate."""
+    if not isinstance(resume_context, Mapping):
+        return False
+    queue_item = resume_context.get("queue_item")
+    state = resume_context.get("state")
+    if not isinstance(queue_item, Mapping) or not isinstance(state, Mapping):
+        return False
+    if queue_item.get("resume") is True:
+        return False
+
+    completed = state.get("completed_gates")
+    gate_ids = [str(item.get("gate_id") or "") for item in job.get("gates", []) if isinstance(item, Mapping)]
+    if (
+        not isinstance(completed, list) or not completed
+        or completed != gate_ids[:len(completed)]
+        or len(completed) >= len(gate_ids)
+    ):
+        return False
+    current_gate = gate_ids[len(completed)]
+    previous_gate = completed[-1]
+    if (
+        str(queue_item.get("gate_id") or "") != current_gate
+        or str(state.get("current_gate") or "") != current_gate
+    ):
+        return False
+
+    project_id = str(job.get("project_id") or "")
+    full_run_id = str(job.get("run_id") or "")
+    expected_head = str(job.get("expected_head") or "")
+    expected_branch = str(job.get("expected_branch") or "")
+    safe_id = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+    if (
+        not safe_id.fullmatch(project_id)
+        or not safe_id.fullmatch(full_run_id)
+        or not safe_id.fullmatch(previous_gate)
+        or not _HEAD.fullmatch(current_head)
+        or not _HEAD.fullmatch(expected_head)
+        or not expected_branch
+    ):
+        return False
+
+    project = Path(str(job["project_root"])).resolve()
+    ancestry = subprocess.run(
+        ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, current_head],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    dirty = subprocess.run(
+        ["git", "-C", str(project), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if ancestry.returncode != 0 or dirty.returncode != 0 or dirty.stdout.strip():
+        return False
+
+    state_root = job_state_root(job)
+    artifact_root = state_root / "_workspace" / "global-gate" / project_id / "artifact"
+    run_root = state_root / "_workspace" / "orchestration-runs"
+    resume_root = state_root / "_workspace" / "global-gate-resume"
+    if any(path.is_symlink() or not path.is_dir() for path in (artifact_root, run_root, resume_root)):
+        return False
+
+    def has_symlink_component(base: Path, target: Path) -> bool:
+        try:
+            relative = target.relative_to(base)
+        except ValueError:
+            return True
+        cursor = base
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                return True
+        return False
+
+    previous_gate_run_id = f"{full_run_id}--{previous_gate.lower()}"
+    matches = 0
+    for handoff_path in sorted(artifact_root.glob(f"{previous_gate_run_id}*.handoff.json")):
+        if (
+            handoff_path.is_symlink() or not handoff_path.is_file()
+            or has_symlink_component(artifact_root, handoff_path)
+        ):
+            continue
+        try:
+            handoff = _load_json(handoff_path)
+        except FullPlanJobError:
+            continue
+        unsigned = {key: value for key, value in handoff.items() if key != "handoff_sha256"}
+        handoff_sha = hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        lv_id = str(handoff.get("lv") or "")
+        run_id = str(handoff.get("run_id") or "")
+        plan_sha = str(handoff.get("canonical_plan_sha256") or "")
+        if (
+            handoff.get("handoff_sha256") != handoff_sha
+            or handoff.get("project") != project_id
+            or handoff.get("gate") != previous_gate
+            or handoff.get("branch") != expected_branch
+            or handoff.get("head") != current_head
+            or handoff.get("remaining_plan_items") != []
+            or handoff.get("hard_stop") is not True
+            or not safe_id.fullmatch(lv_id)
+            or not safe_id.fullmatch(run_id)
+            or not (run_id == previous_gate_run_id or run_id.startswith(previous_gate_run_id + "-"))
+            or not _SHA256.fullmatch(plan_sha)
+        ):
+            continue
+
+        result_path = run_root / run_id / lv_id / "worker.result.json"
+        if (
+            result_path.is_symlink() or not result_path.is_file()
+            or has_symlink_component(run_root, result_path)
+        ):
+            continue
+        try:
+            result = _load_json(result_path)
+        except FullPlanJobError:
+            continue
+        baseline = str(result.get("baseline_head") or "")
+        tree = str(result.get("current_tree") or "")
+        if (
+            result.get("status") not in {"completed", "COMPLETED"}
+            or result.get("project_id") != project_id
+            or result.get("gate_id") != previous_gate
+            or result.get("lv_id") != lv_id
+            or result.get("run_id") != run_id
+            or result.get("plan_sha256") != plan_sha
+            or result.get("checkpoint_commit") != current_head
+            or str(result.get("current_head") or current_head) != current_head
+            or not _HEAD.fullmatch(baseline)
+            or not _HEAD.fullmatch(tree)
+        ):
+            continue
+        result_sha = sha256_file(result_path)
+        if handoff.get("artifact_sha256") != result_sha:
+            continue
+        if isinstance(handoff.get("review"), Mapping) and handoff["review"].get("worker_result_sha256") != result_sha:
+            continue
+
+        baseline_from_approval = subprocess.run(
+            ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, baseline],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        baseline_to_checkpoint = subprocess.run(
+            ["git", "-C", str(project), "merge-base", "--is-ancestor", baseline, current_head],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        tree_probe = subprocess.run(
+            ["git", "-C", str(project), "rev-parse", f"{current_head}^{{tree}}"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        if (
+            baseline_from_approval.returncode != 0
+            or baseline_to_checkpoint.returncode != 0
+            or tree_probe.returncode != 0
+            or tree_probe.stdout.strip() != tree
+        ):
+            continue
+
+        event_pattern = f"*/{project_id}/{previous_gate}/{lv_id}/{run_id}/events/000001.json"
+        verified = False
+        for event_one in sorted(resume_root.glob(event_pattern)):
+            if (
+                event_one.is_symlink() or not event_one.is_file()
+                or has_symlink_component(resume_root, event_one)
+            ):
+                continue
+            try:
+                first = _load_json(event_one)
+                from .resume_store import ResumeStore, RunBinding
+                binding = RunBinding(**dict(first.get("binding") or {}))
+                if (
+                    binding.project_id != project_id
+                    or binding.gate_id != previous_gate
+                    or binding.lv_id != lv_id
+                    or binding.run_id != run_id
+                    or binding.head != baseline
+                    or binding.branch != expected_branch
+                    or binding.plan_sha256 != plan_sha
+                ):
+                    continue
+                records = ResumeStore(event_one.parents[5], binding).verify()
+            except (FullPlanJobError, TypeError, ValueError, OSError):
+                continue
+            lifecycles = [str(record.get("lifecycle") or "") for record in records]
+            if (
+                len(records) < 7
+                or lifecycles[:3] != ["PACKAGE", "PREFLIGHT", "WORKER"]
+                or lifecycles[-3:] != ["CHECKPOINT", "EXIT", "HANDOFF"]
+                or any(stage not in {"REVIEW", "REMEDIATION"} for stage in lifecycles[3:-3])
+                or "REVIEW" not in lifecycles[3:-3]
+            ):
+                continue
+            worker_record = records[2]
+            checkpoint_record, exit_record, handoff_record = records[-3:]
+            review_records = [record for record in records[3:-3] if record.get("lifecycle") == "REVIEW"]
+            if (
+                worker_record.get("evidence_sha256") != result_sha
+                or not isinstance(worker_record.get("stage_payload"), Mapping)
+                or str(worker_record["stage_payload"].get("checkpoint_commit") or "") != current_head
+                or not review_records
+                or not isinstance(review_records[-1].get("stage_payload"), Mapping)
+                or review_records[-1]["stage_payload"].get("status") != "PASS"
+                or checkpoint_record.get("checkpoint") is not True
+                or not isinstance(exit_record.get("stage_payload"), Mapping)
+                or exit_record["stage_payload"].get("status") != "EXITED"
+                or handoff_record.get("evidence_sha256") != handoff_sha
+                or not isinstance(handoff_record.get("stage_payload"), Mapping)
+                or handoff_record["stage_payload"].get("status") != "SEALED"
+            ):
+                continue
+            verified = True
+            break
+        if verified:
+            matches += 1
+    return matches == 1
+
+
 def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     project = Path(str(job["project_root"])).resolve()
     harness = Path(str(job["harness_root"])).resolve()
@@ -467,7 +689,11 @@ def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] |
         probe = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"],
                                capture_output=True, text=True, check=False, timeout=10)
         current_head = probe.stdout.strip() if probe.returncode == 0 else ""
-        if current_head != expected_head and not _verified_resume_checkpoint_head(job, resume_context, current_head):
+        if (
+            current_head != expected_head
+            and not _verified_resume_checkpoint_head(job, resume_context, current_head)
+            and not _verified_completed_gate_lineage_head(job, resume_context, current_head)
+        ):
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "SOURCE_HEAD_MISMATCH"}
     release_digest = str(job.get("runtime_release_digest") or "")
     release_head = str(job.get("runtime_release_source_head") or "")
