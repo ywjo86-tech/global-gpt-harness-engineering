@@ -158,6 +158,29 @@ def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
     raise ValidationToolchainError(f"unsupported backend package manager: {name}")
 
 
+_FINAL_EVIDENCE_INTEGRITY_PATHS = (
+    "tests/evidence/test_manifest.py",
+    "evidence/implementation/MANIFEST_SHA256.json",
+)
+
+
+def should_defer_evidence_manifest_integrity(
+    root: Path, owned_files: Sequence[str], completion_criteria: Sequence[str],
+) -> bool:
+    criteria_text = " ".join(str(item) for item in completion_criteria).lower()
+    if "full" in criteria_text and "regression" in criteria_text:
+        return False
+    if any(
+        path == scope or (scope.endswith("/") and path.startswith(scope))
+        for path in _FINAL_EVIDENCE_INTEGRITY_PATHS for scope in owned_files
+    ):
+        return False
+    return all(
+        (root / path).is_file() and not (root / path).is_symlink()
+        for path in _FINAL_EVIDENCE_INTEGRITY_PATHS
+    )
+
+
 def resolve_validation_commands(
     root: Path,
     owned_files: Sequence[str],
@@ -165,6 +188,7 @@ def resolve_validation_commands(
     allow_deferred: bool = False,
     python_executable: str | Path | None = None,
     validation_profile: str | None = None,
+    defer_evidence_manifest_integrity: bool = False,
 ) -> ValidationCommandSet:
     documentation_only = bool(owned_files) and all(
         isinstance(path, str) and (path == "docs/" or path.startswith("docs/"))
@@ -271,6 +295,40 @@ def resolve_validation_commands(
             deferred = True
         else:
             raise ValidationToolchainError("Python owned scope requires owned focused tests")
+
+    evidence_only = bool(owned_files) and all(
+        isinstance(path, str) and path.startswith("evidence/")
+        for path in owned_files
+    )
+    if not profiles and evidence_only:
+        project_config = root / "pyproject.toml"
+        project_interpreter = root / ".venv" / "bin" / "python"
+        tests_root = root / "tests"
+        source_root = root / "src"
+        if (
+            _safe_regular_file(root, project_config)
+            and project_interpreter.is_file()
+            and tests_root.is_dir()
+            and not tests_root.is_symlink()
+        ):
+            profiles.append("PYTHON_PROJECT_EVIDENCE")
+            pytest_command = [".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+            focused_command = list(pytest_command)
+            full_command = list(pytest_command)
+            if defer_evidence_manifest_integrity:
+                evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                if (
+                    not evidence_test.is_file() or evidence_test.is_symlink()
+                    or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                ):
+                    raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                focused_command.append("--ignore=tests/evidence/test_manifest.py")
+                full_command.append("--ignore=tests/evidence/test_manifest.py")
+            focused.append(tuple(focused_command))
+            full.append(tuple(full_command))
+            compile_target = "src" if source_root.is_dir() and not source_root.is_symlink() else "tests"
+            compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", compile_target))
 
     if not profiles:
         if not owned_files:

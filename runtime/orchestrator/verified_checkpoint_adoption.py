@@ -11,7 +11,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .production_approval import load_v2_event_log
-from .validation_toolchain import ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution
+from .validation_toolchain import (
+    ValidationToolchainError, resolve_validation_commands, run_command_group,
+    should_defer_evidence_manifest_integrity, validate_profile_resolution,
+)
 
 
 ADOPTION_MODE = "VERIFIED_CHECKPOINT_ADOPTION"
@@ -141,6 +144,9 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
             external_python = focused[0][0]
         validation_plan = resolve_validation_commands(
             root, owned, allow_deferred=False, python_executable=external_python,
+            defer_evidence_manifest_integrity=should_defer_evidence_manifest_integrity(
+                root, owned, list(manifest.get("completion_checks", [])),
+            ),
         )
         if expected_profiles:
             validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
