@@ -182,9 +182,16 @@ def validate_action_proposal(
                 or (allowed_owned_file_ids is not None and file_id not in allowed_owned_file_ids)
                 or not isinstance(content, str)):
             raise ProviderActionExecutionError("provider ACTION write binding is invalid")
-        directory_scope = bindings[file_id].endswith("/")
-        if directory_scope == (not relative_path):
-            raise ProviderActionExecutionError("provider ACTION relative path binding is invalid")
+        binding_path = bindings[file_id]
+        directory_scope = binding_path.endswith("/")
+        if directory_scope:
+            if not relative_path:
+                raise ProviderActionExecutionError("provider ACTION relative path binding is invalid")
+        else:
+            if relative_path == binding_path:
+                relative_path = ""
+            elif relative_path:
+                raise ProviderActionExecutionError("provider ACTION relative path binding is invalid")
         key = (file_id, relative_path)
         if key in seen:
             raise ProviderActionExecutionError("provider ACTION write target is duplicated")

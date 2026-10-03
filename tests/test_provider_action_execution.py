@@ -534,6 +534,30 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
             self.assertEqual(result["proposal_generation_attempts"], 2)
 
+    def test_exact_file_path_echo_is_canonicalized_without_scope_broadening(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            echoed = self.proposal(content="value = 1\n")
+            echoed["writes"][0]["relative_path"] = owned[0]
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"])
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(echoed), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=decision(("nvidia/fallback-a",)), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual(len(calls), 1)
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            proposal = json.loads((root / "run/provider-action-proposal.json").read_text())
+            self.assertEqual(proposal["writes"][0]["relative_path"], "")
+            self.assertEqual(result["proposal_generation_attempts"], 1)
+
     def test_relative_path_binding_error_is_retryable_but_never_broadens_scope(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
