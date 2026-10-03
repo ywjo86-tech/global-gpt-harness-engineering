@@ -90,6 +90,28 @@ class GateOrchestratorTests(unittest.TestCase):
             with self.assertRaises(InjectedCrash):
                 _test_only_crash_after_production_stage("WORKER")
 
+    def test_runtime_selection_resume_preserves_capability_lineage(self) -> None:
+        from runtime.orchestrator.gate_controller import GateControllerError
+        from runtime.orchestrator.gate_orchestrator import _restore_runtime_selection
+        payload = {
+            "asset_id": "asset-1", "skill_id": "skill-1", "installed_target": "/tmp/skill",
+            "artifact_digest": "a" * 64, "attestation_evidence_reference": "sha256:" + "b" * 64,
+            "use_authorization_evidence_reference": "sha256:" + "c" * 64,
+            "capability_requirement": "cap", "project_id": "project-one",
+            "gate_id": "GATE-1", "lv_id": "G1-LV3-1",
+            "canonical_plan_sha256": "d" * 64, "source": "INSTALLED_PROJECT_SKILL",
+            "capability_contract_id": "contract-1", "capability_contract_version": "v1",
+            "endpoint_version": "endpoint-v2", "activation_epoch": 7,
+        }
+        restored = _restore_runtime_selection(payload)
+        self.assertEqual(restored.capability_contract_id, "contract-1")
+        self.assertEqual(restored.capability_contract_version, "v1")
+        self.assertEqual(restored.endpoint_version, "endpoint-v2")
+        self.assertEqual(restored.activation_epoch, 7)
+        invalid = dict(payload); invalid["endpoint_version"] = ""
+        with self.assertRaisesRegex(GateControllerError, "lineage is incomplete"):
+            _restore_runtime_selection(invalid)
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name) / "project-one"; self.root.mkdir()
         self.plan_path = self.root / "PLAN.md"; self.plan_path.write_text(PLAN)
