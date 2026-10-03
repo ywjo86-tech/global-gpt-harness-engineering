@@ -1,16 +1,38 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from runtime.orchestrator.ocpv2_runtime_service import (
+    RuntimeConfig,
     RuntimeServiceError,
+    _compose_service,
+    _diagnostic_provenance,
+    _runtime_release_for_full_plan_request,
     canary_scope_from_environment,
     execute_authorized_canonical,
+    finalize_remote_control_projection,
+    full_plan_activation_enabled_from_environment,
+    host_inspection_enabled_from_environment,
+    load_runtime_config,
+    work_activation_enabled_from_environment,
 )
+from runtime.orchestrator.operator_control import OPERATOR_DIRECTIVE_SCHEMA
+from runtime.orchestrator.read_only_host_diagnostic_contract import (
+    DiagnosticPolicy,
+    ReadOnlyDiagnosticResultV1,
+)
+from runtime.orchestrator.remote_operator_envelope import (
+    REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA,
+    seal_remote_control_envelope,
+)
+from runtime.orchestrator.remote_operator_transport import RawControlEnvelope
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +70,95 @@ def mutation_directive():
         requested_next_stage="ACTION",
         state_change_required=True,
     )
+
+
+def _write_runtime_env(root: Path, *, extra: dict[str, str] | None = None):
+    repo = root / "repo"
+    repo.mkdir(exist_ok=True)
+    token = root / "token"
+    token.write_text("x\n", encoding="utf-8")
+    token.chmod(0o600)
+    state = root / "state"
+    values = {
+        "OCP_MODE": "CONTROL_READ_ONLY",
+        "OCP_GITHUB_CONTROL_REPOSITORY_ID": "987654",
+        "OCP_GITHUB_CONTROL_PR_NUMBER": "7",
+        "OCP_GITHUB_ALLOWED_ACTOR_IDS": "123",
+        "OCP_GITHUB_TOKEN_FILE": str(token),
+        "OCP_STATE_ROOT": str(state),
+        "OCP_REPO_ROOT": str(repo),
+    }
+    values.update(extra or {})
+    path = root / "ocp.env"
+    path.write_text("\n".join(f"{key}={value}" for key, value in values.items()) + "\n", encoding="utf-8")
+    return path, repo, state
+
+
+def _write_policy(path: Path, repo: Path):
+    path.write_text(json.dumps({
+        "schema_version": "orchestration.read-only-host-diagnostic-config.v1",
+        "roots": {"project": str(repo)},
+        "user_services": ["ocpv2.service"],
+        "limits": {"max_bytes": 32768, "max_lines": 400, "timeout_seconds": 5},
+    }), encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def _diagnostic_raw():
+    payload = {
+        "schema_version": REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA,
+        "message_id": "MSG-DIAG-1", "sequence": 1,
+        "issued_at": "2026-09-23T00:00:00+00:00", "expires_at": "2099-09-24T00:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "GITHUB_CONTROL_V1", "channel_id": "PR:7", "source_actor_id": "123", "source_message_id": "9"},
+        "project_id": "P1", "run_id": "R1", "task_id": "T1", "task_execution_id": "E1", "gate_id": "G1",
+        "operator_directive": {
+            "schema_version": OPERATOR_DIRECTIVE_SCHEMA, "project_id": "P1", "run_id": "R1", "task_id": "T1",
+            "task_execution_id": "E1", "current_stage": "PREPARE", "requested_next_stage": "VERIFY",
+            "required_capabilities": ["read_only_host_diagnostic"], "state_change_required": False,
+            "input_artifact_digests": [], "gate_id": "G1", "directive_id": "D1",
+        },
+        "directive_digest": "",
+        "expected": {
+            "continuation_state_sha256": "", "continuation_owner_epoch": 0, "canonical_run_state_sha256": "",
+            "migration_id": "", "migration_transaction_sha256": "", "migration_phase": "",
+            "qualification_evidence_sha256": "", "source_head": "a" * 40, "runtime_release_digest": "b" * 64,
+        },
+        "authorization": {"risk_envelope_ref": "", "risk_envelope_digest": "", "manual_action_authorization_digest": ""},
+        "read_only_request": {
+            "schema_version": "orchestration.read-only-host-diagnostic-request.v1", "request_id": "REQ-1",
+            "operation": "repo.snapshot", "root_id": "project", "relative_path": "", "start_line": 0,
+            "line_count": 0, "service_id": "",
+        },
+        "read_only_request_digest": "", "envelope_sha256": "",
+    }
+    sealed = seal_remote_control_envelope(payload)
+    return RawControlEnvelope(
+        source_repository_id=987654, source_channel_id="PR:7", source_actor_id="123", source_message_id="9",
+        content=json.dumps(sealed, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        received_at="2026-09-23T00:01:00+00:00",
+    )
+
+
+class _FakeAdapter:
+    def __init__(self, items=(), *, fail_publish=False):
+        self.items = tuple(items)
+        self.fail_publish = fail_publish
+        self.projections = []
+        self.acks = []
+    def receive(self, *, limit=16):
+        return self.items[:limit]
+    def publish_projection(self, projection):
+        if self.fail_publish:
+            raise RuntimeError("offline")
+        self.projections.append(dict(projection))
+    def acknowledge_delivery(self, message_id):
+        self.acks.append(message_id)
+    def has_durable_ack(self, *args, **kwargs):
+        return False
+    def prepare_recovery_delivery(self, **kwargs):
+        return None
 
 
 class OCPv2RuntimeServiceTests(unittest.TestCase):
@@ -110,6 +221,127 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             canary_scope_from_environment("CONTROL_MUTATION_CANARY", broken)
         self.assertIsNone(canary_scope_from_environment("OBSERVE_ONLY", {}))
 
+    def test_diagnostic_feature_defaults_off_and_old_env_still_loads(self):
+        with tempfile.TemporaryDirectory() as td:
+            env_path, _, _ = _write_runtime_env(Path(td))
+            config = load_runtime_config(env_path, process_environment={})
+            self.assertFalse(config.diagnostic_enabled)
+            self.assertIsNone(config.diagnostic_policy)
+
+    def test_old_env_cannot_be_implicitly_enabled_by_process_environment(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, repo, _ = _write_runtime_env(root)
+            policy = _write_policy(root / "policy.json", repo)
+            config = load_runtime_config(env_path, process_environment={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(policy),
+            })
+            self.assertFalse(config.diagnostic_enabled)
+            self.assertIsNone(config.diagnostic_policy)
+
+    def test_diagnostic_provenance_falls_back_to_verified_runtime_release_manifest(self):
+        with tempfile.TemporaryDirectory() as td:
+            release = Path(td)
+            (release / "RUNTIME_RELEASE_MANIFEST.json").write_text(
+                json.dumps({"source_head": "1" * 40}), encoding="utf-8"
+            )
+            with patch("runtime.orchestrator.ocpv2_runtime_service.executor_runtime_identity",
+                       return_value={"head": "", "runtime_source_sha256": "2" * 64}), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.verify_runtime_release",
+                       return_value=SimpleNamespace(source_head="1" * 40)) as verify:
+                self.assertEqual(_diagnostic_provenance(release), ("1" * 40, "2" * 64))
+                verify.assert_called_once_with(release, "1" * 40)
+
+    def test_diagnostic_feature_true_requires_secure_absolute_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, repo, _ = _write_runtime_env(root, extra={"GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true"})
+            with self.assertRaisesRegex(RuntimeServiceError, "diagnostic config"):
+                load_runtime_config(env_path, process_environment={})
+
+            env_path, repo, _ = _write_runtime_env(root, extra={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": "relative.json",
+            })
+            with self.assertRaisesRegex(RuntimeServiceError, "diagnostic config"):
+                load_runtime_config(env_path, process_environment={})
+
+            policy = _write_policy(root / "policy.json", repo)
+            link = root / "policy-link.json"
+            link.symlink_to(policy)
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(link),
+            })
+            with self.assertRaisesRegex(RuntimeServiceError, "diagnostic config"):
+                load_runtime_config(env_path, process_environment={})
+
+            policy.chmod(0o620)
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(policy),
+            })
+            with self.assertRaisesRegex(RuntimeServiceError, "diagnostic config"):
+                load_runtime_config(env_path, process_environment={})
+
+    def test_feature_off_does_not_instantiate_diagnostic_outbox(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        with tempfile.TemporaryDirectory() as td:
+            env_path, _, _ = _write_runtime_env(Path(td))
+            config = load_runtime_config(env_path, process_environment={})
+            with patch.object(module, "RemoteDiagnosticOutbox", side_effect=AssertionError("must stay off"), create=True), \
+                 patch.object(module, "GitHubRESTClient", return_value=Mock()), \
+                 patch.object(module, "GitHubControlAdapter", return_value=Mock()), \
+                 patch.object(module, "recover_pending_canonical_results", return_value=None), \
+                 patch.object(module, "resolve_harness_state_root", return_value=Path(td)):
+                _compose_service(config)
+
+    def test_diagnostic_outbox_recovers_after_publish_crash_without_reexecution(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            policy_path = _write_policy(root / "policy.json", repo)
+            env_path, _, state = _write_runtime_env(root, extra={
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(policy_path),
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            first_adapter = _FakeAdapter((_diagnostic_raw(),), fail_publish=True)
+            second_adapter = _FakeAdapter(())
+            adapters = iter((first_adapter, second_adapter))
+            executions = []
+
+            def fake_execute(request, policy, **kwargs):
+                executions.append((request.request_id, kwargs["source_sha"], kwargs["runtime_sha"]))
+                return ReadOnlyDiagnosticResultV1.build(
+                    request_id=request.request_id, correlation_id=kwargs["correlation_id"], project_id=kwargs["project_id"],
+                    root_id=request.root_id, operation_id=request.operation, authorization_decision="ALLOW",
+                    captured_at="2026-09-23T00:02:00+00:00", freshness="CURRENT",
+                    source_sha=kwargs["source_sha"], runtime_sha=kwargs["runtime_sha"], data_class="DIAG_SUMMARY",
+                    redaction_applied=False, truncated=False, status="OK", error_class="", payload={"head": "a" * 40},
+                )
+
+            with patch.object(module, "GitHubRESTClient", return_value=Mock()), \
+                 patch.object(module, "GitHubControlAdapter", side_effect=lambda **kwargs: next(adapters)), \
+                 patch.object(module, "recover_pending_canonical_results", return_value=None), \
+                 patch.object(module, "resolve_harness_state_root", return_value=repo), \
+                 patch.object(module, "_diagnostic_provenance", return_value=("1" * 40, "2" * 64)), \
+                 patch.object(module, "execute_read_only_host_diagnostic", side_effect=fake_execute, create=True):
+                first = _compose_service(config)
+                with self.assertRaisesRegex(RuntimeError, "offline"):
+                    first.poll_once(mode=config.mode)
+                self.assertEqual(executions, [("REQ-1", "1" * 40, "2" * 64)])
+
+                _compose_service(config)
+                self.assertEqual(executions, [("REQ-1", "1" * 40, "2" * 64)])
+                self.assertEqual(len(second_adapter.projections), 1)
+                recovered = second_adapter.projections[0]
+                self.assertEqual(recovered["schema_version"], "orchestration.remote-diagnostic-projection.v1")
+                self.assertEqual(recovered["diagnostic_result"]["status"], "OK")
+
     def test_runtime_service_has_no_job_registration_or_direct_shell_authority(self):
         import runtime.orchestrator.ocpv2_runtime_service as module
         source = inspect.getsource(module)
@@ -118,10 +350,215 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         self.assertNotIn("os.system", source)
         self.assertNotIn("provider_router", source)
 
+    def test_runtime_decode_uses_additive_remote_control_dispatch(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        source = inspect.getsource(module)
+        self.assertIn("decode_remote_control_payload(value)", source)
+        self.assertNotIn("envelope = validate_remote_envelope(value)", source)
+
+    def test_remote_control_status_projection_does_not_touch_durable_outbox(self):
+        outbox = Mock()
+        finalize_remote_control_projection(
+            outbox,
+            {
+                "schema_version": "orchestration.remote-activation-status-projection.v1",
+                "message_id": "MSG-A1", "activation_request_id": "ACT-1",
+                "project_alias": "demo", "request_digest": "a" * 64,
+                "result_class": "WORK_ACTIVATION_ERROR",
+            },
+        )
+        outbox.mark_published.assert_not_called()
+
+    def test_successor_stage_status_projection_does_not_touch_durable_outbox(self):
+        outbox = Mock()
+        finalize_remote_control_projection(
+            outbox,
+            {
+                "schema_version": "orchestration.remote-successor-release-stage-status-projection.v1",
+                "message_id": "P3-F165-RESTAGE2-DRYRUN-MSG",
+                "request_id": "P3-F165-RESTAGE2",
+                "project_alias": "harness-lifecycle-v2-successor-20260925",
+                "phase_request_digest": "a" * 64,
+                "mode": "DRY_RUN",
+                "result_class": "STAGE_READY",
+            },
+        )
+        outbox.mark_published.assert_not_called()
+
+    def test_p3_promotion_status_projection_does_not_touch_durable_outbox(self):
+        outbox = Mock()
+        finalize_remote_control_projection(
+            outbox,
+            {
+                "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
+                "message_id": "P3-LIVE-ADMISSION-MSG",
+                "request_id": "P3-LIVE-ADMISSION",
+                "project_alias": "harness-lifecycle-v2-successor-20260925",
+                "request_digest": "b" * 64,
+                "mode": "DRY_RUN",
+                "result_class": "P3_CANARY_ADMISSION_READY",
+            },
+        )
+        outbox.mark_published.assert_not_called()
+
     def test_user_service_invokes_runtime_module_not_bootstrap_poll_loop(self):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
-        self.assertIn("-m runtime.orchestrator.ocpv2_runtime_service", text)
+        self.assertRegex(text, r"-m runtime\.orchestrator\.ocpv2_(?:runtime_service|successor_stage_runtime)")
         self.assertNotIn("bootstrap.py run-once", text)
+
+    def test_host_inspection_feature_flag_is_explicit_and_fail_closed(self):
+        self.assertFalse(host_inspection_enabled_from_environment({}))
+        self.assertFalse(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "0"}))
+        self.assertTrue(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "1"}))
+        self.assertFalse(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "true"}))
+        self.assertFalse(host_inspection_enabled_from_environment({"OCP_HOST_INSPECTION_ENABLED": "bogus"}))
+
+    def test_runtime_composes_host_inspection_without_direct_effect_authority(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        source = inspect.getsource(module)
+        self.assertIn("HostInspectionPort", source)
+        self.assertIn("RemoteInspectionProjectionV1", source)
+        self.assertIn("OCP_HOST_INSPECTION_ENABLED", source)
+        for forbidden in ("FullMCPRuntime", "ProcessService", "shell_execute", "register_job(", "provider_router"):
+            with self.subTest(forbidden=forbidden): self.assertNotIn(forbidden, source)
+
+    def test_user_service_defaults_host_inspection_off(self):
+        text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_HOST_INSPECTION_ENABLED=0", text)
+
+    def test_work_activation_feature_flag_is_explicit_and_fail_closed(self):
+        self.assertFalse(work_activation_enabled_from_environment({}))
+        self.assertFalse(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "0"}))
+        self.assertTrue(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "1"}))
+        self.assertFalse(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "true"}))
+        self.assertFalse(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "bogus"}))
+
+    def test_diagnostic_and_full_plan_activation_flags_coexist(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, repo, _ = _write_runtime_env(root)
+            policy = _write_policy(root / "policy.json", repo)
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_MODE": "ACTIVE",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED": "true",
+                "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG": str(policy),
+                "OCP_FULL_PLAN_ACTIVATION_ENABLED": "1",
+                "OCP_FULL_PLAN_ACTIVATION_POLICY_REF": "FP-POLICY-1",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            self.assertTrue(config.diagnostic_enabled)
+            self.assertIsNotNone(config.diagnostic_policy)
+            self.assertTrue(config.full_plan_activation_enabled)
+            self.assertEqual(config.full_plan_activation_policy_ref, "FP-POLICY-1")
+
+    def test_user_service_defaults_work_activation_off(self):
+        text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_WORK_ACTIVATION_ENABLED=0", text)
+
+    def test_full_plan_activation_resolves_exact_sibling_runtime_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            target_root = releases / ("b" * 40)
+            service_root.mkdir(parents=True)
+            target_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            target = SimpleNamespace(
+                source_head="b" * 40, manifest_sha256="2" * 64, release_path=str(target_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=lambda path: service if Path(path) == service_root else target,
+            ) as resolver:
+                selected = _runtime_release_for_full_plan_request(service_root, request)
+            self.assertIs(selected, target)
+            self.assertEqual([Path(call.args[0]) for call in resolver.call_args_list], [service_root, target_root])
+
+    def test_full_plan_activation_rejects_sibling_runtime_digest_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            target_root = releases / ("b" * 40)
+            service_root.mkdir(parents=True)
+            target_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            wrong = SimpleNamespace(
+                source_head="b" * 40, manifest_sha256="3" * 64, release_path=str(target_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=lambda path: service if Path(path) == service_root else wrong,
+            ), self.assertRaisesRegex(RuntimeServiceError, "FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH"):
+                _runtime_release_for_full_plan_request(service_root, request)
+
+    def test_full_plan_activation_flag_is_exact_one_and_independent(self):
+        self.assertFalse(full_plan_activation_enabled_from_environment({}))
+        self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "0"}))
+        self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "true"}))
+        self.assertTrue(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "1"}))
+        self.assertTrue(work_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "1"}))
+        self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_WORK_ACTIVATION_ENABLED": "1"}))
+
+    def test_v1_activation_flag_does_not_enable_full_plan_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=root/"repo"; repo.mkdir(); token=root/"token"; token.write_text("x"); token.chmod(0o600)
+            env=root/"ocp.env"; env.write_text("\n".join([
+                "OCP_MODE=ACTIVE", "OCP_GITHUB_CONTROL_REPOSITORY_ID=222", "OCP_GITHUB_CONTROL_PR_NUMBER=7",
+                "OCP_GITHUB_ALLOWED_ACTOR_IDS=235775273", f"OCP_GITHUB_TOKEN_FILE={token}", f"OCP_STATE_ROOT={root/'state'}",
+                f"OCP_REPO_ROOT={repo}", "OCP_WORK_ACTIVATION_ENABLED=1", "OCP_WORK_ACTIVATION_POLICY_REF=ACT-POLICY-1",
+                "OCP_FULL_PLAN_ACTIVATION_ENABLED=0",
+            ])+"\n")
+            cfg=load_runtime_config(env, process_environment={})
+            self.assertTrue(cfg.work_activation_enabled); self.assertFalse(cfg.full_plan_activation_enabled)
+            self.assertEqual(cfg.full_plan_activation_policy_ref, "")
+
+    def test_full_plan_activation_enabled_requires_dedicated_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=root/"repo"; repo.mkdir(); token=root/"token"; token.write_text("x"); token.chmod(0o600)
+            env=root/"ocp.env"; env.write_text("\n".join([
+                "OCP_MODE=ACTIVE", "OCP_GITHUB_CONTROL_REPOSITORY_ID=222", "OCP_GITHUB_CONTROL_PR_NUMBER=7",
+                "OCP_GITHUB_ALLOWED_ACTOR_IDS=235775273", f"OCP_GITHUB_TOKEN_FILE={token}", f"OCP_STATE_ROOT={root/'state'}",
+                f"OCP_REPO_ROOT={repo}", "OCP_FULL_PLAN_ACTIVATION_ENABLED=1",
+            ])+"\n")
+            with self.assertRaisesRegex(RuntimeServiceError, "Full Plan activation policy"):
+                load_runtime_config(env, process_environment={})
+
+    def test_executable_activation_uses_system_authority_root_and_never_request_mapping_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=root/"runtime"; repo.mkdir(); token=root/"token"; token.write_text("x"); token.chmod(0o600)
+            ocp_state=root/"ocp-state"; ocp_state.mkdir(); harness_state=root/"harness-state"; harness_state.mkdir()
+            authority=root/"authority"; authority.mkdir()
+            cfg=RuntimeConfig(
+                mode=__import__("runtime.orchestrator.remote_operator_service",fromlist=["ControlMode"]).ControlMode.ACTIVE,
+                repo_root=repo, control_repository_id=222, control_pr_number=7,
+                allowed_actor_ids=("235775273",), token_file=token, state_root=ocp_state,
+                environment={"GCH_STATE_ROOT":str(harness_state),"HARNESS_CONTRACT_MAPPING_ROOT":str(authority)},
+                host_inspection_enabled=False, work_activation_enabled=False, activation_policy_ref="",
+                full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+            )
+            with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient",return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter",return_value=Mock()), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.recover_pending_canonical_results"), \
+                 patch("runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",return_value=SimpleNamespace(source_head="b"*40, manifest_sha256="c"*64, release_path=str(repo))) as release, \
+                 patch("runtime.orchestrator.ocpv2_runtime_service.validate_approved_full_plan_binding",side_effect=RuntimeError("stop")) as validate:
+                service=_compose_service(cfg)
+                envelope=SimpleNamespace(payload=SimpleNamespace(mapping_root="caller-forbidden", expected_head="b"*40, runtime_release_digest="c"*64),message_id="MSG-FP")
+                with self.assertRaisesRegex(RuntimeError,"stop"):
+                    service.activate_full_plan_authorized(envelope)
+            self.assertEqual(validate.call_args.kwargs["authority_root"],authority)
+            self.assertEqual(validate.call_args.kwargs["harness_state_root"],harness_state)
+            release.assert_called_once_with(repo)
+
+    def test_user_service_defaults_full_plan_activation_off(self):
+        text=(REPO_ROOT/"deploy/operator-control-plane-v2/ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertNotIn("OCP_FULL_PLAN_ACTIVATION_POLICY_REF=", text)
 
 
 if __name__ == "__main__":

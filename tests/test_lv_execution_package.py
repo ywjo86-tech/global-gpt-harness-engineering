@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import unittest
 from pathlib import Path
@@ -77,6 +78,7 @@ class LVExecutionPackageTest(unittest.TestCase):
         with TemporaryDirectory() as directory:
             _, _, package = self._create(Path(directory))
             prompt = (Path(package["package_root"]) / "worker_prompt.md").read_text(encoding="utf-8")
+            manifest = json.loads((Path(package["package_root"]) / "package.manifest.json").read_text(encoding="utf-8"))
             for text in (
                 "manifest SHA-256",
                 "does not grant runtime or sandbox permission",
@@ -88,13 +90,16 @@ class LVExecutionPackageTest(unittest.TestCase):
                 "Do not run git add",
                 "Do not use network or API access",
                 "Do not guess external API schemas",
-                ".venv/bin/python -m pytest -q tests/test_config.py",
-                "Full regression: `.venv/bin/python -m pytest -q`",
                 "After producing the worker result, stop",
                 "Review is a separate hard stop",
                 "do not automatically start another LV",
             ):
                 self.assertIn(text, prompt)
+            toolchain = manifest["validation_toolchain"]
+            focused = " ; ".join(shlex.join(command) for command in toolchain["focused"])
+            full = " ; ".join(shlex.join(command) for command in toolchain["full"])
+            self.assertIn(f"Focused validation: `{focused}`", prompt)
+            self.assertIn(f"Full regression: `{full}`", prompt)
             self.assertNotIn("execution_authorized=false", prompt)
             self.assertNotIn("Implement G1-LV3-1", prompt)
 

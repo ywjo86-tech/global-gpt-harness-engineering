@@ -94,6 +94,8 @@ LEGACY_CAPABILITY_ALIASES_V2 = {
     "test": "test_execution",
     "implementation": "implementation_apply",
 }
+READ_ONLY_HOST_VALIDATION_CAPABILITIES = frozenset({"shell", "test_execution", "integration"})
+READ_ONLY_PROVIDER_ALIASES_V2 = {"independent_review": "review"}
 
 
 class ProviderRouterContractError(ValueError):
@@ -113,6 +115,23 @@ def normalize_capabilities_v2(required_capabilities: Iterable[str] | None) -> tu
             continue
         normalized.add(LEGACY_CAPABILITY_ALIASES_V2.get(capability, capability))
     return tuple(sorted(normalized))
+
+
+def project_read_only_provider_capabilities(
+    required_capabilities: Iterable[str] | None,
+) -> tuple[str, ...]:
+    """Project a read-only LV onto model capabilities without granting host effects."""
+    projected = {"read_only", "reasoning"}
+    for capability in normalize_capabilities_v2(required_capabilities):
+        if capability in READ_ONLY_HOST_VALIDATION_CAPABILITIES:
+            continue
+        capability = READ_ONLY_PROVIDER_ALIASES_V2.get(capability, capability)
+        if capability in STATE_CHANGING_CAPABILITIES:
+            raise ProviderRouterContractError(
+                "read-only provider projection contains state-changing capability"
+            )
+        projected.add(capability)
+    return tuple(sorted(projected))
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +296,47 @@ def normalize_legacy_hybrid_request(
         required_capabilities=capabilities, state_change_required=state_change_required,
         policy_profile=policy_profile, eligibility_snapshot=eligibility_snapshot,
         request_source=LEGACY_REQUEST_SOURCE_V1, failure_class="", failover_request_ref="",
+    )
+
+
+def d15_recovery_nvidia_read_only_request(
+    *,
+    request_id: str,
+    project_id: str,
+    run_id: str,
+    task_id: str,
+    task_execution_id: str,
+    directive_digest: str,
+    model_ref: str,
+    evidence_refs: Iterable[str],
+    required_capabilities: Iterable[str] = ("reasoning", "read_only", "evidence_analysis"),
+) -> RouterRequestV2:
+    capabilities = normalize_capabilities_v2(required_capabilities)
+    if "read_only" not in capabilities or STATE_CHANGING_CAPABILITIES.intersection(capabilities):
+        raise ProviderRouterContractError("D1.5 NVIDIA recovery helper is read-only only")
+    snapshot = ProviderEligibilitySnapshotV1(
+        schema_version=ELIGIBILITY_SCHEMA_V1,
+        snapshot_id=f"{request_id}:nvidia-read-only",
+        provider_eligible={NVIDIA_PROVIDER: True, CODEX_PROVIDER: False},
+        model_refs={NVIDIA_PROVIDER: str(model_ref)},
+        evidence_refs=tuple(str(ref) for ref in evidence_refs),
+        provider_capabilities={
+            NVIDIA_PROVIDER: ("reasoning", "read_only", "evidence_analysis", "review", "diagnostics", "version_control"),
+        },
+    )
+    return RouterRequestV2(
+        schema_version=ROUTER_REQUEST_SCHEMA_V2,
+        request_id=request_id,
+        project_id=project_id,
+        run_id=run_id,
+        task_id=task_id,
+        task_execution_id=task_execution_id,
+        directive_digest=directive_digest,
+        stage="PREPARE",
+        required_capabilities=capabilities,
+        state_change_required=False,
+        policy_profile=GOVERNED_POLICY_V1,
+        eligibility_snapshot=snapshot,
     )
 
 

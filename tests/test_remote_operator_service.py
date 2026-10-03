@@ -7,11 +7,21 @@ from datetime import datetime, timezone
 from runtime.orchestrator import remote_operator_service
 from runtime.orchestrator.operator_control import OPERATOR_DIRECTIVE_SCHEMA
 from runtime.orchestrator.remote_operator_envelope import (
+    REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA,
     REMOTE_OPERATOR_ENVELOPE_SCHEMA,
+    seal_remote_control_envelope,
     seal_remote_envelope,
+    validate_remote_control_envelope,
     validate_remote_envelope,
 )
 from runtime.orchestrator.remote_operator_ingress import IngressDecision
+from runtime.orchestrator.host_inspection_contract import HostInspectionResultV1
+from runtime.orchestrator.remote_control_envelope import (
+    REMOTE_CONTROL_ENVELOPE_SCHEMA, RemoteControlEnvelopeV1,
+    seal_remote_control_envelope as seal_v1_control_envelope,
+    validate_remote_control_envelope as validate_v1_control_envelope,
+)
+from runtime.orchestrator.remote_operator_outbox import RemoteInspectionProjectionV1
 from runtime.orchestrator.remote_operator_service import (
     CanaryScope,
     ControlMode,
@@ -81,6 +91,28 @@ def envelope(*, state_change=True, task_id="T1", directive_id="D1"):
     )
 
 
+def diagnostic_envelope():
+    payload = envelope(state_change=False).to_dict()
+    payload["schema_version"] = REMOTE_OPERATOR_DIAGNOSTIC_ENVELOPE_SCHEMA
+    payload["operator_directive"].update({
+        "current_stage": "PREPARE",
+        "requested_next_stage": "VERIFY",
+        "required_capabilities": ["read_only_host_diagnostic"],
+        "state_change_required": False,
+        "input_artifact_digests": [],
+    })
+    payload["read_only_request"] = {
+        "schema_version": "orchestration.read-only-host-diagnostic-request.v1",
+        "request_id": "REQ-1", "operation": "repo.snapshot", "root_id": "project",
+        "relative_path": "", "start_line": 0, "line_count": 0, "service_id": "",
+    }
+    payload["read_only_request_digest"] = ""
+    return validate_remote_control_envelope(
+        seal_remote_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
+    )
+
+
 def raw(message_id="RAW-1"):
     return RawControlEnvelope(
         source_repository_id=None,
@@ -89,6 +121,83 @@ def raw(message_id="RAW-1"):
         source_message_id=message_id,
         content=b"{}",
         received_at="2026-09-21T00:05:00+00:00",
+    )
+
+
+def inspection_envelope():
+    request = {
+        "schema_version": "orchestration.host-inspection-request.v1",
+        "request_id": "INSP-1", "correlation_id": "CORR-1",
+        "project_alias": "demo", "operation": "git.status",
+        "arguments": {}, "state_change_required": False,
+    }
+    payload = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "HOST_INSPECTION", "message_id": "MSG-I1", "sequence": 1,
+        "issued_at": "2026-09-21T00:00:00+00:00", "expires_at": "2026-09-21T01:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "TEST", "channel_id": "CTRL", "source_actor_id": "235775273", "source_message_id": "11"},
+        "payload": request, "payload_digest": "",
+        "authorization": {"inspection_policy_ref": "POLICY-1"}, "envelope_sha256": "",
+    }
+    return validate_v1_control_envelope(
+        seal_v1_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
+    )
+
+
+def activation_envelope(policy_ref="ACT-POLICY-1"):
+    request = {
+        "schema_version": "orchestration.approved-work-activation-request.v1",
+        "activation_request_id": "ACT-1", "project_alias": "demo",
+        "approved_plan_path": "PLAN.md", "approved_plan_sha256": "a" * 64,
+        "approved_spec_path": "SPEC.md", "approved_spec_sha256": "b" * 64,
+        "requirement_artifact_path": "requirements.json", "requirement_artifact_sha256": "c" * 64,
+        "approval_ref": "approval:user", "expected_branch": "main", "expected_head": "d" * 40,
+        "task_ids": ["T1"], "runtime_release_digest": "e" * 64,
+    }
+    payload = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "APPROVED_WORK_ACTIVATION", "message_id": "MSG-A1", "sequence": 2,
+        "issued_at": "2026-09-21T00:00:00+00:00", "expires_at": "2026-09-21T01:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "TEST", "channel_id": "CTRL", "source_actor_id": "235775273", "source_message_id": "12"},
+        "payload": request, "payload_digest": "",
+        "authorization": {"activation_policy_ref": policy_ref}, "envelope_sha256": "",
+    }
+    return validate_v1_control_envelope(
+        seal_v1_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
+    )
+
+
+def full_plan_activation_envelope(policy_ref="FP-POLICY-1"):
+    request = {
+        "schema_version": "orchestration.approved-full-plan-activation-request.v1",
+        "activation_request_id": "FP-ACT-1", "project_alias": "demo",
+        "approved_plan": {"path": "docs/PLAN.md", "sha256": "1" * 64},
+        "approved_spec": {"path": "docs/SPEC.md", "sha256": "2" * 64},
+        "expected_branch": "main", "expected_head": "3" * 40,
+        "runtime_release_digest": "4" * 64, "approval_ref": "approval:user:full-plan",
+        "gate_bindings": [{
+            "gate_id": "GATE-001",
+            "approval_evidence": {"path": "gate.json", "sha256": "5" * 64},
+            "engine_requirement_evidence": {"path": "engine.json", "sha256": "6" * 64},
+            "project_requirement_evidence_by_lv": [{"lv_id": "TASK-001", "path": "docs/req.json", "sha256": "7" * 64}],
+        }],
+    }
+    payload = {
+        "schema_version": REMOTE_CONTROL_ENVELOPE_SCHEMA,
+        "request_kind": "APPROVED_FULL_PLAN_ACTIVATION", "message_id": "MSG-FP1", "sequence": 3,
+        "issued_at": "2026-09-21T00:00:00+00:00", "expires_at": "2026-09-21T01:00:00+00:00",
+        "actor": "GPT_OPERATOR",
+        "transport": {"adapter_id": "TEST", "channel_id": "CTRL", "source_actor_id": "235775273", "source_message_id": "13"},
+        "payload": request, "payload_digest": "",
+        "authorization": {"full_plan_activation_policy_ref": policy_ref}, "envelope_sha256": "",
+    }
+    return validate_v1_control_envelope(
+        seal_v1_control_envelope(payload),
+        now=datetime(2026, 9, 21, 0, 5, tzinfo=timezone.utc),
     )
 
 
@@ -166,6 +275,15 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         self.assertEqual(transport.projections[0]["result_class"], "OBSERVED")
         self.assertEqual(transport.acks, [env.message_id])
 
+    def test_v2_non_diagnostic_read_only_remains_read_only_accepted(self):
+        env = envelope(state_change=False)
+        service, transport, executions = self.service(env=env)
+        result = service.poll_once(mode=ControlMode.CONTROL_READ_ONLY)
+        self.assertEqual(result.executed, 0)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(executions, [])
+        self.assertEqual(transport.projections[0]["result_class"], "READ_ONLY_ACCEPTED")
+
     def test_control_read_only_rejects_state_change_required_true(self):
         env = envelope(state_change=True)
         service, transport, executions = self.service(env=env)
@@ -200,6 +318,70 @@ class RemoteOperatorServiceTests(unittest.TestCase):
         self.assertEqual(executions, [])
         self.assertEqual(transport.projections[0]["result_class"], "STALE_DIRECTIVE")
 
+    def diagnostic_service(self, *, with_executor=True):
+        env = diagnostic_envelope()
+        transport = FakeTransport((raw(),))
+        mutations = []
+        diagnostics = []
+
+        def execute_authorized(envelope_value, directive):
+            mutations.append((envelope_value.message_id, directive.directive_id))
+            return {"result_class": "CANONICAL_ACTION_COMPLETED"}
+
+        def execute_read_only(envelope_value, directive, request):
+            diagnostics.append((envelope_value.message_id, directive.directive_id, request.request_id))
+            return {
+                "schema_version": "orchestration.read-only-host-diagnostic-result.v1",
+                "request_id": request.request_id, "status": "OK", "payload_hash": "a" * 64,
+                "payload": {"head": "b" * 40},
+            }
+
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda raw_value: env,
+            ingress=lambda envelope_value: accepted(envelope_value),
+            execute_authorized=execute_authorized,
+            execute_read_only=execute_read_only if with_executor else None,
+        )
+        return env, service, transport, mutations, diagnostics
+
+    def test_observe_only_diagnostic_is_observed_without_execution(self):
+        env, service, transport, mutations, diagnostics = self.diagnostic_service()
+        result = service.poll_once(mode=ControlMode.OBSERVE_ONLY)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "OBSERVED")
+
+    def test_control_read_only_and_active_execute_typed_diagnostic_once(self):
+        for mode in (ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE):
+            with self.subTest(mode=mode.value):
+                env, service, transport, mutations, diagnostics = self.diagnostic_service()
+                result = service.poll_once(mode=mode)
+                self.assertEqual(result.diagnosed, 1)
+                self.assertEqual(result.executed, 0)
+                self.assertEqual(diagnostics, [(env.message_id, "D1", "REQ-1")])
+                self.assertEqual(mutations, [])
+                self.assertEqual(transport.projections[0]["result_class"], "READ_ONLY_DIAGNOSTIC_COMPLETED")
+                self.assertEqual(transport.projections[0]["status"], "OK")
+
+    def test_mutation_canary_does_not_open_diagnostic_execution_authority(self):
+        env, service, transport, mutations, diagnostics = self.diagnostic_service()
+        result = service.poll_once(mode=ControlMode.CONTROL_MUTATION_CANARY)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "MODE_BLOCKED")
+
+    def test_missing_diagnostic_executor_fails_closed_without_mutation_callback(self):
+        env, service, transport, mutations, diagnostics = self.diagnostic_service(with_executor=False)
+        result = service.poll_once(mode=ControlMode.CONTROL_READ_ONLY)
+        self.assertEqual(result.diagnosed, 0)
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "READ_ONLY_DIAGNOSTIC_UNAVAILABLE")
+
     def test_unknown_mode_fails_closed(self):
         env = envelope()
         service, transport, executions = self.service(env=env)
@@ -210,9 +392,167 @@ class RemoteOperatorServiceTests(unittest.TestCase):
 
     def test_import_has_no_systemd_git_or_package_side_effect(self):
         source = inspect.getsource(remote_operator_service)
-        for forbidden in ("systemctl", "subprocess", "os.system", "pip install", "apt ", "git config"):
+        for forbidden in (
+            "systemctl", "subprocess", "os.system", "pip install", "apt ", "git config",
+            "read_project_file_range(", "collect_repo_snapshot(", "systemctl --user",
+        ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
+
+
+    def test_host_inspection_runs_in_observe_read_only_canary_and_active_without_mutation(self):
+        for mode in (ControlMode.OBSERVE_ONLY, ControlMode.CONTROL_READ_ONLY, ControlMode.CONTROL_MUTATION_CANARY, ControlMode.ACTIVE):
+            with self.subTest(mode=mode):
+                env = inspection_envelope(); transport = FakeTransport((raw("RAW-I"),)); inspections = []; mutations = []
+                def inspect_authorized(envelope_value: RemoteControlEnvelopeV1):
+                    inspections.append(envelope_value.message_id)
+                    result = HostInspectionResultV1.ok(envelope_value.payload, {"clean": True})
+                    return RemoteInspectionProjectionV1.from_result(result, message_id=envelope_value.message_id).to_dict()
+                service = RemoteOperatorService(
+                    transport=transport, decode_envelope=lambda _: env,
+                    ingress=lambda _: (_ for _ in ()).throw(AssertionError("inspection must not enter mutation ingress")),
+                    execute_authorized=lambda *_: mutations.append("mutation"),
+                    inspect_authorized=inspect_authorized, host_inspection_enabled=True,
+                )
+                result = service.poll_once(mode=mode)
+                self.assertEqual(result.inspected, 1); self.assertEqual(result.executed, 0)
+                self.assertEqual(inspections, ["MSG-I1"]); self.assertEqual(mutations, [])
+                self.assertEqual(transport.projections[0]["schema_version"], "orchestration.remote-inspection-projection.v1")
+
+    def test_host_inspection_feature_off_fails_closed_without_callback(self):
+        env = inspection_envelope(); transport = FakeTransport((raw("RAW-I"),)); calls = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            inspect_authorized=lambda _: calls.append("inspection"), host_inspection_enabled=False,
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.inspected, result.executed, result.blocked), (0, 0, 1))
+        self.assertEqual(calls, [])
+        self.assertEqual(transport.projections[0]["result_class"], "HOST_INSPECTION_DISABLED")
+
+    def test_host_inspection_failure_does_not_fall_through_to_mutation(self):
+        env = inspection_envelope(); transport = FakeTransport((raw("RAW-I"),)); mutations = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: mutations.append("mutation"),
+            inspect_authorized=lambda _: (_ for _ in ()).throw(ValueError("inspection failed")),
+            host_inspection_enabled=True,
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.inspected, result.executed, result.blocked), (0, 0, 1))
+        self.assertEqual(mutations, [])
+        self.assertEqual(transport.projections[0]["result_class"], "HOST_INSPECTION_ERROR")
+
+    def test_host_inspection_branch_has_no_execution_authority_imports(self):
+        source = inspect.getsource(remote_operator_service)
+        for forbidden in ("FullMCPRuntime", "ProcessService", "register_job(", "provider_router", "shell_execute"):
+            with self.subTest(forbidden=forbidden): self.assertNotIn(forbidden, source)
+
+
+    def test_work_activation_is_blocked_outside_active_mode(self):
+        for mode in (ControlMode.OBSERVE_ONLY, ControlMode.CONTROL_READ_ONLY, ControlMode.CONTROL_MUTATION_CANARY):
+            with self.subTest(mode=mode):
+                env = activation_envelope(); transport = FakeTransport((raw("RAW-A"),)); activations = []; mutations = []
+                service = RemoteOperatorService(
+                    transport=transport, decode_envelope=lambda _: env,
+                    ingress=lambda _: (_ for _ in ()).throw(AssertionError("activation must not enter V2 ingress")),
+                    execute_authorized=lambda *_: mutations.append("mutation"),
+                    activate_authorized=lambda e: activations.append(e.message_id) or {"schema_version": "activation", "result_class": "REGISTERED"},
+                    work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+                )
+                result = service.poll_once(mode=mode)
+                self.assertEqual((result.activated, result.executed, result.blocked), (0, 0, 1))
+                self.assertEqual(activations, []); self.assertEqual(mutations, [])
+                self.assertEqual(transport.projections[0]["result_class"], "MODE_BLOCKED")
+
+    def test_active_work_activation_requires_feature_and_exact_policy(self):
+        env = activation_envelope(); transport = FakeTransport((raw("RAW-A"),)); calls = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_authorized=lambda e: calls.append(e.message_id) or {"schema_version": "activation", "result_class": "REGISTERED"},
+            work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.activated, result.executed, result.blocked), (1, 0, 0))
+        self.assertEqual(calls, ["MSG-A1"]); self.assertEqual(transport.projections[0]["result_class"], "REGISTERED")
+
+        blocked_transport = FakeTransport((raw("RAW-A2"),))
+        blocked_service = RemoteOperatorService(
+            transport=blocked_transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"), activate_authorized=lambda _: calls.append("unexpected"),
+            work_activation_enabled=True, activation_policy_ref="WRONG-POLICY",
+        )
+        blocked_result = blocked_service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual(blocked_result.blocked, 1); self.assertEqual(calls, ["MSG-A1"])
+        self.assertEqual(blocked_transport.projections[0]["result_class"], "ACTIVATION_AUTHORIZATION_MISMATCH")
+
+    def test_activation_failure_never_falls_through_to_existing_run_mutation(self):
+        env = activation_envelope(); transport = FakeTransport((raw("RAW-A"),)); mutations = []
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: mutations.append("mutation"),
+            activate_authorized=lambda _: (_ for _ in ()).throw(ValueError("activation failed")),
+            work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.activated, result.executed, result.blocked), (0, 0, 1))
+        self.assertEqual(mutations, []); self.assertEqual(transport.projections[0]["result_class"], "WORK_ACTIVATION_ERROR")
+
+
+    def test_v1_enable_does_not_enable_executable_activation(self):
+        env = full_plan_activation_envelope(); transport = FakeTransport((raw("RAW-FP"),)); calls=[]
+        service = RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_authorized=lambda _: calls.append("v1"), work_activation_enabled=True,
+            activation_policy_ref="ACT-POLICY-1",
+            activate_full_plan_authorized=lambda _: calls.append("full-plan"),
+            full_plan_activation_enabled=False, full_plan_activation_policy_ref="FP-POLICY-1",
+        )
+        result = service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.full_plan_activated, result.activated, result.executed, result.blocked), (0, 0, 0, 1))
+        self.assertEqual(calls, [])
+        self.assertEqual(transport.projections[0]["result_class"], "FULL_PLAN_ACTIVATION_DISABLED")
+
+    def test_executable_activation_requires_active_mode_and_exact_dedicated_policy(self):
+        for mode in (ControlMode.OBSERVE_ONLY, ControlMode.CONTROL_READ_ONLY, ControlMode.CONTROL_MUTATION_CANARY):
+            with self.subTest(mode=mode):
+                env=full_plan_activation_envelope(); transport=FakeTransport((raw("RAW-FP"),)); calls=[]
+                service=RemoteOperatorService(
+                    transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+                    execute_authorized=lambda *_: calls.append("mutation"),
+                    activate_full_plan_authorized=lambda _: calls.append("full-plan"),
+                    full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+                )
+                result=service.poll_once(mode=mode)
+                self.assertEqual((result.full_plan_activated,result.blocked),(0,1)); self.assertEqual(calls,[])
+                self.assertEqual(transport.projections[0]["result_class"],"MODE_BLOCKED")
+        env=full_plan_activation_envelope(policy_ref="FP-POLICY-1"); transport=FakeTransport((raw("RAW-FP2"),)); calls=[]
+        service=RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env, ingress=lambda _: None,
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_full_plan_authorized=lambda _: calls.append("full-plan"),
+            full_plan_activation_enabled=True, full_plan_activation_policy_ref="OTHER",
+        )
+        result=service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.full_plan_activated,result.blocked),(0,1)); self.assertEqual(calls,[])
+        self.assertEqual(transport.projections[0]["result_class"],"FULL_PLAN_ACTIVATION_AUTHORIZATION_MISMATCH")
+
+    def test_active_executable_activation_uses_only_dedicated_callback(self):
+        env=full_plan_activation_envelope(); transport=FakeTransport((raw("RAW-FP"),)); calls=[]
+        service=RemoteOperatorService(
+            transport=transport, decode_envelope=lambda _: env,
+            ingress=lambda _: (_ for _ in ()).throw(AssertionError("must not enter V2 ingress")),
+            execute_authorized=lambda *_: calls.append("mutation"),
+            activate_authorized=lambda _: calls.append("v1"), work_activation_enabled=True, activation_policy_ref="ACT-POLICY-1",
+            activate_full_plan_authorized=lambda e: calls.append(("full-plan",e.message_id)) or {"schema_version":"full-plan","result_class":"FULL_PLAN_REGISTERED"},
+            full_plan_activation_enabled=True, full_plan_activation_policy_ref="FP-POLICY-1",
+        )
+        result=service.poll_once(mode=ControlMode.ACTIVE)
+        self.assertEqual((result.full_plan_activated,result.activated,result.executed,result.blocked),(1,0,0,0))
+        self.assertEqual(calls,[("full-plan","MSG-FP1")]); self.assertEqual(transport.projections[0]["result_class"],"FULL_PLAN_REGISTERED")
 
 
 if __name__ == "__main__":

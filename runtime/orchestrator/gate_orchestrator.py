@@ -13,10 +13,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, MutableMapping, Sequence
 from types import SimpleNamespace
 
-from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state
+from .contract_adapter import load_project_mapping, sha256_file, evaluate_canonical_state, _ledger_payload
+from .canonical_transition import validate_canonical_gate_state
 from .task_contract_compat import (
     analyze_task_stage_gate_contract, compatibility_block_reason, resolve_task_lv_projection,
-    resolve_task_project_requirement_contract,
+    resolve_read_only_task_gate, resolve_task_project_requirement_contract,
 )
 from .lv_execution_package import canonical_json_bytes
 from .lv_preview import _declared_owned_files, _gate_section, _tables
@@ -107,6 +108,39 @@ def _test_only_crash_after_production_stage(stage: str) -> None:
     if target and target == stage:
         from .operational_capability import InjectedCrash
         raise InjectedCrash(f"injected crash after persisted production stage: {stage}")
+
+
+def _restore_runtime_selection(selection_payload: Mapping[str, Any] | None):
+    if not isinstance(selection_payload, Mapping):
+        return None
+    required = (
+        "asset_id", "skill_id", "installed_target", "artifact_digest",
+        "attestation_evidence_reference", "use_authorization_evidence_reference",
+        "capability_requirement", "project_id", "gate_id", "lv_id",
+        "canonical_plan_sha256", "source",
+    )
+    if not set(required).issubset(selection_payload):
+        return None
+    from .operational_capability import RuntimeSelection
+    values = {key: selection_payload[key] for key in required}
+    for field in ("simulated", "execution_allowed_in_dry_run"):
+        if field in selection_payload:
+            if not isinstance(selection_payload[field], bool):
+                raise GateControllerError("persisted runtime selection boolean field is invalid")
+            values[field] = selection_payload[field]
+    lineage_fields = (
+        "capability_contract_id", "capability_contract_version", "endpoint_version"
+    )
+    lineage = {key: str(selection_payload.get(key) or "") for key in lineage_fields}
+    epoch = selection_payload.get("activation_epoch", 0)
+    lineage_active = any(lineage.values()) or epoch not in (0, None, "")
+    if lineage_active:
+        if (not all(lineage.values()) or isinstance(epoch, bool)
+                or not isinstance(epoch, int) or epoch < 1):
+            raise GateControllerError("persisted runtime selection lineage is incomplete")
+        values.update(lineage)
+        values["activation_epoch"] = epoch
+    return RuntimeSelection(**values)
 
 
 def _safe_project(root: str | Path) -> tuple[Path, str]:
@@ -287,11 +321,11 @@ def _owned_from_rows(summary: dict[str, str], detail: dict[str, str]) -> list[st
         return [_safe_relative(item) for item in dict.fromkeys(raw) if "/" in item or item.endswith((".py", ".md", ".json", ".txt"))]
 
 
-def load_gate_plan(project_root: str | Path, gate_id: str) -> GatePlan:
+def load_gate_plan(project_root: str | Path, gate_id: str, *, mapping_root: str | Path | None = None) -> GatePlan:
     root, root_project_id = _safe_project(project_root)
     match = _GATE_ID.fullmatch(gate_id)
     if not match: raise GateOrchestrationError("invalid Gate ID")
-    mapping = load_project_mapping(root)
+    mapping = load_project_mapping(root, mapping_root=mapping_root)
     if mapping is None: raise GateOrchestrationError("project declarative mapping is required")
     project_id = getattr(mapping, "project_id", root_project_id)
     plan = mapping.canonical_source
@@ -322,6 +356,21 @@ def load_gate_plan(project_root: str | Path, gate_id: str) -> GatePlan:
         ]
         if not lvs:
             raise GateOrchestrationError("TASK-to-LV authority projection resolved an empty Gate")
+        return GatePlan(project_id, str(root), gate_id, plan.relative_to(root).as_posix(), mapping.canonical_sha256, lvs)
+
+    try:
+        resolved_read_only = resolve_read_only_task_gate(plan_text, gate_id=gate_id)
+    except Exception:
+        resolved_read_only = []
+    if resolved_read_only:
+        lvs = [
+            GateLV(
+                gate_id, item["lv_id"], order, item["purpose"], item["dependencies"],
+                item["owned_files"], item["completion_criteria"], item["execution"], item["tests"],
+                item["capability_contract"], item["required_capabilities"],
+            )
+            for order, item in enumerate(resolved_read_only, 1)
+        ]
         return GatePlan(project_id, str(root), gate_id, plan.relative_to(root).as_posix(), mapping.canonical_sha256, lvs)
 
     section = _gate_section(plan_text, gate_id)
@@ -695,10 +744,11 @@ def onboarding_dry_run(project_root: str | Path, alias: str) -> dict[str, Any]:
 
 def validate_global_gate_bindings(project_root: str | Path, gate_id: str, *, requirements_sha256: str,
                                   approval_evidence: str | Path, branch: str, head: str,
-                                  harness_root: str | Path) -> dict[str, Any]:
+                                  harness_root: str | Path,
+                                  mapping_root: str | Path | None = None) -> dict[str, Any]:
     """Validate the W0-W6 boundary without executing a lifecycle or mutating the project."""
     root, root_project_id = _safe_project(project_root)
-    plan = load_gate_plan(root, gate_id)
+    plan = load_gate_plan(root, gate_id, mapping_root=mapping_root)
     project_id = plan.project_id
     order = [item.lv_id for item in plan.lvs]
     owned = {item.lv_id: item.owned_files for item in plan.lvs}
@@ -993,6 +1043,119 @@ def load_approved_authorization(project_root: str | Path, gate_id: str, *, mode:
     return auth
 
 
+def _inactive_project_gate_anchor(
+    root: Path, mapping: Any, plan: GatePlan,
+) -> dict[str, Any]:
+    """Validate one committed Gate ledger without borrowing foreign execution authority."""
+    ledger_path = mapping.gate_state_ledger_path
+    if ledger_path is None or ledger_path.is_symlink() or not ledger_path.is_file():
+        raise GateOrchestrationError("sealed project Gate authority anchor is missing or unsafe")
+    try:
+        relative = ledger_path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError as exc:
+        raise GateOrchestrationError("sealed project Gate authority anchor escapes project root") from exc
+    try:
+        payload = _ledger_payload(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise GateOrchestrationError("sealed project Gate authority anchor is malformed") from exc
+
+    ledger_project_id = str(payload.get("project_id") or "")
+    if ledger_project_id == plan.project_id:
+        anchor = evaluate_canonical_state(mapping)
+        if anchor.get("state") != "GATE1_APPROVAL_READY" or anchor.get("transition_authorized") is not False:
+            raise GateOrchestrationError("sealed project Gate authority requires an inactive canonical anchor")
+        return anchor
+
+    ledger_gate_id = str(payload.get("gate_id") or "")
+    if (
+        payload.get("schema_version") != "orchestration.canonical-gate-state.v2"
+        or not _PROJECT_ID.fullmatch(ledger_project_id)
+        or not _GATE_ID.fullmatch(ledger_gate_id)
+    ):
+        raise GateOrchestrationError("sealed project Gate authority foreign anchor is invalid")
+    try:
+        validate_canonical_gate_state(
+            payload,
+            project_id=ledger_project_id,
+            gate_id=ledger_gate_id,
+            phase=str(payload.get("phase") or ""),
+            plan_sha256=str(payload.get("plan_sha256") or ""),
+            approval_record_hash=payload.get("approval_record_hash"),
+        )
+    except ValueError as exc:
+        raise GateOrchestrationError("sealed project Gate authority foreign anchor is invalid") from exc
+
+    committed = subprocess.run(
+        ["git", "-C", str(root), "show", f"HEAD:{relative}"],
+        capture_output=True, check=False, timeout=30,
+    )
+    if committed.returncode != 0 or committed.stdout != ledger_path.read_bytes():
+        raise GateOrchestrationError("sealed project Gate authority foreign anchor is not committed at HEAD")
+    return {
+        "state": "HISTORICAL_FOREIGN_GATE_ANCHOR",
+        "transition_authorized": False,
+        "historical_project_id": ledger_project_id,
+        "historical_gate_id": ledger_gate_id,
+        "ledger_path": relative,
+    }
+
+
+def _sealed_project_gate_authority(
+    project_root: str | Path, plan: GatePlan, lv_id: str, *,
+    approval_evidence: str | Path, requirements_sha256: str, branch: str, head: str,
+    full_plan_opt_in: bool, project_final_validation: bool,
+) -> tuple[GateAuthorization, dict[str, Any]]:
+    """Project-scoped Full Plan authority derived from the sealed Gate approval.
+
+    The project Gate ledger remains a committed, non-active authority anchor.
+    Per-Gate execution authority comes only from the exact sealed approval that
+    was already bound into the approved Full Plan activation.
+    """
+    root, _ = _safe_project(project_root)
+    mapping = load_project_mapping(root)
+    if mapping is None or mapping.task_lv_projection_path is None:
+        raise GateOrchestrationError("sealed project Gate authority requires TASK projection authority")
+    if mapping.project_id != plan.project_id or mapping.canonical_sha256 != plan.canonical_plan_sha256:
+        raise GateOrchestrationError("sealed project Gate authority mapping mismatch")
+    anchor = _inactive_project_gate_anchor(root, mapping, plan)
+    ledger_path = mapping.gate_state_ledger_path
+
+    envelope = load_approval_evidence(approval_evidence)
+    payload = validate_approval_evidence(
+        envelope, project_id=plan.project_id, gate_id=plan.gate_id,
+        requirements_sha256=requirements_sha256, plan_sha256=plan.canonical_plan_sha256,
+        branch=branch, head=head, lv_order=[item.lv_id for item in plan.lvs],
+        owned_files_by_lv={item.lv_id: item.owned_files for item in plan.lvs},
+    )
+    auth = create_gate_authorization(
+        plan, str(payload["approval_id"]), mode=FULL_PLAN,
+        full_plan_opt_in=full_plan_opt_in, project_final_validation=project_final_validation,
+    )
+    validate_authorization(plan, auth)
+    if lv_id not in auth.approved_lvs:
+        raise GateOrchestrationError("requested LV is outside sealed Gate approval scope")
+    return auth, {
+        "state": "GATE1_RESUME_READY",
+        "project_id": plan.project_id,
+        "selected_source": mapping.canonical_source,
+        "checkpoint_commit": head,
+        "head": head,
+        "branch": branch,
+        "requirements_sha256": requirements_sha256,
+        "approval_evidence_path": str(Path(approval_evidence).resolve()),
+        "transition_authorized": True,
+        "gate_1_started": True,
+        "gate_id": plan.gate_id,
+        "approval_id": payload["approval_id"],
+        "approval_record_hash": envelope["record_hash"],
+        "canonical_plan": mapping.canonical_source.relative_to(root).as_posix(),
+        "plan_sha256": plan.canonical_plan_sha256,
+        "active_scope": [lv_id],
+        "owned_files": list(auth.owned_files_by_lv[lv_id]),
+        "ledger_path": ledger_path.relative_to(root).as_posix(),
+    }
+
+
 def activate_first_gate(project_root: str | Path, gate_id: str, approval_evidence: str | Path, *,
                         mapping_root: str | Path | None = None) -> dict[str, Any]:
     """Receive a sealed first-Gate approval at the project boundary.
@@ -1250,6 +1413,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
                          canonical_worker_authority_provider: Any | None = None,
+                         sealed_project_authority: bool = False,
                          provider_route_envelope: Mapping[str, Any] | None = None,
                          manual_action_package: Mapping[str, Any] | None = None,
                          manual_action_authorization: Mapping[str, Any] | None = None) -> GateControllerAdapters:
@@ -1523,6 +1687,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     output_root=package_root.parent, output_dir=package_root,
                     canonical_state_override=context.get("canonical_state_override"),
                     canonical_owned_files=expected_owned,
+                    sealed_project_authority=sealed_project_authority,
                 )
             except Exception:
                 if callable(package_transition):
@@ -1646,8 +1811,12 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         if prior:
             package_root = state.get("package_root")
             if isinstance(package_root, Path):
-                published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json", project_root=root,
-                                  allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")))
+                published = preflight_run(
+                    run_id, package_root=package_root, result_path=package_root / "worker.result.json",
+                    project_root=root,
+                    allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")),
+                    canonical_state_override=_.get("canonical_state_override"),
+                )
                 if isinstance(published.get("status"), dict) and published["status"].get("status") == "READY":
                     state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
             return prior
@@ -1659,8 +1828,12 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
         # create a smaller gate-local READY document first: that would make
         # preflight_run treat it as an idempotent result and drop interpreter
         # fingerprints from the persisted evidence.
-        published = preflight_run(run_id, package_root=package_root, result_path=package_root / "worker.result.json", project_root=root,
-                                  allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")))
+        published = preflight_run(
+            run_id, package_root=package_root, result_path=package_root / "worker.result.json",
+            project_root=root,
+            allow_safe_descendant_source=bool(state.get("package_only_safe_descendant_resume")),
+            canonical_state_override=_.get("canonical_state_override"),
+        )
         if published.get("status") != "READY" and not (isinstance(published.get("status"), dict) and published["status"].get("status") == "READY"):
             raise GateControllerError(f"PREFLIGHT publication failed: {published}")
         state["preflight_evidence_sha256"] = str(published["preflight_evidence_sha256"])
@@ -1799,7 +1972,10 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                            "allow_verification_only": execution_obligation == "NONE_SATISFIED",
                            "allow_read_only_execution": bool(route_read_only),
                            "provider_route": dict(provider_route_envelope or {}),
-                           "change_target_count":len(manifest.get("owned_files", [])),
+                           "change_target_count":(
+                               0 if execution_obligation == "NONE_SATISFIED"
+                               else len(manifest.get("owned_files", []))
+                           ),
                            "package_manifest_sha256": package_sha,
                            "preflight_evidence_sha256": state.get("preflight_evidence_sha256") or _file_sha(package_root / "preflight" / "preflight.evidence.json"),
                            "attempt": 1,
@@ -1935,6 +2111,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             result_path=Path(state["worker_result_path"]),
             review_request_path=review_request_path,
             project_root=root,
+            canonical_state_override=context.get("canonical_state_override"),
         )
         if publication.get("status") != "READY":
             raise GateControllerError(f"REVIEW preflight publication blocked: {publication}")
@@ -1950,6 +2127,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             package_root=Path(state["package_root"]),
             result_path=Path(state["worker_result_path"]), results_root=review_root,
             project_root=root,
+            canonical_state_override=context.get("canonical_state_override"),
         )
         if review_result.get("status") not in {"PASS", "FAIL"}:
             raise GateControllerError(f"REVIEW blocked: {review_result}")
@@ -2090,6 +2268,471 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                                   checkpoint, exit_stage, handoff)
 
 
+
+def _sealed_completed_lv_lineage(
+    project_root: str | Path,
+    harness_root: str | Path,
+    plan: GatePlan,
+    auth: GateAuthorization,
+    *,
+    lv_id: str,
+    run_id: str,
+    current_head: str,
+) -> dict[str, str]:
+    """Verify one completed LV's durable HANDOFF/ResumeStore lineage at current HEAD."""
+    root = Path(project_root).resolve()
+    harness = Path(harness_root).resolve()
+    artifact_root = namespace_root(harness, plan.project_id, "artifact")
+    handoff_path = artifact_root / f"{run_id}.handoff.json"
+    if handoff_path.is_symlink() or not handoff_path.is_file():
+        raise GateOrchestrationError("completed LV HANDOFF evidence is missing or unsafe")
+    try:
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GateOrchestrationError("completed LV HANDOFF evidence is malformed") from exc
+    validate_handoff(handoff, plan, auth)
+    handoff_sha = str(handoff.get("handoff_sha256") or "")
+    if (
+        handoff.get("project") != plan.project_id
+        or handoff.get("gate") != plan.gate_id
+        or handoff.get("lv") != lv_id
+        or handoff.get("run_id") != run_id
+        or handoff.get("hard_stop") is not True
+        or not re.fullmatch(r"[0-9a-f]{64}", handoff_sha)
+    ):
+        raise GateOrchestrationError("completed LV HANDOFF source lineage mismatch")
+
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    resume_root = harness / "_workspace" / "global-gate-resume"
+    event_pattern = f"*/{plan.project_id}/{plan.gate_id}/{lv_id}/{run_id}/events/000001.json"
+    matches: list[dict[str, str]] = []
+    for event_one in sorted(resume_root.glob(event_pattern)):
+        if event_one.is_symlink() or not event_one.is_file():
+            continue
+        try:
+            first = json.loads(event_one.read_text(encoding="utf-8"))
+            binding = RunBinding(**dict(first.get("binding") or {}))
+            if (
+                binding.project_id != plan.project_id
+                or binding.gate_id != plan.gate_id
+                or binding.lv_id != lv_id
+                or binding.run_id != run_id
+                or binding.plan_sha256 != plan.canonical_plan_sha256
+                or binding.branch != branch
+            ):
+                continue
+            if (
+                handoff.get("branch") != binding.branch
+                or handoff.get("head") != binding.head
+                or handoff.get("authorization", {}).get("id") != auth.authorization_id
+                or subprocess.run(
+                    ["git", "-C", str(root), "merge-base", "--is-ancestor", binding.head, current_head],
+                    capture_output=True, text=True, check=False,
+                ).returncode != 0
+            ):
+                continue
+            commit_count = subprocess.run(
+                ["git", "-C", str(root), "rev-list", "--count", f"{binding.head}..{current_head}"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if commit_count != "1":
+                continue
+            records = ResumeStore(event_one.parents[5], binding).verify()
+        except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError, ResumeStoreError):
+            continue
+
+        def auxiliary(record: Mapping[str, Any]) -> bool:
+            if record.get("lifecycle") != "WORKER":
+                return False
+            payload = record.get("stage_payload")
+            return not (
+                isinstance(payload, Mapping)
+                and isinstance(payload.get("checkpoint_commit"), str)
+                and payload.get("checkpoint_commit")
+            )
+
+        semantic = [record for record in records if not auxiliary(record)]
+        lifecycles = [str(record.get("lifecycle") or "") for record in semantic]
+        if (
+            len(semantic) < 7
+            or lifecycles[:3] != ["PACKAGE", "PREFLIGHT", "WORKER"]
+            or lifecycles[-3:] != ["CHECKPOINT", "EXIT", "HANDOFF"]
+            or any(stage not in {"REVIEW", "REMEDIATION"} for stage in lifecycles[3:-3])
+            or "REVIEW" not in lifecycles[3:-3]
+        ):
+            continue
+        worker = semantic[2]
+        reviews = [record for record in semantic[3:-3] if record.get("lifecycle") == "REVIEW"]
+        checkpoint, exit_event, handoff_event = semantic[-3:]
+        worker_payload = worker.get("stage_payload")
+        exit_payload = exit_event.get("stage_payload")
+        handoff_payload = handoff_event.get("stage_payload")
+        changed = worker_payload.get("changed_files") if isinstance(worker_payload, Mapping) else None
+        committed = subprocess.run(
+            ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", current_head],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        if (
+            not isinstance(worker_payload, Mapping)
+            or worker_payload.get("baseline_head") != binding.head
+            or worker_payload.get("current_head") != current_head
+            or worker_payload.get("checkpoint_commit") != current_head
+            or not isinstance(changed, list)
+            or not changed
+            or sorted(changed) != sorted(committed)
+            or handoff.get("changed_files") != changed
+            or not reviews
+            or not isinstance(reviews[-1].get("stage_payload"), Mapping)
+            or reviews[-1]["stage_payload"].get("status") != "PASS"
+            or checkpoint.get("checkpoint") is not True
+            or not isinstance(exit_payload, Mapping)
+            or exit_payload.get("status") != "EXITED"
+            or not isinstance(handoff_payload, Mapping)
+            or handoff_payload.get("status") != "SEALED"
+            or handoff_event.get("evidence_sha256") != handoff_sha
+        ):
+            continue
+        worker_path = harness / "_workspace" / "orchestration-runs" / run_id / lv_id / "worker.result.json"
+        if worker_path.is_symlink() or not worker_path.is_file():
+            continue
+        worker_sha = _file_sha(worker_path)
+        if worker.get("evidence_sha256") != worker_sha or handoff.get("artifact_sha256") != worker_sha:
+            continue
+        exit_digest = str(exit_event.get("evidence_sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", exit_digest):
+            continue
+        matches.append({
+            "lineage_kind": "SEALED_LV_HANDOFF",
+            "current_head": current_head,
+            "predecessor_digest": exit_digest,
+            "predecessor_lv": lv_id,
+            "predecessor_run_id": run_id,
+            "handoff_sha256": handoff_sha,
+        })
+    if len(matches) != 1:
+        raise GateOrchestrationError("completed LV source lineage is missing or ambiguous")
+    return matches[0]
+
+
+def _verified_historical_satisfied_recertification(
+    project_root: str | Path,
+    harness_root: str | Path,
+    plan: GatePlan,
+    current_auth: GateAuthorization,
+    *,
+    lv_id: str,
+    current_run_id: str,
+    current_head: str,
+) -> dict[str, Any] | None:
+    """Recertify a sealed historical LV already contained in current HEAD."""
+    root = Path(project_root).resolve()
+    harness = Path(harness_root).resolve()
+    actual_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if current_head != actual_head:
+        raise GateOrchestrationError("historical LV recertification current HEAD mismatch")
+    if subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip():
+        raise GateOrchestrationError("historical LV recertification requires a clean worktree")
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    selected = next((item for item in plan.lvs if item.lv_id == lv_id), None)
+    if selected is None or lv_id not in current_auth.approved_lvs:
+        raise GateOrchestrationError("historical LV recertification LV is outside current authority")
+    expected_owned = list(current_auth.owned_files_by_lv.get(lv_id, []))
+    if expected_owned != list(selected.owned_files):
+        raise GateOrchestrationError("historical LV recertification current scope mismatch")
+    expected_tests = list(selected.completion_criteria)
+    artifact_root = namespace_root(harness, plan.project_id, "artifact")
+    approval_root = namespace_root(harness, plan.project_id, "approval")
+    candidates: list[dict[str, Any]] = []
+
+    for handoff_path in sorted(artifact_root.glob("*.handoff.json")):
+        if handoff_path.is_symlink() or not handoff_path.is_file():
+            continue
+        try:
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            not isinstance(handoff, Mapping)
+            or handoff.get("project") != plan.project_id
+            or handoff.get("gate") != plan.gate_id
+            or handoff.get("lv") != lv_id
+            or handoff.get("canonical_plan_sha256") != plan.canonical_plan_sha256
+            or handoff.get("branch") != branch
+            or handoff.get("owned_files") != expected_owned
+            or handoff.get("tests") != expected_tests
+            or handoff.get("hard_stop") is not True
+            or not isinstance(handoff.get("review"), Mapping)
+            or handoff["review"].get("status") != "PASS"
+        ):
+            continue
+        historical_run_id = str(handoff.get("run_id") or "")
+        if not historical_run_id or historical_run_id == current_run_id:
+            continue
+        worker_path = (
+            harness / "_workspace" / "orchestration-runs"
+            / historical_run_id / lv_id / "worker.result.json"
+        )
+        if worker_path.is_symlink() or not worker_path.is_file():
+            continue
+        try:
+            worker = json.loads(worker_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        checkpoint = str(worker.get("checkpoint_commit") or "")
+        if (
+            not re.fullmatch(r"[0-9a-f]{40}", checkpoint)
+            or worker.get("status") != "completed"
+            or worker.get("project_id") != plan.project_id
+            or worker.get("gate_id") != plan.gate_id
+            or worker.get("lv_id") != lv_id
+            or worker.get("run_id") != historical_run_id
+            or worker.get("plan_sha256") != plan.canonical_plan_sha256
+            or worker.get("owned_files") != expected_owned
+            or worker.get("tests") != expected_tests
+            or worker.get("review_verdict") != "PASS"
+            or worker.get("hard_stop") is not True
+        ):
+            continue
+        if subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", checkpoint, current_head],
+            capture_output=True, text=True, check=False,
+        ).returncode != 0:
+            continue
+        later_owned = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", f"{checkpoint}..{current_head}", "--", *expected_owned],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        if later_owned:
+            continue
+
+        authorization = handoff.get("authorization")
+        historical_approval_id = (
+            str(authorization.get("id") or "") if isinstance(authorization, Mapping) else ""
+        )
+        recovery_checkpoint = handoff.get("recovery_checkpoint")
+        checkpoint_payload = (
+            recovery_checkpoint.get("payload")
+            if isinstance(recovery_checkpoint, Mapping) else None
+        )
+        historical_binding = (
+            checkpoint_payload.get("binding")
+            if isinstance(checkpoint_payload, Mapping) else None
+        )
+        historical_requirements = (
+            str(historical_binding.get("requirements_sha256") or "")
+            if isinstance(historical_binding, Mapping) else ""
+        )
+        if (
+            not historical_approval_id
+            or not re.fullmatch(r"[0-9a-f]{64}", historical_requirements)
+        ):
+            continue
+
+        approval_matches: list[Mapping[str, Any]] = []
+        for approval_path in sorted(approval_root.glob("*.json")):
+            try:
+                envelope = load_approval_evidence(approval_path)
+            except Exception:
+                continue
+            payload = envelope.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            if (
+                payload.get("approval_id") == historical_approval_id
+                and payload.get("project_id") == plan.project_id
+                and payload.get("gate_id") == plan.gate_id
+                and payload.get("plan_sha256") == plan.canonical_plan_sha256
+                and payload.get("requirements_sha256") == historical_requirements
+                and payload.get("branch") == branch
+                and payload.get("head") == handoff.get("head")
+                and payload.get("scope") == {
+                    "lv_order": [item.lv_id for item in plan.lvs],
+                    "owned_files_by_lv": {
+                        item.lv_id: list(item.owned_files) for item in plan.lvs
+                    },
+                }
+            ):
+                approval_matches.append(envelope)
+        if len(approval_matches) != 1:
+            continue
+
+        historical_auth = create_gate_authorization(
+            plan, historical_approval_id, mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        validate_authorization(plan, historical_auth)
+        try:
+            lineage = _sealed_completed_lv_lineage(
+                root, harness, plan, historical_auth,
+                lv_id=lv_id, run_id=historical_run_id, current_head=checkpoint,
+            )
+        except GateOrchestrationError:
+            continue
+
+        record = {
+            "schema_version": "orchestration.historical-lv-recertification.v1",
+            "project_id": plan.project_id,
+            "gate_id": plan.gate_id,
+            "lv_id": lv_id,
+            "plan_sha256": plan.canonical_plan_sha256,
+            "current_approval_id": current_auth.authorization_id,
+            "historical_run_id": historical_run_id,
+            "historical_approval_id": historical_approval_id,
+            "historical_approval_record_hash": str(
+                approval_matches[0].get("record_hash") or ""
+            ),
+            "checkpoint_commit": checkpoint,
+            "current_head": current_head,
+            "handoff_sha256": str(lineage["handoff_sha256"]),
+            "exit_evidence_sha256": str(lineage["predecessor_digest"]),
+            "owned_files": expected_owned,
+        }
+        record["record_sha256"] = hashlib.sha256(
+            canonical_json_bytes(record)
+        ).hexdigest()
+        candidates.append(record)
+
+    if not candidates:
+        return None
+    if len(candidates) != 1:
+        raise GateOrchestrationError("historical LV recertification is ambiguous")
+    return candidates[0]
+
+
+def _verified_approved_baseline_satisfied_recertification(
+    project_root: str | Path,
+    plan: GatePlan,
+    current_auth: GateAuthorization,
+    *,
+    lv_id: str,
+    current_head: str,
+    approval_head: str,
+) -> dict[str, Any] | None:
+    """Recertify an already-satisfied mutating LV from the approved baseline.
+
+    This is a fail-closed fallback for recovery plans whose implementation is
+    already contained in the approved baseline but has no sealed historical
+    worker/handoff.  It never declares completion by itself: it only permits
+    the existing NONE_SATISFIED verification-only worker path, which reruns
+    the sealed focused/full/compile checks before review.
+    """
+    root = Path(project_root).resolve()
+    actual_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if current_head != actual_head:
+        raise GateOrchestrationError("baseline satisfied recertification current HEAD mismatch")
+    if subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip():
+        raise GateOrchestrationError("baseline satisfied recertification requires a clean worktree")
+
+    selected = next((item for item in plan.lvs if item.lv_id == lv_id), None)
+    if selected is None or lv_id not in current_auth.approved_lvs:
+        raise GateOrchestrationError("baseline satisfied recertification LV is outside current authority")
+    expected_owned = list(current_auth.owned_files_by_lv.get(lv_id, []))
+    if not expected_owned or expected_owned != list(selected.owned_files):
+        raise GateOrchestrationError("baseline satisfied recertification current scope mismatch")
+    if not re.fullmatch(r"[0-9a-f]{40}", approval_head):
+        raise GateOrchestrationError("baseline satisfied recertification approval HEAD is invalid")
+    if subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", approval_head, current_head],
+        capture_output=True, text=True, check=False,
+    ).returncode != 0:
+        return None
+
+    safe_owned = [_safe_scope(item) for item in expected_owned]
+    exact_only = all(not scope.endswith("/") for scope in safe_owned)
+
+    def within_owned(path: str) -> bool:
+        return any(
+            path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope))
+            for scope in safe_owned
+        )
+
+    witness = ""
+    changed: list[str] = []
+    history = subprocess.run(
+        ["git", "-C", str(root), "log", "--format=%H", approval_head, "--", *safe_owned],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    for candidate in history:
+        if not re.fullmatch(r"[0-9a-f]{40}", candidate):
+            continue
+        candidate_changed = [
+            item for item in subprocess.run(
+                ["git", "-C", str(root), "diff-tree", "--root", "--no-commit-id",
+                 "--name-only", "-r", candidate],
+                capture_output=True, text=True, check=True,
+            ).stdout.splitlines() if item
+        ]
+        if candidate_changed and all(within_owned(path) for path in candidate_changed):
+            witness = candidate
+            changed = candidate_changed
+            break
+    if not witness:
+        return None
+    if subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", witness, approval_head],
+        capture_output=True, text=True, check=False,
+    ).returncode != 0:
+        return None
+
+    later_owned_commits = [
+        item for item in subprocess.run(
+            ["git", "-C", str(root), "log", "--format=%H", f"{witness}..{current_head}",
+             "--", *safe_owned],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines() if item
+    ]
+    if later_owned_commits:
+        # Later edits are eligible only when they are already inside the exact
+        # user-approved baseline.  This never admits post-approval drift.
+        if current_head != approval_head or not exact_only:
+            return None
+        for scope in safe_owned:
+            target = root / scope
+            if target.is_symlink() or not target.is_file():
+                return None
+            if subprocess.run(
+                ["git", "-C", str(root), "cat-file", "-e", f"{approval_head}:{scope}"],
+                capture_output=True, text=True, check=False,
+            ).returncode != 0:
+                return None
+
+    record = {
+        "schema_version": "orchestration.approved-baseline-lv-recertification.v1",
+        "project_id": plan.project_id,
+        "gate_id": plan.gate_id,
+        "lv_id": lv_id,
+        "plan_sha256": plan.canonical_plan_sha256,
+        "current_approval_id": current_auth.authorization_id,
+        "checkpoint_commit": witness,
+        "approval_head": approval_head,
+        "current_head": current_head,
+        "owned_files": expected_owned,
+        "witness_changed_files": sorted(changed),
+        "post_witness_owned_commits": later_owned_commits,
+        "source_kind": "APPROVED_BASELINE_WITNESS",
+    }
+    record["record_sha256"] = hashlib.sha256(canonical_json_bytes(record)).hexdigest()
+    return record
+
+
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
@@ -2108,17 +2751,27 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  manual_action_packages_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
                  manual_action_authorizations_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
                  codex_auth_readiness: Any | None = None,
-                 codex_readiness_recheck_probes: Any | None = None) -> dict[str, Any]:
+                 codex_readiness_recheck_probes: Any | None = None,
+                 source_lineage: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
     validate_global_gate_bindings(root, gate_id, requirements_sha256=requirements_sha256,
                                   approval_evidence=approval_evidence, branch=branch, head=head,
                                   harness_root=harness_root)
-    auth = load_approved_authorization(
-        root, gate_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
-        project_final_validation=project_final_validation,
-    )
+    sealed_project_authority = mode == FULL_PLAN and project_requirement_evidence_by_lv is not None
+    if sealed_project_authority:
+        auth, _ = _sealed_project_gate_authority(
+            root, plan, plan.lvs[0].lv_id,
+            approval_evidence=approval_evidence, requirements_sha256=requirements_sha256,
+            branch=branch, head=head, full_plan_opt_in=full_plan_opt_in,
+            project_final_validation=project_final_validation,
+        )
+    else:
+        auth = load_approved_authorization(
+            root, gate_id, mode=mode, full_plan_opt_in=full_plan_opt_in,
+            project_final_validation=project_final_validation,
+        )
     if any(value is not None for value in (capability_requirements, capability_prerequisite, capability_checkpoints)):
         if mode != FULL_PLAN or not dry_run_capability_resolution:
             raise GateOrchestrationError("operational capability wiring requires explicit FULL_PLAN dry-run context")
@@ -2171,6 +2824,44 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             completed_evidence[item.lv_id] = digest
     state = {"run_id": run_id, "project_id": plan.project_id, "gate_id": gate_id, "current_stage": "PLAN", "completed_lvs": completed,
              "lv_id": completed[-1] if completed else None}
+    lineage: dict[str, str] | None = None
+    if source_lineage is not None:
+        candidate = dict(source_lineage)
+        candidate_head = str(candidate.get("current_head") or "")
+        candidate_digest = str(candidate.get("predecessor_digest") or "")
+        observed_head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if (
+            candidate_head != observed_head
+            or not re.fullmatch(r"[0-9a-f]{64}", candidate_digest)
+            or subprocess.run(
+                ["git", "-C", str(root), "merge-base", "--is-ancestor", head, observed_head],
+                capture_output=True, text=True, check=False,
+            ).returncode != 0
+        ):
+            raise GateOrchestrationError("Full Plan source lineage binding mismatch")
+        lineage = {
+            "lineage_kind": str(candidate.get("lineage_kind") or "SEALED_SOURCE_LINEAGE"),
+            "current_head": candidate_head,
+            "predecessor_digest": candidate_digest,
+            "predecessor_lv": str(candidate.get("predecessor_lv") or ""),
+            "predecessor_run_id": str(candidate.get("predecessor_run_id") or ""),
+        }
+    if sealed_project_authority and completed and resume:
+        predecessor_lv = completed[-1]
+        predecessor_index = [item.lv_id for item in plan.lvs].index(predecessor_lv)
+        predecessor_run = run_id if predecessor_index == 0 else f"{run_id}-{predecessor_lv.lower()}"
+        observed_head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if observed_head != head:
+            lineage = _sealed_completed_lv_lineage(
+                root, harness_root, plan, auth,
+                lv_id=predecessor_lv, run_id=predecessor_run, current_head=observed_head,
+            )
     lifecycles: list[dict[str, Any]] = []
     while True:
         transition = derive_transition(plan, auth, state.get("lv_id"), state["completed_lvs"])
@@ -2416,97 +3107,215 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         # LVs in the same invocation are fresh work and must not inherit a
         # synthetic resume requirement.
         lv_resume = bool(resume and (lv_package_root / "package.manifest.json").is_file())
+        selected_lv = plan.lvs[lv_index]
+        observed_head = head
+        transition_record = None
+        if sealed_project_authority:
+            observed_head = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            observed_branch = subprocess.run(
+                ["git", "-C", str(root), "branch", "--show-current"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if observed_branch != branch:
+                raise GateOrchestrationError("Full Plan execution branch drift")
+            if observed_head != head:
+                if (
+                    not isinstance(lineage, Mapping)
+                    or lineage.get("current_head") != observed_head
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(lineage.get("predecessor_digest") or ""))
+                ):
+                    raise GateOrchestrationError("sealed project source lineage is required")
+                from .active_transition import activate_canonical_lv_transition
+                transition_record = activate_canonical_lv_transition(
+                    harness_root,
+                    project_id=plan.project_id,
+                    gate_id=gate_id,
+                    lv_id=lv_id,
+                    run_id=lv_run_id,
+                    approval_event_id=str(getattr(auth, "authorization_id", "")),
+                    plan_sha256=plan.canonical_plan_sha256,
+                    branch=branch,
+                    baseline_head=head,
+                    current_head=observed_head,
+                    predecessor_digest=str(lineage["predecessor_digest"]),
+                    owned_files=list(auth.owned_files_by_lv.get(lv_id, [])),
+                    completion_conditions=list(selected_lv.completion_criteria),
+                )
         context = {"project_id": plan.project_id, "gate_id": gate_id, "lv_id": lv_id, "run_id": lv_run_id,
                    "plan_sha256": plan.canonical_plan_sha256, "requirements_sha256": requirements_sha256,
-                   "branch": branch, "head": head, "resume": lv_resume,
+                   "branch": branch, "head": observed_head, "resume": lv_resume,
                    "owned_files": list(auth.owned_files_by_lv.get(lv_id, [])),
                    "owned_file_scope": {key: list(value) for key, value in auth.owned_files_by_lv.items()},
                    "canonical_lv_scope": list(auth.approved_lvs),
                    "completed_plan_items": list(state["completed_lvs"]),
                    "remaining_plan_items": [item.lv_id for item in plan.lvs[lv_index + 1:]]}
+        if sealed_project_authority:
+            context.update({
+                "baseline_head": head,
+                "current_head": observed_head,
+                "predecessor_completion_digest": (
+                    str(lineage.get("predecessor_digest")) if isinstance(lineage, Mapping) else ""
+                ),
+                "predecessor_lv": (
+                    str(lineage.get("predecessor_lv") or "") if isinstance(lineage, Mapping) else ""
+                ),
+                "approval_freshness_stage": "POST_HANDOFF" if transition_record is not None else "PRE_RUN",
+                "completion_conditions": list(selected_lv.completion_criteria),
+            })
         task_mapping = load_project_mapping(root)
         if task_mapping is not None and getattr(task_mapping, "task_lv_projection_path", None) is not None:
-            context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
+            if sealed_project_authority:
+                _, sealed_state = _sealed_project_gate_authority(
+                    root, plan, lv_id,
+                    approval_evidence=approval_evidence, requirements_sha256=requirements_sha256,
+                    branch=branch, head=head, full_plan_opt_in=full_plan_opt_in,
+                    project_final_validation=project_final_validation,
+                )
+                if transition_record is not None:
+                    sealed_state["checkpoint_commit"] = observed_head
+                    sealed_state["transition"] = transition_record
+                context["canonical_state_override"] = sealed_state
+            else:
+                context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
         if adapters is None:
             from .execution_contract import READY
             from .provider_runtime_binding import ProviderRuntimeBindingError, collect_production_provider_eligibility
-            from .provider_router import normalize_legacy_hybrid_request, route_request as route_provider_request
+            from .provider_router import (
+                d15_recovery_nvidia_read_only_request,
+                normalize_legacy_hybrid_request,
+                project_read_only_provider_capabilities,
+                route_request as route_provider_request,
+            )
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
 
-            selected_lv = plan.lvs[lv_index]
-            resolved_codex_readiness, resolved_codex_probes = _resolve_lv_codex_readiness(
-                project_id=plan.project_id, gate_id=gate_id, lv_id=lv_id, run_id=lv_run_id,
-                existing=codex_auth_readiness, probes=codex_readiness_recheck_probes,
-            )
-            codex_override = _codex_eligibility_override(resolved_codex_readiness)
-            try:
-                eligibility = collect_production_provider_eligibility(
-                    root, lv_run_id, required_capabilities=selected_lv.required_capabilities,
-                    codex_ready_override=False if codex_override is None else codex_override,
-                    extra_evidence_refs=(
-                        "production-full-plan",
-                        "codex-readiness:ready" if codex_override is True else "codex-readiness:unavailable",
-                    ),
+            satisfied_recertification = None
+            if (
+                sealed_project_authority
+                and selected_lv.execution != "READ_ONLY"
+                and "filesystem_write" in selected_lv.required_capabilities
+            ):
+                current_head = subprocess.run(
+                    ["git", "-C", str(root), "rev-parse", "HEAD"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.strip()
+                satisfied_recertification = _verified_historical_satisfied_recertification(
+                    root, harness_root, plan, auth,
+                    lv_id=lv_id, current_run_id=lv_run_id, current_head=current_head,
                 )
-            except ProviderRuntimeBindingError as exc:
-                raise GateOrchestrationError(f"PROVIDER_ROUTE_BLOCKED:provider_runtime_binding:{exc}") from exc
-            route_request_value = normalize_legacy_hybrid_request(
-                required_capabilities=selected_lv.required_capabilities,
-                eligibility_snapshot=eligibility,
-                request_id=f"{lv_run_id}-{lv_id}-provider-route",
-                project_id=plan.project_id,
-                run_id=lv_run_id,
-                task_id=lv_id,
-                task_execution_id=f"{lv_run_id}-{lv_id}-worker",
-                directive_digest=_canonical_hash({
+                if satisfied_recertification is None:
+                    satisfied_recertification = _verified_approved_baseline_satisfied_recertification(
+                        root, plan, auth,
+                        lv_id=lv_id, current_head=current_head, approval_head=head,
+                    )
+
+            if satisfied_recertification is not None:
+                resolved_codex_readiness = resolved_codex_probes = None
+                provider_route_envelope = None
+                production_provider = build_production_canonical_worker_authority_provider(
+                    codex_auth_readiness=None,
+                    readiness_recheck_probes=None,
+                    router_decision=None,
+                    satisfied_recertification=satisfied_recertification,
+                )
+            else:
+                resolved_codex_readiness, resolved_codex_probes = _resolve_lv_codex_readiness(
+                    project_id=plan.project_id, gate_id=gate_id, lv_id=lv_id, run_id=lv_run_id,
+                    existing=codex_auth_readiness, probes=codex_readiness_recheck_probes,
+                )
+                codex_override = _codex_eligibility_override(resolved_codex_readiness)
+                try:
+                    eligibility = collect_production_provider_eligibility(
+                        root, lv_run_id, required_capabilities=selected_lv.required_capabilities,
+                        codex_ready_override=False if codex_override is None else codex_override,
+                        extra_evidence_refs=(
+                            "production-full-plan",
+                            "codex-readiness:ready" if codex_override is True else "codex-readiness:unavailable",
+                        ),
+                    )
+                except ProviderRuntimeBindingError as exc:
+                    raise GateOrchestrationError(f"PROVIDER_ROUTE_BLOCKED:provider_runtime_binding:{exc}") from exc
+                directive_digest = _canonical_hash({
                     "project_id": plan.project_id,
                     "gate_id": gate_id,
                     "lv_id": lv_id,
                     "run_id": lv_run_id,
                     "plan_sha256": plan.canonical_plan_sha256,
                     "required_capabilities": list(selected_lv.required_capabilities),
-                }),
-            )
-            route_decision_value = route_provider_request(route_request_value)
-            provider_route_envelope = {
-                "request": route_request_value.to_dict(),
-                "decision": route_decision_value.to_dict(),
-            }
-            manual_route_authorized = (
-                route_decision_value.stage == "ACTION"
-                and (manual_action_packages_by_lv or {}).get(lv_id) is not None
-                and (manual_action_authorizations_by_lv or {}).get(lv_id) is not None
-            )
-            if not route_decision_value.eligible and not manual_route_authorized:
-                from .wait_recovery import record_provider_wait_recovery_evidence
-                record_provider_wait_recovery_evidence(
-                    harness_root, project_id=plan.project_id, gate_run_id=run_id,
-                    gate_id=gate_id, lv_id=lv_id, lv_run_id=lv_run_id,
-                    project_root=root, source_head=head,
-                    router_request=route_request_value.to_dict(),
-                    router_decision=route_decision_value.to_dict(),
-                    output_contract={
-                        "purpose": selected_lv.purpose,
-                        "owned_files": list(selected_lv.owned_files),
-                    },
-                    validation_contract={
-                        "completion_criteria": list(selected_lv.completion_criteria),
-                        "tests": list(selected_lv.tests),
-                    },
-                    risk_contract={
-                        "stage": route_request_value.stage,
-                        "state_change_required": route_request_value.state_change_required,
-                        "required_capabilities": list(route_request_value.required_capabilities),
-                    },
+                })
+                nvidia_model = str(eligibility.model_refs.get("nvidia", "")).strip()
+                d15_read_only = (
+                    selected_lv.execution == "READ_ONLY"
+                    and bool(eligibility.provider_eligible.get("nvidia", False))
+                    and bool(nvidia_model)
                 )
-                raise GateOrchestrationError(
-                    f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
+                if d15_read_only:
+                    route_request_value = d15_recovery_nvidia_read_only_request(
+                        request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                        project_id=plan.project_id,
+                        run_id=lv_run_id,
+                        task_id=lv_id,
+                        task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                        directive_digest=directive_digest,
+                        model_ref=nvidia_model,
+                        evidence_refs=eligibility.evidence_refs,
+                        required_capabilities=project_read_only_provider_capabilities(
+                            selected_lv.required_capabilities
+                        ),
+                    )
+                else:
+                    route_request_value = normalize_legacy_hybrid_request(
+                        required_capabilities=selected_lv.required_capabilities,
+                        eligibility_snapshot=eligibility,
+                        request_id=f"{lv_run_id}-{lv_id}-provider-route",
+                        project_id=plan.project_id,
+                        run_id=lv_run_id,
+                        task_id=lv_id,
+                        task_execution_id=f"{lv_run_id}-{lv_id}-worker",
+                        directive_digest=directive_digest,
+                    )
+                route_decision_value = route_provider_request(route_request_value)
+                provider_route_envelope = {
+                    "request": route_request_value.to_dict(),
+                    "decision": route_decision_value.to_dict(),
+                }
+                manual_route_authorized = (
+                    route_decision_value.stage == "ACTION"
+                    and (manual_action_packages_by_lv or {}).get(lv_id) is not None
+                    and (manual_action_authorizations_by_lv or {}).get(lv_id) is not None
                 )
-            production_provider = build_production_canonical_worker_authority_provider(
-                codex_auth_readiness=resolved_codex_readiness,
-                readiness_recheck_probes=resolved_codex_probes,
-                router_decision=route_decision_value,
-            )
+                if not route_decision_value.eligible and not manual_route_authorized:
+                    from .wait_recovery import record_provider_wait_recovery_evidence
+                    record_provider_wait_recovery_evidence(
+                        harness_root, project_id=plan.project_id, gate_run_id=run_id,
+                        gate_id=gate_id, lv_id=lv_id, lv_run_id=lv_run_id,
+                        project_root=root, source_head=head,
+                        router_request=route_request_value.to_dict(),
+                        router_decision=route_decision_value.to_dict(),
+                        output_contract={
+                            "purpose": selected_lv.purpose,
+                            "owned_files": list(selected_lv.owned_files),
+                        },
+                        validation_contract={
+                            "completion_criteria": list(selected_lv.completion_criteria),
+                            "tests": list(selected_lv.tests),
+                        },
+                        risk_contract={
+                            "stage": route_request_value.stage,
+                            "state_change_required": route_request_value.state_change_required,
+                            "required_capabilities": list(route_request_value.required_capabilities),
+                        },
+                    )
+                    raise GateOrchestrationError(
+                        f"PROVIDER_ROUTE_BLOCKED:{route_decision_value.reason_code}"
+                    )
+                production_provider = build_production_canonical_worker_authority_provider(
+                    codex_auth_readiness=resolved_codex_readiness,
+                    readiness_recheck_probes=resolved_codex_probes,
+                    router_decision=route_decision_value,
+                )
             incident_recovery = None
             if lv_resume:
                 incident_root = canonical_lv_path(
@@ -2532,6 +3341,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 root, plan, auth, lv_id, lv_run_id, harness_root,
                 recovery=incident_recovery, diagnostic_run_id=run_id,
                 canonical_worker_authority_provider=production_provider,
+                sealed_project_authority=sealed_project_authority,
                 provider_route_envelope=provider_route_envelope,
                 manual_action_package=(manual_action_packages_by_lv or {}).get(lv_id),
                 manual_action_authorization=(manual_action_authorizations_by_lv or {}).get(lv_id),
@@ -2611,16 +3421,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                             verified_checkpoints[str(payload.get("stage"))] = dict(payload)
                 if isinstance(persisted_payload, Mapping) and isinstance(persisted_payload.get("projection"), Mapping):
                     projection = dict(persisted_payload["projection"])
-                    restored_selection = None
                     selection_payload = projection.get("runtime_selection")
-                    if isinstance(selection_payload, Mapping):
-                        from .operational_capability import RuntimeSelection
-                        required_selection = {"asset_id", "skill_id", "installed_target", "artifact_digest",
-                                              "attestation_evidence_reference", "use_authorization_evidence_reference",
-                                              "capability_requirement", "project_id", "gate_id", "lv_id",
-                                              "canonical_plan_sha256", "source"}
-                        if required_selection.issubset(selection_payload):
-                            restored_selection = RuntimeSelection(**{key: selection_payload[key] for key in required_selection})
+                    restored_selection = _restore_runtime_selection(selection_payload)
                     capability_result = SimpleNamespace(
                         status="DISCOVERED_CAPABILITY_READY",
                         worker_prerequisites_satisfied=True,
@@ -2722,4 +3524,18 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             }
             if getattr(capability_result, "existing_decision", None) is not None:
                 lifecycle["capability"]["existing_decision"] = asdict(capability_result.existing_decision)
-        lifecycles.append(lifecycle); state["completed_lvs"].append(lv_id); state["lv_id"] = lv_id
+        lifecycles.append(lifecycle)
+        state["completed_lvs"].append(lv_id)
+        state["lv_id"] = lv_id
+        if sealed_project_authority:
+            completed_head = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if completed_head != head:
+                lineage = _sealed_completed_lv_lineage(
+                    root, harness_root, plan, auth,
+                    lv_id=lv_id, run_id=lv_run_id, current_head=completed_head,
+                )
+            else:
+                lineage = None

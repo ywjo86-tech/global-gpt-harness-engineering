@@ -318,6 +318,30 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
     if status not in ACTIVE_STATES:
         return {"job": str(job_path), "action": "BLOCKED", "state": status,
                 "reason": "UNRECOGNIZED_ACTIVE_STATE", "launched": False}
+    if getattr(supervisor, "continuation_mode", "LEGACY") == "TDD_V1":
+        store = supervisor.tdd_store()
+        if store.pointer_path.exists():
+            checkpoint = store.load()
+            if checkpoint.phase == "GREEN_RUNNING":
+                reason = "GREEN_EFFECT_RECEIPT_REQUIRED"
+                AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+                    kind="TDD_RECONCILIATION_REQUIRED", state=status, reason=reason,
+                    gate_id=str(state.get("current_gate") or "") or None,
+                    state_sha256=str(state.get("state_sha256") or "") or None,
+                    details={"source": "periodic_reconciler", "tdd_phase": checkpoint.phase},
+                )
+                return {"job": str(job_path), "action": "TDD_RECONCILIATION_REQUIRED",
+                        "state": status, "reason": reason, "launched": False}
+            if checkpoint.phase == "BLOCKED":
+                reason = str(checkpoint.block_reason or "TDD_CONTINUATION_BLOCKED")
+                AttentionOutbox(supervisor.base, project_id=str(job["project_id"]), run_id=str(job["run_id"])).publish(
+                    kind="TDD_CONTINUATION_BLOCKED", state=status, reason=reason,
+                    gate_id=str(state.get("current_gate") or "") or None,
+                    state_sha256=str(state.get("state_sha256") or "") or None,
+                    details={"source": "periodic_reconciler", "tdd_phase": checkpoint.phase},
+                )
+                return {"job": str(job_path), "action": "TDD_BLOCKED",
+                        "state": status, "reason": reason, "launched": False}
     unit = _unit_name(str(job["project_id"]), str(job["run_id"]))
     if _unit_active(unit):
         return {"job": str(job_path), "action": "ALREADY_ACTIVE", "state": status,
@@ -357,7 +381,10 @@ def reconcile_all(search_root: str | Path, *, launch: bool = True) -> dict[str, 
         "harness_root": resolved,
         "jobs_found": len(jobs),
         "resume_requested": sum(1 for item in results if item["action"] == "RESUME_REQUESTED"),
-        "blocked": sum(1 for item in results if item["action"] in {"BLOCKED", "LAUNCH_FAILED", "MIGRATION_RECOVERY_REQUIRED"}),
+        "blocked": sum(1 for item in results if item["action"] in {
+            "BLOCKED", "LAUNCH_FAILED", "MIGRATION_RECOVERY_REQUIRED",
+            "TDD_BLOCKED", "TDD_RECONCILIATION_REQUIRED",
+        }),
         "results": results,
     }
 

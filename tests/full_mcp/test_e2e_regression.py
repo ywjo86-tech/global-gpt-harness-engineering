@@ -9,10 +9,19 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mcp.client.stdio import StdioServerParameters
+from tests.full_mcp import mcp_available
+
+try:
+    from mcp.client.stdio import StdioServerParameters
+except ModuleNotFoundError:
+    StdioServerParameters = None
 
 from runtime.orchestrator.execution_modes import HYBRID, NVIDIA
-from runtime.orchestrator.full_mcp_backend_adapter import AdapterToolCall, FullMCPBackendAdapter
+if mcp_available():
+    from runtime.orchestrator.full_mcp_backend_adapter import AdapterToolCall, FullMCPBackendAdapter
+else:
+    AdapterToolCall = None
+    FullMCPBackendAdapter = None
 from runtime.orchestrator.provider_router import MANUAL_PROVIDER, NVIDIA_PROVIDER, route_provider
 from tests.full_mcp.test_adapter_contract import gateway_request, initialize_repo, invocation_fixture
 
@@ -34,6 +43,7 @@ class ProviderHybridRegressionTests(unittest.TestCase):
         self.assertEqual(rejected.reason_code, "nvidia_rejects_state_changing")
 
 
+@unittest.skipIf(StdioServerParameters is None, "optional mcp package is not installed")
 class RepresentativeLifecycleTests(unittest.TestCase):
     def test_read_change_execute_validate_restore_returns_to_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -244,9 +244,15 @@ def _assert_package(package_root: Path, run_id: str) -> tuple[dict[str, Any], Pa
                           "RUN_STARTED.json", "diagnostics.json"}
     allowed |= {entry.name for entry in entries if entry.name.startswith("production.review-request-")
                 and entry.name.endswith(".json")}
-    review_dirs = {entry.name for entry in entries if entry.is_dir() and entry.name.startswith("review-attempt-")}
+    allowed |= {"provider-action-proposal.json"} | _RUNTIME_OUTPUT_DIRS
+    review_dirs = {entry.name for entry in entries
+                   if not entry.is_symlink() and entry.is_dir() and entry.name.startswith("review-attempt-")}
     allowed |= review_dirs
-    if not expected.issubset(names) or not names.issubset(allowed) or not all((entry.is_dir() and (entry.name == "preflight" or entry.name.startswith("review-attempt-"))) or (entry.is_file() and not entry.is_symlink()) for entry in entries):
+    allowed_dirs = {"preflight"} | _RUNTIME_OUTPUT_DIRS | review_dirs
+    if (not expected.issubset(names) or not names.issubset(allowed)
+            or not all(not entry.is_symlink() and (
+                (entry.is_dir() and entry.name in allowed_dirs) or entry.is_file()
+            ) for entry in entries)):
         raise LVReviewError(f"sealed package must contain exactly six regular files: {sorted(names)}")
     manifest_path = package_root / "package.manifest.json"
     manifest_bytes = manifest_path.read_bytes()
@@ -544,11 +550,29 @@ def _project_task_execution_binding(
     return projected
 
 
-def _assert_canonical_binding(root: Path, manifest: dict[str, Any]) -> None:
+def _assert_canonical_binding(
+    root: Path, manifest: dict[str, Any], *,
+    canonical_state_override: Mapping[str, Any] | None = None,
+) -> None:
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVReviewError("project contract mapping is required")
-    state = evaluate_canonical_state(mapping)
+    state = (dict(canonical_state_override)
+             if canonical_state_override is not None else evaluate_canonical_state(mapping))
+    if canonical_state_override is not None:
+        if state.get("project_id") != mapping.project_id:
+            raise LVReviewError("canonical binding mismatch: project_id")
+        canonical_sha = getattr(mapping, "canonical_sha256", None)
+        if isinstance(canonical_sha, str) and state.get("plan_sha256") != canonical_sha:
+            raise LVReviewError("canonical binding mismatch: canonical_plan_sha256")
+        canonical_source = getattr(mapping, "canonical_source", None)
+        if isinstance(canonical_source, Path):
+            try:
+                selected = Path(state.get("selected_source", "")).resolve()
+            except (OSError, TypeError, ValueError) as exc:
+                raise LVReviewError("canonical binding mismatch: canonical_plan_path") from exc
+            if selected != canonical_source.resolve():
+                raise LVReviewError("canonical binding mismatch: canonical_plan_path")
     ledger = _ledger_binding(root, mapping, state)
     state = _project_task_execution_binding(root, mapping, state, manifest)
     transition = manifest.get("production_transition")
@@ -705,6 +729,7 @@ def _preflight(
     review_attempt: int = 1,
     project_root: Path | None = None,
     allow_safe_descendant_source: bool = False,
+    canonical_state_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _safe_run_id(run_id)
     package_root = package_root or _package_root(run_id)
@@ -712,7 +737,7 @@ def _preflight(
     project_id = str(manifest.get("project_id", ""))
     root = (_validate_execution_root(project_root, project_id)
             if project_root is not None else _project_root_for(project_id))
-    _assert_canonical_binding(root, manifest)
+    _assert_canonical_binding(root, manifest, canonical_state_override=canonical_state_override)
     _assert_source_snapshot(root, manifest, source, require_clean=not allow_worker_changes,
                             allow_safe_descendant_source=allow_safe_descendant_source)
     result_path = result_path or _result_path(run_id)
@@ -827,7 +852,8 @@ def _seal_preflight_evidence(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def preflight_run(run_id: str, *, package_root: Path | None = None, result_path: Path | None = None,
-                  project_root: Path | None = None, allow_safe_descendant_source: bool = False) -> dict[str, Any]:
+                  project_root: Path | None = None, allow_safe_descendant_source: bool = False,
+                  canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     if project_root is not None and package_root is not None:
         try:
             package_manifest = _canonical_json(Path(package_root) / "package.manifest.json")
@@ -856,7 +882,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
     try:
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
                              review_attempt=1, project_root=project_root,
-                             allow_safe_descendant_source=allow_safe_descendant_source)
+                             allow_safe_descendant_source=allow_safe_descendant_source,
+                             canonical_state_override=canonical_state_override)
         # A package-scoped invocation must seal into that package's namespace;
         # falling back to the run-root preflight would collide with a prior LV.
         if package_root is not None:
@@ -878,7 +905,8 @@ def preflight_run(run_id: str, *, package_root: Path | None = None, result_path:
 def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, source_root: Path,
                                        result_path: Path, successor_lineage: dict[str, str] | None = None,
                                        review_attempt: int = 1,
-                                       project_root: Path | None = None) -> dict[str, Any]:
+                                       project_root: Path | None = None,
+                                       canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Publish a derived LV-review attestation for an immutable Gate preflight."""
     source_file = source_root / "preflight.evidence.json"
     sidecar = source_root / "preflight.evidence.sha256"
@@ -893,7 +921,8 @@ def publish_gate_preflight_attestation(run_id: str, *, package_root: Path, sourc
         context = _preflight(run_id, package_root=package_root, result_path=result_path,
                              results_root=package_root / ".publication-validation",
                              allow_worker_changes=True, check_result_absent=False, review_attempt=1,
-                             project_root=project_root)
+                             project_root=project_root,
+                             canonical_state_override=canonical_state_override)
     except (LVReviewError, LVExecutionPackageError) as exc:
         # Preserve the strict failure, but expose only the safe field-level
         # contract detail needed for remediation.  Never include payloads,
@@ -1180,7 +1209,8 @@ def _worker_request_path_for_result(package_root: Path, worker_payload: Mapping[
 
 def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, source_root: Path,
                                           result_path: Path, review_request_path: Path,
-                                          project_root: Path | None = None) -> dict[str, Any]:
+                                          project_root: Path | None = None,
+                                          canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Resolve a derived publication without ever treating legacy as READY."""
     try:
         request_raw = review_request_path.read_bytes()
@@ -1234,7 +1264,9 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
             raise LVReviewError("production review request binding is invalid")
         execution_root = (_validate_execution_root(project_root, str(manifest["project_id"]))
                           if project_root is not None else _project_root_for(str(manifest["project_id"])))
-        _assert_canonical_binding(execution_root, manifest)
+        _assert_canonical_binding(
+            execution_root, manifest, canonical_state_override=canonical_state_override,
+        )
         source_raw = _read_publication_bytes(source_root)
         source_evidence = json.loads(source_raw["preflight.evidence.json"])
         source_status = json.loads(source_raw["preflight.status"])
@@ -1284,10 +1316,12 @@ def resolve_derived_preflight_publication(run_id: str, *, package_root: Path, so
         lineage = {"predecessor_artifact_sha256": legacy[0][1]["evidence_sha256"],
                    "source_evidence_sha256": source_digest,
                    "review_request_sha256": _sha256(request_raw)}
-    published = publish_gate_preflight_attestation(run_id, package_root=package_root, source_root=source_root,
-                                                   result_path=result_path, successor_lineage=lineage,
-                                                   review_attempt=request["review_attempt"],
-                                                   project_root=project_root)
+    published = publish_gate_preflight_attestation(
+        run_id, package_root=package_root, source_root=source_root,
+        result_path=result_path, successor_lineage=lineage,
+        review_attempt=request["review_attempt"], project_root=project_root,
+        canonical_state_override=canonical_state_override,
+    )
     if published.get("status") == "READY" and legacy:
         published = {**published, "classification": "LEGACY_STATUS_UPGRADABLE",
                      "legacy_completion_eligible": False, "review_request_sha256": _sha256(request_raw),
@@ -1433,16 +1467,26 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
     if payload.get("completion_mode") == "READ_ONLY_EXECUTION":
         authority = payload.get("verification_authority")
         executor = payload.get("executor")
+        commands = payload.get("commands")
+        worker = commands.get("worker") if isinstance(commands, Mapping) else None
+        command = worker.get("command") if isinstance(worker, Mapping) else None
+        provider = authority.get("provider") if isinstance(authority, Mapping) else None
+        executor_identity = executor.get("identity") if isinstance(executor, Mapping) else None
+        valid_executor_identity = (
+            executor_identity == "provider-router-production"
+            or (executor_identity == "nvidia-router-production" and provider == "nvidia")
+        )
         if (
             not isinstance(authority, Mapping)
             or authority.get("execution_obligation") != "READ_ONLY_EXECUTION"
-            or authority.get("provider") != "nvidia"
+            or not isinstance(provider, str) or not provider
             or not isinstance(authority.get("router_decision_digest"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", authority["router_decision_digest"])
             or not isinstance(authority.get("canonical_authority_binding_digest"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", authority["canonical_authority_binding_digest"])
-            or not isinstance(executor, Mapping)
-            or executor.get("identity") != "nvidia-router-production"
+            or not valid_executor_identity
+            or not isinstance(command, list) or len(command) < 3
+            or command[0] != "provider-read" or command[1] != provider
             or payload.get("changed_files") != []
             or payload.get("governed_effect_evidence") != []
         ):
@@ -1477,6 +1521,49 @@ def _validate_production_provenance(payload: Mapping[str, Any]) -> None:
             raise LVReviewError("manual production worker authorization binding is invalid")
         return
     executor = payload.get("executor")
+    if isinstance(executor, Mapping) and executor.get("identity") == "provider-action-production":
+        commands = payload.get("commands")
+        worker = commands.get("worker") if isinstance(commands, Mapping) else None
+        command = worker.get("command") if isinstance(worker, Mapping) else None
+        owned = payload.get("owned_files")
+        changed = payload.get("changed_files")
+        effects = payload.get("governed_effect_evidence")
+        if (
+            payload.get("completion_mode") != "CODE_CHANGE"
+            or not isinstance(command, list) or len(command) < 3 or command[0] != "provider-action"
+            or not isinstance(owned, list) or not owned
+            or not isinstance(changed, list) or not changed
+            or any(not isinstance(path, str) or not _path_within_owned_scope(path, owned) for path in changed)
+            or not isinstance(effects, list) or not effects
+        ):
+            raise LVReviewError("provider action provenance is invalid")
+        effect_scopes: list[str] = []
+        for effect in effects:
+            if not isinstance(effect, Mapping):
+                raise LVReviewError("provider action provenance is invalid")
+            scope = effect.get("scope_ref")
+            intent = effect.get("intent_digest")
+            receipt = effect.get("receipt_digest")
+            receipt_intent = effect.get("receipt_intent_digest")
+            refs = effect.get("evidence_refs")
+            if (
+                effect.get("authorized") is not True
+                or effect.get("mutation_performed") is not True
+                or effect.get("security_passed") is not True
+                or effect.get("operation") != "PROJECT_OWNED_FILE_WRITE"
+                or not isinstance(effect.get("effect_id"), str) or not effect["effect_id"]
+                or not isinstance(scope, str) or not _path_within_owned_scope(scope, owned)
+                or not isinstance(intent, str) or not re.fullmatch(r"[0-9a-f]{64}", intent)
+                or not isinstance(receipt, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt)
+                or receipt_intent != intent
+                or not isinstance(refs, list) or len(refs) < 2
+                or any(not isinstance(ref, str) or not ref for ref in refs)
+            ):
+                raise LVReviewError("provider action provenance is invalid")
+            effect_scopes.append(scope)
+        if any(not any(_path_within_owned_scope(path, [scope]) for scope in effect_scopes) for path in changed):
+            raise LVReviewError("provider action provenance is invalid")
+        return
     if not isinstance(executor, Mapping) or executor.get("identity") != "codex-cli-production":
         raise LVReviewError("production worker executor identity is invalid")
 
@@ -1762,7 +1849,8 @@ def _owned_python_test_files(root: Path, owned_files: list[str], changed_files: 
 
 def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest",
                allow_test_only: bool = False, expected_profiles: list[str] | None = None,
-               changed_files: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+               changed_files: list[str] | None = None,
+               allow_no_test_scope: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     expected_profiles = list(expected_profiles or [])
     native_requested = bool(expected_profiles and expected_profiles not in (["PYTHON_PYTEST"], ["PYTHON_UNITTEST_EXTERNAL"]))
     if native_requested:
@@ -1784,6 +1872,13 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
             if result.get("timeout") or result.get("exit_code") != 0:
                 return results, f"independent project-native validation failed (exit={result.get('exit_code')})"
         return results, None
+
+    if allow_no_test_scope and not owned_files and not (changed_files or []):
+        return [
+            {"exit_code": 0, "timeout": False, "not_applicable": True},
+            {"exit_code": 0, "timeout": False, "not_applicable": True},
+            {"exit_code": 0, "timeout": False, "not_applicable": True},
+        ], None
 
     changed_test_targets = [
         path for path in (changed_files or [])
@@ -1851,11 +1946,40 @@ def _check(
     return item
 
 
+_RUNTIME_OUTPUT_DIRS = frozenset({
+    "provider-action-effects",
+    "provider-action-response-evidence",
+    "host-gateway-ledger",
+    "validation-remediation",
+})
+
+
 def _file_snapshot(path: Path) -> tuple[int, int, int, int, str]:
     current = path.lstat()
     if not stat.S_ISREG(current.st_mode) or path.is_symlink():
         raise LVReviewError("immutable input is not a regular non-symlink file")
     return current.st_dev, current.st_ino, current.st_mode, current.st_size, _sha256(path.read_bytes())
+
+
+def _snapshot_runtime_output_tree(
+    path: Path, *, relative: str,
+    snapshots: dict[str, tuple[int, int, int, int, str]],
+) -> None:
+    current = path.lstat()
+    if path.is_symlink():
+        raise LVReviewError("immutable input directory contains an unsafe entry")
+    if stat.S_ISREG(current.st_mode):
+        snapshots[relative] = _file_snapshot(path)
+        return
+    if not stat.S_ISDIR(current.st_mode):
+        raise LVReviewError("immutable input directory contains an unsafe entry")
+    snapshots[relative + "/"] = (
+        current.st_dev, current.st_ino, current.st_mode, current.st_size, "DIR"
+    )
+    for child in sorted(path.iterdir(), key=lambda item: item.name):
+        _snapshot_runtime_output_tree(
+            child, relative=f"{relative}/{child.name}", snapshots=snapshots
+        )
 
 
 def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]:
@@ -1865,9 +1989,21 @@ def _directory_snapshot(root: Path) -> dict[str, tuple[int, int, int, int, str]]
     ignored = {"preflight", "worker.request.json", "manual-action.request.json", "worker.result.json", "worker_handoff.md", "handoff_report.md"}
     ignored_dirs = {path.name for path in entries if path.is_dir() and path.name.startswith("review-attempt-")}
     ignored |= ignored_dirs
-    if any(path.is_symlink() or (not path.is_file() and path.name not in ignored) for path in entries):
-        raise LVReviewError("immutable input directory contains an unsafe entry")
-    return {path.name: _file_snapshot(path) for path in entries if path.name not in ignored}
+    snapshots: dict[str, tuple[int, int, int, int, str]] = {}
+    for path in entries:
+        if path.name in ignored:
+            continue
+        if path.name in _RUNTIME_OUTPUT_DIRS:
+            if path.is_symlink() or not path.is_dir():
+                raise LVReviewError("immutable input directory contains an unsafe entry")
+            _snapshot_runtime_output_tree(
+                path, relative=path.name, snapshots=snapshots
+            )
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise LVReviewError("immutable input directory contains an unsafe entry")
+        snapshots[path.name] = _file_snapshot(path)
+    return snapshots
 
 
 def _path_within_owned_scope(path: str, scopes: list[str]) -> bool:
@@ -2524,6 +2660,7 @@ def review_run(
     prior_review_contract: dict[str, str] | None = None,
     prior_attempt_contract: dict[str, str] | None = None,
     project_root: Path | None = None,
+    canonical_state_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
         review_attempt = parse_review_attempt(attempt)
@@ -2540,6 +2677,7 @@ def review_run(
             check_result_absent=False,
             review_attempt=review_attempt,
             project_root=project_root,
+            canonical_state_override=canonical_state_override,
         )
     except (LVReviewError, LVExecutionPackageError) as exc:
         return {"status": "BLOCKED", "run_id": run_id, "reason": str(exc), "hard_stop": True}
@@ -2724,13 +2862,15 @@ def review_run(
             context["project_root"], list(context["manifest"]["owned_files"]), list(actual["changed_files"])
         )
         verification_only = is_production and payload.get("completion_mode") == "VERIFICATION_ONLY"
+        read_only_execution = is_production and payload.get("completion_mode") == "READ_ONLY_EXECUTION"
+        read_only_no_test_scope = read_only_execution and not owned_scopes and not expected_profiles
         test_only_owned_scope = bool(owned_scopes) and all(
             isinstance(scope, str)
             and scope.startswith("tests/")
             and (scope.endswith(".py") or scope.endswith("/"))
             for scope in owned_scopes
         )
-        if not native_validation and ((not (verification_only or test_only_owned_scope) and not owned_test_files) or any(
+        if not native_validation and not read_only_no_test_scope and ((not (verification_only or test_only_owned_scope) and not owned_test_files) or any(
             not (context["project_root"] / path).is_file()
             or (context["project_root"] / path).is_symlink()
             for path in owned_test_files
@@ -2755,12 +2895,18 @@ def review_run(
             allow_test_only=verification_only or test_only_owned_scope,
             expected_profiles=expected_profiles,
             changed_files=list(actual["changed_files"]),
+            allow_no_test_scope=read_only_no_test_scope,
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
             result = tests[index] if index < len(tests) else {"exit_code": None, "timeout": False}
             passed = result.get("exit_code") == 0 and not result.get("timeout")
-            independent_checks.append(_check(identifier, passed, "independent command passed" if passed else "independent command failed", exit_code=result.get("exit_code")))
+            summary = (
+                "not applicable for read-only task without owned test scope"
+                if result.get("not_applicable") else
+                "independent command passed" if passed else "independent command failed"
+            )
+            independent_checks.append(_check(identifier, passed, summary, exit_code=result.get("exit_code")))
         if context.get("interpreter_probe_required", True):
             try:
                 interpreter_after = (_validate_external_interpreter(context["interpreter"])

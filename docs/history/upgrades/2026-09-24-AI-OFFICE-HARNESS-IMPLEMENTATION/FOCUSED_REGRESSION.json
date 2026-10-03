@@ -1,0 +1,9 @@
+{
+  "error_count": 0,
+  "failure_count": 0,
+  "interpreter_profile": "MCP_CAPABLE_EXTERNAL",
+  "schema_version": "gch.ai-office-focused-regression.v1",
+  "source_head": "094c4ab87cfdbdf31745e1d78946a1c82bec7eeb",
+  "status": "PASS",
+  "test_count": 100
+}

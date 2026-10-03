@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -15,8 +16,9 @@ from typing import Any, Mapping
 from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
 from .operator_exit_guard import assess_operator_turn_exit
 from .durable_io import atomic_write_json
-from .contract_adapter import MAPPING_ROOT_ENV
+from .contract_adapter import MAPPING_ROOT_ENV, sha256_file
 from .harness_state_root import job_state_root
+from .runtime_release import RuntimeReleaseError, verify_runtime_release
 from .production_run_authority import (
     AUTO_RECONCILE_OWNER, RunAuthorityError, bind_manual_action_paths, extract_runtime_bindings,
     merge_runtime_bindings, resolve_execution_owner, seal_authority_core, validate_authority_core,
@@ -24,6 +26,8 @@ from .production_run_authority import (
 )
 
 JOB_SCHEMA = "orchestration.production-full-plan-job.v1"
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_HEAD = re.compile(r"[0-9a-f]{40,64}\Z")
 
 
 class FullPlanJobError(ValueError):
@@ -67,8 +71,14 @@ def load_job(path: str | Path) -> dict[str, Any]:
         if gate.get("full_plan_opt_in") is not True or gate.get("project_final_validation") is not True:
             raise FullPlanJobError("Gate job requires explicit FULL_PLAN opt-in and final validation")
         adoption_path = gate.get("adopted_prefix_evidence_path")
-        if adoption_path is not None and (not isinstance(adoption_path, str) or not adoption_path):
-            raise FullPlanJobError("Gate job adopted_prefix_evidence_path is invalid")
+        adoption_digest = gate.get("adopted_prefix_evidence_sha256")
+        if (adoption_path is None) != (adoption_digest is None):
+            raise FullPlanJobError("Gate job prefix adoption evidence binding is incomplete")
+        if adoption_path is not None:
+            if not isinstance(adoption_path, str) or not adoption_path:
+                raise FullPlanJobError("Gate job adopted_prefix_evidence_path is invalid")
+            if not isinstance(adoption_digest, str) or not _SHA256.fullmatch(adoption_digest):
+                raise FullPlanJobError("Gate job adopted prefix evidence digest is invalid")
         for field in ("manual_action_package_paths_by_lv", "manual_action_authorization_paths_by_lv"):
             manual_paths = gate.get(field)
             if manual_paths is not None:
@@ -80,8 +90,37 @@ def load_job(path: str | Path) -> dict[str, Any]:
                     or any(not isinstance(k, str) or not k or not isinstance(v, str) or not v
                            for k, v in evidence_paths_by_lv.items())):
                 raise FullPlanJobError("Gate job requirement_evidence_paths_by_lv is invalid")
+        approval_digest = gate.get("approval_evidence_sha256")
+        if approval_digest is not None and (not isinstance(approval_digest, str) or not _SHA256.fullmatch(approval_digest)):
+            raise FullPlanJobError("Gate job approval evidence digest is invalid")
+        engine_digest = gate.get("requirement_evidence_sha256")
+        if engine_digest is not None:
+            if not gate.get("requirement_evidence_path") or not isinstance(engine_digest, str) or not _SHA256.fullmatch(engine_digest):
+                raise FullPlanJobError("Gate job engine requirement evidence digest is invalid")
+        evidence_digests_by_lv = gate.get("requirement_evidence_sha256_by_lv")
+        if evidence_digests_by_lv is not None:
+            if (not isinstance(evidence_digests_by_lv, dict) or evidence_paths_by_lv is None
+                    or set(evidence_digests_by_lv) != set(evidence_paths_by_lv)
+                    or any(not isinstance(k, str) or not k or not isinstance(v, str) or not _SHA256.fullmatch(v)
+                           for k, v in evidence_digests_by_lv.items())):
+                raise FullPlanJobError("Gate job requirement evidence digest coverage mismatch")
     if len(set(ids)) != len(ids):
         raise FullPlanJobError("Full Plan job contains duplicate Gates")
+    expected_head = job.get("expected_head")
+    if expected_head is not None and (not isinstance(expected_head, str) or not _HEAD.fullmatch(expected_head)):
+        raise FullPlanJobError("Full Plan job expected HEAD is invalid")
+    release_digest = job.get("runtime_release_digest")
+    release_head = job.get("runtime_release_source_head")
+    if (release_digest is None) != (release_head is None):
+        raise FullPlanJobError("Full Plan job runtime release binding is incomplete")
+    if release_digest is not None:
+        if (not isinstance(release_digest, str) or not _SHA256.fullmatch(release_digest)
+                or not isinstance(release_head, str) or not _HEAD.fullmatch(release_head)):
+            raise FullPlanJobError("Full Plan job runtime release binding is invalid")
+    for field in ("activation_binding_digest", "executable_authority_bundle_digest", "ai_office_context_digest"):
+        value = job.get(field)
+        if value is not None and (not isinstance(value, str) or not _SHA256.fullmatch(value)):
+            raise FullPlanJobError(f"Full Plan job {field} is invalid")
     if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
         from .operator_plan_execution import validate_operator_plan_job
         validate_operator_plan_job(job)
@@ -224,7 +263,450 @@ def load_registered_job(path: str | Path) -> dict[str, Any]:
         raise FullPlanJobError(str(exc)) from exc
 
 
-def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
+
+def _verified_resume_checkpoint_head(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> bool:
+    """Accept only the exact checkpoint sealed by this run's WORKER event."""
+    if not isinstance(resume_context, Mapping):
+        return False
+    queue_item = resume_context.get("queue_item")
+    state = resume_context.get("state")
+    if not isinstance(queue_item, Mapping) or not isinstance(state, Mapping):
+        return False
+    if queue_item.get("resume") is not True:
+        return False
+
+    gate_id = str(queue_item.get("gate_id") or "")
+    gate_run_id = str(queue_item.get("gate_run_id") or "")
+    project_id = str(job.get("project_id") or "")
+    expected_head = str(job.get("expected_head") or "")
+    safe_id = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+    if (
+        not safe_id.fullmatch(project_id)
+        or not safe_id.fullmatch(gate_id)
+        or not safe_id.fullmatch(gate_run_id)
+        or gate_id != str(state.get("current_gate") or "")
+        or not _HEAD.fullmatch(current_head)
+        or not _HEAD.fullmatch(expected_head)
+    ):
+        return False
+
+    project = Path(str(job["project_root"])).resolve()
+    ancestry = subprocess.run(
+        ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, current_head],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if ancestry.returncode != 0:
+        return False
+    dirty = subprocess.run(
+        ["git", "-C", str(project), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if dirty.returncode != 0 or dirty.stdout.strip():
+        return False
+
+    state_root = job_state_root(job)
+    run_root = state_root / "_workspace" / "orchestration-runs"
+    resume_root = state_root / "_workspace" / "global-gate-resume"
+    if (
+        run_root.is_symlink() or resume_root.is_symlink()
+        or not run_root.is_dir() or not resume_root.is_dir()
+    ):
+        return False
+
+    def has_symlink_component(base: Path, target: Path) -> bool:
+        try:
+            relative = target.relative_to(base)
+        except ValueError:
+            return True
+        cursor = base
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                return True
+        return False
+
+    run_candidates = [run_root / gate_run_id]
+    run_candidates.extend(
+        sorted(
+            path for path in run_root.glob(f"{gate_run_id}-*")
+            if path.is_dir() and not path.is_symlink()
+        )
+    )
+    matches = 0
+    for run_candidate in run_candidates:
+        if (
+            run_candidate.is_symlink() or not run_candidate.is_dir()
+            or has_symlink_component(run_root, run_candidate)
+        ):
+            continue
+        for result_path in sorted(run_candidate.glob("*/worker.result.json")):
+            if (
+                result_path.is_symlink() or not result_path.is_file()
+                or has_symlink_component(run_root, result_path)
+            ):
+                continue
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(result, dict) or result.get("status") not in {"completed", "COMPLETED"}:
+                continue
+
+            lv_id = str(result.get("lv_id") or "")
+            run_id = str(result.get("run_id") or "")
+            checkpoint = str(result.get("checkpoint_commit") or "")
+            baseline = str(result.get("baseline_head") or "")
+            tree = str(result.get("current_tree") or "")
+            if (
+                not safe_id.fullmatch(lv_id)
+                or not safe_id.fullmatch(run_id)
+                or str(result.get("project_id") or "") != project_id
+                or str(result.get("gate_id") or "") != gate_id
+                or checkpoint != current_head
+                or not _HEAD.fullmatch(baseline)
+                or not _HEAD.fullmatch(tree)
+            ):
+                continue
+            tree_probe = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", f"{current_head}^{{tree}}"],
+                capture_output=True, text=True, check=False, timeout=10,
+            )
+            if tree_probe.returncode != 0 or tree_probe.stdout.strip() != tree:
+                continue
+
+            result_sha = sha256_file(result_path)
+            event_pattern = f"*/{project_id}/{gate_id}/{lv_id}/{run_id}/events/000001.json"
+            event_ones = sorted(resume_root.glob(event_pattern))
+            verified = False
+            for event_one in event_ones:
+                if (
+                    event_one.is_symlink() or not event_one.is_file()
+                    or has_symlink_component(resume_root, event_one)
+                ):
+                    continue
+                try:
+                    first = _load_json(event_one)
+                    from .resume_store import ResumeStore, RunBinding
+                    binding = RunBinding(**dict(first.get("binding") or {}))
+                    if (
+                        binding.project_id != project_id
+                        or binding.gate_id != gate_id
+                        or binding.lv_id != lv_id
+                        or binding.run_id != run_id
+                        or binding.head != expected_head
+                        or binding.branch != str(job.get("expected_branch") or "")
+                    ):
+                        continue
+                    store = ResumeStore(event_one.parents[5], binding)
+                    records = store.verify()
+                except (FullPlanJobError, TypeError, ValueError, OSError):
+                    continue
+                if any(
+                    record.get("lifecycle") == "WORKER"
+                    and record.get("evidence_sha256") == result_sha
+                    and isinstance(record.get("stage_payload"), Mapping)
+                    and str(record["stage_payload"].get("checkpoint_commit") or "") == current_head
+                    for record in records
+                ):
+                    verified = True
+                    break
+            if verified:
+                matches += 1
+    return matches == 1
+
+
+def _verified_completed_gate_lineage_head(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> dict[str, str] | None:
+    """Accept a successor Gate only at the exact sealed terminal HEAD of the prior Gate."""
+    if not isinstance(resume_context, Mapping):
+        return None
+    queue_item = resume_context.get("queue_item")
+    state = resume_context.get("state")
+    if not isinstance(queue_item, Mapping) or not isinstance(state, Mapping):
+        return None
+    if queue_item.get("resume") is True:
+        return None
+
+    completed = state.get("completed_gates")
+    gate_ids = [str(item.get("gate_id") or "") for item in job.get("gates", []) if isinstance(item, Mapping)]
+    if (
+        not isinstance(completed, list) or not completed
+        or completed != gate_ids[:len(completed)]
+        or len(completed) >= len(gate_ids)
+    ):
+        return None
+    current_gate = gate_ids[len(completed)]
+    previous_gate = completed[-1]
+    if (
+        str(queue_item.get("gate_id") or "") != current_gate
+        or str(state.get("current_gate") or "") != current_gate
+    ):
+        return None
+
+    project_id = str(job.get("project_id") or "")
+    full_run_id = str(job.get("run_id") or "")
+    expected_head = str(job.get("expected_head") or "")
+    expected_branch = str(job.get("expected_branch") or "")
+    safe_id = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+    if (
+        not safe_id.fullmatch(project_id)
+        or not safe_id.fullmatch(full_run_id)
+        or not safe_id.fullmatch(previous_gate)
+        or not _HEAD.fullmatch(current_head)
+        or not _HEAD.fullmatch(expected_head)
+        or not expected_branch
+    ):
+        return None
+
+    project = Path(str(job["project_root"])).resolve()
+    ancestry = subprocess.run(
+        ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, current_head],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    dirty = subprocess.run(
+        ["git", "-C", str(project), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if ancestry.returncode != 0 or dirty.returncode != 0 or dirty.stdout.strip():
+        return None
+
+    state_root = job_state_root(job)
+    artifact_root = state_root / "_workspace" / "global-gate" / project_id / "artifact"
+    run_root = state_root / "_workspace" / "orchestration-runs"
+    resume_root = state_root / "_workspace" / "global-gate-resume"
+    if any(path.is_symlink() or not path.is_dir() for path in (artifact_root, run_root, resume_root)):
+        return None
+
+    def has_symlink_component(base: Path, target: Path) -> bool:
+        try:
+            relative = target.relative_to(base)
+        except ValueError:
+            return True
+        cursor = base
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                return True
+        return None
+
+    previous_gate_run_id = f"{full_run_id}--{previous_gate.lower()}"
+    candidates: list[dict[str, str]] = []
+    for handoff_path in sorted(artifact_root.glob(f"{previous_gate_run_id}*.handoff.json")):
+        if (
+            handoff_path.is_symlink() or not handoff_path.is_file()
+            or has_symlink_component(artifact_root, handoff_path)
+        ):
+            continue
+        try:
+            handoff = _load_json(handoff_path)
+        except FullPlanJobError:
+            continue
+        unsigned = {key: value for key, value in handoff.items() if key != "handoff_sha256"}
+        handoff_sha = hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        lv_id = str(handoff.get("lv") or "")
+        run_id = str(handoff.get("run_id") or "")
+        plan_sha = str(handoff.get("canonical_plan_sha256") or "")
+        if (
+            handoff.get("handoff_sha256") != handoff_sha
+            or handoff.get("project") != project_id
+            or handoff.get("gate") != previous_gate
+            or handoff.get("branch") != expected_branch
+            or handoff.get("remaining_plan_items") != []
+            or handoff.get("hard_stop") is not True
+            or not safe_id.fullmatch(lv_id)
+            or not safe_id.fullmatch(run_id)
+            or not (run_id == previous_gate_run_id or run_id.startswith(previous_gate_run_id + "-"))
+            or not _SHA256.fullmatch(plan_sha)
+        ):
+            continue
+
+        result_path = run_root / run_id / lv_id / "worker.result.json"
+        if (
+            result_path.is_symlink() or not result_path.is_file()
+            or has_symlink_component(run_root, result_path)
+        ):
+            continue
+        try:
+            result = _load_json(result_path)
+        except FullPlanJobError:
+            continue
+        baseline = str(result.get("baseline_head") or "")
+        tree = str(result.get("current_tree") or "")
+        if (
+            result.get("status") not in {"completed", "COMPLETED"}
+            or result.get("project_id") != project_id
+            or result.get("gate_id") != previous_gate
+            or result.get("lv_id") != lv_id
+            or result.get("run_id") != run_id
+            or result.get("plan_sha256") != plan_sha
+            or result.get("checkpoint_commit") != current_head
+            or str(result.get("current_head") or current_head) != current_head
+            or not _HEAD.fullmatch(baseline)
+            or not _HEAD.fullmatch(tree)
+        ):
+            continue
+        result_sha = sha256_file(result_path)
+        if handoff.get("head") != baseline:
+            continue
+        if handoff.get("artifact_sha256") != result_sha:
+            continue
+        if isinstance(handoff.get("review"), Mapping) and handoff["review"].get("worker_result_sha256") != result_sha:
+            continue
+
+        baseline_from_approval = subprocess.run(
+            ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, baseline],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        baseline_to_checkpoint = subprocess.run(
+            ["git", "-C", str(project), "merge-base", "--is-ancestor", baseline, current_head],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        tree_probe = subprocess.run(
+            ["git", "-C", str(project), "rev-parse", f"{current_head}^{{tree}}"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        if (
+            baseline_from_approval.returncode != 0
+            or baseline_to_checkpoint.returncode != 0
+            or tree_probe.returncode != 0
+            or tree_probe.stdout.strip() != tree
+        ):
+            continue
+
+        event_pattern = f"*/{project_id}/{previous_gate}/{lv_id}/{run_id}/events/000001.json"
+        verified = False
+        for event_one in sorted(resume_root.glob(event_pattern)):
+            if (
+                event_one.is_symlink() or not event_one.is_file()
+                or has_symlink_component(resume_root, event_one)
+            ):
+                continue
+            try:
+                first = _load_json(event_one)
+                from .resume_store import ResumeStore, RunBinding
+                binding = RunBinding(**dict(first.get("binding") or {}))
+                if (
+                    binding.project_id != project_id
+                    or binding.gate_id != previous_gate
+                    or binding.lv_id != lv_id
+                    or binding.run_id != run_id
+                    or binding.head != baseline
+                    or binding.branch != expected_branch
+                    or binding.plan_sha256 != plan_sha
+                ):
+                    continue
+                records = ResumeStore(event_one.parents[5], binding).verify()
+            except (FullPlanJobError, TypeError, ValueError, OSError):
+                continue
+            semantic_records = [
+                record for record in records
+                if not (
+                    record.get("lifecycle") == "WORKER"
+                    and not (
+                        isinstance(record.get("stage_payload"), Mapping)
+                        and isinstance(record["stage_payload"].get("checkpoint_commit"), str)
+                        and record["stage_payload"].get("checkpoint_commit")
+                    )
+                )
+            ]
+            lifecycles = [str(record.get("lifecycle") or "") for record in semantic_records]
+            if (
+                len(semantic_records) < 7
+                or lifecycles[:3] != ["PACKAGE", "PREFLIGHT", "WORKER"]
+                or lifecycles[-3:] != ["CHECKPOINT", "EXIT", "HANDOFF"]
+                or any(stage not in {"REVIEW", "REMEDIATION"} for stage in lifecycles[3:-3])
+                or "REVIEW" not in lifecycles[3:-3]
+            ):
+                continue
+            worker_record = semantic_records[2]
+            checkpoint_record, exit_record, handoff_record = semantic_records[-3:]
+            review_records = [record for record in semantic_records[3:-3] if record.get("lifecycle") == "REVIEW"]
+            if (
+                worker_record.get("evidence_sha256") != result_sha
+                or not isinstance(worker_record.get("stage_payload"), Mapping)
+                or str(worker_record["stage_payload"].get("checkpoint_commit") or "") != current_head
+                or not review_records
+                or not isinstance(review_records[-1].get("stage_payload"), Mapping)
+                or review_records[-1]["stage_payload"].get("status") != "PASS"
+                or checkpoint_record.get("checkpoint") is not True
+                or not isinstance(exit_record.get("stage_payload"), Mapping)
+                or exit_record["stage_payload"].get("status") != "EXITED"
+                or handoff_record.get("evidence_sha256") != handoff_sha
+                or not isinstance(handoff_record.get("stage_payload"), Mapping)
+                or handoff_record["stage_payload"].get("status") != "SEALED"
+            ):
+                continue
+            verified = True
+            break
+        if verified:
+            candidates.append({
+                "lineage_kind": "SEALED_PREVIOUS_GATE",
+                "current_head": current_head,
+                "predecessor_digest": handoff_sha,
+                "predecessor_lv": lv_id,
+                "predecessor_run_id": run_id,
+            })
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _source_lineage_for_context(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> dict[str, str] | None:
+    """Return one verified source-lineage token for the active Gate."""
+    if _verified_resume_checkpoint_head(job, resume_context, current_head):
+        queue_item = dict((resume_context or {}).get("queue_item") or {})
+        gate_id = str(queue_item.get("gate_id") or "")
+        gate_run_id = str(queue_item.get("gate_run_id") or "")
+        run_root = job_state_root(job) / "_workspace" / "orchestration-runs"
+        candidates: list[dict[str, str]] = []
+        run_candidates = [run_root / gate_run_id]
+        run_candidates.extend(sorted(path for path in run_root.glob(f"{gate_run_id}-*") if path.is_dir() and not path.is_symlink()))
+        for run_candidate in run_candidates:
+            for result_path in sorted(run_candidate.glob("*/worker.result.json")):
+                if result_path.is_symlink() or not result_path.is_file():
+                    continue
+                try:
+                    result = _load_json(result_path)
+                except FullPlanJobError:
+                    continue
+                if (
+                    result.get("status") not in {"completed", "COMPLETED"}
+                    or result.get("project_id") != job.get("project_id")
+                    or result.get("gate_id") != gate_id
+                    or result.get("checkpoint_commit") != current_head
+                ):
+                    continue
+                candidates.append({
+                    "lineage_kind": "SEALED_WORKER_CHECKPOINT",
+                    "current_head": current_head,
+                    "predecessor_digest": sha256_file(result_path),
+                    "predecessor_lv": str(result.get("lv_id") or ""),
+                    "predecessor_run_id": str(result.get("run_id") or ""),
+                })
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    completed_gate_lineage = _verified_completed_gate_lineage_head(
+        job, resume_context, current_head
+    )
+    if completed_gate_lineage is not None:
+        return completed_gate_lineage
+    return None
+
+
+def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     project = Path(str(job["project_root"])).resolve()
     harness = Path(str(job["harness_root"])).resolve()
     state_root = job_state_root(job)
@@ -268,6 +750,55 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
                                capture_output=True, text=True, check=False, timeout=10)
         if probe.returncode != 0 or probe.stdout.strip() != expected_branch:
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "GIT_BRANCH_MISMATCH"}
+    expected_head = job.get("expected_head")
+    if expected_head:
+        probe = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"],
+                               capture_output=True, text=True, check=False, timeout=10)
+        current_head = probe.stdout.strip() if probe.returncode == 0 else ""
+        if (
+            current_head != expected_head
+            and not _verified_resume_checkpoint_head(job, resume_context, current_head)
+            and not _verified_completed_gate_lineage_head(job, resume_context, current_head)
+        ):
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "SOURCE_HEAD_MISMATCH"}
+    release_digest = str(job.get("runtime_release_digest") or "")
+    release_head = str(job.get("runtime_release_source_head") or "")
+    if release_digest or release_head:
+        if not (_SHA256.fullmatch(release_digest) and _HEAD.fullmatch(release_head)):
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "RUNTIME_RELEASE_BINDING_INVALID"}
+        runtime = Path(str(job.get("runtime_code_root") or job["harness_root"])).resolve()
+        try:
+            release = verify_runtime_release(runtime, release_head)
+        except (RuntimeReleaseError, OSError, ValueError):
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "RUNTIME_RELEASE_DRIFT"}
+        if release.manifest_sha256 != release_digest:
+            return {"status": "BLOCK", "state": "BLOCKED", "reason": "RUNTIME_RELEASE_DRIFT"}
+    for gate in job.get("gates", []):
+        checks: list[tuple[object, object, str]] = []
+        if "approval_evidence_sha256" in gate:
+            checks.append((gate.get("approval_evidence"), gate.get("approval_evidence_sha256"), "approval"))
+        if "requirement_evidence_sha256" in gate:
+            checks.append((gate.get("requirement_evidence_path"), gate.get("requirement_evidence_sha256"), "engine_requirement"))
+        if "requirement_evidence_sha256_by_lv" in gate:
+            for lv_id, evidence_path in dict(gate.get("requirement_evidence_paths_by_lv") or {}).items():
+                expected = dict(gate.get("requirement_evidence_sha256_by_lv") or {}).get(lv_id)
+                checks.append((evidence_path, expected, f"project_requirement:{lv_id}"))
+        if "adopted_prefix_evidence_sha256" in gate:
+            checks.append((gate.get("adopted_prefix_evidence_path"), gate.get("adopted_prefix_evidence_sha256"), "prefix_adoption"))
+        for evidence_path, expected, label in checks:
+            source = Path(str(evidence_path or ""))
+            if (not isinstance(expected, str) or not _SHA256.fullmatch(expected)
+                    or source.is_symlink() or not source.is_file()):
+                reason = "PREFIX_ADOPTION_EVIDENCE_DRIFT" if label == "prefix_adoption" else f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": reason}
+            try:
+                actual = sha256_file(source)
+            except OSError:
+                reason = "PREFIX_ADOPTION_EVIDENCE_DRIFT" if label == "prefix_adoption" else f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": reason}
+            if actual != expected:
+                reason = "PREFIX_ADOPTION_EVIDENCE_DRIFT" if label == "prefix_adoption" else f"GATE_AUTHORITY_EVIDENCE_DRIFT:{gate['gate_id']}:{label}"
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": reason}
     if job.get("authority_core_sha256"):
         try:
             validate_authority_core(job)
@@ -293,6 +824,33 @@ def build_gate_executor(job: Mapping[str, Any]):
     def execute(gate_id: str, gate_run_id: str, resume: bool) -> Mapping[str, Any]:
         from .gate_orchestrator import FULL_PLAN, execute_gate
         spec = specs[gate_id]
+        source_lineage = None
+        head_probe = subprocess.run(
+            ["git", "-C", project_root, "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        current_head = head_probe.stdout.strip() if head_probe.returncode == 0 else ""
+        if current_head and current_head != str(spec["head"]):
+            gates = [str(item["gate_id"]) for item in job["gates"]]
+            supervisor = DurableFullPlanSupervisor(
+                job_state_root(job), project_id=job["project_id"], run_id=job["run_id"],
+                gates=gates, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
+                **dict(job.get("policy") or {}),
+            )
+            state, _ = supervisor.load()
+            queue_items = [
+                item for item in state.get("queue", [])
+                if isinstance(item, Mapping) and item.get("gate_id") == gate_id
+            ]
+            if len(queue_items) != 1:
+                raise FullPlanJobError("active Gate queue lineage is missing or ambiguous")
+            source_lineage = _source_lineage_for_context(
+                job,
+                {"state": state, "queue_item": dict(queue_items[0])},
+                current_head,
+            )
+            if source_lineage is None:
+                raise FullPlanJobError("sealed Full Plan source lineage is required")
         requirement_evidence = None
         evidence_path = spec.get("requirement_evidence_path")
         if evidence_path:
@@ -334,6 +892,7 @@ def build_gate_executor(job: Mapping[str, Any]):
             adopted_prefix_evidence=adopted_prefix_evidence,
             manual_action_packages_by_lv=manual_action_packages_by_lv,
             manual_action_authorizations_by_lv=manual_action_authorizations_by_lv,
+            source_lineage=source_lineage,
         )
     return execute
 
@@ -361,7 +920,10 @@ def run_job(path: str | Path) -> dict[str, Any]:
     if mapping_root is not None:
         os.environ[MAPPING_ROOT_ENV] = str(mapping_root)
     try:
-        result = supervisor.run(build_gate_executor(job), preflight=lambda _: preflight_job(job)).to_dict()
+        result = supervisor.run(
+            build_gate_executor(job),
+            preflight=lambda context: preflight_job(job, resume_context=context),
+        ).to_dict()
         result["operator_exit"] = assess_operator_turn_exit(
             result.get("state", {}),
             attention_events=supervisor.attention_outbox.pending(),

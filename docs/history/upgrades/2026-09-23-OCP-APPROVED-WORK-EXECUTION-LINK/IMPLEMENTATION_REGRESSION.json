@@ -1,0 +1,10 @@
+{
+  "feature_enabled": false,
+  "focused_status": "PASS",
+  "full_status": "PASS",
+  "full_test_count": 2263,
+  "live_activation_performed": false,
+  "schema_version": "awel.implementation-regression.v1",
+  "skipped_count": 15,
+  "tested_head": "5db0eb40422195adf340ca6e977c24ee34a4453e"
+}

@@ -4,7 +4,6 @@ import json
 import os
 import re
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping, Sequence
@@ -30,6 +29,26 @@ class ValidationCommandSet:
             "compile": [list(item) for item in self.compile],
             "deferred": self.deferred,
         }
+
+
+@dataclass(frozen=True)
+class _PythonValidationIntent:
+    branch: str
+    profile_id: str | None
+    explicit: bool
+
+
+_PYTHON_VALIDATION_PROFILES = {None, "PYTEST_PROFILE", "EXTERNAL_UNITTEST_PROFILE", "RESOLVER_SELECTION"}
+
+
+def _python_validation_intent(validation_profile: str | None) -> _PythonValidationIntent:
+    if validation_profile not in _PYTHON_VALIDATION_PROFILES:
+        raise ValidationToolchainError("unknown validation profile")
+    if validation_profile == "PYTEST_PROFILE":
+        return _PythonValidationIntent("pytest", "PYTEST_PROFILE", True)
+    if validation_profile == "EXTERNAL_UNITTEST_PROFILE":
+        return _PythonValidationIntent("external_unittest", "EXTERNAL_UNITTEST_PROFILE", True)
+    return _PythonValidationIntent("resolver", None, False)
 
 
 def _scope_flags(owned_files: Sequence[str]) -> tuple[bool, bool, bool]:
@@ -139,7 +158,38 @@ def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
     raise ValidationToolchainError(f"unsupported backend package manager: {name}")
 
 
-def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow_deferred: bool = False, python_executable: str | Path | None = None) -> ValidationCommandSet:
+_FINAL_EVIDENCE_INTEGRITY_PATHS = (
+    "tests/evidence/test_manifest.py",
+    "evidence/implementation/MANIFEST_SHA256.json",
+)
+
+
+def should_defer_evidence_manifest_integrity(
+    root: Path, owned_files: Sequence[str], completion_criteria: Sequence[str],
+) -> bool:
+    criteria_text = " ".join(str(item) for item in completion_criteria).lower()
+    if "full" in criteria_text and "regression" in criteria_text:
+        return False
+    if any(
+        path == scope or (scope.endswith("/") and path.startswith(scope))
+        for path in _FINAL_EVIDENCE_INTEGRITY_PATHS for scope in owned_files
+    ):
+        return False
+    return all(
+        (root / path).is_file() and not (root / path).is_symlink()
+        for path in _FINAL_EVIDENCE_INTEGRITY_PATHS
+    )
+
+
+def resolve_validation_commands(
+    root: Path,
+    owned_files: Sequence[str],
+    *,
+    allow_deferred: bool = False,
+    python_executable: str | Path | None = None,
+    validation_profile: str | None = None,
+    defer_evidence_manifest_integrity: bool = False,
+) -> ValidationCommandSet:
     documentation_only = bool(owned_files) and all(
         isinstance(path, str) and (path == "docs/" or path.startswith("docs/"))
         for path in owned_files
@@ -192,8 +242,11 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
 
     py_tests = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
     if python_scope and not android and not node:
+        python_intent = _python_validation_intent(validation_profile)
         project_interpreter = root / ".venv" / "bin" / "python"
         external_interpreter: Path | None = None
+        if python_intent.branch == "external_unittest" and python_executable is None:
+            raise ValidationToolchainError("explicit external unittest profile requires approved interpreter")
         if python_executable is not None:
             candidate = Path(str(python_executable))
             if not candidate.is_absolute() or not candidate.is_file() or not os.access(candidate, os.X_OK):
@@ -208,25 +261,27 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
             if not resolved.is_file() or resolved.stat().st_mode & 0o022:
                 raise ValidationToolchainError("approved external Python interpreter is unsafe")
             external_interpreter = candidate.absolute()
-        elif not project_interpreter.is_file():
-            active_python = Path(sys.executable)
-            if sys.prefix != sys.base_prefix and active_python.is_file() and os.access(active_python, os.X_OK):
-                external_interpreter = active_python.absolute()
 
         if py_tests:
             py_owned = [path for path in owned_files if path.endswith(".py")]
-            if project_interpreter.is_file() and external_interpreter is None:
+            if python_intent.branch == "pytest":
+                profiles.append("PYTEST_PROFILE")
+                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
+                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
+                deferred = bool(allow_deferred)
+            elif external_interpreter is not None:
+                modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
+                runner = str(external_interpreter)
+                profiles.append(python_intent.profile_id or "PYTHON_UNITTEST_EXTERNAL")
+                focused.append((runner, "-m", "unittest", "-v", *modules))
+                full.append((runner, "-m", "unittest", "discover", "-s", "tests", "-v"))
+                compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
+            elif project_interpreter.is_file():
                 profiles.append("PYTHON_PYTEST")
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
                 full.append((".venv/bin/python", "-m", "pytest", "-q"))
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
-            elif external_interpreter is not None:
-                modules = tuple(path[:-3].replace("/", ".") for path in py_tests)
-                runner = str(external_interpreter)
-                profiles.append("PYTHON_UNITTEST_EXTERNAL")
-                focused.append((runner, "-m", "unittest", "-v", *modules))
-                full.append((runner, "-m", "unittest", "discover", "-s", "tests", "-v"))
-                compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
             elif allow_deferred:
                 profiles.append("PYTHON_PYTEST")
                 focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
@@ -240,6 +295,40 @@ def resolve_validation_commands(root: Path, owned_files: Sequence[str], *, allow
             deferred = True
         else:
             raise ValidationToolchainError("Python owned scope requires owned focused tests")
+
+    evidence_only = bool(owned_files) and all(
+        isinstance(path, str) and path.startswith("evidence/")
+        for path in owned_files
+    )
+    if not profiles and evidence_only:
+        project_config = root / "pyproject.toml"
+        project_interpreter = root / ".venv" / "bin" / "python"
+        tests_root = root / "tests"
+        source_root = root / "src"
+        if (
+            _safe_regular_file(root, project_config)
+            and project_interpreter.is_file()
+            and tests_root.is_dir()
+            and not tests_root.is_symlink()
+        ):
+            profiles.append("PYTHON_PROJECT_EVIDENCE")
+            pytest_command = [".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+            focused_command = list(pytest_command)
+            full_command = list(pytest_command)
+            if defer_evidence_manifest_integrity:
+                evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                if (
+                    not evidence_test.is_file() or evidence_test.is_symlink()
+                    or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                ):
+                    raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                focused_command.append("--ignore=tests/evidence/test_manifest.py")
+                full_command.append("--ignore=tests/evidence/test_manifest.py")
+            focused.append(tuple(focused_command))
+            full.append(tuple(full_command))
+            compile_target = "src" if source_root.is_dir() and not source_root.is_symlink() else "tests"
+            compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", compile_target))
 
     if not profiles:
         if not owned_files:

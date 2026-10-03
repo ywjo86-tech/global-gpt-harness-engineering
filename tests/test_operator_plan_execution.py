@@ -49,6 +49,37 @@ class OperatorPlanExecutionTests(unittest.TestCase):
             approved_spec_path=spec, approval_ref="chat://2026-09-20/spec-approved",
         )
 
+    def test_operator_plan_tdd_continuation_is_explicit_opt_in_and_authority_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); spec, plan = self.make_repo(root)
+            legacy = self.build_job(root, spec, plan)
+            self.assertNotIn("continuation_mode", legacy["policy"])
+            tdd = build_operator_plan_job(
+                project_root=root, harness_root=root, runtime_code_root=root,
+                project_id="proj", run_id="run-tdd", task_ids=("TASK-001",),
+                approved_plan_path=plan, approved_spec_path=spec, approval_ref="chat://approved",
+                continuation_mode="TDD_V1",
+            )
+            self.assertEqual(tdd["policy"]["continuation_mode"], "TDD_V1")
+            canonical = register_job(tdd)
+            registered = load_registered_job(canonical)
+            self.assertEqual(registered["policy"]["continuation_mode"], "TDD_V1")
+            mutated = dict(registered); mutated["policy"] = dict(registered["policy"]); mutated["policy"]["continuation_mode"] = "LEGACY"
+            requested = root / "mutated.json"; requested.write_text(json.dumps(mutated), encoding="utf-8")
+            with self.assertRaisesRegex(Exception, "AUTHORITY|REBIND|DRIFT"):
+                register_job(load_job(requested))
+
+    def test_operator_plan_rejects_unknown_tdd_continuation_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); spec, plan = self.make_repo(root)
+            with self.assertRaisesRegex(OperatorPlanExecutionError, "continuation mode"):
+                build_operator_plan_job(
+                    project_root=root, harness_root=root, runtime_code_root=root,
+                    project_id="proj", run_id="run-bad", task_ids=("TASK-001",),
+                    approved_plan_path=plan, approved_spec_path=spec, approval_ref="chat://approved",
+                    continuation_mode="FUTURE",
+                )
+
     def test_build_job_binds_approved_plan_spec_branch_and_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

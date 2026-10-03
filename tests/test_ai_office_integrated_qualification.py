@@ -62,12 +62,17 @@ class AIOfficeIntegratedQualificationTest(unittest.TestCase):
 
     def test_031_task016_requirements_have_explicit_gate005_traceability_and_complete_exit_criteria(self) -> None:
         text = PLAN.read_text(encoding="utf-8")
-        rows = {match.group(1): match.group(0) for match in re.finditer(r"(?m)^\|\s*([A-Z]+-\d+)\s*\|.*$", text)}
+        rows: dict[str, list[str]] = {}
+        for match in re.finditer(r"(?m)^\|\s*([A-Z]+-\d+)\s*\|.*$", text):
+            rows.setdefault(match.group(1), []).append(match.group(0))
         missing = []
         qualification_tests = ("TEST-028", "TEST-029", "TEST-030", "TEST-031")
         for requirement in TASK016_REQUIREMENTS:
-            row = rows.get(requirement, "")
-            if "GATE-005" not in row or "EVD-" not in row or not any(test_id in row for test_id in qualification_tests):
+            matching_rows = rows.get(requirement, [])
+            if not any(
+                "GATE-005" in row and "EVD-" in row and any(test_id in row for test_id in qualification_tests)
+                for row in matching_rows
+            ):
                 missing.append(requirement)
         self.assertEqual(missing, [])
         self.assertEqual(EDP_EXIT_CRITERIA["BLOCKER_COUNT"], 0)

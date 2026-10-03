@@ -90,6 +90,28 @@ class GateOrchestratorTests(unittest.TestCase):
             with self.assertRaises(InjectedCrash):
                 _test_only_crash_after_production_stage("WORKER")
 
+    def test_runtime_selection_resume_preserves_capability_lineage(self) -> None:
+        from runtime.orchestrator.gate_controller import GateControllerError
+        from runtime.orchestrator.gate_orchestrator import _restore_runtime_selection
+        payload = {
+            "asset_id": "asset-1", "skill_id": "skill-1", "installed_target": "/tmp/skill",
+            "artifact_digest": "a" * 64, "attestation_evidence_reference": "sha256:" + "b" * 64,
+            "use_authorization_evidence_reference": "sha256:" + "c" * 64,
+            "capability_requirement": "cap", "project_id": "project-one",
+            "gate_id": "GATE-1", "lv_id": "G1-LV3-1",
+            "canonical_plan_sha256": "d" * 64, "source": "INSTALLED_PROJECT_SKILL",
+            "capability_contract_id": "contract-1", "capability_contract_version": "v1",
+            "endpoint_version": "endpoint-v2", "activation_epoch": 7,
+        }
+        restored = _restore_runtime_selection(payload)
+        self.assertEqual(restored.capability_contract_id, "contract-1")
+        self.assertEqual(restored.capability_contract_version, "v1")
+        self.assertEqual(restored.endpoint_version, "endpoint-v2")
+        self.assertEqual(restored.activation_epoch, 7)
+        invalid = dict(payload); invalid["endpoint_version"] = ""
+        with self.assertRaisesRegex(GateControllerError, "lineage is incomplete"):
+            _restore_runtime_selection(invalid)
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name) / "project-one"; self.root.mkdir()
         self.plan_path = self.root / "PLAN.md"; self.plan_path.write_text(PLAN)
@@ -99,6 +121,155 @@ class GateOrchestratorTests(unittest.TestCase):
             self.plan = load_gate_plan(self.root, "GATE-1")
         self.auth = create_gate_authorization(self.plan, "AUTH-G1")
 
+
+    def test_load_gate_plan_uses_explicit_mapping_root_without_environment_patch(self) -> None:
+        mapping_root = self.root.parent / "mappings"
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=self.mapping) as loader:
+            plan = load_gate_plan(self.root, "GATE-1", mapping_root=mapping_root)
+        self.assertEqual(plan.gate_id, "GATE-1")
+        loader.assert_called_once_with(self.root.resolve(), mapping_root=mapping_root)
+
+    def test_validate_global_gate_bindings_threads_explicit_mapping_root(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import validate_global_gate_bindings
+        mapping_root = self.root.parent / "mappings"
+        approval_path = self.root / "approval.json"
+        approval_path.write_text("{}", encoding="utf-8")
+        harness_root = self.root.parent / "harness"
+        harness_root.mkdir()
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan", return_value=self.plan) as loader, \
+             patch("runtime.orchestrator.gate_orchestrator.load_approval_evidence", return_value={}), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_approval_evidence", return_value={"approval_id": "A"}):
+            result = validate_global_gate_bindings(
+                self.root, "GATE-1", requirements_sha256="a" * 64,
+                approval_evidence=approval_path, branch="main", head="b" * 40,
+                harness_root=harness_root, mapping_root=mapping_root,
+            )
+        self.assertEqual(result["status"], "VALIDATED")
+        loader.assert_called_once_with(self.root.resolve(), "GATE-1", mapping_root=mapping_root)
+
+    def test_sealed_project_gate_authority_does_not_reuse_legacy_canonical_gate_state(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _sealed_project_gate_authority
+        full_auth = create_gate_authorization(
+            self.plan, "APR-G1-TEST", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        anchor = SimpleNamespace(
+            project_id=self.plan.project_id,
+            canonical_source=self.plan_path,
+            canonical_sha256=self.plan_hash,
+            task_lv_projection_path=self.root / "docs" / "harness" / "task-lv.json",
+            gate_state_ledger_path=self.root / "docs" / "harness" / "d15-gate-anchor.json",
+        )
+        anchor.gate_state_ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        same_project_ledger = {
+            "schema_version": "orchestration.canonical-gate-state.v2",
+            "project_id": self.plan.project_id,
+            "gate_id": "GATE-1",
+            "phase": "TEST",
+            "plan_sha256": self.plan_hash,
+            "gate_status": "READY_FOR_APPROVAL",
+            "closure_status": "CLOSED",
+            "approval_record_hash": None,
+        }
+        anchor.gate_state_ledger_path.write_text(
+            "# Gate State Ledger\n\n```json\n" + json.dumps(same_project_ledger, indent=2) + "\n```\n",
+            encoding="utf-8",
+        )
+        envelope = json.loads(self.approval_evidence("sealed-project-gate.json").read_text())
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
+             patch("runtime.orchestrator.gate_orchestrator.evaluate_canonical_state",
+                   return_value={"state": "GATE1_APPROVAL_READY", "transition_authorized": False}):
+            auth, state = _sealed_project_gate_authority(
+                self.root, self.plan, "G1-LV3-1",
+                approval_evidence=self.root.parent / "sealed-project-gate.json",
+                requirements_sha256="b" * 64, branch="main", head="c" * 40,
+                full_plan_opt_in=True, project_final_validation=True,
+            )
+        self.assertEqual(auth.authorization_id, full_auth.authorization_id)
+        self.assertEqual(state["gate_id"], "GATE-1")
+        self.assertEqual(state["active_scope"], ["G1-LV3-1"])
+        self.assertEqual(state["approval_id"], "APR-G1-TEST")
+        self.assertEqual(state["approval_record_hash"], envelope["record_hash"])
+        self.assertEqual(state["ledger_path"], "docs/harness/d15-gate-anchor.json")
+
+    def test_sealed_project_gate_authority_accepts_only_committed_foreign_v2_anchor(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import _sealed_project_gate_authority
+        anchor = SimpleNamespace(
+            project_id=self.plan.project_id,
+            canonical_source=self.plan_path,
+            canonical_sha256=self.plan_hash,
+            task_lv_projection_path=self.root / "docs" / "harness" / "task-lv.json",
+            gate_state_ledger_path=self.root / "docs" / "GATE_STATE.md",
+        )
+        anchor.task_lv_projection_path.parent.mkdir(parents=True, exist_ok=True)
+        anchor.task_lv_projection_path.write_text("{}", encoding="utf-8")
+        anchor.gate_state_ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger = {
+            "schema_version": "orchestration.canonical-gate-state.v2",
+            "project_id": "MULTI_PROVIDER_FOUNDATION",
+            "gate_id": "GATE-010",
+            "phase": "FINAL_CLOSURE",
+            "plan_sha256": "d" * 64,
+            "gate_status": "READY_FOR_TRANSITION",
+            "closure_status": "CLOSED",
+            "approval_record_hash": "e" * 64,
+        }
+        anchor.gate_state_ledger_path.write_text(
+            "# Gate State Ledger\n\n```json\n" + json.dumps(ledger, indent=2) + "\n```\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "-C", str(self.root), "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "docs/GATE_STATE.md"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "test anchor"], check=True, capture_output=True)
+        approval = self.approval_evidence("foreign-anchor-approval.json")
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
+             patch("runtime.orchestrator.gate_orchestrator.evaluate_canonical_state") as legacy:
+            auth, state = _sealed_project_gate_authority(
+                self.root, self.plan, "G1-LV3-1",
+                approval_evidence=approval, requirements_sha256="b" * 64,
+                branch="main", head="c" * 40, full_plan_opt_in=True,
+                project_final_validation=True,
+            )
+        legacy.assert_not_called()
+        self.assertEqual(auth.authorization_id, "APR-G1-TEST")
+        self.assertEqual(state["ledger_path"], "docs/GATE_STATE.md")
+        anchor.gate_state_ledger_path.write_text(anchor.gate_state_ledger_path.read_text() + "\n")
+        with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=anchor), \
+             self.assertRaisesRegex(GateOrchestrationError, "not committed at HEAD"):
+            _sealed_project_gate_authority(
+                self.root, self.plan, "G1-LV3-1",
+                approval_evidence=approval, requirements_sha256="b" * 64,
+                branch="main", head="c" * 40, full_plan_opt_in=True,
+                project_final_validation=True,
+            )
+
+    def test_project_requirement_full_plan_never_calls_legacy_authorization_loader(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+        full_auth = create_gate_authorization(
+            self.plan, "APR-G1-TEST", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        sealed_state = {"gate_id": "GATE-1", "active_scope": ["G1-LV3-1"]}
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan", return_value=self.plan), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_global_gate_bindings"), \
+             patch("runtime.orchestrator.gate_orchestrator._sealed_project_gate_authority",
+                   return_value=(full_auth, sealed_state)) as sealed, \
+             patch("runtime.orchestrator.gate_orchestrator.load_approved_authorization") as legacy, \
+             self.assertRaisesRegex(GateOrchestrationError, "TEST_ONLY"):
+            execute_gate(
+                self.root, "GATE-1", "run-sealed-project", harness_root=self.root.parent,
+                approval_evidence=self.approval_evidence("sealed-project-execute.json"),
+                requirements_sha256="b" * 64, branch="main", head="c" * 40,
+                mode=FULL_PLAN, full_plan_opt_in=True, project_final_validation=True,
+                project_requirement_evidence_by_lv={"G1-LV3-1": {"REQ-001": {"status": "PENDING"}}},
+                capability_requirements={}, capability_prerequisite=lambda *_: None,
+                capability_checkpoints={}, dry_run_capability_resolution=True,
+            )
+        self.assertTrue(sealed.called)
+        legacy.assert_not_called()
 
     def test_manual_action_request_is_create_once_and_preserves_provider_request(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _persist_manual_action_request
@@ -486,6 +657,223 @@ class GateOrchestratorTests(unittest.TestCase):
         with patch("runtime.orchestrator.gate_orchestrator.load_project_mapping", return_value=None):
             result = compatibility_dry_run(self.root, "GATE-1")
         self.assertEqual(result["status"], "BLOCKED"); self.assertFalse(result["mutation_performed"])
+
+    def test_approved_baseline_satisfied_recertification_is_fail_closed(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import (
+            GateLV, GatePlan, _verified_approved_baseline_satisfied_recertification,
+        )
+
+        def run_case(*, outside_witness: bool = False, post_approval_owned_change: bool = False):
+            with tempfile.TemporaryDirectory() as directory:
+                project = Path(directory) / "project-case"; project.mkdir()
+                subprocess.run(["git", "-C", str(project), "init", "-b", "main"], check=True, capture_output=True)
+                subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+                subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.com"], check=True)
+                (project / "PLAN.md").write_text("plan\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(project), "add", "PLAN.md"], check=True)
+                subprocess.run(["git", "-C", str(project), "commit", "-m", "baseline"], check=True, capture_output=True)
+
+                (project / "app").mkdir()
+                (project / "app/model.py").write_text("VALUE = 1\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(project), "add", "app/model.py"], check=True)
+                if outside_witness:
+                    (project / "outside.txt").write_text("outside\n", encoding="utf-8")
+                    subprocess.run(["git", "-C", str(project), "add", "outside.txt"], check=True)
+                subprocess.run(["git", "-C", str(project), "commit", "-m", "task implementation"], check=True, capture_output=True)
+                witness = subprocess.run(
+                    ["git", "-C", str(project), "rev-parse", "HEAD"],
+                    check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+                (project / "governance.txt").write_text("approved\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(project), "add", "governance.txt"], check=True)
+                subprocess.run(["git", "-C", str(project), "commit", "-m", "approval baseline"], check=True, capture_output=True)
+                approval_head = subprocess.run(
+                    ["git", "-C", str(project), "rev-parse", "HEAD"],
+                    check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+                if post_approval_owned_change:
+                    (project / "app/model.py").write_text("VALUE = 2\n", encoding="utf-8")
+                    subprocess.run(["git", "-C", str(project), "add", "app/model.py"], check=True)
+                    subprocess.run(["git", "-C", str(project), "commit", "-m", "late owned drift"], check=True, capture_output=True)
+                current_head = subprocess.run(
+                    ["git", "-C", str(project), "rev-parse", "HEAD"],
+                    check=True, capture_output=True, text=True,
+                ).stdout.strip()
+
+                lv = GateLV(
+                    "GATE-R03", "TASK-R04", 1, "durability", [],
+                    ["app/model.py"], ["focused pass"], "STATE_CHANGING", ["focused pass"],
+                    required_capabilities=["implementation", "filesystem_write"],
+                )
+                plan = GatePlan(
+                    project.name, str(project), "GATE-R03", str(project / "PLAN.md"),
+                    "1" * 64, [lv],
+                )
+                auth = create_gate_authorization(
+                    plan, "AUTH-R04", mode=FULL_PLAN,
+                    full_plan_opt_in=True, project_final_validation=True,
+                )
+                result = _verified_approved_baseline_satisfied_recertification(
+                    project, plan, auth, lv_id="TASK-R04",
+                    current_head=current_head, approval_head=approval_head,
+                )
+                return result, witness, approval_head, current_head
+
+        valid, witness, approval_head, current_head = run_case()
+        self.assertIsNotNone(valid)
+        self.assertEqual(valid["schema_version"], "orchestration.approved-baseline-lv-recertification.v1")
+        self.assertEqual(valid["checkpoint_commit"], witness)
+        self.assertEqual(valid["approval_head"], approval_head)
+        self.assertEqual(valid["current_head"], current_head)
+        self.assertEqual(valid["witness_changed_files"], ["app/model.py"])
+
+        outside, *_ = run_case(outside_witness=True)
+        self.assertIsNone(outside)
+
+        drifted, *_ = run_case(post_approval_owned_change=True)
+        self.assertIsNone(drifted)
+
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project-refined"; project.mkdir()
+            subprocess.run(["git", "-C", str(project), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.com"], check=True)
+            (project / "PLAN.md").write_text("plan\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "PLAN.md"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "baseline"], check=True, capture_output=True)
+            (project / "app").mkdir()
+            (project / "app/model.py").write_text("VALUE = 1\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "app/model.py"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "task implementation"], check=True, capture_output=True)
+            witness = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            (project / "app/model.py").write_text("VALUE = 2\n", encoding="utf-8")
+            (project / "repair-test.py").write_text("repair\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "approved repair"], check=True, capture_output=True)
+            repair = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            (project / "governance.txt").write_text("approved\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "governance.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "approval baseline"], check=True, capture_output=True)
+            approval_head = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            lv = GateLV(
+                "GATE-R04", "TASK-R05", 1, "runner", [], ["app/model.py"],
+                ["focused pass"], "STATE_CHANGING", ["focused pass"],
+                required_capabilities=["implementation", "filesystem_write"],
+            )
+            plan = GatePlan(project.name, str(project), "GATE-R04", str(project / "PLAN.md"), "2" * 64, [lv])
+            auth = create_gate_authorization(
+                plan, "AUTH-R05", mode=FULL_PLAN,
+                full_plan_opt_in=True, project_final_validation=True,
+            )
+            refined = _verified_approved_baseline_satisfied_recertification(
+                project, plan, auth, lv_id="TASK-R05",
+                current_head=approval_head, approval_head=approval_head,
+            )
+            self.assertIsNotNone(refined)
+            self.assertEqual(refined["checkpoint_commit"], witness)
+            self.assertEqual(refined["post_witness_owned_commits"], [repair])
+
+    def test_sealed_completed_lv_lineage_uses_handoff_baseline_and_worker_checkpoint(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import (
+            _sealed_completed_lv_lineage, structured_handoff,
+        )
+
+        subprocess.run(["git", "-C", str(self.root), "init", "-b", "main"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.com"], check=True)
+        (self.root / "app").mkdir(exist_ok=True)
+        model = self.root / "app" / "model.py"
+        model.write_text("BASE = 1\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "baseline"], check=True, capture_output=True)
+        baseline = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        model.write_text("BASE = 2\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "app/model.py"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "checkpoint"], check=True, capture_output=True)
+        current = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+        run_id = "run-lineage"
+        lv_id = "G1-LV3-1"
+        harness = self.root.parent / "harness-lineage"
+        auth = create_gate_authorization(self.plan, "AUTH-LINEAGE")
+        worker_dir = harness / "_workspace" / "orchestration-runs" / run_id / lv_id
+        worker_dir.mkdir(parents=True)
+        worker_payload = {
+            "baseline_head": baseline,
+            "current_head": current,
+            "checkpoint_commit": current,
+            "changed_files": ["app/model.py"],
+        }
+        worker_path = worker_dir / "worker.result.json"
+        worker_path.write_text(json.dumps(worker_payload, sort_keys=True), encoding="utf-8")
+        worker_sha = hashlib.sha256(worker_path.read_bytes()).hexdigest()
+
+        handoff = structured_handoff(
+            self.plan, auth, lv_id=lv_id, run_id=run_id, branch="main", head=baseline,
+            completed_plan_items=[lv_id], remaining_plan_items=["G1-LV3-2", "G1-LV3-3"],
+            changed_files=["app/model.py"], tests=[{"status": "PASS"}],
+            review={"status": "PASS"}, artifact_sha256=worker_sha,
+            used_assets=[], recovery={},
+        )
+        artifact_root = namespace_root(harness, self.plan.project_id, "artifact")
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        (artifact_root / f"{run_id}.handoff.json").write_text(
+            json.dumps(handoff, sort_keys=True), encoding="utf-8"
+        )
+
+        binding = RunBinding(
+            self.plan.project_id, self.plan.gate_id, lv_id, run_id,
+            "b" * 64, self.plan.canonical_plan_sha256, "main", baseline,
+            "a" * 64, {"app/model.py": "a" * 64},
+        )
+        event_dir = (
+            harness / "_workspace" / "global-gate-resume" / "TASK"
+            / self.plan.project_id / self.plan.gate_id / lv_id / run_id / "events"
+        )
+        event_dir.mkdir(parents=True)
+        (event_dir / "000001.json").write_text(
+            json.dumps({"binding": asdict(binding)}), encoding="utf-8"
+        )
+        exit_digest = "e" * 64
+        records = [
+            {"lifecycle": "PACKAGE"},
+            {"lifecycle": "PREFLIGHT"},
+            {"lifecycle": "WORKER", "evidence_sha256": worker_sha, "stage_payload": worker_payload},
+            {"lifecycle": "REVIEW", "stage_payload": {"status": "PASS"}},
+            {"lifecycle": "CHECKPOINT", "checkpoint": True, "stage_payload": {"status": "CHECKPOINTED"}},
+            {"lifecycle": "EXIT", "evidence_sha256": exit_digest, "stage_payload": {"status": "EXITED"}},
+            {"lifecycle": "WORKER", "checkpoint": True,
+             "stage_payload": {"capability_checkpoint": {"schema_version": "orchestration.capability-resume.v1"}}},
+            {"lifecycle": "HANDOFF", "evidence_sha256": handoff["handoff_sha256"],
+             "stage_payload": {"status": "SEALED"}},
+        ]
+        with patch("runtime.orchestrator.gate_orchestrator.ResumeStore.verify", return_value=records):
+            lineage = _sealed_completed_lv_lineage(
+                self.root, harness, self.plan, auth,
+                lv_id=lv_id, run_id=run_id, current_head=current,
+            )
+        self.assertEqual(lineage["current_head"], current)
+        self.assertEqual(lineage["predecessor_digest"], exit_digest)
+        self.assertEqual(lineage["handoff_sha256"], handoff["handoff_sha256"])
 
     def test_execute_gate_uses_full_controller_and_never_worker_handoff(self) -> None:
         from runtime.orchestrator.gate_orchestrator import execute_gate

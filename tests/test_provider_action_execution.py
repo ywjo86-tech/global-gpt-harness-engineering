@@ -273,6 +273,35 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
             self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
 
+    def test_model_scoped_client_failure_rotates_and_persists_diagnostics(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            routed = decision(("nvidia/fallback-a",))
+            def provider_runner(**kwargs):
+                calls.append(dict(kwargs))
+                if len(calls) == 1:
+                    return {
+                        "status": "provider_failed", "model": kwargs["model"], "provider_attempts": 1,
+                        "provider_error_class": "nvidia_client_error", "provider_http_status": 422,
+                        "model_attempts": {kwargs["model"]: 1}, "model_failover_trace": [],
+                    }
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(self.proposal(content="value = 1\n")), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=routed, baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual([item["model"] for item in calls], ["nvidia/action-model", "nvidia/fallback-a"])
+            evidence = json.loads((root / "run/provider-action-response-evidence/ALL-attempt-01.json").read_text())
+            self.assertEqual(evidence["provider_error_class"], "nvidia_client_error")
+            self.assertEqual(evidence["provider_http_status"], 422)
+            self.assertTrue(result["model_failover_used"])
+
     def test_provider_neutral_network_failure_rotates_without_adapter_specific_name(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
@@ -446,6 +475,39 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertTrue(result["validation_feedback_applied"])
             self.assertEqual((root / owned[0]).read_text(), "def test_fixed():\n    assert True\n")
 
+    def test_multifile_remediation_validates_the_combined_candidate_atomically(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_one.py", "runtime/module.py"]
+            (root / "tests").mkdir(); (root / "runtime").mkdir()
+            (root / owned[0]).write_text("BROKEN_TEST = True\n")
+            (root / owned[1]).write_text("BROKEN_MODULE = True\n")
+            request = worker(root, owned); validations = []
+            proposal = self.proposal(content="FIXED_TEST = True\n", owned_id="OWNED_0001")
+            proposal["writes"].append({
+                "owned_file_id": "OWNED_0002", "relative_path": "", "content": "FIXED_MODULE = True\n",
+            })
+            def provider_runner(**kwargs):
+                self.assertNotIn("SEGMENT TARGET:", kwargs["prompt"])
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(proposal), "context_metadata": {},
+                }
+            def candidate_validator(candidate):
+                validations.append([item["owned_file_id"] for item in candidate["writes"]])
+                return "" if validations[-1] == ["OWNED_0001", "OWNED_0002"] else "partial candidate"
+            result = execute_provider_action_proposal(
+                request, decision=decision(), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+                validation_feedback="ImportError: dependent owned files are inconsistent",
+                candidate_validator=candidate_validator,
+            )
+            self.assertEqual(validations, [["OWNED_0001", "OWNED_0002"]])
+            self.assertFalse(result["segmented_generation"])
+            self.assertEqual((root / owned[0]).read_text(), "FIXED_TEST = True\n")
+            self.assertEqual((root / owned[1]).read_text(), "FIXED_MODULE = True\n")
+
     def test_write_binding_error_retries_with_router_approved_fallback_without_early_effect(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); owned = ["tests/test_generated.py"]
@@ -471,6 +533,30 @@ class ProviderActionExecutionTest(unittest.TestCase):
             self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
             self.assertEqual(len(list((root / "run/provider-action-effects").glob("*.receipt.json"))), 1)
             self.assertEqual(result["proposal_generation_attempts"], 2)
+
+    def test_exact_file_path_echo_is_canonicalized_without_scope_broadening(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); owned = ["tests/test_generated.py"]
+            request = worker(root, owned); calls = []
+            echoed = self.proposal(content="value = 1\n")
+            echoed["writes"][0]["relative_path"] = owned[0]
+            def provider_runner(**kwargs):
+                calls.append(kwargs["prompt"])
+                return {
+                    "status": "completed", "model": kwargs["model"], "provider_attempts": 1,
+                    "model_attempts": {kwargs["model"]: 1}, "model_failover_used": False,
+                    "summary": json.dumps(echoed), "context_metadata": {},
+                }
+            result = execute_provider_action_proposal(
+                request, decision=decision(("nvidia/fallback-a",)), baseline="a" * 40, owned=owned,
+                output_dir=root / "run", provider_runner=provider_runner,
+                security_scan=lambda _raw: True, timeout=30,
+            )
+            self.assertEqual(len(calls), 1)
+            self.assertEqual((root / owned[0]).read_text(), "value = 1\n")
+            proposal = json.loads((root / "run/provider-action-proposal.json").read_text())
+            self.assertEqual(proposal["writes"][0]["relative_path"], "")
+            self.assertEqual(result["proposal_generation_attempts"], 1)
 
     def test_relative_path_binding_error_is_retryable_but_never_broadens_scope(self):
         with tempfile.TemporaryDirectory() as td:

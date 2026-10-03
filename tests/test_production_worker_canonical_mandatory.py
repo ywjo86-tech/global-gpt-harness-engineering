@@ -248,6 +248,16 @@ class ProductionWorkerCanonicalMandatoryRepositoryInvariantTests(unittest.TestCa
             "runtime HostExecutionGateway bypass callsites: " + ", ".join(violations),
         )
 
+    def test_executor_manages_broker_native_runner_when_transport_is_not_injected(self):
+        tree = ast.parse(TARGET.read_text(encoding="utf-8"))
+        managed_calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ManagedHostRunner"
+        ]
+        self.assertEqual(len(managed_calls), 1)
+
     def test_executor_binds_validation_before_transport_factory_call(self):
         tree = ast.parse(TARGET.read_text(encoding="utf-8"))
         helper_calls = [

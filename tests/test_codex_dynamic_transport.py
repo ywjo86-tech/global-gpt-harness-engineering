@@ -33,6 +33,22 @@ class _Process:
     def kill(self): self.returncode = -9
 
 
+class _BufferedPipeProcess:
+    """Real text pipe whose readline may pre-buffer later JSON-RPC lines."""
+    def __init__(self, lines):
+        self.stdin = _Pipe(); self.stderr = _Pipe(); self.returncode = None
+        read_fd, write_fd = os.pipe()
+        self._write_fd = write_fd
+        self.stdout = os.fdopen(read_fd, "r", encoding="utf-8", buffering=8192)
+        os.write(write_fd, "".join(lines).encode("utf-8"))
+    def poll(self): return self.returncode
+    def terminate(self):
+        if self.returncode is None:
+            os.close(self._write_fd); self.returncode = 0
+    def wait(self, timeout=None): return self.returncode
+    def kill(self): self.terminate(); self.returncode = -9
+
+
 class CodexDynamicTransportTests(unittest.TestCase):
     def test_compatibility_is_exact_and_fail_closed(self):
         good = CodexAppServerAdapter(version_probe=lambda: "0.150.1")
@@ -80,6 +96,29 @@ class CodexDynamicTransportTests(unittest.TestCase):
         tool_response = next(item for item in writes if item.get("id") == 80)
         self.assertTrue(tool_response["result"]["success"])
         self.assertFalse(any("command" in json.dumps(item).lower() for item in writes))
+
+    def test_buffered_text_pipe_does_not_deadlock_between_protocol_lines(self):
+        lines = [
+            json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 80, "method": "item/tool/call", "params": {
+                "tool": "PROJECT_FILE_READ", "callId": "call-1", "arguments": {"owned_file_id": "FILE_1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 81, "method": "item/tool/call", "params": {
+                "tool": "PROJECT_FILE_READ", "callId": "call-2", "arguments": {"owned_file_id": "FILE_1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "method": "turn/completed", "params": {}}) + "\n",
+        ]
+        process = _BufferedPipeProcess(lines)
+        seen = []
+        adapter = CodexAppServerAdapter(process_factory=lambda *a, **k: process,
+                                        version_probe=lambda: "0.150.1")
+        result = adapter.run_turn(
+            prompt="bounded", dynamic_tools=TOOLS, timeout=1,
+            tool_handler=lambda envelope: seen.append(envelope) or ToolResultEnvelope(
+                "COMPLETED", "PRESENT", "PASS", {"status": "COMPLETED"}),
+        )
+        self.assertEqual(result["completion"], "COMPLETED")
+        self.assertEqual(len(seen), 2)
 
     def test_broker_failure_is_returned_as_block_without_native_fallback(self):
         lines = [

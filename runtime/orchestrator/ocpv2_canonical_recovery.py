@@ -70,7 +70,7 @@ def recover_pending_canonical_results(
     publisher: Callable[[RemoteResultProjectionV1], object],
     durable_acknowledged: Callable[[str], bool],
 ) -> dict[str, object]:
-    """Reconstruct and publish proven results without exposing any mutation callback."""
+    """Reconstruct and publish proven canonical results without exposing mutation callbacks."""
     recovered = 0
     published = 0
     acknowledged = 0
@@ -79,7 +79,11 @@ def recover_pending_canonical_results(
     for binding in binding_store.pending():
         if durable_acknowledged(binding.message_id):
             if binding.status == "OUTBOXED" and binding.projection_id:
-                pending = {item.projection_id: item for item in outbox.pending()}
+                pending = {
+                    item.projection_id: item
+                    for item in outbox.pending()
+                    if isinstance(item, RemoteResultProjectionV1)
+                }
                 projection = pending.get(binding.projection_id)
                 if projection is not None:
                     outbox.mark_published(projection.projection_id, projection.projection_sha256)
@@ -114,9 +118,14 @@ def recover_pending_canonical_results(
         binding_store.mark_outboxed(binding.message_id, projection.projection_id)
         recovered += 1
 
-    # Publishing is deliberately after all durable enqueue/receipt transitions.  If the
-    # publisher raises, the outbox item and OUTBOXED binding survive for the next run.
+    # Publishing is deliberately after all durable enqueue/receipt transitions. If the
+    # publisher raises, the canonical outbox item and OUTBOXED binding survive for the
+    # next run. Noncanonical control projections share the durable outbox but are owned
+    # by the runtime service's separate recovery path and must never enter this binding-
+    # guarded loop.
     for projection in tuple(outbox.pending()):
+        if not isinstance(projection, RemoteResultProjectionV1):
+            continue
         publisher(projection)
         outbox.mark_published(projection.projection_id, projection.projection_sha256)
         for binding in binding_store.pending():

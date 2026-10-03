@@ -8,6 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runtime.orchestrator.lv_execution_package import canonical_json_bytes
+from runtime.orchestrator.lv_review import _validate_production_provenance
+from runtime.orchestrator.provider_execution_registry import PROVIDER_READ_ONLY_BACKEND
 from runtime.orchestrator.production_worker_executor import (
     NVIDIA_EXECUTOR_ID,
     NVIDIA_READ_ONLY_BACKEND,
@@ -148,6 +150,43 @@ class ProductionProviderRouterIntegrationTests(unittest.TestCase):
                 "",
             )
             nvidia.assert_called_once()
+
+    def test_generic_provider_read_result_is_accepted_by_review_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self._request(root)
+            request.extra_context["execution_backend"] = PROVIDER_READ_ONLY_BACKEND
+            provider_result = {
+                "status": "completed",
+                "provider": "nvidia",
+                "model": "nvidia/test-read-model",
+                "routed_model": "nvidia/test-read-model",
+                "model_failover_used": False,
+                "provider_attempts": 1,
+                "route_reason": "nvidia_read_only",
+                "summary": "READ_ONLY_REVIEW_PASS",
+                "warnings": [],
+                "errors": [],
+            }
+            with patch(
+                "runtime.orchestrator.production_worker_executor.run_nvidia_reasoning_task",
+                return_value=provider_result,
+            ):
+                result = execute_production_worker(request)
+            self.assertEqual(result["executor"]["identity"], "provider-router-production")
+            self.assertEqual(result["commands"]["worker"]["command"][0:2], ["provider-read", "nvidia"])
+            _validate_production_provenance(result)
+
+            drifted = dict(result)
+            drifted["commands"] = {
+                **result["commands"],
+                "worker": {
+                    **result["commands"]["worker"],
+                    "command": ["provider-read", "groq", "nvidia/test-read-model"],
+                },
+            }
+            with self.assertRaisesRegex(Exception, "read-only NVIDIA provenance is invalid"):
+                _validate_production_provenance(drifted)
 
     def test_nvidia_read_only_backend_rejects_state_changing_task(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

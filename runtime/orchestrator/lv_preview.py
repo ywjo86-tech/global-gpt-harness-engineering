@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -172,7 +174,158 @@ def parse_lv_definition(
     )
 
 
-def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, canonical_state_override: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def _validate_sealed_project_authority_state(
+    root: Path,
+    mapping: Any,
+    gate_id: str,
+    lv_id: str,
+    canonical_state: Mapping[str, Any],
+) -> None:
+    from .gate_approval import GateApprovalError, load_approval_evidence, validate_approval_evidence
+    if canonical_state.get("project_id") != mapping.project_id:
+        raise LVPreviewValidationError("sealed project authority project binding mismatch")
+    if canonical_state.get("state") != "GATE1_RESUME_READY":
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if canonical_state.get("transition_authorized") is not True or canonical_state.get("gate_1_started") is not True:
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if canonical_state.get("gate_id") != gate_id or canonical_state.get("active_scope") != [lv_id]:
+        raise LVPreviewValidationError("sealed project authority Gate/LV binding mismatch")
+    approval_id = canonical_state.get("approval_id")
+    record_hash = canonical_state.get("approval_record_hash")
+    requirements_sha256 = canonical_state.get("requirements_sha256")
+    head = canonical_state.get("head")
+    branch = canonical_state.get("branch")
+    checkpoint = canonical_state.get("checkpoint_commit")
+    transition = canonical_state.get("transition")
+    if not isinstance(approval_id, str) or not approval_id:
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if not isinstance(record_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", record_hash):
+        raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
+    if not isinstance(requirements_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", requirements_sha256):
+        raise LVPreviewValidationError("sealed project authority requirements binding is malformed")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise LVPreviewValidationError("sealed project authority HEAD binding is malformed")
+    if not isinstance(branch, str) or not branch:
+        raise LVPreviewValidationError("sealed project authority branch binding is malformed")
+
+    current_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    current_branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if branch != current_branch:
+        raise LVPreviewValidationError("sealed project authority source binding drift")
+
+    if transition is None:
+        if checkpoint != head or head != current_head:
+            raise LVPreviewValidationError("sealed project authority source binding drift")
+    else:
+        required_transition = {
+            "schema_version", "project_id", "gate_id", "lv_id", "run_id",
+            "approval_event_id", "plan_sha256", "branch", "baseline_head",
+            "current_head", "predecessor_completion_digest", "owned_file_scope",
+            "completion_conditions", "transition_type", "created_at", "record_hash",
+        }
+        if not isinstance(transition, dict) or set(transition) != required_transition:
+            raise LVPreviewValidationError("sealed project authority transition binding is malformed")
+        unsigned = {key: value for key, value in transition.items() if key != "record_hash"}
+        digest = hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        if (
+            transition.get("record_hash") != digest
+            or transition.get("schema_version") != "orchestration.canonical-active-lv-transition.v1"
+            or transition.get("transition_type") != "SYSTEM_TRANSITION"
+        ):
+            raise LVPreviewValidationError("sealed project authority transition binding is malformed")
+        if (
+            transition.get("project_id") != mapping.project_id
+            or transition.get("gate_id") != gate_id
+            or transition.get("lv_id") != lv_id
+            or transition.get("approval_event_id") != approval_id
+            or transition.get("plan_sha256") != mapping.canonical_sha256
+            or transition.get("branch") != branch
+            or transition.get("baseline_head") != head
+            or transition.get("current_head") != current_head
+            or checkpoint != current_head
+            or not isinstance(transition.get("run_id"), str)
+            or not transition.get("run_id")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(transition.get("predecessor_completion_digest") or ""))
+            or transition.get("owned_file_scope") != canonical_state.get("owned_files")
+        ):
+            raise LVPreviewValidationError("sealed project authority transition binding drift")
+
+    evidence_value = canonical_state.get("approval_evidence_path")
+    if not isinstance(evidence_value, (str, os.PathLike)):
+        raise LVPreviewValidationError("sealed project authority approval evidence path is missing")
+    evidence_path = Path(evidence_value)
+    if not evidence_path.is_absolute() or evidence_path.is_symlink() or not evidence_path.is_file():
+        raise LVPreviewValidationError("sealed project authority approval evidence path is unsafe")
+    parts = evidence_path.resolve().parts
+    expected_tail = ("_workspace", "global-gate", mapping.project_id, "approval")
+    if len(parts) < 5 or tuple(parts[-5:-1]) != expected_tail:
+        raise LVPreviewValidationError("sealed project authority approval evidence namespace mismatch")
+
+    projection_path = getattr(mapping, "task_lv_projection_path", None)
+    projection_sha = getattr(mapping, "task_lv_projection_sha256", None)
+    if (
+        projection_path is None
+        or projection_sha is None
+        or projection_path.is_symlink()
+        or not projection_path.is_file()
+        or sha256_file(projection_path) != projection_sha
+    ):
+        raise LVPreviewValidationError("sealed project authority TASK projection binding is invalid")
+    try:
+        projection = json.loads(projection_path.read_text(encoding="utf-8"))
+        projected = resolve_task_lv_projection(
+            mapping.canonical_source.read_text(encoding="utf-8"),
+            projection,
+            project_id=mapping.project_id,
+            canonical_plan_sha256=mapping.canonical_sha256,
+            gate_id=gate_id,
+        )
+        lv_order = [item["lv_id"] for item in projected]
+        owned_files_by_lv = {item["lv_id"]: list(item["owned_files"]) for item in projected}
+        if isinstance(transition, dict):
+            projected_item = next((item for item in projected if item.get("lv_id") == lv_id), None)
+            if (
+                not isinstance(projected_item, dict)
+                or transition.get("owned_file_scope") != list(projected_item.get("owned_files", []))
+                or transition.get("completion_conditions") != list(projected_item.get("completion_criteria", []))
+            ):
+                raise LVPreviewValidationError("sealed project authority transition scope drift")
+        envelope = load_approval_evidence(evidence_path)
+        payload = validate_approval_evidence(
+            envelope,
+            project_id=mapping.project_id,
+            gate_id=gate_id,
+            requirements_sha256=requirements_sha256,
+            plan_sha256=mapping.canonical_sha256,
+            branch=branch,
+            head=head,
+            lv_order=lv_order,
+            owned_files_by_lv=owned_files_by_lv,
+        )
+    except (GateApprovalError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise LVPreviewValidationError(f"sealed project authority approval validation failed: {exc}") from exc
+    if payload.get("approval_id") != approval_id or envelope.get("record_hash") != record_hash:
+        raise LVPreviewValidationError("sealed project authority approval identity mismatch")
+    if canonical_state.get("owned_files") != owned_files_by_lv.get(lv_id):
+        raise LVPreviewValidationError("sealed project authority owned scope mismatch")
+
+
+def preview_lv_read_only(
+    project_root: str | Path,
+    gate_id: str,
+    lv_id: str,
+    *,
+    canonical_state_override: Mapping[str, Any] | None = None,
+    sealed_project_authority: bool = False,
+) -> dict[str, Any]:
     if not gate_id:
         raise LVPreviewValidationError("gate_id is required")
     if not lv_id:
@@ -181,9 +334,18 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
     mapping = load_project_mapping(root)
     if mapping is None:
         raise LVPreviewValidationError("a project contract mapping is required for LV preview")
+    if sealed_project_authority and canonical_state_override is None:
+        raise LVPreviewValidationError("sealed project authority requires an explicit canonical state")
 
-    inspection = inspect_read_only(root)
-    canonical_state = dict(canonical_state_override) if canonical_state_override is not None else evaluate_canonical_state(mapping)
+    if sealed_project_authority:
+        canonical_state = dict(canonical_state_override)
+    else:
+        inspection = inspect_read_only(root)
+        canonical_state = (
+            dict(canonical_state_override)
+            if canonical_state_override is not None
+            else evaluate_canonical_state(mapping)
+        )
     state = canonical_state.get("state")
     if not isinstance(state, str) or not (state.endswith("_ACTIVE") or state == "GATE1_RESUME_READY"):
         raise LVPreviewValidationError("LV preview requires an active canonical Gate state")
@@ -211,6 +373,28 @@ def preview_lv_read_only(project_root: str | Path, gate_id: str, lv_id: str, *, 
     if sha256_file(mapping.canonical_source) != mapping.canonical_sha256:
         raise LVPreviewValidationError("canonical implementation plan hash mismatch")
 
+    if sealed_project_authority:
+        _validate_sealed_project_authority_state(root, mapping, gate_id, lv_id, canonical_state)
+        inspection = {
+            "business_gate_state": {
+                "namespace": "business_gate_state",
+                "status": "historical_static_not_execution_authority",
+                "validation": "sealed_project_gate_authority",
+                "transition_authorized": False,
+            },
+            "business_lv_approval_state": {
+                "namespace": "business_lv_gate_approval",
+                "status": "historical_static_not_execution_authority",
+                "validation": "sealed_project_gate_authority",
+                "reused_as_runtime_approval": False,
+            },
+            "codex_runtime_sandbox_approval_state": {
+                "namespace": "codex_runtime_sandbox_approval",
+                "status": "not_requested_read_only",
+                "business_approval_reused": False,
+                "runtime_mutation_authorized": False,
+            },
+        }
     owned = canonical_state.get("owned_files")
     if not isinstance(owned, list):
         raise LVPreviewValidationError("approved owned files are missing")

@@ -116,6 +116,52 @@ class DurableDeliveryAckTests(unittest.TestCase):
                 "M1", source_message_id="444", content_sha256=content_sha(edited_item)
             ))
 
+    def test_receive_persists_pending_fingerprint_for_restart_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            original = comment()
+            first = adapter(path, (original,))
+            self.assertEqual(len(first.receive()), 1)
+            self.assertTrue(first.delivery_pending_path.is_file())
+
+            recovered = adapter(path, ())
+            recovered.publish_projection({"schema_version": "x", "message_id": "M1"})
+            recovered.acknowledge_delivery("M1")
+
+            self.assertEqual(len(recovered.rest_client.publish_calls), 1)
+            self.assertTrue(recovered.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(original)
+            ))
+            self.assertFalse(recovered.delivery_pending_path.exists())
+
+            exact = adapter(path, (original,))
+            self.assertEqual(exact.receive(), ())
+
+    def test_durable_ack_prevents_duplicate_publish_if_pending_cleanup_lagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            original = comment()
+            first = adapter(path, (original,))
+            self.assertEqual(len(first.receive()), 1)
+            pending_snapshot = first.delivery_pending_path.read_bytes()
+            first.publish_projection({"schema_version": "x", "message_id": "M1"})
+            first.acknowledge_delivery("M1")
+            self.assertTrue(first.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(original)
+            ))
+
+            # Simulate a crash after durable ACK commit but before pending-ledger cleanup.
+            first.delivery_pending_path.write_bytes(pending_snapshot)
+
+            recovered = adapter(path, ())
+            recovered.publish_projection({"schema_version": "x", "message_id": "M1"})
+            recovered.acknowledge_delivery("M1")
+
+            self.assertEqual(recovered.rest_client.publish_calls, [])
+            self.assertFalse(recovered.delivery_pending_path.exists())
+            exact = adapter(path, (original,))
+            self.assertEqual(exact.receive(), ())
+
     def test_edited_same_comment_is_not_hidden_by_durable_ack(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "acks.json"
