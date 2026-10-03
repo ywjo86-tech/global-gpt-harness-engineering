@@ -14,12 +14,13 @@ def _utc_now() -> str:
 
 
 class StateStore:
-    def __init__(self, project_root: str | Path) -> None:
+    def __init__(self, project_root: str | Path, *, create_runtime_dir: bool = True) -> None:
         self.project_root = Path(project_root).resolve()
         self.runtime_dir = self.project_root / "runtime"
         self.state_path = self.runtime_dir / "orchestrator_state.json"
         self.markdown_path = self.project_root / "docs" / "harness" / "orchestration-state.md"
-        self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        if create_runtime_dir:
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.state = self.load()
 
     def load(self) -> RuntimeState:

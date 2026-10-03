@@ -1,0 +1,18 @@
+{
+  "dashboard_qualification_head": "c13e257fcaffc2e994785499ced5b8efe71249b7",
+  "dashboard_source_head": "3e7f74bb44e7f2476ee7890d56e0d30d85ec1ca2",
+  "direct_execution_authority": false,
+  "gate": "4",
+  "jarvis_baseline_head": "fae40101e83eef16723c4b6eb0de773be32dc392",
+  "local_jarvis_changes_preserved": true,
+  "primary_view": "LIST_OPERATIONS",
+  "qualification": {
+    "authority_source_guard": "PASS",
+    "dashboard_tests": "4_PASS",
+    "existing_voice_regression_on_current_user_worktree": "47_PASS"
+  },
+  "read_schema": "orchestration.operations-read-model.v1",
+  "schema_version": "gch.ai-office-dashboard-track-qualification.v1",
+  "status": "PASS",
+  "three_d_state": "GATED_BY_RENDERER_QUALIFICATION"
+}

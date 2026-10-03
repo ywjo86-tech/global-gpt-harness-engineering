@@ -9,9 +9,10 @@ from .bridge_api import (
     get_status,
     get_workers,
     refresh_dashboard_snapshot,
+    refresh_operations_projection,
     run_command,
 )
 from .command_dispatcher import dispatch_command
 from .event_stream import read_recent_events
-from .state_reader import read_dashboard_state, render_dashboard_markdown
+from .state_reader import read_dashboard_state, read_dashboard_state_projection_only, render_dashboard_markdown
 

@@ -406,6 +406,10 @@ class RuntimeSelection:
     source: str
     simulated: bool = True
     execution_allowed_in_dry_run: bool = False
+    capability_contract_id: str = ""
+    capability_contract_version: str = ""
+    endpoint_version: str = ""
+    activation_epoch: int = 0
 
 
 StageOperation = Callable[[Mapping[str, Any]], Mapping[str, Any]]
@@ -514,7 +518,7 @@ class OperationalCapabilityResult:
                 for stage, record in self.stage_records.items()}
         discovered = str(self.stage_records.get("DISCOVERY", {}).get("payload", {}).get("candidate_id", ""))
         evaluated = str(self.stage_records.get("EVALUATION", {}).get("payload", {}).get("candidate_id", discovered))
-        return {
+        projection = {
             "capability_requirements": [selection.get("capability_requirement", "")] if selection else [],
             "existing_capability_decision": selection.get("asset_id", "") if self.route == "EXISTING" else "",
             "capability_gaps": [] if self.route == "EXISTING" else ([selection.get("capability_requirement", "")] if selection else []),
@@ -540,6 +544,23 @@ class OperationalCapabilityResult:
             "used_assets": [selection.get("asset_id", "")] if selection else [],
             "runtime_selections": [_digest(selection)] if selection else [],
         }
+
+        if selection.get("capability_contract_id"):
+            projection["capability_contract_lineage"] = {
+                "capability_contract_id": selection[
+                    "capability_contract_id"
+                ],
+                "capability_contract_version": selection.get(
+                    "capability_contract_version", ""
+                ),
+                "endpoint_version": selection.get(
+                    "endpoint_version", ""
+                ),
+                "activation_epoch": selection.get(
+                    "activation_epoch", 0
+                ),
+            }
+        return projection
 
 
 def run_module_backed_fixture_dry_run(
