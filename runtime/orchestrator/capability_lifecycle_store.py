@@ -71,12 +71,25 @@ class CapabilityLifecycleStore:
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
+    def _write_path(self, record: CapabilityLifecycleRecordV1) -> Path:
+        contract_id = record.contract.contract_id
+        canonical = self._path(contract_id)
+        legacy = self.root / _legacy_contract_filename(contract_id)
+        if canonical == legacy or canonical.exists() or not legacy.exists():
+            return canonical
+        try:
+            payload, _ = durable_json_load(legacy)
+            existing = CapabilityLifecycleRecordV1.from_mapping(payload)
+        except (DurableIOError, CapabilityLifecycleError, FileNotFoundError):
+            return canonical
+        return legacy if existing.contract.contract_id == contract_id else canonical
+
     def put(self, record: CapabilityLifecycleRecordV1) -> Path:
         if not isinstance(record, CapabilityLifecycleRecordV1) or not record.valid():
             raise CapabilityLifecycleStoreError("lifecycle record digest mismatch")
         try:
             return atomic_write_json(
-                self._path(record.contract.contract_id), record.to_dict()
+                self._write_path(record), record.to_dict()
             )
         except DurableIOError as exc:
             raise CapabilityLifecycleStoreError(str(exc)) from exc
@@ -133,7 +146,7 @@ class CapabilityLifecycleStore:
             return draining
 
     def list_records(self) -> tuple[CapabilityLifecycleRecordV1, ...]:
-        records: list[CapabilityLifecycleRecordV1] = []
+        records: dict[str, tuple[CapabilityLifecycleRecordV1, bool]] = {}
         for path in sorted(self.root.glob("*.json")):
             try:
                 payload, _ = durable_json_load(path)
@@ -144,5 +157,9 @@ class CapabilityLifecycleStore:
                 ) from exc
             if not record.valid():
                 raise CapabilityLifecycleStoreError("lifecycle record digest mismatch")
-            records.append(record)
-        return tuple(records)
+            contract_id = record.contract.contract_id
+            is_canonical = path == self._path(contract_id)
+            previous = records.get(contract_id)
+            if previous is None or (is_canonical and not previous[1]):
+                records[contract_id] = (record, is_canonical)
+        return tuple(value[0] for value in records.values())
