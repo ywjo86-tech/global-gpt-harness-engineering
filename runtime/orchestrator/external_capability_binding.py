@@ -62,11 +62,16 @@ def qualify_external_binding(
         raise ExternalCapabilityBindingError("unsupported binding kind")
     if effect_policy not in EFFECT_POLICIES:
         raise ExternalCapabilityBindingError("unsupported effect policy")
-    state = str(_field(evaluation, "evaluation_state", _field(evaluation, "state", "")))
+    raw_state = _field(evaluation, "evaluation_state", _field(evaluation, "state", ""))
+    state = str(getattr(raw_state, "value", raw_state))
     if state != "SAFE_FOR_CONSIDERATION":
         raise ExternalCapabilityBindingError("candidate evaluation is not safe for consideration")
     evidence_ref = str(
-        _field(evaluation, "evidence_ref", _field(evaluation, "evaluation_evidence_ref", ""))
+        _field(
+            evaluation,
+            "evidence_reference",
+            _field(evaluation, "evidence_ref", _field(evaluation, "evaluation_evidence_ref", "")),
+        )
     ).strip()
     if not evidence_ref:
         raise ExternalCapabilityBindingError("evaluation evidence is required")
