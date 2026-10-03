@@ -262,7 +262,163 @@ def load_registered_job(path: str | Path) -> dict[str, Any]:
         raise FullPlanJobError(str(exc)) from exc
 
 
-def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
+
+def _verified_resume_checkpoint_head(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> bool:
+    """Accept only the exact checkpoint sealed by this run's WORKER event."""
+    if not isinstance(resume_context, Mapping):
+        return False
+    queue_item = resume_context.get("queue_item")
+    state = resume_context.get("state")
+    if not isinstance(queue_item, Mapping) or not isinstance(state, Mapping):
+        return False
+    if queue_item.get("resume") is not True:
+        return False
+
+    gate_id = str(queue_item.get("gate_id") or "")
+    gate_run_id = str(queue_item.get("gate_run_id") or "")
+    project_id = str(job.get("project_id") or "")
+    expected_head = str(job.get("expected_head") or "")
+    safe_id = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+    if (
+        not safe_id.fullmatch(project_id)
+        or not safe_id.fullmatch(gate_id)
+        or not safe_id.fullmatch(gate_run_id)
+        or gate_id != str(state.get("current_gate") or "")
+        or not _HEAD.fullmatch(current_head)
+        or not _HEAD.fullmatch(expected_head)
+    ):
+        return False
+
+    project = Path(str(job["project_root"])).resolve()
+    ancestry = subprocess.run(
+        ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, current_head],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if ancestry.returncode != 0:
+        return False
+    dirty = subprocess.run(
+        ["git", "-C", str(project), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if dirty.returncode != 0 or dirty.stdout.strip():
+        return False
+
+    state_root = job_state_root(job)
+    run_root = state_root / "_workspace" / "orchestration-runs"
+    resume_root = state_root / "_workspace" / "global-gate-resume"
+    if (
+        run_root.is_symlink() or resume_root.is_symlink()
+        or not run_root.is_dir() or not resume_root.is_dir()
+    ):
+        return False
+
+    def has_symlink_component(base: Path, target: Path) -> bool:
+        try:
+            relative = target.relative_to(base)
+        except ValueError:
+            return True
+        cursor = base
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                return True
+        return False
+
+    run_candidates = [run_root / gate_run_id]
+    run_candidates.extend(
+        sorted(
+            path for path in run_root.glob(f"{gate_run_id}-*")
+            if path.is_dir() and not path.is_symlink()
+        )
+    )
+    matches = 0
+    for run_candidate in run_candidates:
+        if (
+            run_candidate.is_symlink() or not run_candidate.is_dir()
+            or has_symlink_component(run_root, run_candidate)
+        ):
+            continue
+        for result_path in sorted(run_candidate.glob("*/worker.result.json")):
+            if (
+                result_path.is_symlink() or not result_path.is_file()
+                or has_symlink_component(run_root, result_path)
+            ):
+                continue
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(result, dict) or result.get("status") not in {"completed", "COMPLETED"}:
+                continue
+
+            lv_id = str(result.get("lv_id") or "")
+            run_id = str(result.get("run_id") or "")
+            checkpoint = str(result.get("checkpoint_commit") or "")
+            baseline = str(result.get("baseline_head") or "")
+            tree = str(result.get("current_tree") or "")
+            if (
+                not safe_id.fullmatch(lv_id)
+                or not safe_id.fullmatch(run_id)
+                or str(result.get("project_id") or "") != project_id
+                or str(result.get("gate_id") or "") != gate_id
+                or checkpoint != current_head
+                or not _HEAD.fullmatch(baseline)
+                or not _HEAD.fullmatch(tree)
+            ):
+                continue
+            tree_probe = subprocess.run(
+                ["git", "-C", str(project), "rev-parse", f"{current_head}^{{tree}}"],
+                capture_output=True, text=True, check=False, timeout=10,
+            )
+            if tree_probe.returncode != 0 or tree_probe.stdout.strip() != tree:
+                continue
+
+            result_sha = sha256_file(result_path)
+            event_pattern = f"*/{project_id}/{gate_id}/{lv_id}/{run_id}/events/000001.json"
+            event_ones = sorted(resume_root.glob(event_pattern))
+            verified = False
+            for event_one in event_ones:
+                if (
+                    event_one.is_symlink() or not event_one.is_file()
+                    or has_symlink_component(resume_root, event_one)
+                ):
+                    continue
+                try:
+                    first = _load_json(event_one)
+                    from .resume_store import ResumeStore, RunBinding
+                    binding = RunBinding(**dict(first.get("binding") or {}))
+                    if (
+                        binding.project_id != project_id
+                        or binding.gate_id != gate_id
+                        or binding.lv_id != lv_id
+                        or binding.run_id != run_id
+                        or binding.head != expected_head
+                        or binding.branch != str(job.get("expected_branch") or "")
+                    ):
+                        continue
+                    store = ResumeStore(event_one.parents[5], binding)
+                    records = store.verify()
+                except (FullPlanJobError, TypeError, ValueError, OSError):
+                    continue
+                if any(
+                    record.get("lifecycle") == "WORKER"
+                    and record.get("evidence_sha256") == result_sha
+                    and isinstance(record.get("stage_payload"), Mapping)
+                    and str(record["stage_payload"].get("checkpoint_commit") or "") == current_head
+                    for record in records
+                ):
+                    verified = True
+                    break
+            if verified:
+                matches += 1
+    return matches == 1
+
+
+def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     project = Path(str(job["project_root"])).resolve()
     harness = Path(str(job["harness_root"])).resolve()
     state_root = job_state_root(job)
@@ -310,7 +466,8 @@ def preflight_job(job: Mapping[str, Any]) -> dict[str, Any]:
     if expected_head:
         probe = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"],
                                capture_output=True, text=True, check=False, timeout=10)
-        if probe.returncode != 0 or probe.stdout.strip() != expected_head:
+        current_head = probe.stdout.strip() if probe.returncode == 0 else ""
+        if current_head != expected_head and not _verified_resume_checkpoint_head(job, resume_context, current_head):
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "SOURCE_HEAD_MISMATCH"}
     release_digest = str(job.get("runtime_release_digest") or "")
     release_head = str(job.get("runtime_release_source_head") or "")
@@ -443,7 +600,10 @@ def run_job(path: str | Path) -> dict[str, Any]:
     if mapping_root is not None:
         os.environ[MAPPING_ROOT_ENV] = str(mapping_root)
     try:
-        result = supervisor.run(build_gate_executor(job), preflight=lambda _: preflight_job(job)).to_dict()
+        result = supervisor.run(
+            build_gate_executor(job),
+            preflight=lambda context: preflight_job(job, resume_context=context),
+        ).to_dict()
         result["operator_exit"] = assess_operator_turn_exit(
             result.get("state", {}),
             attention_events=supervisor.attention_outbox.pending(),
