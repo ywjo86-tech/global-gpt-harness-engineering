@@ -204,11 +204,33 @@ class LVPreviewTest(unittest.TestCase):
                 "approval_record_hash": "c" * 64,
                 "requirements_sha256": "a" * 64,
                 "head": "d" * 40,
-                "checkpoint_commit": "d" * 40,
+                "checkpoint_commit": "e" * 40,
                 "branch": "main",
                 "approval_evidence_path": str(evidence),
                 "owned_files": [],
             }
+            transition = {
+                "schema_version": "orchestration.canonical-active-lv-transition.v1",
+                "project_id": "PROJECT",
+                "gate_id": "GATE-R01",
+                "lv_id": "TASK-R01",
+                "run_id": "RUN-R01",
+                "approval_event_id": "APR-1",
+                "plan_sha256": "a" * 64,
+                "branch": "main",
+                "baseline_head": "d" * 40,
+                "current_head": "e" * 40,
+                "predecessor_completion_digest": "f" * 64,
+                "owned_file_scope": [],
+                "completion_conditions": ["done"],
+                "transition_type": "SYSTEM_TRANSITION",
+                "created_at": "2026-10-03T00:00:00+00:00",
+            }
+            import hashlib
+            transition["record_hash"] = hashlib.sha256(
+                json.dumps(transition, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            state["transition"] = transition
             projected = [{
                 "lv_id": "TASK-R01",
                 "owned_files": [],
@@ -218,7 +240,7 @@ class LVPreviewTest(unittest.TestCase):
                 "execution": "sequential",
             }]
             def git_result(argv, **kwargs):
-                stdout = ("d" * 40 + "\n") if argv[-1] == "HEAD" else "main\n"
+                stdout = ("e" * 40 + "\n") if argv[-1] == "HEAD" else "main\n"
                 return SimpleNamespace(stdout=stdout)
 
             with patch("runtime.orchestrator.lv_preview.subprocess.run", side_effect=git_result), \
@@ -233,6 +255,13 @@ class LVPreviewTest(unittest.TestCase):
             self.assertEqual(validator.call_args.kwargs["head"], "d" * 40)
             self.assertEqual(validator.call_args.kwargs["lv_order"], ["TASK-R01"])
             self.assertEqual(validator.call_args.kwargs["owned_files_by_lv"], {"TASK-R01": []})
+
+            invalid_transition = dict(state)
+            invalid_transition["transition"] = dict(state["transition"], schema_version="unexpected.v1")
+            with patch("runtime.orchestrator.lv_preview.subprocess.run", side_effect=git_result),                  patch("runtime.orchestrator.lv_preview.sha256_file", return_value="b" * 64),                  patch("runtime.orchestrator.lv_preview.resolve_task_lv_projection", return_value=projected),                  self.assertRaisesRegex(LVPreviewValidationError, "transition binding is malformed"):
+                _validate_sealed_project_authority_state(
+                    root, mapping, "GATE-R01", "TASK-R01", invalid_transition
+                )
 
             invalid = dict(state)
             invalid["project_id"] = "OTHER"

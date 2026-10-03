@@ -636,6 +636,96 @@ class GateOrchestratorTests(unittest.TestCase):
             result = compatibility_dry_run(self.root, "GATE-1")
         self.assertEqual(result["status"], "BLOCKED"); self.assertFalse(result["mutation_performed"])
 
+    def test_sealed_completed_lv_lineage_uses_handoff_baseline_and_worker_checkpoint(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import (
+            _sealed_completed_lv_lineage, structured_handoff,
+        )
+
+        subprocess.run(["git", "-C", str(self.root), "init", "-b", "main"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.com"], check=True)
+        (self.root / "app").mkdir(exist_ok=True)
+        model = self.root / "app" / "model.py"
+        model.write_text("BASE = 1\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "baseline"], check=True, capture_output=True)
+        baseline = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        model.write_text("BASE = 2\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "app/model.py"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "checkpoint"], check=True, capture_output=True)
+        current = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+        run_id = "run-lineage"
+        lv_id = "G1-LV3-1"
+        harness = self.root.parent / "harness-lineage"
+        auth = create_gate_authorization(self.plan, "AUTH-LINEAGE")
+        worker_dir = harness / "_workspace" / "orchestration-runs" / run_id / lv_id
+        worker_dir.mkdir(parents=True)
+        worker_payload = {
+            "baseline_head": baseline,
+            "current_head": current,
+            "checkpoint_commit": current,
+            "changed_files": ["app/model.py"],
+        }
+        worker_path = worker_dir / "worker.result.json"
+        worker_path.write_text(json.dumps(worker_payload, sort_keys=True), encoding="utf-8")
+        worker_sha = hashlib.sha256(worker_path.read_bytes()).hexdigest()
+
+        handoff = structured_handoff(
+            self.plan, auth, lv_id=lv_id, run_id=run_id, branch="main", head=baseline,
+            completed_plan_items=[lv_id], remaining_plan_items=["G1-LV3-2", "G1-LV3-3"],
+            changed_files=["app/model.py"], tests=[{"status": "PASS"}],
+            review={"status": "PASS"}, artifact_sha256=worker_sha,
+            used_assets=[], recovery={},
+        )
+        artifact_root = namespace_root(harness, self.plan.project_id, "artifact")
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        (artifact_root / f"{run_id}.handoff.json").write_text(
+            json.dumps(handoff, sort_keys=True), encoding="utf-8"
+        )
+
+        binding = RunBinding(
+            self.plan.project_id, self.plan.gate_id, lv_id, run_id,
+            "b" * 64, self.plan.canonical_plan_sha256, "main", baseline,
+            "a" * 64, {"app/model.py": "a" * 64},
+        )
+        event_dir = (
+            harness / "_workspace" / "global-gate-resume" / "TASK"
+            / self.plan.project_id / self.plan.gate_id / lv_id / run_id / "events"
+        )
+        event_dir.mkdir(parents=True)
+        (event_dir / "000001.json").write_text(
+            json.dumps({"binding": asdict(binding)}), encoding="utf-8"
+        )
+        exit_digest = "e" * 64
+        records = [
+            {"lifecycle": "PACKAGE"},
+            {"lifecycle": "PREFLIGHT"},
+            {"lifecycle": "WORKER", "evidence_sha256": worker_sha, "stage_payload": worker_payload},
+            {"lifecycle": "REVIEW", "stage_payload": {"status": "PASS"}},
+            {"lifecycle": "CHECKPOINT", "checkpoint": True, "stage_payload": {"status": "CHECKPOINTED"}},
+            {"lifecycle": "EXIT", "evidence_sha256": exit_digest, "stage_payload": {"status": "EXITED"}},
+            {"lifecycle": "WORKER", "checkpoint": True,
+             "stage_payload": {"capability_checkpoint": {"schema_version": "orchestration.capability-resume.v1"}}},
+            {"lifecycle": "HANDOFF", "evidence_sha256": handoff["handoff_sha256"],
+             "stage_payload": {"status": "SEALED"}},
+        ]
+        with patch("runtime.orchestrator.gate_orchestrator.ResumeStore.verify", return_value=records):
+            lineage = _sealed_completed_lv_lineage(
+                self.root, harness, self.plan, auth,
+                lv_id=lv_id, run_id=run_id, current_head=current,
+            )
+        self.assertEqual(lineage["current_head"], current)
+        self.assertEqual(lineage["predecessor_digest"], exit_digest)
+        self.assertEqual(lineage["handoff_sha256"], handoff["handoff_sha256"])
+
     def test_execute_gate_uses_full_controller_and_never_worker_handoff(self) -> None:
         from runtime.orchestrator.gate_orchestrator import execute_gate
         def result(status):

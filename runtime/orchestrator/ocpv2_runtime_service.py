@@ -155,6 +155,57 @@ def _runtime_release_for_root(root: Path) -> RuntimeReleaseManifest:
         raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_INVALID") from exc
 
 
+def _runtime_release_for_full_plan_request(
+    configured_root: str | Path,
+    request: Any,
+    *,
+    service_release: RuntimeReleaseManifest | None = None,
+) -> RuntimeReleaseManifest:
+    """Resolve the immutable release explicitly bound by one Full Plan request.
+
+    OCP's own repo root remains the control-runtime identity.  A Full Plan
+    request may bind a sibling immutable release, but only by exact HEAD and
+    manifest digest; no runtime-current lookup or arbitrary path is allowed.
+    """
+    root = Path(configured_root).expanduser().absolute()
+    service_release = service_release or _runtime_release_for_root(root)
+    expected_head = str(getattr(request, "expected_head", "") or "")
+    expected_digest = str(getattr(request, "runtime_release_digest", "") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    if (
+        str(service_release.source_head) == expected_head
+        and str(service_release.manifest_sha256) == expected_digest
+        and Path(str(service_release.release_path or "")).absolute() == root
+    ):
+        return service_release
+
+    releases_root = root.parent
+    target = releases_root / expected_head
+    if (
+        releases_root.is_symlink()
+        or not releases_root.is_dir()
+        or target.is_symlink()
+        or not target.is_dir()
+        or target.resolve(strict=True) != target
+        or target.parent != releases_root
+    ):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    try:
+        release = _runtime_release_for_root(target)
+    except (RuntimeServiceError, OSError, ValueError) as exc:
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH") from exc
+    if (
+        str(release.source_head) != expected_head
+        or str(release.manifest_sha256) != expected_digest
+        or Path(str(release.release_path or "")).absolute() != target
+    ):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    return release
+
+
 def finalize_remote_control_projection(
     outbox: RemoteResultOutbox, projection: Mapping[str, Any],
 ) -> None:
@@ -672,10 +723,13 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             or full_plan_activation_store is None
         ):
             raise RuntimeServiceError("FULL_PLAN_ACTIVATION_DISABLED")
+        request_release = _runtime_release_for_full_plan_request(
+            config.repo_root, envelope.payload, service_release=activation_release,
+        )
         bundle = validate_approved_full_plan_binding(
             envelope.payload,
             authority_root=full_plan_authority_root,
-            runtime_release=activation_release,
+            runtime_release=request_release,
             harness_state_root=harness_state_root,
         )
         office_store = AIOfficeStateStore(
@@ -717,10 +771,13 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             envelope.payload,
         )
 
+        request_release = _runtime_release_for_full_plan_request(
+            config.repo_root, recovery_payload, service_release=activation_release,
+        )
         bundle = validate_approved_full_plan_binding(
             recovery_payload,
             authority_root=full_plan_authority_root,
-            runtime_release=activation_release,
+            runtime_release=request_release,
             harness_state_root=harness_state_root,
         )
 

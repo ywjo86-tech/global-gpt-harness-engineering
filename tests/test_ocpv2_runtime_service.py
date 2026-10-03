@@ -14,6 +14,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     RuntimeServiceError,
     _compose_service,
     _diagnostic_provenance,
+    _runtime_release_for_full_plan_request,
     canary_scope_from_environment,
     execute_authorized_canonical,
     finalize_remote_control_projection,
@@ -454,6 +455,48 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_WORK_ACTIVATION_ENABLED=0", text)
 
+    def test_full_plan_activation_resolves_exact_sibling_runtime_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            target_root = releases / ("b" * 40)
+            service_root.mkdir(parents=True)
+            target_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            target = SimpleNamespace(
+                source_head="b" * 40, manifest_sha256="2" * 64, release_path=str(target_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=lambda path: service if Path(path) == service_root else target,
+            ) as resolver:
+                selected = _runtime_release_for_full_plan_request(service_root, request)
+            self.assertIs(selected, target)
+            self.assertEqual([Path(call.args[0]) for call in resolver.call_args_list], [service_root, target_root])
+
+    def test_full_plan_activation_rejects_sibling_runtime_digest_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            target_root = releases / ("b" * 40)
+            service_root.mkdir(parents=True)
+            target_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            wrong = SimpleNamespace(
+                source_head="b" * 40, manifest_sha256="3" * 64, release_path=str(target_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=lambda path: service if Path(path) == service_root else wrong,
+            ), self.assertRaisesRegex(RuntimeServiceError, "FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH"):
+                _runtime_release_for_full_plan_request(service_root, request)
+
     def test_full_plan_activation_flag_is_exact_one_and_independent(self):
         self.assertFalse(full_plan_activation_enabled_from_environment({}))
         self.assertFalse(full_plan_activation_enabled_from_environment({"OCP_FULL_PLAN_ACTIVATION_ENABLED": "0"}))
@@ -502,10 +545,10 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             with patch("runtime.orchestrator.ocpv2_runtime_service.GitHubRESTClient",return_value=Mock()), \
                  patch("runtime.orchestrator.ocpv2_runtime_service.GitHubControlAdapter",return_value=Mock()), \
                  patch("runtime.orchestrator.ocpv2_runtime_service.recover_pending_canonical_results"), \
-                 patch("runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",return_value=Mock()) as release, \
+                 patch("runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",return_value=SimpleNamespace(source_head="b"*40, manifest_sha256="c"*64, release_path=str(repo))) as release, \
                  patch("runtime.orchestrator.ocpv2_runtime_service.validate_approved_full_plan_binding",side_effect=RuntimeError("stop")) as validate:
                 service=_compose_service(cfg)
-                envelope=SimpleNamespace(payload=SimpleNamespace(mapping_root="caller-forbidden"),message_id="MSG-FP")
+                envelope=SimpleNamespace(payload=SimpleNamespace(mapping_root="caller-forbidden", expected_head="b"*40, runtime_release_digest="c"*64),message_id="MSG-FP")
                 with self.assertRaisesRegex(RuntimeError,"stop"):
                     service.activate_full_plan_authorized(envelope)
             self.assertEqual(validate.call_args.kwargs["authority_root"],authority)

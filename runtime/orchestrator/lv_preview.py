@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import os
@@ -195,13 +196,14 @@ def _validate_sealed_project_authority_state(
     head = canonical_state.get("head")
     branch = canonical_state.get("branch")
     checkpoint = canonical_state.get("checkpoint_commit")
+    transition = canonical_state.get("transition")
     if not isinstance(approval_id, str) or not approval_id:
         raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
     if not isinstance(record_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", record_hash):
         raise LVPreviewValidationError("sealed project authority state is incomplete or malformed")
     if not isinstance(requirements_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", requirements_sha256):
         raise LVPreviewValidationError("sealed project authority requirements binding is malformed")
-    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head) or checkpoint != head:
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
         raise LVPreviewValidationError("sealed project authority HEAD binding is malformed")
     if not isinstance(branch, str) or not branch:
         raise LVPreviewValidationError("sealed project authority branch binding is malformed")
@@ -214,8 +216,47 @@ def _validate_sealed_project_authority_state(
         ["git", "-C", str(root), "branch", "--show-current"],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
-    if head != current_head or branch != current_branch:
+    if branch != current_branch:
         raise LVPreviewValidationError("sealed project authority source binding drift")
+
+    if transition is None:
+        if checkpoint != head or head != current_head:
+            raise LVPreviewValidationError("sealed project authority source binding drift")
+    else:
+        required_transition = {
+            "schema_version", "project_id", "gate_id", "lv_id", "run_id",
+            "approval_event_id", "plan_sha256", "branch", "baseline_head",
+            "current_head", "predecessor_completion_digest", "owned_file_scope",
+            "completion_conditions", "transition_type", "created_at", "record_hash",
+        }
+        if not isinstance(transition, dict) or set(transition) != required_transition:
+            raise LVPreviewValidationError("sealed project authority transition binding is malformed")
+        unsigned = {key: value for key, value in transition.items() if key != "record_hash"}
+        digest = hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        if (
+            transition.get("record_hash") != digest
+            or transition.get("schema_version") != "orchestration.canonical-active-lv-transition.v1"
+            or transition.get("transition_type") != "SYSTEM_TRANSITION"
+        ):
+            raise LVPreviewValidationError("sealed project authority transition binding is malformed")
+        if (
+            transition.get("project_id") != mapping.project_id
+            or transition.get("gate_id") != gate_id
+            or transition.get("lv_id") != lv_id
+            or transition.get("approval_event_id") != approval_id
+            or transition.get("plan_sha256") != mapping.canonical_sha256
+            or transition.get("branch") != branch
+            or transition.get("baseline_head") != head
+            or transition.get("current_head") != current_head
+            or checkpoint != current_head
+            or not isinstance(transition.get("run_id"), str)
+            or not transition.get("run_id")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(transition.get("predecessor_completion_digest") or ""))
+            or transition.get("owned_file_scope") != canonical_state.get("owned_files")
+        ):
+            raise LVPreviewValidationError("sealed project authority transition binding drift")
 
     evidence_value = canonical_state.get("approval_evidence_path")
     if not isinstance(evidence_value, (str, os.PathLike)):
@@ -249,6 +290,14 @@ def _validate_sealed_project_authority_state(
         )
         lv_order = [item["lv_id"] for item in projected]
         owned_files_by_lv = {item["lv_id"]: list(item["owned_files"]) for item in projected}
+        if isinstance(transition, dict):
+            projected_item = next((item for item in projected if item.get("lv_id") == lv_id), None)
+            if (
+                not isinstance(projected_item, dict)
+                or transition.get("owned_file_scope") != list(projected_item.get("owned_files", []))
+                or transition.get("completion_conditions") != list(projected_item.get("completion_criteria", []))
+            ):
+                raise LVPreviewValidationError("sealed project authority transition scope drift")
         envelope = load_approval_evidence(evidence_path)
         payload = validate_approval_evidence(
             envelope,

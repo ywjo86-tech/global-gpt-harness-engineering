@@ -63,13 +63,13 @@ class HarnessLifecycleV2Gate15DefaultDisableTests(unittest.TestCase):
                  patch.object(runtime_service, "GitHubControlAdapter", return_value=Mock()), \
                  patch.object(runtime_service, "recover_pending_canonical_results", return_value=None), \
                  patch.object(runtime_service, "resolve_harness_state_root", return_value=harness_state), \
-                 patch.object(runtime_service, "_runtime_release_for_root", return_value=Mock()), \
+                 patch.object(runtime_service, "_runtime_release_for_root", return_value=SimpleNamespace(source_head="b"*40, manifest_sha256="c"*64, release_path=str(repo))), \
                  patch.object(runtime_service, "validate_approved_full_plan_binding", return_value=bundle), \
                  patch.object(runtime_service, "AIOfficeStateStore", return_value=Mock()), \
                  patch.object(runtime_service, "coordinate_approved_full_plan_activation", return_value=Mock()), \
                  patch.object(runtime_service, "activate_approved_full_plan", activation):
                 service = runtime_service._compose_service(config)
-                envelope = SimpleNamespace(payload=Mock(), message_id="MSG-FP-ROLLBACK")
+                envelope = SimpleNamespace(payload=SimpleNamespace(expected_head="b"*40, runtime_release_digest="c"*64), message_id="MSG-FP-ROLLBACK")
                 with self.assertRaisesRegex(RuntimeError, "STOP_AFTER_ACTIVATION_CALL"):
                     service.activate_full_plan_authorized(envelope)
 

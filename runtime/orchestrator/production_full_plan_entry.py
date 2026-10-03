@@ -606,18 +606,29 @@ def _verified_completed_gate_lineage_head(
                 records = ResumeStore(event_one.parents[5], binding).verify()
             except (FullPlanJobError, TypeError, ValueError, OSError):
                 continue
-            lifecycles = [str(record.get("lifecycle") or "") for record in records]
+            semantic_records = [
+                record for record in records
+                if not (
+                    record.get("lifecycle") == "WORKER"
+                    and not (
+                        isinstance(record.get("stage_payload"), Mapping)
+                        and isinstance(record["stage_payload"].get("checkpoint_commit"), str)
+                        and record["stage_payload"].get("checkpoint_commit")
+                    )
+                )
+            ]
+            lifecycles = [str(record.get("lifecycle") or "") for record in semantic_records]
             if (
-                len(records) < 7
+                len(semantic_records) < 7
                 or lifecycles[:3] != ["PACKAGE", "PREFLIGHT", "WORKER"]
                 or lifecycles[-3:] != ["CHECKPOINT", "EXIT", "HANDOFF"]
                 or any(stage not in {"REVIEW", "REMEDIATION"} for stage in lifecycles[3:-3])
                 or "REVIEW" not in lifecycles[3:-3]
             ):
                 continue
-            worker_record = records[2]
-            checkpoint_record, exit_record, handoff_record = records[-3:]
-            review_records = [record for record in records[3:-3] if record.get("lifecycle") == "REVIEW"]
+            worker_record = semantic_records[2]
+            checkpoint_record, exit_record, handoff_record = semantic_records[-3:]
+            review_records = [record for record in semantic_records[3:-3] if record.get("lifecycle") == "REVIEW"]
             if (
                 worker_record.get("evidence_sha256") != result_sha
                 or not isinstance(worker_record.get("stage_payload"), Mapping)
@@ -638,6 +649,90 @@ def _verified_completed_gate_lineage_head(
         if verified:
             matches += 1
     return matches == 1
+
+
+def _source_lineage_for_context(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> dict[str, str] | None:
+    """Return one verified source-lineage token for the active Gate."""
+    if _verified_resume_checkpoint_head(job, resume_context, current_head):
+        queue_item = dict((resume_context or {}).get("queue_item") or {})
+        gate_id = str(queue_item.get("gate_id") or "")
+        gate_run_id = str(queue_item.get("gate_run_id") or "")
+        run_root = job_state_root(job) / "_workspace" / "orchestration-runs"
+        candidates: list[dict[str, str]] = []
+        run_candidates = [run_root / gate_run_id]
+        run_candidates.extend(sorted(path for path in run_root.glob(f"{gate_run_id}-*") if path.is_dir() and not path.is_symlink()))
+        for run_candidate in run_candidates:
+            for result_path in sorted(run_candidate.glob("*/worker.result.json")):
+                if result_path.is_symlink() or not result_path.is_file():
+                    continue
+                try:
+                    result = _load_json(result_path)
+                except FullPlanJobError:
+                    continue
+                if (
+                    result.get("status") not in {"completed", "COMPLETED"}
+                    or result.get("project_id") != job.get("project_id")
+                    or result.get("gate_id") != gate_id
+                    or result.get("checkpoint_commit") != current_head
+                ):
+                    continue
+                candidates.append({
+                    "lineage_kind": "SEALED_WORKER_CHECKPOINT",
+                    "current_head": current_head,
+                    "predecessor_digest": sha256_file(result_path),
+                    "predecessor_lv": str(result.get("lv_id") or ""),
+                    "predecessor_run_id": str(result.get("run_id") or ""),
+                })
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    if _verified_completed_gate_lineage_head(job, resume_context, current_head):
+        state = dict((resume_context or {}).get("state") or {})
+        completed = list(state.get("completed_gates") or [])
+        if not completed:
+            return None
+        previous_gate = str(completed[-1])
+        full_run_id = str(job.get("run_id") or "")
+        artifact_root = (
+            job_state_root(job) / "_workspace" / "global-gate"
+            / str(job.get("project_id") or "") / "artifact"
+        )
+        prefix = f"{full_run_id}--{previous_gate.lower()}"
+        candidates: list[dict[str, str]] = []
+        for handoff_path in sorted(artifact_root.glob(f"{prefix}*.handoff.json")):
+            if handoff_path.is_symlink() or not handoff_path.is_file():
+                continue
+            try:
+                handoff = _load_json(handoff_path)
+            except FullPlanJobError:
+                continue
+            unsigned = {key: value for key, value in handoff.items() if key != "handoff_sha256"}
+            handoff_sha = hashlib.sha256(
+                json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            if (
+                handoff.get("project") != job.get("project_id")
+                or handoff.get("gate") != previous_gate
+                or handoff.get("head") != current_head
+                or handoff.get("handoff_sha256") != handoff_sha
+                or handoff.get("hard_stop") is not True
+            ):
+                continue
+            candidates.append({
+                "lineage_kind": "SEALED_PREVIOUS_GATE",
+                "current_head": current_head,
+                "predecessor_digest": handoff_sha,
+                "predecessor_lv": str(handoff.get("lv") or ""),
+                "predecessor_run_id": str(handoff.get("run_id") or ""),
+            })
+        if len(candidates) == 1:
+            return candidates[0]
+    return None
 
 
 def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -758,6 +853,33 @@ def build_gate_executor(job: Mapping[str, Any]):
     def execute(gate_id: str, gate_run_id: str, resume: bool) -> Mapping[str, Any]:
         from .gate_orchestrator import FULL_PLAN, execute_gate
         spec = specs[gate_id]
+        source_lineage = None
+        head_probe = subprocess.run(
+            ["git", "-C", project_root, "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        current_head = head_probe.stdout.strip() if head_probe.returncode == 0 else ""
+        if current_head and current_head != str(spec["head"]):
+            gates = [str(item["gate_id"]) for item in job["gates"]]
+            supervisor = DurableFullPlanSupervisor(
+                job_state_root(job), project_id=job["project_id"], run_id=job["run_id"],
+                gates=gates, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
+                **dict(job.get("policy") or {}),
+            )
+            state, _ = supervisor.load()
+            queue_items = [
+                item for item in state.get("queue", [])
+                if isinstance(item, Mapping) and item.get("gate_id") == gate_id
+            ]
+            if len(queue_items) != 1:
+                raise FullPlanJobError("active Gate queue lineage is missing or ambiguous")
+            source_lineage = _source_lineage_for_context(
+                job,
+                {"state": state, "queue_item": dict(queue_items[0])},
+                current_head,
+            )
+            if source_lineage is None:
+                raise FullPlanJobError("sealed Full Plan source lineage is required")
         requirement_evidence = None
         evidence_path = spec.get("requirement_evidence_path")
         if evidence_path:
@@ -799,6 +921,7 @@ def build_gate_executor(job: Mapping[str, Any]):
             adopted_prefix_evidence=adopted_prefix_evidence,
             manual_action_packages_by_lv=manual_action_packages_by_lv,
             manual_action_authorizations_by_lv=manual_action_authorizations_by_lv,
+            source_lineage=source_lineage,
         )
     return execute
 

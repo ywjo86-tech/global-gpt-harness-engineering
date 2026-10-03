@@ -2232,6 +2232,155 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                                   checkpoint, exit_stage, handoff)
 
 
+
+def _sealed_completed_lv_lineage(
+    project_root: str | Path,
+    harness_root: str | Path,
+    plan: GatePlan,
+    auth: GateAuthorization,
+    *,
+    lv_id: str,
+    run_id: str,
+    current_head: str,
+) -> dict[str, str]:
+    """Verify one completed LV's durable HANDOFF/ResumeStore lineage at current HEAD."""
+    root = Path(project_root).resolve()
+    harness = Path(harness_root).resolve()
+    artifact_root = namespace_root(harness, plan.project_id, "artifact")
+    handoff_path = artifact_root / f"{run_id}.handoff.json"
+    if handoff_path.is_symlink() or not handoff_path.is_file():
+        raise GateOrchestrationError("completed LV HANDOFF evidence is missing or unsafe")
+    try:
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GateOrchestrationError("completed LV HANDOFF evidence is malformed") from exc
+    validate_handoff(handoff, plan, auth)
+    handoff_sha = str(handoff.get("handoff_sha256") or "")
+    if (
+        handoff.get("project") != plan.project_id
+        or handoff.get("gate") != plan.gate_id
+        or handoff.get("lv") != lv_id
+        or handoff.get("run_id") != run_id
+        or handoff.get("hard_stop") is not True
+        or not re.fullmatch(r"[0-9a-f]{64}", handoff_sha)
+    ):
+        raise GateOrchestrationError("completed LV HANDOFF source lineage mismatch")
+
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    resume_root = harness / "_workspace" / "global-gate-resume"
+    event_pattern = f"*/{plan.project_id}/{plan.gate_id}/{lv_id}/{run_id}/events/000001.json"
+    matches: list[dict[str, str]] = []
+    for event_one in sorted(resume_root.glob(event_pattern)):
+        if event_one.is_symlink() or not event_one.is_file():
+            continue
+        try:
+            first = json.loads(event_one.read_text(encoding="utf-8"))
+            binding = RunBinding(**dict(first.get("binding") or {}))
+            if (
+                binding.project_id != plan.project_id
+                or binding.gate_id != plan.gate_id
+                or binding.lv_id != lv_id
+                or binding.run_id != run_id
+                or binding.plan_sha256 != plan.canonical_plan_sha256
+                or binding.branch != branch
+            ):
+                continue
+            if (
+                handoff.get("branch") != binding.branch
+                or handoff.get("head") != binding.head
+                or handoff.get("authorization", {}).get("id") != auth.authorization_id
+                or subprocess.run(
+                    ["git", "-C", str(root), "merge-base", "--is-ancestor", binding.head, current_head],
+                    capture_output=True, text=True, check=False,
+                ).returncode != 0
+            ):
+                continue
+            commit_count = subprocess.run(
+                ["git", "-C", str(root), "rev-list", "--count", f"{binding.head}..{current_head}"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if commit_count != "1":
+                continue
+            records = ResumeStore(event_one.parents[5], binding).verify()
+        except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError, ResumeStoreError):
+            continue
+
+        def auxiliary(record: Mapping[str, Any]) -> bool:
+            if record.get("lifecycle") != "WORKER":
+                return False
+            payload = record.get("stage_payload")
+            return not (
+                isinstance(payload, Mapping)
+                and isinstance(payload.get("checkpoint_commit"), str)
+                and payload.get("checkpoint_commit")
+            )
+
+        semantic = [record for record in records if not auxiliary(record)]
+        lifecycles = [str(record.get("lifecycle") or "") for record in semantic]
+        if (
+            len(semantic) < 7
+            or lifecycles[:3] != ["PACKAGE", "PREFLIGHT", "WORKER"]
+            or lifecycles[-3:] != ["CHECKPOINT", "EXIT", "HANDOFF"]
+            or any(stage not in {"REVIEW", "REMEDIATION"} for stage in lifecycles[3:-3])
+            or "REVIEW" not in lifecycles[3:-3]
+        ):
+            continue
+        worker = semantic[2]
+        reviews = [record for record in semantic[3:-3] if record.get("lifecycle") == "REVIEW"]
+        checkpoint, exit_event, handoff_event = semantic[-3:]
+        worker_payload = worker.get("stage_payload")
+        exit_payload = exit_event.get("stage_payload")
+        handoff_payload = handoff_event.get("stage_payload")
+        changed = worker_payload.get("changed_files") if isinstance(worker_payload, Mapping) else None
+        committed = subprocess.run(
+            ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", current_head],
+            capture_output=True, text=True, check=True,
+        ).stdout.splitlines()
+        if (
+            not isinstance(worker_payload, Mapping)
+            or worker_payload.get("baseline_head") != binding.head
+            or worker_payload.get("current_head") != current_head
+            or worker_payload.get("checkpoint_commit") != current_head
+            or not isinstance(changed, list)
+            or not changed
+            or sorted(changed) != sorted(committed)
+            or handoff.get("changed_files") != changed
+            or not reviews
+            or not isinstance(reviews[-1].get("stage_payload"), Mapping)
+            or reviews[-1]["stage_payload"].get("status") != "PASS"
+            or checkpoint.get("checkpoint") is not True
+            or not isinstance(exit_payload, Mapping)
+            or exit_payload.get("status") != "EXITED"
+            or not isinstance(handoff_payload, Mapping)
+            or handoff_payload.get("status") != "SEALED"
+            or handoff_event.get("evidence_sha256") != handoff_sha
+        ):
+            continue
+        worker_path = harness / "_workspace" / "orchestration-runs" / run_id / lv_id / "worker.result.json"
+        if worker_path.is_symlink() or not worker_path.is_file():
+            continue
+        worker_sha = _file_sha(worker_path)
+        if worker.get("evidence_sha256") != worker_sha or handoff.get("artifact_sha256") != worker_sha:
+            continue
+        exit_digest = str(exit_event.get("evidence_sha256") or "")
+        if not re.fullmatch(r"[0-9a-f]{64}", exit_digest):
+            continue
+        matches.append({
+            "lineage_kind": "SEALED_LV_HANDOFF",
+            "current_head": current_head,
+            "predecessor_digest": exit_digest,
+            "predecessor_lv": lv_id,
+            "predecessor_run_id": run_id,
+            "handoff_sha256": handoff_sha,
+        })
+    if len(matches) != 1:
+        raise GateOrchestrationError("completed LV source lineage is missing or ambiguous")
+    return matches[0]
+
+
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
@@ -2250,7 +2399,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  manual_action_packages_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
                  manual_action_authorizations_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
                  codex_auth_readiness: Any | None = None,
-                 codex_readiness_recheck_probes: Any | None = None) -> dict[str, Any]:
+                 codex_readiness_recheck_probes: Any | None = None,
+                 source_lineage: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
@@ -2322,6 +2472,44 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             completed_evidence[item.lv_id] = digest
     state = {"run_id": run_id, "project_id": plan.project_id, "gate_id": gate_id, "current_stage": "PLAN", "completed_lvs": completed,
              "lv_id": completed[-1] if completed else None}
+    lineage: dict[str, str] | None = None
+    if source_lineage is not None:
+        candidate = dict(source_lineage)
+        candidate_head = str(candidate.get("current_head") or "")
+        candidate_digest = str(candidate.get("predecessor_digest") or "")
+        observed_head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if (
+            candidate_head != observed_head
+            or not re.fullmatch(r"[0-9a-f]{64}", candidate_digest)
+            or subprocess.run(
+                ["git", "-C", str(root), "merge-base", "--is-ancestor", head, observed_head],
+                capture_output=True, text=True, check=False,
+            ).returncode != 0
+        ):
+            raise GateOrchestrationError("Full Plan source lineage binding mismatch")
+        lineage = {
+            "lineage_kind": str(candidate.get("lineage_kind") or "SEALED_SOURCE_LINEAGE"),
+            "current_head": candidate_head,
+            "predecessor_digest": candidate_digest,
+            "predecessor_lv": str(candidate.get("predecessor_lv") or ""),
+            "predecessor_run_id": str(candidate.get("predecessor_run_id") or ""),
+        }
+    if sealed_project_authority and completed and resume:
+        predecessor_lv = completed[-1]
+        predecessor_index = [item.lv_id for item in plan.lvs].index(predecessor_lv)
+        predecessor_run = run_id if predecessor_index == 0 else f"{run_id}-{predecessor_lv.lower()}"
+        observed_head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if observed_head != head:
+            lineage = _sealed_completed_lv_lineage(
+                root, harness_root, plan, auth,
+                lv_id=predecessor_lv, run_id=predecessor_run, current_head=observed_head,
+            )
     lifecycles: list[dict[str, Any]] = []
     while True:
         transition = derive_transition(plan, auth, state.get("lv_id"), state["completed_lvs"])
@@ -2567,23 +2755,77 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
         # LVs in the same invocation are fresh work and must not inherit a
         # synthetic resume requirement.
         lv_resume = bool(resume and (lv_package_root / "package.manifest.json").is_file())
+        selected_lv = plan.lvs[lv_index]
+        observed_head = head
+        transition_record = None
+        if sealed_project_authority:
+            observed_head = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            observed_branch = subprocess.run(
+                ["git", "-C", str(root), "branch", "--show-current"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if observed_branch != branch:
+                raise GateOrchestrationError("Full Plan execution branch drift")
+            if observed_head != head:
+                if (
+                    not isinstance(lineage, Mapping)
+                    or lineage.get("current_head") != observed_head
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(lineage.get("predecessor_digest") or ""))
+                ):
+                    raise GateOrchestrationError("sealed project source lineage is required")
+                from .active_transition import activate_canonical_lv_transition
+                transition_record = activate_canonical_lv_transition(
+                    harness_root,
+                    project_id=plan.project_id,
+                    gate_id=gate_id,
+                    lv_id=lv_id,
+                    run_id=lv_run_id,
+                    approval_event_id=str(getattr(auth, "authorization_id", "")),
+                    plan_sha256=plan.canonical_plan_sha256,
+                    branch=branch,
+                    baseline_head=head,
+                    current_head=observed_head,
+                    predecessor_digest=str(lineage["predecessor_digest"]),
+                    owned_files=list(auth.owned_files_by_lv.get(lv_id, [])),
+                    completion_conditions=list(selected_lv.completion_criteria),
+                )
         context = {"project_id": plan.project_id, "gate_id": gate_id, "lv_id": lv_id, "run_id": lv_run_id,
                    "plan_sha256": plan.canonical_plan_sha256, "requirements_sha256": requirements_sha256,
-                   "branch": branch, "head": head, "resume": lv_resume,
+                   "branch": branch, "head": observed_head, "resume": lv_resume,
                    "owned_files": list(auth.owned_files_by_lv.get(lv_id, [])),
                    "owned_file_scope": {key: list(value) for key, value in auth.owned_files_by_lv.items()},
                    "canonical_lv_scope": list(auth.approved_lvs),
                    "completed_plan_items": list(state["completed_lvs"]),
                    "remaining_plan_items": [item.lv_id for item in plan.lvs[lv_index + 1:]]}
+        if sealed_project_authority:
+            context.update({
+                "baseline_head": head,
+                "current_head": observed_head,
+                "predecessor_completion_digest": (
+                    str(lineage.get("predecessor_digest")) if isinstance(lineage, Mapping) else ""
+                ),
+                "predecessor_lv": (
+                    str(lineage.get("predecessor_lv") or "") if isinstance(lineage, Mapping) else ""
+                ),
+                "approval_freshness_stage": "POST_HANDOFF" if transition_record is not None else "PRE_RUN",
+                "completion_conditions": list(selected_lv.completion_criteria),
+            })
         task_mapping = load_project_mapping(root)
         if task_mapping is not None and getattr(task_mapping, "task_lv_projection_path", None) is not None:
             if sealed_project_authority:
-                _, context["canonical_state_override"] = _sealed_project_gate_authority(
+                _, sealed_state = _sealed_project_gate_authority(
                     root, plan, lv_id,
                     approval_evidence=approval_evidence, requirements_sha256=requirements_sha256,
                     branch=branch, head=head, full_plan_opt_in=full_plan_opt_in,
                     project_final_validation=project_final_validation,
                 )
+                if transition_record is not None:
+                    sealed_state["checkpoint_commit"] = observed_head
+                    sealed_state["transition"] = transition_record
+                context["canonical_state_override"] = sealed_state
             else:
                 context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
         if adapters is None:
@@ -2596,7 +2838,6 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             )
             from .production_canonical_authority import build_production_canonical_worker_authority_provider
 
-            selected_lv = plan.lvs[lv_index]
             resolved_codex_readiness, resolved_codex_probes = _resolve_lv_codex_readiness(
                 project_id=plan.project_id, gate_id=gate_id, lv_id=lv_id, run_id=lv_run_id,
                 existing=codex_auth_readiness, probes=codex_readiness_recheck_probes,
@@ -2907,4 +3148,18 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             }
             if getattr(capability_result, "existing_decision", None) is not None:
                 lifecycle["capability"]["existing_decision"] = asdict(capability_result.existing_decision)
-        lifecycles.append(lifecycle); state["completed_lvs"].append(lv_id); state["lv_id"] = lv_id
+        lifecycles.append(lifecycle)
+        state["completed_lvs"].append(lv_id)
+        state["lv_id"] = lv_id
+        if sealed_project_authority:
+            completed_head = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if completed_head != head:
+                lineage = _sealed_completed_lv_lineage(
+                    root, harness_root, plan, auth,
+                    lv_id=lv_id, run_id=lv_run_id, current_head=completed_head,
+                )
+            else:
+                lineage = None
