@@ -158,6 +158,29 @@ def _node_runner(root: Path) -> tuple[str, tuple[str, ...]]:
     raise ValidationToolchainError(f"unsupported backend package manager: {name}")
 
 
+_FINAL_EVIDENCE_INTEGRITY_PATHS = (
+    "tests/evidence/test_manifest.py",
+    "evidence/implementation/MANIFEST_SHA256.json",
+)
+
+
+def should_defer_evidence_manifest_integrity(
+    root: Path, owned_files: Sequence[str], completion_criteria: Sequence[str],
+) -> bool:
+    criteria_text = " ".join(str(item) for item in completion_criteria).lower()
+    if "full" in criteria_text and "regression" in criteria_text:
+        return False
+    if any(
+        path == scope or (scope.endswith("/") and path.startswith(scope))
+        for path in _FINAL_EVIDENCE_INTEGRITY_PATHS for scope in owned_files
+    ):
+        return False
+    return all(
+        (root / path).is_file() and not (root / path).is_symlink()
+        for path in _FINAL_EVIDENCE_INTEGRITY_PATHS
+    )
+
+
 def resolve_validation_commands(
     root: Path,
     owned_files: Sequence[str],
@@ -165,6 +188,7 @@ def resolve_validation_commands(
     allow_deferred: bool = False,
     python_executable: str | Path | None = None,
     validation_profile: str | None = None,
+    defer_evidence_manifest_integrity: bool = False,
 ) -> ValidationCommandSet:
     documentation_only = bool(owned_files) and all(
         isinstance(path, str) and (path == "docs/" or path.startswith("docs/"))

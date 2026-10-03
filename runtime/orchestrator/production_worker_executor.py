@@ -33,7 +33,8 @@ from .provider_router import (
 from .schemas import WorkerRequest
 from .tool_authorization import build_contract_candidate
 from .validation_toolchain import (
-    ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
+    ValidationToolchainError, resolve_validation_commands, run_command_group,
+    should_defer_evidence_manifest_integrity, validate_profile_resolution,
 )
 from .provider_action_execution import (
     PROVIDER_ACTION_BACKEND, ProviderActionExecutionError, execute_provider_action_proposal,
@@ -3071,6 +3072,9 @@ def execute_production_worker(request: WorkerRequest, *,
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
     pre_result_partial_recovery = request.extra_context.get("pre_result_partial_recovery") is True
+    defer_evidence_manifest_integrity = should_defer_evidence_manifest_integrity(
+        root, owned, request.task.validation_criteria,
+    )
     if pre_result_partial_recovery:
         if int(request.extra_context.get("attempt", 0)) <= 1 or not pending_paths:
             raise ProductionWorkerError("pre-result partial recovery binding is invalid")
@@ -3085,6 +3089,7 @@ def execute_production_worker(request: WorkerRequest, *,
             resolve_validation_commands(
                 root, owned, allow_deferred=False,
                 python_executable=_sealed_external_validation_python(request),
+                defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
             )
         except (ValidationToolchainError, ProductionWorkerError):
             materialized_partial_recovery = False
@@ -3459,6 +3464,7 @@ def execute_production_worker(request: WorkerRequest, *,
         validation_plan = resolve_validation_commands(
             root, owned, allow_deferred=False,
             python_executable=_sealed_external_validation_python(request),
+            defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
         )
         expected_profiles = sealed_toolchain.get("profile_ids", []) if isinstance(sealed_toolchain, Mapping) else []
         if expected_profiles:
@@ -3565,6 +3571,7 @@ def execute_production_worker(request: WorkerRequest, *,
         try:
             validation_plan = resolve_validation_commands(
                 root, owned, allow_deferred=False, python_executable=_sealed_external_validation_python(request),
+                defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
             )
             if expected_profiles:
                 validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
