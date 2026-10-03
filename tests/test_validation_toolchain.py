@@ -8,6 +8,7 @@ from unittest.mock import patch
 from runtime.orchestrator.validation_toolchain import (
     ValidationToolchainError,
     resolve_validation_commands,
+    should_defer_evidence_manifest_integrity,
     validate_profile_resolution,
 )
 
@@ -19,6 +20,30 @@ class ValidationToolchainTests(unittest.TestCase):
             plan=resolve_validation_commands(root,['app/a.py','tests/test_a.py'])
             self.assertEqual(plan.profile_ids,('PYTHON_PYTEST',))
             self.assertEqual(plan.focused[0][:4],('.venv/bin/python','-m','pytest','-q'))
+
+    def test_intermediate_python_task_can_defer_final_evidence_manifest_integrity_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'.venv/bin').mkdir(parents=True); (root/'.venv/bin/python').write_text('')
+            (root/'tests/evidence').mkdir(parents=True); (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): pass\n')
+            (root/'evidence/implementation').mkdir(parents=True); (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            criteria=["Intermediate task validation.", "Validation: TEST-003"]
+            self.assertTrue(should_defer_evidence_manifest_integrity(
+                root,['app/a.py','tests/test_a.py'],criteria,
+            ))
+            self.assertFalse(should_defer_evidence_manifest_integrity(
+                root,['app/a.py','tests/test_a.py'],["M6 compatibility + full regression"],
+            ))
+            plan=resolve_validation_commands(
+                root,['app/a.py','tests/test_a.py'],
+                defer_evidence_manifest_integrity=should_defer_evidence_manifest_integrity(
+                    root,['app/a.py','tests/test_a.py'],criteria,
+                ),
+            )
+            self.assertEqual(
+                plan.full[0],
+                ('.venv/bin/python','-m','pytest','-q','--ignore=tests/evidence/test_manifest.py'),
+            )
+            self.assertEqual(plan.focused[0],('.venv/bin/python','-m','pytest','-q','tests/test_a.py'))
 
     def test_explicit_pytest_profile_is_not_changed_by_active_external_venv(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
@@ -167,6 +192,39 @@ class ValidationToolchainTests(unittest.TestCase):
                 plan=resolve_validation_commands(Path(d),['android-app/','backend/'],allow_deferred=True)
             self.assertTrue(plan.deferred)
             self.assertEqual(plan.profile_ids,('ANDROID_GRADLE_BOOTSTRAP','NODE_PACKAGE_MANIFEST'))
+
+    def test_python_project_evidence_scope_uses_full_project_validation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'tests/evidence').mkdir(parents=True)
+            (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): pass\n')
+            (root/'evidence/implementation').mkdir(parents=True)
+            (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            (root/'src').mkdir()
+            (root/'pyproject.toml').write_text('[project]\nname="fixture"\n')
+            plan=resolve_validation_commands(
+                root,['evidence/v0_4_0/readiness.json'],
+                defer_evidence_manifest_integrity=True,
+            )
+            self.assertEqual(plan.profile_ids,('PYTHON_PROJECT_EVIDENCE',))
+            self.assertEqual(
+                plan.focused[0],
+                ('.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider','--ignore=tests/evidence/test_manifest.py'),
+            )
+            self.assertEqual(
+                plan.full[0],
+                ('.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider','--ignore=tests/evidence/test_manifest.py'),
+            )
+            self.assertEqual(plan.compile[0],('.venv/bin/python','-m','compileall','-q','src'))
+            self.assertFalse(plan.deferred)
+
+    def test_evidence_scope_without_python_project_markers_remains_fail_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            with self.assertRaisesRegex(ValidationToolchainError,'no project-native validation toolchain'):
+                resolve_validation_commands(root,['evidence/readiness.json'])
 
     def test_cross_cutting_scope_uses_existing_project_manifests(self):
         with tempfile.TemporaryDirectory() as d:
