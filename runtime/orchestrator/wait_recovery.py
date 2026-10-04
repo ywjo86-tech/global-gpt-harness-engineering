@@ -171,6 +171,42 @@ def record_provider_wait_recovery_evidence(
     return evidence
 
 
+
+def retire_provider_wait_pointers_for_run(
+    state_root: str | Path, *, project_id: str, run_id: str, terminal_state: str,
+) -> tuple[str, ...]:
+    """Retire only active pointers whose Gate-run identity belongs to a terminal run."""
+    project = _safe_id(project_id, "project ID")
+    run = _safe_id(run_id, "run ID")
+    if terminal_state not in {"COMPLETED", "BLOCKED", "CANCELLED", "FAILED", "SUPERSEDED", "RETIRED"}:
+        raise WaitRecoveryError("provider wait retirement requires terminal state")
+    root = Path(state_root).resolve() / "_workspace" / "provider-wait" / project
+    if not root.is_dir() or root.is_symlink():
+        return ()
+    retired: list[str] = []
+    for pointer in sorted(root.glob("*/active.json")):
+        if pointer.is_symlink() or not pointer.is_file():
+            continue
+        try:
+            value = json.loads(pointer.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        gate_run_id = str(value.get("gate_run_id") or "")
+        if not gate_run_id.startswith(run + "--"):
+            continue
+        unsigned = {
+            "schema_version": "orchestration.provider-wait-retirement.v1",
+            "project_id": project, "run_id": run, "gate_run_id": gate_run_id,
+            "terminal_state": terminal_state,
+            "retired_pointer_sha256": str(value.get("pointer_sha256") or ""),
+            "retired_at": _now(), "control_authority": "NONE",
+        }
+        record = {**unsigned, "retirement_sha256": _digest(unsigned)}
+        atomic_write_json(pointer.parent / "retired.json", record)
+        pointer.unlink()
+        retired.append(str(pointer))
+    return tuple(retired)
+
 def _validate_evidence(evidence: Mapping[str, Any]) -> dict[str, Any]:
     value = dict(evidence)
     if value.get("schema_version") != PROVIDER_WAIT_EVIDENCE_SCHEMA:
