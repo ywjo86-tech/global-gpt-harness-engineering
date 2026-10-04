@@ -7,8 +7,8 @@ import subprocess
 from typing import Callable, Sequence
 
 SERVICE_PROPERTIES = ("ActiveState", "SubState", "Result", "ExecMainStatus")
-_PROPERTY_ARG = "--property=" + ",".join(SERVICE_PROPERTIES)
-_SAFE_UNIT = re.compile(r"[A-Za-z0-9_.@:-]+\.service\Z")
+TIMER_PROPERTIES = ("ActiveState", "SubState", "Result", "LastTriggerUSec")
+_SAFE_UNIT = re.compile(r"[A-Za-z0-9_.@:-]+\.(?:service|timer)\Z")
 
 
 class UserServiceObserverError(ValueError):
@@ -16,11 +16,16 @@ class UserServiceObserverError(ValueError):
 
 
 def _default_runner(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8"}
-    for name in ("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
-        value = os.environ.get(name)
-        if value:
-            env[name] = value
+    uid = os.getuid()
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}"
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C.UTF-8",
+        "XDG_RUNTIME_DIR": runtime_dir,
+        "DBUS_SESSION_BUS_ADDRESS": (
+            os.environ.get("DBUS_SESSION_BUS_ADDRESS") or f"unix:path={runtime_dir}/bus"
+        ),
+    }
     try:
         return subprocess.run(
             list(argv), capture_output=True, text=True, encoding="utf-8", errors="strict",
@@ -45,7 +50,8 @@ class UserServiceObserver:
     def read(self, unit_id: str) -> dict[str, str]:
         if not isinstance(unit_id, str) or not _SAFE_UNIT.fullmatch(unit_id) or unit_id not in self.allowed_units:
             raise UserServiceObserverError("UNIT_NOT_ALLOWED")
-        command = ("systemctl", "--user", "show", unit_id, _PROPERTY_ARG)
+        properties = TIMER_PROPERTIES if unit_id.endswith(".timer") else SERVICE_PROPERTIES
+        command = ("systemctl", "--user", "show", unit_id, "--property=" + ",".join(properties))
         try:
             completed = self.runner(command)
         except UserServiceObserverError:
@@ -62,9 +68,9 @@ class UserServiceObserver:
             if not line or "=" not in line:
                 raise UserServiceObserverError("SERVICE_RESULT_INVALID")
             key, value = line.split("=", 1)
-            if key not in SERVICE_PROPERTIES or key in values:
+            if key not in properties or key in values:
                 raise UserServiceObserverError("SERVICE_RESULT_INVALID")
             values[key] = value
-        if set(values) != set(SERVICE_PROPERTIES):
+        if set(values) != set(properties):
             raise UserServiceObserverError("SERVICE_RESULT_INVALID")
-        return {key: values[key] for key in SERVICE_PROPERTIES}
+        return {key: values[key] for key in properties}

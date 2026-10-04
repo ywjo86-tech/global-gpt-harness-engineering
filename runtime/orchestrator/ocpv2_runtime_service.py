@@ -48,6 +48,7 @@ from .remote_operator_receipt import RemoteOperatorReceiptStore
 from .remote_operator_recovery_binding import RemoteExecutionBindingStore
 from .production_run_authority import executor_runtime_identity
 from .runtime_release import RuntimeReleaseError, RuntimeReleaseManifest, verify_runtime_release
+from .user_service_observer import UserServiceObserver, UserServiceObserverError
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
 
 
@@ -88,6 +89,44 @@ _PROJECTION_SECRET = re.compile(
 
 class RuntimeServiceError(ValueError):
     pass
+
+
+_RECONCILE_SERVICE_UNIT = "global-gpt-harness-full-plan-reconcile.service"
+_RECONCILE_TIMER_UNIT = "global-gpt-harness-full-plan-reconcile.timer"
+
+
+def full_plan_execution_health(
+    observer: UserServiceObserver | None = None,
+) -> dict[str, Any]:
+    """Read-only health projection for the downstream Full Plan execution loop.
+
+    This deliberately has no repair authority.  It prevents OCP from claiming a
+    green control-plane status when approved Full Plan jobs cannot be picked up.
+    """
+    probe = observer or UserServiceObserver(
+        allowed_units=frozenset({_RECONCILE_SERVICE_UNIT, _RECONCILE_TIMER_UNIT})
+    )
+    try:
+        timer = probe.read(_RECONCILE_TIMER_UNIT)
+        service = probe.read(_RECONCILE_SERVICE_UNIT)
+    except UserServiceObserverError as exc:
+        return {
+            "status": "DEGRADED",
+            "reason": "RECONCILE_HEALTH_UNAVAILABLE",
+            "error": str(exc),
+        }
+
+    reasons: list[str] = []
+    if timer.get("ActiveState") != "active" or timer.get("SubState") not in {"waiting", "running"}:
+        reasons.append("RECONCILE_TIMER_NOT_ACTIVE")
+    if service.get("Result") != "success" or service.get("ExecMainStatus") != "0":
+        reasons.append("RECONCILE_SERVICE_NOT_HEALTHY")
+    return {
+        "status": "HEALTHY" if not reasons else "DEGRADED",
+        "reason": "" if not reasons else ",".join(reasons),
+        "timer": timer,
+        "service": service,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -956,7 +995,13 @@ def main(argv: list[str] | None = None) -> int:
     except (RuntimeServiceError, RemoteOperatorServiceError, ValueError, OSError) as exc:
         print(json.dumps({"status": "BLOCKED", "error": str(exc)}, sort_keys=True), file=os.sys.stderr)
         return 2
-    print(json.dumps({"status": "OK", **result}, sort_keys=True))
+    health = (
+        full_plan_execution_health()
+        if config.full_plan_activation_enabled
+        else {"status": "NOT_APPLICABLE", "reason": "FULL_PLAN_ACTIVATION_DISABLED"}
+    )
+    status = "OK" if health["status"] in {"HEALTHY", "NOT_APPLICABLE"} else "DEGRADED"
+    print(json.dumps({"status": status, "operational_health": health, **result}, sort_keys=True))
     return 0
 
 
