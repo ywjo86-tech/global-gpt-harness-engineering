@@ -19,6 +19,7 @@ def main(argv=None)->int:
     p.add_argument("--output-root",required=True); p.add_argument("--stale-after-seconds",type=int,default=180)
     a=p.parse_args(argv)
     now=datetime.now(timezone.utc)
+    gate_now=datetime.now()
     out=Path(a.output_root); out.mkdir(parents=True,exist_ok=True)
     jobs=discover_registered_jobs(a.search_root)
     attention=discover_pending_attention(a.search_root,now=now)
@@ -37,7 +38,7 @@ def main(argv=None)->int:
         result="PASS" if timer_ok else "BLOCKED")
     tp=out/"reconcile-timer-health.json"; record_monitor_health_receipt(tp,tr)
     gate=evaluate_post_change_gate(diagnostic_config=a.diagnostic_config,attention_watch_enabled=True,timer_watch_enabled=True,
-        attention_health_receipt=ap,timer_health_receipt=tp,stale_after_seconds=a.stale_after_seconds,now=now)
+        attention_health_receipt=ap,timer_health_receipt=tp,stale_after_seconds=a.stale_after_seconds,now=gate_now)
     (out/"post-change-gate.json").write_text(json.dumps(gate,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
     state_path=Path(a.state_root)/"_workspace"/"production-full-plan"/a.project_id/a.run_id/"state.json"
     state=json.loads(state_path.read_text(encoding="utf-8"))
