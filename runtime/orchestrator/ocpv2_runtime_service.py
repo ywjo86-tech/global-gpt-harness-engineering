@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -95,14 +96,27 @@ _RECONCILE_SERVICE_UNIT = "global-gpt-harness-full-plan-reconcile.service"
 _RECONCILE_TIMER_UNIT = "global-gpt-harness-full-plan-reconcile.timer"
 
 
+def _parse_systemd_local_trigger(value: str) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("LAST_TRIGGER_MISSING")
+    body = text.rsplit(" ", 1)[0]
+    return datetime.strptime(body, "%a %Y-%m-%d %H:%M:%S")
+
+
 def full_plan_execution_health(
     observer: UserServiceObserver | None = None,
+    *,
+    now: datetime | None = None,
+    stale_after_seconds: int = 180,
 ) -> dict[str, Any]:
     """Read-only health projection for the downstream Full Plan execution loop.
 
     This deliberately has no repair authority.  It prevents OCP from claiming a
     green control-plane status when approved Full Plan jobs cannot be picked up.
     """
+    if stale_after_seconds <= 0:
+        raise ValueError("STALE_THRESHOLD_INVALID")
     probe = observer or UserServiceObserver(
         allowed_units=frozenset({_RECONCILE_SERVICE_UNIT, _RECONCILE_TIMER_UNIT})
     )
@@ -119,11 +133,23 @@ def full_plan_execution_health(
     reasons: list[str] = []
     if timer.get("ActiveState") != "active" or timer.get("SubState") not in {"waiting", "running"}:
         reasons.append("RECONCILE_TIMER_NOT_ACTIVE")
+    try:
+        current = now or datetime.now()
+        age_seconds = max(
+            0.0,
+            (current - _parse_systemd_local_trigger(timer.get("LastTriggerUSec", ""))).total_seconds(),
+        )
+        if age_seconds > stale_after_seconds:
+            reasons.append("RECONCILE_TIMER_TRIGGER_STALE")
+    except ValueError:
+        age_seconds = None
+        reasons.append("RECONCILE_TIMER_TRIGGER_UNAVAILABLE")
     if service.get("Result") != "success" or service.get("ExecMainStatus") != "0":
         reasons.append("RECONCILE_SERVICE_NOT_HEALTHY")
     return {
         "status": "HEALTHY" if not reasons else "DEGRADED",
         "reason": "" if not reasons else ",".join(reasons),
+        "timer_age_seconds": age_seconds,
         "timer": timer,
         "service": service,
     }

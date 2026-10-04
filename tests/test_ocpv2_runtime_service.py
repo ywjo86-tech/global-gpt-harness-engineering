@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from datetime import datetime
 import tempfile
 import unittest
 from pathlib import Path
@@ -559,32 +560,60 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
     def test_full_plan_execution_health_is_healthy_only_with_live_timer_and_successful_service(self):
         observer = Mock()
         observer.read.side_effect = [
-            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0",
+             "LastTriggerUSec": "Sun 2026-10-04 11:59:00 KST"},
             {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
         ]
-        result = full_plan_execution_health(observer)
+        result = full_plan_execution_health(observer, now=datetime(2026, 10, 4, 12, 0, 0))
         self.assertEqual(result["status"], "HEALTHY")
         self.assertEqual(result["reason"], "")
 
     def test_full_plan_execution_health_marks_stopped_timer_degraded(self):
         observer = Mock()
         observer.read.side_effect = [
-            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0",
+             "LastTriggerUSec": "Sun 2026-10-04 11:59:00 KST"},
             {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
         ]
-        result = full_plan_execution_health(observer)
+        result = full_plan_execution_health(observer, now=datetime(2026, 10, 4, 12, 0, 0))
         self.assertEqual(result["status"], "DEGRADED")
         self.assertIn("RECONCILE_TIMER_NOT_ACTIVE", result["reason"])
 
     def test_full_plan_execution_health_marks_failed_service_degraded(self):
         observer = Mock()
         observer.read.side_effect = [
-            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0",
+             "LastTriggerUSec": "Sun 2026-10-04 11:59:00 KST"},
             {"ActiveState": "failed", "SubState": "failed", "Result": "exit-code", "ExecMainStatus": "1"},
         ]
-        result = full_plan_execution_health(observer)
+        result = full_plan_execution_health(observer, now=datetime(2026, 10, 4, 12, 0, 0))
         self.assertEqual(result["status"], "DEGRADED")
         self.assertIn("RECONCILE_SERVICE_NOT_HEALTHY", result["reason"])
+
+    def test_full_plan_execution_health_marks_stale_timer_degraded(self):
+        observer = Mock()
+        observer.read.side_effect = [
+            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0",
+             "LastTriggerUSec": "Sun 2026-10-04 11:50:00 KST"},
+            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
+        ]
+        result = full_plan_execution_health(
+            observer, now=datetime(2026, 10, 4, 12, 0, 0), stale_after_seconds=180
+        )
+        self.assertEqual(result["status"], "DEGRADED")
+        self.assertIn("RECONCILE_TIMER_TRIGGER_STALE", result["reason"])
+
+    def test_full_plan_execution_health_marks_missing_trigger_degraded(self):
+        observer = Mock()
+        observer.read.side_effect = [
+            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
+        ]
+        result = full_plan_execution_health(
+            observer, now=datetime(2026, 10, 4, 12, 0, 0), stale_after_seconds=180
+        )
+        self.assertEqual(result["status"], "DEGRADED")
+        self.assertIn("RECONCILE_TIMER_TRIGGER_UNAVAILABLE", result["reason"])
 
     def test_main_reports_degraded_instead_of_false_ok_when_reconcile_is_unhealthy(self):
         import runtime.orchestrator.ocpv2_runtime_service as module
