@@ -96,6 +96,30 @@ class WaitRecoveryTests(unittest.TestCase):
         stale=evaluate_resource(state,resources_ok=True,expected_state_sha256="b"*64,expected_epoch=7)
         self.assertFalse(stale.resume_allowed); self.assertEqual(stale.reason,"STATE_CAS_MISMATCH")
 
+    def test_terminal_run_retires_matching_active_provider_wait_pointer(self):
+        from runtime.orchestrator.wait_recovery import (
+            retire_provider_wait_pointers_for_terminal_run,
+        )
+        *_, record, load = self.api()
+        unavailable,_ = self.snapshots()
+        request=normalize_legacy_hybrid_request(
+            required_capabilities=("read_only",),eligibility_snapshot=unavailable,
+            request_id="req",project_id="P",run_id="RUN--gate-1-task-1",task_id="LV",
+            task_execution_id="RUN--gate-1-task-1-LV-worker",directive_digest="d"*64)
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            record(root,project_id="P",gate_run_id="RUN--gate-1-task-1",gate_id="G1",lv_id="LV",
+                lv_run_id="RUN--gate-1-task-1",project_root="/tmp/project",source_head="1"*40,
+                router_request=request.to_dict(),router_decision=route_request(request).to_dict(),
+                output_contract={"purpose":"x"},validation_contract={"tests":["T"]},
+                risk_contract={"state_change_required":False})
+            self.assertIsNotNone(load(root,project_id="P",gate_run_id="RUN--gate-1-task-1"))
+            retired=retire_provider_wait_pointers_for_terminal_run(
+                root,project_id="P",run_id="RUN",terminal_state_sha256="a"*64,
+                reason="FULL_PLAN_COMPLETED")
+            self.assertEqual(retired,1)
+            self.assertIsNone(load(root,project_id="P",gate_run_id="RUN--gate-1-task-1"))
+
     def test_provider_wait_evidence_round_trip_uses_active_pointer(self):
         *_,record,load=self.api(); unavailable,_=self.snapshots()
         request=normalize_legacy_hybrid_request(

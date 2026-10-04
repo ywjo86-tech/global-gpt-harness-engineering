@@ -121,6 +121,8 @@ class OperationsReadModelV1:
     sources: tuple[SourceIdentityV1, ...]
     freshness: str
     diagnostic_health: DiagnosticHealthProjectionV1 | None = None
+    operational_acceptance_state: str = "UNKNOWN"
+    operational_acceptance_failures: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         value = asdict(self)
@@ -128,6 +130,7 @@ class OperationsReadModelV1:
         value["checkpoint_refs"] = list(self.checkpoint_refs)
         value["evidence_refs"] = list(self.evidence_refs)
         value["sources"] = [asdict(item) for item in self.sources]
+        value["operational_acceptance_failures"] = list(self.operational_acceptance_failures)
         return value
 
 
@@ -155,6 +158,8 @@ def build_operations_read_model(
     *,
     source_identities: tuple[SourceIdentityV1, ...],
     now: datetime,
+    diagnostic_health: DiagnosticHealthProjectionV1 | None = None,
+    operational_acceptance: Mapping[str, Any] | None = None,
 ) -> OperationsReadModelV1:
     """Build a closed read model from bounded projections only.
 
@@ -193,6 +198,9 @@ def build_operations_read_model(
         evidence_refs=evidence_refs,
         sources=tuple(source_identities),
         freshness=resolve_freshness(tuple(source_identities), now),
+        diagnostic_health=diagnostic_health,
+        operational_acceptance_state=str((operational_acceptance or {}).get("status") or "UNKNOWN"),
+        operational_acceptance_failures=tuple(str(item) for item in (operational_acceptance or {}).get("failures", ())),
     )
 
 
@@ -201,6 +209,8 @@ def build_operations_read_model_from_console_snapshot(
     snapshot: Mapping[str, Any],
     *,
     source_identities: tuple[SourceIdentityV1, ...] = (),
+    diagnostic_health: DiagnosticHealthProjectionV1 | None = None,
+    operational_acceptance: Mapping[str, Any] | None = None,
 ) -> OperationsReadModelV1:
     """Bounded adapter for the legacy Jarvis bridge snapshot shape."""
     if not isinstance(console, OperatorConsoleProjectionV1) or not isinstance(snapshot, Mapping):
@@ -237,4 +247,7 @@ def build_operations_read_model_from_console_snapshot(
         evidence_refs=console.evidence_refs,
         sources=tuple(sources),
         freshness="UNKNOWN",
+        diagnostic_health=diagnostic_health,
+        operational_acceptance_state=str((operational_acceptance or {}).get("status") or "UNKNOWN"),
+        operational_acceptance_failures=tuple(str(item) for item in (operational_acceptance or {}).get("failures", ())),
     )

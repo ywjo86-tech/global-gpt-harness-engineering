@@ -16,6 +16,25 @@ def _console_atom(value: object, fallback: str) -> str:
     return (normalized or fallback)[:200]
 
 
+
+
+def _operational_acceptance_for_run(project_root: Path, run_id: str) -> dict[str, Any] | None:
+    from runtime.orchestrator.harness_state_root import resolve_harness_state_root
+    from runtime.orchestrator.operational_acceptance import load_latest_acceptance
+
+    try:
+        state_root = resolve_harness_state_root(project_root=project_root)
+    except ValueError:
+        return None
+    base = state_root / "_workspace" / "operational-acceptance"
+    if not base.is_dir():
+        return None
+    matches = list(base.glob(f"*/{run_id}/latest.json"))
+    if len(matches) != 1:
+        return None
+    project_id = matches[0].parent.parent.name
+    return load_latest_acceptance(state_root, project_id, run_id)
+
 def refresh_dashboard_snapshot(project_root: str | Path, run_id: str | None = None) -> dict[str, Any]:
     return read_dashboard_state(project_root, run_id=run_id)
 
@@ -23,6 +42,7 @@ def refresh_dashboard_snapshot(project_root: str | Path, run_id: str | None = No
 def refresh_operations_projection(project_root: str | Path, run_id: str | None = None) -> dict[str, object]:
     from runtime.orchestrator.operator_console_projection import build_operator_console_projection
     from runtime.orchestrator.operations_read_model import build_operations_read_model_from_console_snapshot
+    from runtime.orchestrator.operations_diagnostic_projection import build_diagnostic_health_projection
 
     snapshot = read_dashboard_state_projection_only(project_root, run_id=run_id)
     stage_gate = snapshot.get("stage_gate_result") if isinstance(snapshot.get("stage_gate_result"), dict) else {}
@@ -41,7 +61,23 @@ def refresh_operations_projection(project_root: str | Path, run_id: str | None =
         transport_state="OBSERVE_ONLY",
         status_flags=tuple(),
     )
-    return build_operations_read_model_from_console_snapshot(console, snapshot).to_dict()
+    acceptance = _operational_acceptance_for_run(Path(project_root).resolve(), str(snapshot.get("run_id") or ""))
+    diagnostic_health = None
+    if acceptance is not None:
+        acceptance_state = str(acceptance.get("status") or "UNKNOWN")
+        diagnostic_health = build_diagnostic_health_projection(
+            current_state={"freshness": "FRESH", "normalized_state": str(console.stage or "UNKNOWN")},
+            diagnostic_findings=({
+                "domain": "operational_acceptance",
+                "state": "HEALTHY" if acceptance_state == "ACCEPTED" else "BLOCKED",
+                "evidence_ref": str(acceptance.get("record_sha256") or ""),
+            },),
+            attention_events=(),
+            recovery_refs=(),
+        )
+    return build_operations_read_model_from_console_snapshot(
+        console, snapshot, diagnostic_health=diagnostic_health, operational_acceptance=acceptance,
+    ).to_dict()
 
 
 def get_status(project_root: str | Path, run_id: str | None = None) -> dict[str, Any]:

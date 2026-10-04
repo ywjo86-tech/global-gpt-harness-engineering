@@ -216,6 +216,17 @@ class GatewayContractTests(unittest.TestCase):
         self.assertEqual(execution.stdout, b"safe")
         self.assertEqual(execution.gateway_request["execution_backend"], HOST_GATEWAY)
 
+    def test_host_runner_no_client_times_out_and_removes_socket(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "gateway.sock"
+            runner = UnixSocketHostRunner(sock, root / "ledger", broker_native=True)
+            started = time.monotonic()
+            with self.assertRaisesRegex(GatewayError, "HOST_RUNNER_ACCEPT_TIMEOUT"):
+                runner.serve_once(timeout=1)
+            self.assertLess(time.monotonic() - started, 2.5)
+            self.assertFalse(sock.exists())
+
     def test_managed_host_runner_exposes_one_shot_socket_without_background_daemon(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); sock = root / "runtime" / "managed.sock"; ledger = root / "ledger"

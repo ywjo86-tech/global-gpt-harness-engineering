@@ -837,8 +837,14 @@ class UnixSocketHostRunner:
                 server.listen(1)
             except OSError as exc:
                 raise GatewayError("UDS_LISTEN") from exc
+            if timeout <= 0:
+                raise GatewayError("HOST_RUNNER_TIMEOUT_INVALID")
+            server.settimeout(float(timeout))
             with server:
-                conn, _ = server.accept()
+                try:
+                    conn, _ = server.accept()
+                except socket.timeout as exc:
+                    raise GatewayError("HOST_RUNNER_ACCEPT_TIMEOUT") from exc
                 with conn:
                     if hasattr(socket, "SO_PEERCRED"):
                         _, uid, _ = struct.unpack("3i", conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))

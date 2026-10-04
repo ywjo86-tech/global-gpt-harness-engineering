@@ -21,6 +21,12 @@ from .harness_state_root import discovery_roots, job_dedupe_key, job_state_root
 from .wait_recovery import (
     WaitRecoveryError, classify_wait_recovery, evaluate_provider_wait_recovery,
     evaluate_resource_wait_recovery, load_active_provider_wait_recovery_evidence,
+    retire_provider_wait_pointers_for_terminal_run,
+)
+from .monitor_health import monitor_health_path, record_attention_monitor_health
+from .operational_acceptance import evaluate_operational_environment, record_operational_acceptance
+from runtime.diagnostics.process_lifecycle import (
+    process_lifecycle_latest_path, record_process_lifecycle_snapshot,
 )
 
 
@@ -295,6 +301,18 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         status = str(state.get("state"))
     if status in TERMINAL_STATES:
         terminal_reason = str(state.get("terminal_reason") or "")
+        state_sha = str(state.get("state_sha256") or "")
+        if len(state_sha) == 64:
+            try:
+                retire_provider_wait_pointers_for_terminal_run(
+                    job_state_root(job),
+                    project_id=str(job["project_id"]),
+                    run_id=str(job["run_id"]),
+                    terminal_state_sha256=state_sha,
+                    reason=f"FULL_PLAN_{status}",
+                )
+            except WaitRecoveryError:
+                pass
         if status == "CANCELLED" and (
             terminal_reason == "RUNTIME_ACTIVATION_MIGRATION"
             or (terminal_reason == "MIGRATED_TO_SUCCESSOR" and not _migration_successor_is_registered(job, state))
@@ -374,7 +392,51 @@ def reconcile_all(search_root: str | Path, *, launch: bool = True) -> dict[str, 
             results.append(reconcile_job(path, launch=launch))
         except Exception as exc:
             results.append({"job": str(path), "action": "BLOCKED", "reason": str(exc), "launched": False})
-    resolved = str(Path(search_root).resolve())
+    root = Path(search_root).resolve()
+    monitor_summary: dict[str, Any]
+    process_summary: dict[str, Any]
+    try:
+        monitor = record_attention_monitor_health(root, search_root=root)
+        monitor_summary = monitor.to_dict()
+    except Exception as exc:
+        monitor_summary = {"status": "DEGRADED", "error": str(exc)}
+    try:
+        process_summary = record_process_lifecycle_snapshot(root)
+    except Exception as exc:
+        process_summary = {"status": "DEGRADED", "error": str(exc), "blocking_count": -1}
+
+    try:
+        operational_environment = evaluate_operational_environment(
+            root,
+            monitor_health_receipt_path=monitor_health_path(root),
+            process_snapshot_path=process_lifecycle_latest_path(root),
+        )
+    except Exception as exc:
+        operational_environment = {
+            "gate": {"status": "BLOCKED", "failures": [f"OPERATIONAL_ENVIRONMENT_EVALUATION_FAILED:{exc}"]},
+            "process_snapshot": process_summary if isinstance(process_summary, dict) else None,
+            "failures": [f"OPERATIONAL_ENVIRONMENT_EVALUATION_FAILED:{exc}"],
+        }
+
+    acceptance_rows: list[dict[str, Any]] = []
+    for path in jobs:
+        try:
+            record = record_operational_acceptance(
+                path,
+                monitor_health_receipt_path=monitor_health_path(root),
+                process_snapshot_path=process_lifecycle_latest_path(root),
+                environment=operational_environment,
+            )
+            if record is not None:
+                acceptance_rows.append({
+                    "job": str(path), "project_id": record["project_id"], "run_id": record["run_id"],
+                    "status": record["status"], "record_sha256": record["record_sha256"],
+                    "failures": list(record.get("failures") or []),
+                })
+        except Exception as exc:
+            acceptance_rows.append({"job": str(path), "status": "BLOCKED", "failures": [str(exc)]})
+
+    resolved = str(root)
     return {
         "schema_version": "orchestration.production-full-plan-boot-reconcile.v1",
         "search_root": resolved,
@@ -385,6 +447,13 @@ def reconcile_all(search_root: str | Path, *, launch: bool = True) -> dict[str, 
             "BLOCKED", "LAUNCH_FAILED", "MIGRATION_RECOVERY_REQUIRED",
             "TDD_BLOCKED", "TDD_RECONCILIATION_REQUIRED",
         }),
+        "monitor_health": monitor_summary,
+        "process_lifecycle": {
+            "snapshot_sha256": process_summary.get("snapshot_sha256"),
+            "blocking_count": process_summary.get("blocking_count"),
+            "status": "HEALTHY" if process_summary.get("blocking_count") == 0 else "BLOCKED",
+        },
+        "operational_acceptance": acceptance_rows,
         "results": results,
     }
 

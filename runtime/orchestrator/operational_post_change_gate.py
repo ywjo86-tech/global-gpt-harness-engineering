@@ -7,13 +7,14 @@ monitoring chain healthy enough to declare the change operationally complete?
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
 
 from .read_only_host_diagnostic_contract import DiagnosticContractError, DiagnosticPolicy
 from .user_service_observer import UserServiceObserver, UserServiceObserverError
+from .monitor_health import MonitorHealthError, load_attention_monitor_health
 
 OCP_SERVICE = "ocpv2.service"
 OCP_TIMER = "ocpv2.timer"
@@ -73,8 +74,10 @@ def _resident_service_check(name: str, data: dict[str, str]) -> dict[str, Any]:
 def evaluate_post_change_gate(
     *,
     diagnostic_config: str | Path,
-    attention_watch_enabled: bool,
-    timer_watch_enabled: bool,
+    attention_watch_enabled: bool | None = None,
+    timer_watch_enabled: bool | None = None,
+    monitor_health_path: str | Path | None = None,
+    require_external_monitor_flags: bool = True,
     stale_after_seconds: int = 180,
     observer: UserServiceObserver | None = None,
     now: datetime | None = None,
@@ -115,9 +118,22 @@ def evaluate_post_change_gate(
     if missing:
         failures.append("DIAGNOSTIC_COVERAGE_MISSING:" + ",".join(missing))
 
-    if not attention_watch_enabled:
+    monitor_health = None
+    if monitor_health_path is not None:
+        try:
+            monitor_now = now if isinstance(now, datetime) and now.tzinfo is not None else datetime.now(timezone.utc)
+            receipt = load_attention_monitor_health(
+                monitor_health_path, now=monitor_now, stale_after_seconds=stale_after_seconds,
+            )
+            monitor_health = receipt.to_dict()
+            if receipt.status != "HEALTHY" or receipt.current_attention_count:
+                failures.append("ATTENTION_MONITOR_CURRENT_EVENTS")
+        except MonitorHealthError as exc:
+            failures.append(f"ATTENTION_MONITOR_HEALTH_INVALID:{exc}")
+    elif require_external_monitor_flags and not attention_watch_enabled:
         failures.append("ATTENTION_WATCH_DISABLED")
-    if not timer_watch_enabled:
+
+    if require_external_monitor_flags and not timer_watch_enabled:
         failures.append("RECONCILE_TIMER_WATCH_DISABLED")
 
     return {
@@ -130,7 +146,9 @@ def evaluate_post_change_gate(
         "external_monitors": {
             "attention_watch_enabled": bool(attention_watch_enabled),
             "reconcile_timer_watch_enabled": bool(timer_watch_enabled),
+            "flags_required": bool(require_external_monitor_flags),
         },
+        "attention_monitor_health": monitor_health,
         "failures": failures,
     }
 
@@ -140,12 +158,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--diagnostic-config", required=True)
     parser.add_argument("--attention-watch-enabled", action="store_true")
     parser.add_argument("--timer-watch-enabled", action="store_true")
+    parser.add_argument("--monitor-health-path")
+    parser.add_argument("--no-external-monitor-flags", action="store_true")
     parser.add_argument("--stale-after-seconds", type=int, default=180)
     args = parser.parse_args(argv)
     result = evaluate_post_change_gate(
         diagnostic_config=args.diagnostic_config,
         attention_watch_enabled=args.attention_watch_enabled,
         timer_watch_enabled=args.timer_watch_enabled,
+        monitor_health_path=args.monitor_health_path,
+        require_external_monitor_flags=not args.no_external_monitor_flags,
         stale_after_seconds=args.stale_after_seconds,
     )
     print(json.dumps(result, sort_keys=True))

@@ -25,6 +25,8 @@ CANARY_EXECUTOR_KIND = "DCC_LIVE_AUTO_CANARY"
 CANARY_PROJECT_ID = "DCC_LIVE_AUTO_CANARY"
 CANARY_GATES = ("CANARY-A", "CANARY-B", "CANARY-C")
 PAUSE_ENV = "GCH_LIVE_AUTO_CANARY_PAUSE_AFTER_GATE_A"
+PAUSE_MAX_SECONDS_ENV = "GCH_LIVE_AUTO_CANARY_PAUSE_MAX_SECONDS"
+DEFAULT_PAUSE_MAX_SECONDS = 120.0
 
 
 class LiveAutoCanaryError(ValueError):
@@ -111,8 +113,17 @@ def build_live_auto_canary_executor(job: Mapping[str, Any]):
         # Test/live qualification can intentionally strand B in RUNNING after A
         # to prove durable recovery. Pause happens before any B mutation.
         if gate_id != CANARY_GATES[0] and os.environ.get(PAUSE_ENV) == "1":
-            while True:
-                time.sleep(1.0)
+            raw_limit = str(os.environ.get(PAUSE_MAX_SECONDS_ENV) or DEFAULT_PAUSE_MAX_SECONDS)
+            try:
+                pause_limit = float(raw_limit)
+            except ValueError as exc:
+                raise LiveAutoCanaryError("canary pause lifetime is invalid") from exc
+            if not 0 < pause_limit <= 3600:
+                raise LiveAutoCanaryError("canary pause lifetime is invalid")
+            deadline = time.monotonic() + pause_limit
+            while time.monotonic() < deadline:
+                time.sleep(min(1.0, max(0.01, deadline - time.monotonic())))
+            raise LiveAutoCanaryError("canary intentional pause expired")
 
         relative = Path("artifacts") / f"{gate_id}.txt"
         artifact = project / relative

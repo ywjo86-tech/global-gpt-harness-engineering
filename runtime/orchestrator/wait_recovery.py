@@ -164,7 +164,7 @@ def record_provider_wait_recovery_evidence(
         "project_id": evidence["project_id"], "gate_run_id": evidence["gate_run_id"],
         "lv_id": evidence["lv_id"], "evidence_file": path.name,
         "evidence_sha256": evidence["evidence_sha256"], "updated_at": _now(),
-        "control_authority": "NONE",
+        "status": "ACTIVE", "control_authority": "NONE",
     }
     pointer["pointer_sha256"] = _digest(pointer)
     atomic_write_json(base / "active.json", pointer)
@@ -206,6 +206,11 @@ def load_active_provider_wait_recovery_evidence(
     unsigned = {k: v for k, v in pointer.items() if k != "pointer_sha256"}
     if expected != _digest(unsigned):
         raise WaitRecoveryError("provider wait pointer digest mismatch")
+    status = str(pointer.get("status") or "ACTIVE")
+    if status == "RETIRED":
+        return None
+    if status != "ACTIVE":
+        raise WaitRecoveryError("provider wait pointer status is invalid")
     name = str(pointer.get("evidence_file") or "")
     if not name or Path(name).name != name:
         raise WaitRecoveryError("provider wait pointer path is invalid")
@@ -217,6 +222,72 @@ def load_active_provider_wait_recovery_evidence(
     if validated["evidence_sha256"] != pointer.get("evidence_sha256"):
         raise WaitRecoveryError("provider wait pointer/evidence mismatch")
     return validated
+
+
+def retire_provider_wait_recovery_pointer(
+    state_root: str | Path, *, project_id: str, gate_run_id: str,
+    terminal_state_sha256: str, reason: str,
+) -> bool:
+    base = _provider_wait_base(state_root, project_id, gate_run_id)
+    pointer_path = base / "active.json"
+    if not pointer_path.exists():
+        return False
+    if pointer_path.is_symlink() or not pointer_path.is_file():
+        raise WaitRecoveryError("provider wait pointer is unsafe")
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise WaitRecoveryError("provider wait pointer is unreadable") from exc
+    if not isinstance(pointer, dict) or pointer.get("schema_version") != PROVIDER_WAIT_POINTER_SCHEMA:
+        raise WaitRecoveryError("provider wait pointer schema mismatch")
+    expected = str(pointer.get("pointer_sha256") or "")
+    unsigned = {k: v for k, v in pointer.items() if k != "pointer_sha256"}
+    if expected != _digest(unsigned):
+        raise WaitRecoveryError("provider wait pointer digest mismatch")
+    if str(pointer.get("status") or "ACTIVE") == "RETIRED":
+        return False
+    state_sha = str(terminal_state_sha256 or "")
+    if len(state_sha) != 64 or any(ch not in "0123456789abcdef" for ch in state_sha):
+        raise WaitRecoveryError("terminal state digest is invalid")
+    reason_text = str(reason or "").strip()
+    if not reason_text or len(reason_text) > 256:
+        raise WaitRecoveryError("provider wait retirement reason is invalid")
+    retired = {
+        **{k: v for k, v in pointer.items() if k != "pointer_sha256"},
+        "status": "RETIRED",
+        "retired_at": _now(),
+        "retirement_reason": reason_text,
+        "terminal_state_sha256": state_sha,
+    }
+    retired["pointer_sha256"] = _digest(retired)
+    atomic_write_json(pointer_path, retired)
+    return True
+
+
+def retire_provider_wait_pointers_for_terminal_run(
+    state_root: str | Path, *, project_id: str, run_id: str,
+    terminal_state_sha256: str, reason: str,
+) -> int:
+    project = (
+        Path(state_root).resolve() / "_workspace" / "provider-wait"
+        / _safe_id(project_id, "project ID")
+    )
+    if not project.is_dir() or project.is_symlink():
+        return 0
+    prefix = _safe_id(run_id, "run ID") + "--"
+    retired = 0
+    for base in sorted(project.iterdir()):
+        if not base.is_dir() or base.is_symlink() or not base.name.startswith(prefix):
+            continue
+        if retire_provider_wait_recovery_pointer(
+            state_root,
+            project_id=project_id,
+            gate_run_id=base.name,
+            terminal_state_sha256=terminal_state_sha256,
+            reason=reason,
+        ):
+            retired += 1
+    return retired
 
 
 def evaluate_provider_wait_recovery(
