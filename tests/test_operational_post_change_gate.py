@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -141,6 +141,43 @@ class OperationalPostChangeGateTests(unittest.TestCase):
         self.assertIn("ATTENTION_HEALTH:MONITOR_RECEIPT_MISSING",result["failures"])
         self.assertIn("RECONCILE_TIMER_HEALTH:MONITOR_RECEIPT_MISSING",result["failures"])
         self.assertIn("ATTENTION_WATCH_BOOLEAN_COMPAT_ONLY",result["legacy_monitor_compatibility"])
+
+    def test_default_clock_keeps_fresh_utc_monitor_receipts_fresh(self):
+        now_utc = datetime.now(timezone.utc)
+        local_trigger = now_utc.astimezone().strftime("%a %Y-%m-%d %H:%M:%S") + " LOCAL"
+        values = healthy_values()
+        values[OCP_TIMER]["LastTriggerUSec"] = local_trigger
+        values[RECONCILE_TIMER]["LastTriggerUSec"] = local_trigger
+        attention = build_monitor_health_receipt(
+            monitor_name="ATTENTION_HEALTH",
+            runtime_source_identity="runtime:current",
+            search_root="/tmp/state",
+            registered_job_count=94,
+            pending_current_event_count=0,
+            result="PASS",
+            scanned_at=now_utc.isoformat(timespec="seconds"),
+        ).to_dict()
+        timer = build_monitor_health_receipt(
+            monitor_name="RECONCILE_TIMER_HEALTH",
+            runtime_source_identity="runtime:current",
+            search_root="/tmp/state",
+            registered_job_count=94,
+            pending_current_event_count=0,
+            result="PASS",
+            scanned_at=now_utc.isoformat(timespec="seconds"),
+        ).to_dict()
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
+            result=evaluate_post_change_gate(
+                diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=attention, timer_health_receipt=timer,
+                process_lifecycle_snapshot={"blocking_count":0},
+                observer=FakeObserver(values),
+            )
+        self.assertEqual(result["status"],"PASS")
+        self.assertNotIn("ATTENTION_HEALTH:MONITOR_RECEIPT_STALE",result["failures"])
+        self.assertNotIn("RECONCILE_TIMER_HEALTH:MONITOR_RECEIPT_STALE",result["failures"])
 
     def test_process_lifecycle_blocker_prevents_false_green(self):
         with tempfile.TemporaryDirectory() as td:

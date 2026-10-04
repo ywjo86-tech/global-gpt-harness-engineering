@@ -90,7 +90,7 @@ def evaluate_post_change_gate(
 ) -> dict[str, Any]:
     if stale_after_seconds <= 0:
         raise ValueError("STALE_THRESHOLD_INVALID")
-    current = now or datetime.now()
+    current = now or datetime.now(timezone.utc)
     probe = observer or UserServiceObserver(allowed_units=OBSERVED_UNITS)
     checks: list[dict[str, Any]] = []
     failures: list[str] = []
