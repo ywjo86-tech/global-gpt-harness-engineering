@@ -111,4 +111,25 @@ class WaitRecoveryTests(unittest.TestCase):
             self.assertEqual(loaded["evidence_sha256"],evidence["evidence_sha256"])
             self.assertEqual(loaded["lv_id"],"LV")
 
+    def test_terminal_run_retires_active_provider_wait_pointer_with_receipt(self):
+        from runtime.orchestrator.wait_recovery import retire_active_provider_wait_pointer
+        *_,record,load=self.api(); unavailable,_=self.snapshots()
+        request=normalize_legacy_hybrid_request(
+            required_capabilities=("read_only",),eligibility_snapshot=unavailable,
+            request_id="req",project_id="P",run_id="GR",task_id="LV",task_execution_id="GR-LV-worker",directive_digest="d"*64)
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            record(root,project_id="P",gate_run_id="GR",gate_id="G",lv_id="LV",lv_run_id="GR",
+                project_root="/tmp/project",source_head="1"*40,router_request=request.to_dict(),
+                router_decision=route_request(request).to_dict(),output_contract={"purpose":"x"},
+                validation_contract={"tests":["T"]},risk_contract={"state_change_required":False})
+            receipt = retire_active_provider_wait_pointer(
+                root,
+                project_id="P",
+                gate_run_id="GR",
+                terminal_state={"state":"BLOCKED","state_sha256":"a"*64},
+            )
+            self.assertEqual(receipt["terminal_state"],"BLOCKED")
+            self.assertIsNone(load(root,project_id="P",gate_run_id="GR"))
+
 if __name__=="__main__": unittest.main()

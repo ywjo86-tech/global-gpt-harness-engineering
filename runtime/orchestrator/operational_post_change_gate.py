@@ -7,11 +7,13 @@ monitoring chain healthy enough to declare the change operationally complete?
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
+from .monitor_health import evaluate_monitor_health_receipt
 from .read_only_host_diagnostic_contract import DiagnosticContractError, DiagnosticPolicy
 from .user_service_observer import UserServiceObserver, UserServiceObserverError
 
@@ -75,6 +77,8 @@ def evaluate_post_change_gate(
     diagnostic_config: str | Path,
     attention_watch_enabled: bool,
     timer_watch_enabled: bool,
+    attention_health_receipt: dict[str, Any] | str | Path | None = None,
+    timer_health_receipt: dict[str, Any] | str | Path | None = None,
     stale_after_seconds: int = 180,
     observer: UserServiceObserver | None = None,
     now: datetime | None = None,
@@ -115,24 +119,56 @@ def evaluate_post_change_gate(
     if missing:
         failures.append("DIAGNOSTIC_COVERAGE_MISSING:" + ",".join(missing))
 
+    monitor_receipts: dict[str, Any] = {}
+    monitor_now = current if current.tzinfo is not None else current.replace(tzinfo=timezone.utc)
+    attention_receipt, attention_failures = evaluate_monitor_health_receipt(
+        attention_health_receipt,
+        monitor_name="ATTENTION_HEALTH",
+        now=monitor_now,
+        fresh_after_seconds=stale_after_seconds,
+    )
+    timer_receipt, timer_failures = evaluate_monitor_health_receipt(
+        timer_health_receipt,
+        monitor_name="RECONCILE_TIMER_HEALTH",
+        now=monitor_now,
+        fresh_after_seconds=stale_after_seconds,
+    )
+    if attention_receipt is not None:
+        monitor_receipts["attention_health"] = attention_receipt
+    if timer_receipt is not None:
+        monitor_receipts["reconcile_timer_health"] = timer_receipt
+    failures.extend(attention_failures)
+    failures.extend(timer_failures)
+
+    legacy_compatibility: list[str] = []
+    if attention_health_receipt is None and attention_watch_enabled:
+        legacy_compatibility.append("ATTENTION_WATCH_BOOLEAN_COMPAT_ONLY")
+    if timer_health_receipt is None and timer_watch_enabled:
+        legacy_compatibility.append("RECONCILE_TIMER_WATCH_BOOLEAN_COMPAT_ONLY")
     if not attention_watch_enabled:
         failures.append("ATTENTION_WATCH_DISABLED")
     if not timer_watch_enabled:
         failures.append("RECONCILE_TIMER_WATCH_DISABLED")
 
-    return {
+    result = {
         "schema_version": "ai-office.operational-post-change-gate.v1",
         "status": "PASS" if not failures else "BLOCKED",
         "stale_after_seconds": stale_after_seconds,
         "checks": checks,
         "diagnostic_required_units": sorted(REQUIRED_DIAGNOSTIC_UNITS),
         "diagnostic_missing_units": missing,
+        "monitor_health_receipts": monitor_receipts,
+        "legacy_monitor_compatibility": legacy_compatibility,
         "external_monitors": {
             "attention_watch_enabled": bool(attention_watch_enabled),
             "reconcile_timer_watch_enabled": bool(timer_watch_enabled),
         },
         "failures": failures,
     }
+    result["gate_evidence_sha256"] = hashlib.sha256(
+        json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -140,12 +176,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--diagnostic-config", required=True)
     parser.add_argument("--attention-watch-enabled", action="store_true")
     parser.add_argument("--timer-watch-enabled", action="store_true")
+    parser.add_argument("--attention-health-receipt")
+    parser.add_argument("--timer-health-receipt")
     parser.add_argument("--stale-after-seconds", type=int, default=180)
     args = parser.parse_args(argv)
     result = evaluate_post_change_gate(
         diagnostic_config=args.diagnostic_config,
         attention_watch_enabled=args.attention_watch_enabled,
         timer_watch_enabled=args.timer_watch_enabled,
+        attention_health_receipt=args.attention_health_receipt,
+        timer_health_receipt=args.timer_health_receipt,
         stale_after_seconds=args.stale_after_seconds,
     )
     print(json.dumps(result, sort_keys=True))

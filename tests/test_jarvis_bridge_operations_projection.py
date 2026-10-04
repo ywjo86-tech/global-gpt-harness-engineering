@@ -25,6 +25,7 @@ class JarvisBridgeOperationsProjectionTests(unittest.TestCase):
             engine.plan(mode="manual", run_id="operations-projection")
             payload = refresh_operations_projection(project, run_id="operations-projection")
             self.assertEqual(payload["schema_version"], "orchestration.operations-read-model.v1")
+            self.assertIn("diagnostic_health", payload)
             serialized = repr(payload).lower()
             for forbidden in ("credential", "token", "raw_effect_payload", "final_assignee"):
                 self.assertNotIn(forbidden, serialized)

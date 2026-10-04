@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -53,6 +54,29 @@ class LiveAutoCanaryTests(unittest.TestCase):
         self.assertEqual(profile["credentials"], "DENIED")
         self.assertEqual(profile["packages"], "DENIED")
         self.assertEqual(profile["external_effect_policy"], "NO_EXTERNAL_EFFECT")
+
+    def test_pause_after_gate_a_has_bounded_lease(self):
+        from runtime.orchestrator.live_auto_canary import LiveAutoCanaryError, PAUSE_ENV, PAUSE_TTL_ENV, build_live_auto_canary_executor
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"; project.mkdir()
+            state = root / "state"; state.mkdir()
+            job = {
+                "executor_kind": "DCC_LIVE_AUTO_CANARY",
+                "project_root": str(project),
+                "harness_root": str(state),
+                "harness_state_root": str(state),
+                "run_id": "lease-test",
+                "gates": [
+                    {"gate_id": "CANARY-A", "continuation_contract": {"schema_version":"orchestration.gate-continuation-contract.v1"}},
+                    {"gate_id": "CANARY-B", "continuation_contract": {"schema_version":"orchestration.gate-continuation-contract.v1"}},
+                    {"gate_id": "CANARY-C", "continuation_contract": {"schema_version":"orchestration.gate-continuation-contract.v1"}},
+                ],
+            }
+            executor = build_live_auto_canary_executor(job)
+            with patch.dict("os.environ", {PAUSE_ENV: "1", PAUSE_TTL_ENV: "0"}, clear=False):
+                with self.assertRaisesRegex(LiveAutoCanaryError, "TTL"):
+                    executor("CANARY-B", "gate-run", False)
 
 
 if __name__ == "__main__":

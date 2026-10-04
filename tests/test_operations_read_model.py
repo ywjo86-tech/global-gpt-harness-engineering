@@ -18,6 +18,7 @@ from runtime.orchestrator.operations_read_model import (
     normalize_progress,
     resolve_freshness,
 )
+from runtime.orchestrator.operational_acceptance import build_operational_acceptance_record
 
 
 def make_console() -> OperatorConsoleProjectionV1:
@@ -118,6 +119,47 @@ class OperationsReadModelContractTests(unittest.TestCase):
             ),
             "STALE",
         )
+
+    def test_execution_complete_with_blocked_operational_acceptance_is_not_false_green(self):
+        gate = {
+            "schema_version": "ai-office.operational-post-change-gate.v1",
+            "status": "BLOCKED",
+            "failures": ["ATTENTION_WATCH_DISABLED"],
+            "gate_evidence_sha256": "b" * 64,
+        }
+        acceptance = build_operational_acceptance_record(
+            project_id="P1",
+            run_id="R1",
+            full_plan_terminal_state={
+                "state": "COMPLETED",
+                "state_sha256": "a" * 64,
+                "authority_core_sha256": "c" * 64,
+                "terminal_reason": "ALL_GATES_COMPLETED",
+            },
+            post_change_gate=gate,
+        )
+        status = OfficeStatusProjectionV1(
+            OFFICE_STATUS_SCHEMA_V1, "P1", "R1", "COMPLETE", 3, "", ""
+        )
+        report = OfficeReportV1(
+            OFFICE_REPORT_SCHEMA_V1,
+            status,
+            make_office_report().kpi,
+            "",
+            "",
+            "",
+            ("observation:E1",),
+            (),
+        )
+        model = build_operations_read_model(
+            make_console(),
+            report,
+            source_identities=(SourceIdentityV1("HARNESS", "v1", "a" * 40, "2026-09-24T00:00:00+00:00"),),
+            now=datetime(2026, 9, 24, 0, 0, 5, tzinfo=timezone.utc),
+            operational_acceptance=acceptance,
+        ).to_dict()
+        self.assertEqual(model["normalized_state"], "COMPLETED")
+        self.assertEqual(model["operational_acceptance"]["status"], "BLOCKED")
 
 
 if __name__ == "__main__":

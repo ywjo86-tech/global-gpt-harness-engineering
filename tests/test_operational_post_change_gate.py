@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from runtime.orchestrator.monitor_health import build_monitor_health_receipt
 from runtime.orchestrator.operational_post_change_gate import (
     HOST_RUNNER_SERVICE, OCP_SERVICE, OCP_TIMER, RECONCILE_SERVICE, RECONCILE_TIMER,
     evaluate_post_change_gate,
@@ -42,6 +43,18 @@ def write_policy(root: Path, services):
     return path
 
 
+def healthy_receipt(name: str) -> dict:
+    return build_monitor_health_receipt(
+        monitor_name=name,
+        runtime_source_identity="runtime:478",
+        search_root="/tmp/state",
+        registered_job_count=94,
+        pending_current_event_count=0,
+        result="PASS",
+        scanned_at="2026-10-04T12:00:00+00:00",
+    ).to_dict()
+
+
 class OperationalPostChangeGateTests(unittest.TestCase):
     def test_all_required_conditions_pass(self):
         with tempfile.TemporaryDirectory() as td:
@@ -49,6 +62,8 @@ class OperationalPostChangeGateTests(unittest.TestCase):
             policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
             result=evaluate_post_change_gate(
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertEqual(result["status"],"PASS")
@@ -63,6 +78,8 @@ class OperationalPostChangeGateTests(unittest.TestCase):
             policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
             result=evaluate_post_change_gate(
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
                 observer=FakeObserver(values), now=datetime(2026,10,4,12,0,0),
             )
         self.assertEqual(result["status"],"BLOCKED")
@@ -76,6 +93,8 @@ class OperationalPostChangeGateTests(unittest.TestCase):
             policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
             result=evaluate_post_change_gate(
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
                 observer=FakeObserver(values), now=datetime(2026,10,4,12,0,0),
             )
         self.assertIn(f"{OCP_TIMER}:TRIGGER_STALE",result["failures"])
@@ -86,6 +105,8 @@ class OperationalPostChangeGateTests(unittest.TestCase):
             policy=write_policy(root,[OCP_SERVICE])
             result=evaluate_post_change_gate(
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertEqual(result["status"],"BLOCKED")
@@ -97,9 +118,45 @@ class OperationalPostChangeGateTests(unittest.TestCase):
             policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
             result=evaluate_post_change_gate(
                 diagnostic_config=policy, attention_watch_enabled=False, timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertIn("ATTENTION_WATCH_DISABLED",result["failures"])
+
+    def test_caller_booleans_without_fresh_receipts_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
+            result=evaluate_post_change_gate(
+                diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
+            )
+        self.assertEqual(result["status"],"BLOCKED")
+        self.assertIn("ATTENTION_HEALTH:MONITOR_RECEIPT_MISSING",result["failures"])
+        self.assertIn("RECONCILE_TIMER_HEALTH:MONITOR_RECEIPT_MISSING",result["failures"])
+        self.assertIn("ATTENTION_WATCH_BOOLEAN_COMPAT_ONLY",result["legacy_monitor_compatibility"])
+
+    def test_stale_monitor_receipt_blocks_gate(self):
+        stale = build_monitor_health_receipt(
+            monitor_name="ATTENTION_HEALTH",
+            runtime_source_identity="runtime:478",
+            search_root="/tmp/state",
+            registered_job_count=94,
+            pending_current_event_count=0,
+            result="PASS",
+            scanned_at="2026-10-04T11:00:00+00:00",
+        ).to_dict()
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
+            result=evaluate_post_change_gate(
+                diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=stale,
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
+            )
+        self.assertIn("ATTENTION_HEALTH:MONITOR_RECEIPT_STALE",result["failures"])
 
 
 if __name__=="__main__":

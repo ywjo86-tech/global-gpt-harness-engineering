@@ -820,6 +820,8 @@ class UnixSocketHostRunner:
         self.broker_native = broker_native; self.runtime_handler = runtime_handler
 
     def serve_once(self, *, timeout: int = 1800) -> None:
+        if timeout <= 0:
+            raise GatewayError("HOST_GATEWAY_TIMEOUT_INVALID")
         if self.socket_path.exists():
             raise GatewayError("runner socket already exists")
         # Linux AF_UNIX pathname is limited to 108 bytes including NUL.
@@ -838,7 +840,11 @@ class UnixSocketHostRunner:
             except OSError as exc:
                 raise GatewayError("UDS_LISTEN") from exc
             with server:
-                conn, _ = server.accept()
+                server.settimeout(float(timeout))
+                try:
+                    conn, _ = server.accept()
+                except socket.timeout as exc:
+                    raise GatewayError("HOST_GATEWAY_ACCEPT_TIMEOUT") from exc
                 with conn:
                     if hasattr(socket, "SO_PEERCRED"):
                         _, uid, _ = struct.unpack("3i", conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))

@@ -12,9 +12,11 @@ from unittest.mock import patch
 from runtime.ai_office.full_plan_activation import AIFullPlanActivationContextV1
 from runtime.orchestrator.approved_full_plan_binding import ExecutableAuthorityBundleV1, ValidatedGateAuthorityV1
 from runtime.orchestrator.full_plan_activation import (
-    FullPlanActivationError, FullPlanActivationStore,
+    FullPlanActivationError, FullPlanActivationReceiptV1, FullPlanActivationStore,
     activate_approved_full_plan, build_executable_full_plan_job,
+    resolve_activation_receipt_job,
 )
+from runtime.orchestrator.run_supersession import RunSupersessionRecord
 from runtime.orchestrator.production_full_plan_entry import preflight_job
 
 
@@ -82,6 +84,36 @@ class FullPlanActivationTests(unittest.TestCase):
         with self.assertRaisesRegex(FullPlanActivationError,"continuation mode"):
             build_executable_full_plan_job(
                 self.bundle,ai_context=self.context,harness_state_root=self.state,continuation_mode="FUTURE")
+
+    def test_activation_receipt_resolves_dangling_path_only_with_bound_supersession(self):
+        receipt = FullPlanActivationReceiptV1(
+            schema_version="orchestration.full-plan-activation-receipt.v1",
+            activation_request_id="OLD",
+            bundle_digest="b"*64,
+            result_status="FULL_PLAN_REGISTERED",
+            canonical_job_path=str(self.base/"missing.job.json"),
+            run_id="OLD",
+            authority_digest="a"*64,
+            executable_authority_bundle_digest="b"*64,
+            activation_digest="c"*64,
+        )
+        record = RunSupersessionRecord.create(
+            project_id="project",
+            predecessor_run_id="OLD",
+            predecessor_authority_sha256="a"*64,
+            successor_run_id="NEW",
+            successor_authority_sha256="d"*64,
+            reason="archived successor preserves terminal evidence",
+            evidence_refs=("supersession:test",),
+        )
+        resolved = resolve_activation_receipt_job(
+            receipt,
+            supersession=record,
+            successor_job={"project_id":"project","run_id":"NEW","authority_core_sha256":"d"*64},
+        )
+        self.assertEqual(resolved["resolution"], "SUPERSEDED")
+        with self.assertRaises(FullPlanActivationError):
+            resolve_activation_receipt_job(receipt)
 
     def test_builder_emits_generic_auto_reconcile_job_without_executor_kind(self):
         job=build_executable_full_plan_job(self.bundle,ai_context=self.context,harness_state_root=self.state)

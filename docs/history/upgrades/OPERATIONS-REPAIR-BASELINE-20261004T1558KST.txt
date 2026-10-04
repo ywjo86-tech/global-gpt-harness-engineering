@@ -1,0 +1,71 @@
+captured_at=2026-10-04T15:58:26+09:00
+repo=/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering
+main_head=ffe54dae3713888b955579c12e9a3d0e43258d3b
+main_branch=design/ai-office-topdown-dashboard-capability-20260923
+=== status ===
+## design/ai-office-topdown-dashboard-capability-20260923
+ M docs/DEVELOPMENT_PLAN.txt
+?? docs/history/upgrades/2026-10-01-<approved-upgrade-sequence>/
+?? docs/history/upgrades/2026-10-01-d1.4-to-d1.5-recovery/
+?? docs/history/upgrades/AI-OFFICE-FULLPLAN-HYBRID-OPERATIONS-DEEP-DIAGNOSIS-20261004.md
+?? docs/history/upgrades/AI-OFFICE-HARNESS-FULLPLAN-OPERATIONS-CONSOLIDATED-REPAIR-PLAN-20261004.md
+?? docs/history/upgrades/AI-OFFICE-HARNESS-PH5_AI_OFFICE_STABLE_BASELINE_D1.5_FULL_PLAN_EXECUTION_CONTRACT_DRAFT.txt
+?? docs/history/upgrades/OPERATIONS-REPAIR-BASELINE-20261004T1558KST.txt
+=== refs ===
+d3317010112384b3e86d3c68bd0708f05de5558c 5b6d329ff6831a9fdc8a77334b61f9d750001d67 2026-10-03 16:19:24 +0900 fix(full-plan): route read-only validation safely
+478dc312f4c0f6808eab0b21775362c6ff0541bb f36c0446539a3f7eb9f0c8349283ea04c5d5cbee 2026-10-04 12:52:34 +0900 fix(ocpv2): fail closed on stale reconcile timer
+b9864506a1a07e2e7500a3b1dda80cf6db42bf29 7446f9ed4b6e0f3a499ade6148e24fad07aecb9b b4faddda3664701602d7669168b40d1c6efd1094 2026-10-03 20:36:09 +0900 merge(ai-office): preserve serving OCP baseline in PR33 successor
+=== units ===
+Result=success
+ExecMainStatus=0
+WorkingDirectory=/home/ywjo/AI-Workspace/runtime/releases/478dc312f4c0f6808eab0b21775362c6ff0541bb
+Id=ocpv2.service
+ActiveState=inactive
+SubState=dead
+
+Result=success
+Id=ocpv2.timer
+ActiveState=active
+SubState=waiting
+
+Result=success
+ExecMainStatus=0
+WorkingDirectory=/home/ywjo/.local/share/ocpv2-control-runner
+Id=ocpv2-host-runner.service
+ActiveState=active
+SubState=running
+
+Result=success
+ExecMainStatus=0
+WorkingDirectory=/home/ywjo/.local/share/global-gpt-harness/runtime-current
+Id=global-gpt-harness-full-plan-reconcile.service
+ActiveState=inactive
+SubState=dead
+
+Result=success
+Id=global-gpt-harness-full-plan-reconcile.timer
+ActiveState=active
+SubState=waiting
+=== runtime-current ===
+/home/ywjo/AI-Workspace/runtime/releases/d3317010112384b3e86d3c68bd0708f05de5558c
+=== processes ===
+   1450    1360 Sat Sep  5 16:12:15 2026 2504771 Ssl  /home/ywjo/AI-Workspace/project-workspace/llmwiki-action-api/.venv/bin/python /home/ywjo/AI-Workspace/project-workspace/llmwiki-action-api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+  38602   38600 Sat Sep  5 17:08:56 2026 2501369 S+   python3 -m runtime.orchestrator.host_runner_entry --socket /tmp/harness-host-gateway-4f18ba65ee9b6726c388d50b.sock --ledger /home/ywjo/AI-Workspace/project-workspace/_phase4a_r2c_proof34_20260905-170856/evidence-phase4a-r2c-proof34-worker-crash-20260905-170856/host-gateway-ledger
+1336197 1336195 Mon Sep  7 21:22:14 2026 2313372 S+   python3 -m runtime.orchestrator.host_runner_entry --socket /tmp/harness-host-gateway-9dd009b81c922fbcafe86682.sock --ledger /home/ywjo/AI-Workspace/project-workspace/_phase4a_r2c_proof87_20260907-212134/evidence-phase4a-r2c-proof87-worker-crash-20260907-212214/host-gateway-ledger
+2724112       1 Mon Sep 28 13:46:44 2026  526302 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python -m uvicorn webapp.app:app --host 0.0.0.0 --port 8011
+2732063       1 Mon Sep 28 14:36:43 2026  523303 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python /tmp/ai-office-dashboard-access-smoke.py
+2748010       1 Mon Sep 28 14:51:50 2026  522396 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python /tmp/ai-office-dashboard-smoke-launcher.py
+2758866       1 Mon Sep 28 16:02:19 2026  518167 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python -m uvicorn --app-dir /tmp ai-office-dashboard-smoke:app --host 100.123.191.38 --port 8014
+2767064       1 Mon Sep 28 16:48:29 2026  515397 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python /tmp/ai-office-dashboard-smoke-runner.py
+2768176       1 Mon Sep 28 16:53:19 2026  515107 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python /tmp/ai-office-dashboard-smoke.py
+2769925       1 Mon Sep 28 17:02:37 2026  514549 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python -m uvicorn ai-office-dashboard-smoke:app --app-dir /tmp --host 100.123.191.38 --port 8017
+2776302       1 Mon Sep 28 17:38:06 2026  512420 Sl   /home/ywjo/AI-Workspace/project-workspace/jarvis-assistant/.venv/bin/python -m uvicorn ai_office_dashboard_access_smoke:app --app-dir /tmp --host 100.123.191.38 --port 8018
+=== listeners ===
+LISTEN 0      2048                100.123.191.38:8014       0.0.0.0:*    users:(("python",pid=2758866,fd=6))
+LISTEN 0      2048                100.123.191.38:8018       0.0.0.0:*    users:(("python",pid=2776302,fd=6))
+LISTEN 0      2048                100.123.191.38:8017       0.0.0.0:*    users:(("python",pid=2769925,fd=6))
+u_str LISTEN 0      1               /tmp/harness-host-gateway-4f18ba65ee9b6726c388d50b.sock 99220               * 0    users:(("python3",pid=38602,fd=3))           
+u_str LISTEN 0      1               /tmp/harness-host-gateway-9dd009b81c922fbcafe86682.sock 3794407             * 0    users:(("python3",pid=1336197,fd=3))         
+=== transport ===
+f353e5af1ff915d286cf7f19ab83f2bd2c83d7a55a47912455e857f8a37a7b6a  /home/ywjo/.local/state/gch/ocpv2/transport/github-delivery-acks.json
+ab458862ba391e866afc3bb8adaba666b3e5d1c005f45c432ed7a1072f4a8335  /home/ywjo/.local/state/gch/ocpv2/transport/github-delivery-acks.json.pending

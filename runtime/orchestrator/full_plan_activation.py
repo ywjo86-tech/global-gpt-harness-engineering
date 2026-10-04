@@ -19,6 +19,7 @@ from .execution_lifecycle_v2 import (
 )
 from .production_full_plan_entry import FullPlanJobError, canonical_job_path, load_job, preflight_job, register_job
 from .production_run_authority import AUTO_RECONCILE_OWNER, executor_runtime_identity
+from .run_supersession import RunSupersessionRecord
 from .implementation_continuation import CONTINUATION_MODES, LEGACY, TDD_V1
 
 FULL_PLAN_ACTIVATION_RESULT_SCHEMA_V1 = "orchestration.full-plan-activation-result.v1"
@@ -124,6 +125,39 @@ class FullPlanActivationStore:
             try: durable_json_save(path, receipt.to_dict())
             except (DurableIOError, OSError, ValueError) as exc: raise FullPlanActivationError("ACTIVATION_RECEIPT_WRITE_FAILED") from exc
             return receipt
+
+
+def resolve_activation_receipt_job(
+    receipt: FullPlanActivationReceiptV1,
+    *,
+    supersession: RunSupersessionRecord | None = None,
+    successor_job: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve immutable activation receipt evidence without rewriting it."""
+    path = Path(receipt.canonical_job_path)
+    if path.is_file() and not path.is_symlink():
+        return {
+            "resolution": "DIRECT",
+            "canonical_job_path": receipt.canonical_job_path,
+            "activation_digest": receipt.activation_digest,
+        }
+    if supersession is None or successor_job is None:
+        raise FullPlanActivationError("ACTIVATION_RECEIPT_JOB_UNRESOLVED")
+    supersession.validate()
+    if (
+        supersession.predecessor_run_id != receipt.run_id
+        or supersession.predecessor_authority_sha256 != receipt.authority_digest
+        or str(successor_job.get("run_id") or "") != supersession.successor_run_id
+        or str(successor_job.get("authority_core_sha256") or "") != supersession.successor_authority_sha256
+    ):
+        raise FullPlanActivationError("ACTIVATION_RECEIPT_SUPERSESSION_MISMATCH")
+    return {
+        "resolution": "SUPERSEDED",
+        "activation_digest": receipt.activation_digest,
+        "supersession_record_sha256": supersession.record_sha256,
+        "successor_run_id": supersession.successor_run_id,
+        "successor_authority_sha256": supersession.successor_authority_sha256,
+    }
 
 
 def _git_common_dir(root: Path) -> str:

@@ -72,6 +72,8 @@ def build_diagnostic_health_projection(
             evidence_refs.append(ref)
         if state in _ISSUE_STATES:
             issue_states.append(state)
+        elif state == "STALE":
+            issue_states.append("DEGRADED")
 
     for event in attention_events:
         if not isinstance(event, Mapping):

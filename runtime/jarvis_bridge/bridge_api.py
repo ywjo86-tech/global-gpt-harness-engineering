@@ -21,6 +21,7 @@ def refresh_dashboard_snapshot(project_root: str | Path, run_id: str | None = No
 
 
 def refresh_operations_projection(project_root: str | Path, run_id: str | None = None) -> dict[str, object]:
+    from runtime.orchestrator.operations_diagnostic_projection import build_diagnostic_health_projection
     from runtime.orchestrator.operator_console_projection import build_operator_console_projection
     from runtime.orchestrator.operations_read_model import build_operations_read_model_from_console_snapshot
 
@@ -41,7 +42,28 @@ def refresh_operations_projection(project_root: str | Path, run_id: str | None =
         transport_state="OBSERVE_ONLY",
         status_flags=tuple(),
     )
-    return build_operations_read_model_from_console_snapshot(console, snapshot).to_dict()
+    diagnostic_findings = snapshot.get("diagnostic_findings")
+    if not isinstance(diagnostic_findings, list):
+        diagnostic_findings = []
+    attention_events = snapshot.get("attention_events")
+    if not isinstance(attention_events, list):
+        attention_events = []
+    recovery_refs = snapshot.get("recovery_refs")
+    if not isinstance(recovery_refs, list):
+        recovery_refs = []
+    health = build_diagnostic_health_projection(
+        current_state={"normalized_state": console.stage, "freshness": "UNKNOWN"},
+        diagnostic_findings=diagnostic_findings,
+        attention_events=attention_events,
+        recovery_refs=tuple(str(item) for item in recovery_refs),
+    )
+    acceptance = snapshot.get("operational_acceptance")
+    return build_operations_read_model_from_console_snapshot(
+        console,
+        snapshot,
+        diagnostic_health=health,
+        operational_acceptance=acceptance if isinstance(acceptance, dict) else None,
+    ).to_dict()
 
 
 def get_status(project_root: str | Path, run_id: str | None = None) -> dict[str, Any]:

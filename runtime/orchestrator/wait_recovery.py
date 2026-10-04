@@ -21,6 +21,7 @@ from .provider_router import (
 
 PROVIDER_WAIT_EVIDENCE_SCHEMA = "orchestration.provider-wait-recovery-evidence.v1"
 PROVIDER_WAIT_POINTER_SCHEMA = "orchestration.provider-wait-recovery-pointer.v1"
+PROVIDER_WAIT_RETIREMENT_SCHEMA = "orchestration.provider-wait-retirement.v1"
 
 
 class WaitRecoveryError(ValueError):
@@ -217,6 +218,41 @@ def load_active_provider_wait_recovery_evidence(
     if validated["evidence_sha256"] != pointer.get("evidence_sha256"):
         raise WaitRecoveryError("provider wait pointer/evidence mismatch")
     return validated
+
+
+def retire_active_provider_wait_pointer(
+    state_root: str | Path, *, project_id: str, gate_run_id: str,
+    terminal_state: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    state = str(terminal_state.get("state") or "").upper()
+    if state not in {"COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}:
+        raise WaitRecoveryError("provider wait retirement requires terminal state")
+    base = _provider_wait_base(state_root, project_id, gate_run_id)
+    pointer_path = base / "active.json"
+    if not pointer_path.exists():
+        return None
+    if pointer_path.is_symlink() or not pointer_path.is_file():
+        raise WaitRecoveryError("provider wait pointer is unsafe")
+    evidence = load_active_provider_wait_recovery_evidence(
+        state_root,
+        project_id=project_id,
+        gate_run_id=gate_run_id,
+    )
+    unsigned = {
+        "schema_version": PROVIDER_WAIT_RETIREMENT_SCHEMA,
+        "project_id": evidence["project_id"],
+        "gate_run_id": evidence["gate_run_id"],
+        "lv_id": evidence["lv_id"],
+        "evidence_sha256": evidence["evidence_sha256"],
+        "terminal_state": state,
+        "terminal_state_sha256": str(terminal_state.get("state_sha256") or ""),
+        "retired_at": _now(),
+        "control_authority": "NONE",
+    }
+    unsigned["retirement_sha256"] = _digest(unsigned)
+    atomic_write_json(base / "retired-active.json", unsigned)
+    pointer_path.unlink()
+    return unsigned
 
 
 def evaluate_provider_wait_recovery(

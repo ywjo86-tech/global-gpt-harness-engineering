@@ -90,6 +90,22 @@ class DurableDeliveryAckTests(unittest.TestCase):
                 "M1", source_message_id="444", content_sha256=content_sha(comment())
             ))
 
+    def test_pending_delivery_diagnostics_and_explicit_retirement_do_not_forge_ack(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            first = adapter(path, (comment(),))
+            self.assertEqual(len(first.receive()), 1)
+            diagnostic = first.classify_delivery_pending()
+            self.assertEqual(diagnostic["entries"][0]["classification"], "CURRENT_PENDING")
+            retirement = first.retire_delivery_pending_explicitly(
+                source_message_id="444",
+                message_id="M1",
+                content_sha256=content_sha(comment()),
+                evidence_ref="diagnostic:obsolete",
+            )
+            self.assertEqual(retirement["classification"], "OBSOLETE_WITH_EVIDENCE")
+            self.assertFalse(first.has_durable_ack("M1", source_message_id="444", content_sha256=content_sha(comment())))
+
     def test_recovery_publish_persists_exact_delivery_fingerprint(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "acks.json"

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from runtime.ai_office.reporting import OfficeReportV1
+from .operational_acceptance import OperationalAcceptanceRecordV1
 from .operations_diagnostic_projection import DiagnosticHealthProjectionV1
 from .operator_console_projection import OperatorConsoleProjectionV1
 
@@ -121,6 +122,7 @@ class OperationsReadModelV1:
     sources: tuple[SourceIdentityV1, ...]
     freshness: str
     diagnostic_health: DiagnosticHealthProjectionV1 | None = None
+    operational_acceptance: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, object]:
         value = asdict(self)
@@ -128,6 +130,8 @@ class OperationsReadModelV1:
         value["checkpoint_refs"] = list(self.checkpoint_refs)
         value["evidence_refs"] = list(self.evidence_refs)
         value["sources"] = [asdict(item) for item in self.sources]
+        if self.diagnostic_health is not None:
+            value["diagnostic_health"] = asdict(self.diagnostic_health)
         return value
 
 
@@ -155,6 +159,8 @@ def build_operations_read_model(
     *,
     source_identities: tuple[SourceIdentityV1, ...],
     now: datetime,
+    diagnostic_health: DiagnosticHealthProjectionV1 | None = None,
+    operational_acceptance: OperationalAcceptanceRecordV1 | Mapping[str, Any] | None = None,
 ) -> OperationsReadModelV1:
     """Build a closed read model from bounded projections only.
 
@@ -172,6 +178,13 @@ def build_operations_read_model(
             (*console.evidence_refs, *office_report.observation_refs, *office_report.recovery_refs)
         )
     )
+    acceptance_payload: dict[str, Any] | None
+    if isinstance(operational_acceptance, OperationalAcceptanceRecordV1):
+        acceptance_payload = operational_acceptance.to_dict()
+    elif isinstance(operational_acceptance, Mapping):
+        acceptance_payload = dict(operational_acceptance)
+    else:
+        acceptance_payload = None
     return OperationsReadModelV1(
         schema_version=OPERATIONS_READ_MODEL_SCHEMA_V1,
         project_id=console.project_id,
@@ -193,6 +206,8 @@ def build_operations_read_model(
         evidence_refs=evidence_refs,
         sources=tuple(source_identities),
         freshness=resolve_freshness(tuple(source_identities), now),
+        diagnostic_health=diagnostic_health,
+        operational_acceptance=acceptance_payload,
     )
 
 
@@ -201,6 +216,8 @@ def build_operations_read_model_from_console_snapshot(
     snapshot: Mapping[str, Any],
     *,
     source_identities: tuple[SourceIdentityV1, ...] = (),
+    diagnostic_health: DiagnosticHealthProjectionV1 | None = None,
+    operational_acceptance: Mapping[str, Any] | None = None,
 ) -> OperationsReadModelV1:
     """Bounded adapter for the legacy Jarvis bridge snapshot shape."""
     if not isinstance(console, OperatorConsoleProjectionV1) or not isinstance(snapshot, Mapping):
@@ -237,4 +254,6 @@ def build_operations_read_model_from_console_snapshot(
         evidence_refs=console.evidence_refs,
         sources=tuple(sources),
         freshness="UNKNOWN",
+        diagnostic_health=diagnostic_health,
+        operational_acceptance=dict(operational_acceptance) if operational_acceptance else None,
     )

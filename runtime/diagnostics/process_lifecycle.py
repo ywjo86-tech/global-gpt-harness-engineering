@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Mapping
 
 
@@ -22,6 +23,35 @@ class ProcessLifecycleDiagnosticV1:
     orphan_suspicion_reason: str
     recommended_action: str
     cleanup_authorization_required: bool
+
+
+def collect_process_ownership_facts(
+    *,
+    pid: int,
+    owner_ref: str,
+    owner_state_path: str | Path,
+    lock_path: str | Path,
+    expected_lifecycle_state: str = "UNKNOWN",
+    last_semantic_progress: str = "",
+    command_digest: str = "",
+) -> dict[str, Any]:
+    """Collect read-only ownership facts; never signals or reaps a process."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        raise ProcessLifecycleDiagnosticError("valid pid is required")
+    state = Path(owner_state_path)
+    lock = Path(lock_path)
+    return {
+        "pid": pid,
+        "owner_ref": str(owner_ref),
+        "owner_state_path": str(state),
+        "owner_state_exists": state.exists() and not state.is_symlink(),
+        "lock_path": str(lock),
+        "lock_exists": lock.exists() and not lock.is_symlink(),
+        "expected_lifecycle_state": str(expected_lifecycle_state),
+        "last_semantic_progress": str(last_semantic_progress),
+        "command_digest": str(command_digest),
+        "collection_mode": "READ_ONLY",
+    }
 
 
 def diagnose_process_lifecycle(

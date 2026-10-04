@@ -32,6 +32,17 @@ class OperationsDiagnosticProjectionTests(unittest.TestCase):
         for name in ("restart", "kill", "recover", "complete_gate"):
             self.assertFalse(hasattr(result, name))
 
+    def test_stale_process_lifecycle_finding_degrades_health(self):
+        result = build_diagnostic_health_projection(
+            current_state={"normalized_state": "COMPLETED", "freshness": "FRESH"},
+            diagnostic_findings=(
+                {"domain": "process_lifecycle", "state": "STALE", "evidence_ref": "diag:process"},
+            ),
+            attention_events=(),
+            recovery_refs=(),
+        )
+        self.assertEqual(result.overall_state, "DEGRADED")
+
 
 if __name__ == "__main__":
     unittest.main()

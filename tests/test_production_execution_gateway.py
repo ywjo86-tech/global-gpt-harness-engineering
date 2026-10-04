@@ -294,6 +294,18 @@ class GatewayContractTests(unittest.TestCase):
                 from runtime.orchestrator.production_worker_executor import CodexExecutionAdapter
                 CodexExecutionAdapter().probe_version(executor)
 
+    def test_host_runner_no_client_times_out_and_removes_socket(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "gateway.sock"
+            runner = UnixSocketHostRunner(sock, root / "ledger", executor=lambda *a, **k: None)
+            try:
+                with self.assertRaisesRegex(GatewayError, "HOST_GATEWAY_ACCEPT_TIMEOUT"):
+                    runner.serve_once(timeout=1)
+            except PermissionError:
+                self.skipTest("local sandbox does not permit AF_UNIX bind")
+            self.assertFalse(sock.exists())
+
     def test_gateway_request_contract_is_version_bound(self):
         req = request()
         self.assertEqual(req["adapter_contract_version"], "SEM-025.v2")

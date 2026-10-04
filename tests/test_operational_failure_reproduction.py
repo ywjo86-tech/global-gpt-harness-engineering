@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from runtime.orchestrator.ocpv2_runtime_service import full_plan_execution_health
+from runtime.orchestrator.monitor_health import build_monitor_health_receipt
 from runtime.orchestrator.operational_post_change_gate import (
     HOST_RUNNER_SERVICE,
     OCP_SERVICE,
@@ -75,6 +76,17 @@ def write_policy(root: Path, services):
 
 
 class OperationalFailureReproductionTests(unittest.TestCase):
+    def _receipt(self, name: str) -> dict:
+        return build_monitor_health_receipt(
+            monitor_name=name,
+            runtime_source_identity="runtime:478",
+            search_root="/tmp/state",
+            registered_job_count=94,
+            pending_current_event_count=0,
+            result="PASS",
+            scanned_at="2026-10-04T12:00:00+00:00",
+        ).to_dict()
+
     def _gate(self, values, *, attention=True, timer_watch=True, services=None):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -86,6 +98,8 @@ class OperationalFailureReproductionTests(unittest.TestCase):
                 diagnostic_config=policy,
                 attention_watch_enabled=attention,
                 timer_watch_enabled=timer_watch,
+                attention_health_receipt=self._receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=self._receipt("RECONCILE_TIMER_HEALTH"),
                 observer=DictObserver(values),
                 now=NOW,
                 stale_after_seconds=180,

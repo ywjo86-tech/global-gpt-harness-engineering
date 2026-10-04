@@ -28,6 +28,7 @@ CONTROL_PREFIX = "OCPV2_CONTROL_V2\n"
 RESULT_PREFIX = "OCPV2_RESULT_V1\n"
 _DELIVERY_ACK_SCHEMA = "ocpv2.github-delivery-ack.v1"
 _DELIVERY_PENDING_SCHEMA = "ocpv2.github-delivery-pending.v1"
+_DELIVERY_PENDING_DIAGNOSTIC_SCHEMA = "ocpv2.github-delivery-pending-diagnostic.v1"
 
 
 class GitHubControlAdapterError(ValueError):
@@ -321,6 +322,62 @@ class GitHubControlAdapter:
         else:
             self._pending.pop(pending.message_id, None)
         self._save_delivery_pending()
+
+    def classify_delivery_pending(self) -> dict[str, Any]:
+        """Read-only pending classification; never forges ACK or deletes by age."""
+        rows: list[dict[str, str]] = []
+        for pending in self._load_delivery_pending():
+            if self.has_durable_ack(
+                pending.message_id,
+                source_message_id=pending.source_message_id,
+                content_sha256=pending.content_sha256,
+            ):
+                classification = "ACKED"
+            elif pending.source_message_id and pending.message_id and pending.content_sha256:
+                classification = "CURRENT_PENDING"
+            else:
+                classification = "UNKNOWN"
+            rows.append({
+                "source_message_id": pending.source_message_id,
+                "message_id": pending.message_id,
+                "content_sha256": pending.content_sha256,
+                "classification": classification,
+            })
+        return {
+            "schema_version": _DELIVERY_PENDING_DIAGNOSTIC_SCHEMA,
+            "entries": rows,
+            "unknown_count": sum(1 for row in rows if row["classification"] == "UNKNOWN"),
+            "control_authority": "NONE",
+        }
+
+    def retire_delivery_pending_explicitly(
+        self,
+        *,
+        source_message_id: str,
+        message_id: str,
+        content_sha256: str,
+        evidence_ref: str,
+    ) -> dict[str, Any]:
+        """Explicitly retire obsolete pending delivery evidence without creating ACK."""
+        target = _PendingDelivery(
+            source_message_id=str(source_message_id),
+            message_id=str(message_id),
+            content_sha256=str(content_sha256),
+        )
+        if not str(evidence_ref or "").strip():
+            raise GitHubControlAdapterError("explicit retirement evidence is required")
+        if target not in self._pending.get(target.message_id, []):
+            raise GitHubControlAdapterError("pending delivery identity not found")
+        self._discard_pending(target)
+        return {
+            "schema_version": "ocpv2.github-delivery-pending-retirement.v1",
+            "source_message_id": target.source_message_id,
+            "message_id": target.message_id,
+            "content_sha256": target.content_sha256,
+            "classification": "OBSOLETE_WITH_EVIDENCE",
+            "evidence_ref": str(evidence_ref),
+            "control_authority": "NONE",
+        }
 
     def _persist_successful_publish(self, message_id: object) -> None:
         value = str(message_id or "")
