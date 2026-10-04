@@ -505,6 +505,44 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
                 )
             self.assertIs(selected, target)
 
+    def test_full_plan_activation_rejects_ambiguous_runtime_digest_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            first_root = releases / ("c" * 40)
+            second_root = releases / ("d" * 40)
+            service_root.mkdir(parents=True)
+            first_root.mkdir()
+            second_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            first = SimpleNamespace(
+                source_head="c" * 40, manifest_sha256="2" * 64, release_path=str(first_root),
+            )
+            second = SimpleNamespace(
+                source_head="d" * 40, manifest_sha256="2" * 64, release_path=str(second_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+
+            def resolve(path):
+                path = Path(path)
+                if path == first_root:
+                    return first
+                if path == second_root:
+                    return second
+                raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_REQUIRED")
+
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=resolve,
+            ), self.assertRaisesRegex(
+                RuntimeServiceError, "FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH",
+            ):
+                _runtime_release_for_full_plan_request(
+                    service_root, request, service_release=service,
+                )
+
     def test_full_plan_activation_resolves_exact_sibling_runtime_release(self):
         with tempfile.TemporaryDirectory() as directory:
             releases = Path(directory) / "releases"
