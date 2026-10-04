@@ -244,8 +244,7 @@ def _runtime_release_for_full_plan_request(
         raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
 
     if (
-        str(service_release.source_head) == root.name
-        and str(service_release.manifest_sha256) == expected_digest
+        str(service_release.manifest_sha256) == expected_digest
         and Path(str(service_release.release_path or "")).absolute() == root
     ):
         return service_release
