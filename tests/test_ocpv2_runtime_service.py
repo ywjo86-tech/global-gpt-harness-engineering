@@ -19,6 +19,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     execute_authorized_canonical,
     finalize_remote_control_projection,
     full_plan_activation_enabled_from_environment,
+    full_plan_execution_health,
     host_inspection_enabled_from_environment,
     load_runtime_config,
     work_activation_enabled_from_environment,
@@ -554,6 +555,70 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             self.assertEqual(validate.call_args.kwargs["authority_root"],authority)
             self.assertEqual(validate.call_args.kwargs["harness_state_root"],harness_state)
             release.assert_called_once_with(repo)
+
+    def test_full_plan_execution_health_is_healthy_only_with_live_timer_and_successful_service(self):
+        observer = Mock()
+        observer.read.side_effect = [
+            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
+        ]
+        result = full_plan_execution_health(observer)
+        self.assertEqual(result["status"], "HEALTHY")
+        self.assertEqual(result["reason"], "")
+
+    def test_full_plan_execution_health_marks_stopped_timer_degraded(self):
+        observer = Mock()
+        observer.read.side_effect = [
+            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "inactive", "SubState": "dead", "Result": "success", "ExecMainStatus": "0"},
+        ]
+        result = full_plan_execution_health(observer)
+        self.assertEqual(result["status"], "DEGRADED")
+        self.assertIn("RECONCILE_TIMER_NOT_ACTIVE", result["reason"])
+
+    def test_full_plan_execution_health_marks_failed_service_degraded(self):
+        observer = Mock()
+        observer.read.side_effect = [
+            {"ActiveState": "active", "SubState": "waiting", "Result": "success", "ExecMainStatus": "0"},
+            {"ActiveState": "failed", "SubState": "failed", "Result": "exit-code", "ExecMainStatus": "1"},
+        ]
+        result = full_plan_execution_health(observer)
+        self.assertEqual(result["status"], "DEGRADED")
+        self.assertIn("RECONCILE_SERVICE_NOT_HEALTHY", result["reason"])
+
+    def test_main_reports_degraded_instead_of_false_ok_when_reconcile_is_unhealthy(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        config = SimpleNamespace(full_plan_activation_enabled=True)
+        result = {"mode": "ACTIVE", "received": 0, "validated": 0, "executed": 0}
+        printed = []
+        with patch.object(module, "load_runtime_config", return_value=config), \
+             patch.object(module, "run_once", return_value=result), \
+             patch.object(module, "full_plan_execution_health", return_value={
+                 "status": "DEGRADED", "reason": "RECONCILE_TIMER_NOT_ACTIVE"
+             }), \
+             patch("builtins.print", side_effect=lambda value, **kwargs: printed.append(value)):
+            rc = module.main(["--env-file", "/unused/test.env"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(printed[-1])
+        self.assertEqual(payload["status"], "DEGRADED")
+        self.assertEqual(payload["operational_health"]["reason"], "RECONCILE_TIMER_NOT_ACTIVE")
+
+    def test_main_reports_ok_when_reconcile_is_healthy(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+        config = SimpleNamespace(full_plan_activation_enabled=True)
+        result = {"mode": "ACTIVE", "received": 0, "validated": 0, "executed": 0}
+        printed = []
+        with patch.object(module, "load_runtime_config", return_value=config), \
+             patch.object(module, "run_once", return_value=result), \
+             patch.object(module, "full_plan_execution_health", return_value={
+                 "status": "HEALTHY", "reason": ""
+             }), \
+             patch("builtins.print", side_effect=lambda value, **kwargs: printed.append(value)):
+            rc = module.main(["--env-file", "/unused/test.env"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(printed[-1])
+        self.assertEqual(payload["status"], "OK")
+        self.assertEqual(payload["operational_health"]["status"], "HEALTHY")
 
     def test_user_service_defaults_full_plan_activation_off(self):
         text=(REPO_ROOT/"deploy/operator-control-plane-v2/ocpv2.user.service.in").read_text(encoding="utf-8")

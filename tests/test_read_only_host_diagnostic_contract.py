@@ -148,6 +148,22 @@ class DiagnosticContractTests(unittest.TestCase):
                 status="OK", error_class="", payload=payload,
             )
 
+    def test_policy_accepts_explicit_systemd_timer_unit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            policy = root / "policy.json"
+            policy.write_text(json.dumps({
+                "schema_version": "orchestration.read-only-host-diagnostic-config.v1",
+                "roots": {"project": str(project)},
+                "user_services": ["ocpv2.service", "ocpv2.timer"],
+                "limits": {"max_bytes": 1024, "max_lines": 20, "timeout_seconds": 5},
+            }))
+            loaded = DiagnosticPolicy.load(policy)
+            self.assertEqual(loaded.user_services, ("ocpv2.service", "ocpv2.timer"))
+
+
 
 if __name__ == "__main__":
     unittest.main()

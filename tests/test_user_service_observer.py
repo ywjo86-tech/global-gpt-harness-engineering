@@ -29,6 +29,29 @@ class UserServiceObserverTests(unittest.TestCase):
             "--property=ActiveState,SubState,Result,ExecMainStatus",
         )])
 
+    def test_timer_unit_is_allowed_when_explicitly_allowlisted(self) -> None:
+        calls = []
+
+        def runner(argv):
+            calls.append(tuple(argv))
+            return subprocess.CompletedProcess(
+                argv, 0,
+                stdout="ActiveState=active\nSubState=waiting\nResult=success\nLastTriggerUSec=Sun 2026-10-04 11:57:50 KST\n",
+                stderr="",
+            )
+
+        observer = UserServiceObserver(
+            allowed_units=frozenset({"global-gpt-harness-full-plan-reconcile.timer"}), runner=runner,
+        )
+        result = observer.read("global-gpt-harness-full-plan-reconcile.timer")
+        self.assertEqual(result["ActiveState"], "active")
+        self.assertEqual(result["SubState"], "waiting")
+        self.assertEqual(calls[0], (
+            "systemctl", "--user", "show", "global-gpt-harness-full-plan-reconcile.timer",
+            "--property=ActiveState,SubState,Result,LastTriggerUSec",
+        ))
+        self.assertNotIn("ExecMainStatus", result)
+
     def test_disallowed_or_malformed_unit_never_calls_runner(self) -> None:
         calls = []
         observer = UserServiceObserver(
