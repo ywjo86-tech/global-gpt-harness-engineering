@@ -120,7 +120,7 @@ def evaluate_post_change_gate(
         failures.append("DIAGNOSTIC_COVERAGE_MISSING:" + ",".join(missing))
 
     monitor_receipts: dict[str, Any] = {}
-    monitor_now = current if current.tzinfo is not None else current.replace(tzinfo=timezone.utc)
+    monitor_now = current.astimezone(timezone.utc) if current.tzinfo is not None else datetime.now(timezone.utc)
     attention_receipt, attention_failures = evaluate_monitor_health_receipt(
         attention_health_receipt,
         monitor_name="ATTENTION_HEALTH",
