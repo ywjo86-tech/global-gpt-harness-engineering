@@ -100,6 +100,7 @@ class OperationalFailureReproductionTests(unittest.TestCase):
                 timer_watch_enabled=timer_watch,
                 attention_health_receipt=self._receipt("ATTENTION_HEALTH"),
                 timer_health_receipt=self._receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=DictObserver(values),
                 now=NOW,
                 stale_after_seconds=180,

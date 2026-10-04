@@ -297,3 +297,32 @@ def evaluate_resource_wait_recovery(
     if not resources_ok:
         return ResourceWaitRecoveryDecision(False, "RESOURCE_STILL_CONSTRAINED", state_sha, epoch)
     return ResourceWaitRecoveryDecision(True, "RESOURCE_RECOVERED", state_sha, epoch)
+
+
+def retire_provider_wait_pointers_for_terminal_run(
+    state_root: str | Path, *, project_id: str, run_id: str,
+    terminal_state: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    state = str(terminal_state.get("state") or "").upper()
+    if state not in {"COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}:
+        raise WaitRecoveryError("provider wait retirement requires terminal state")
+    project_root = (
+        Path(state_root).resolve() / "_workspace" / "provider-wait"
+        / _safe_id(project_id, "project ID")
+    )
+    if not project_root.is_dir() or project_root.is_symlink():
+        return ()
+    prefix = _safe_id(run_id, "run ID") + "--"
+    receipts: list[dict[str, Any]] = []
+    for base in sorted(project_root.iterdir()):
+        if not base.is_dir() or base.is_symlink() or not base.name.startswith(prefix):
+            continue
+        receipt = retire_active_provider_wait_pointer(
+            state_root,
+            project_id=project_id,
+            gate_run_id=base.name,
+            terminal_state=terminal_state,
+        )
+        if receipt is not None:
+            receipts.append(receipt)
+    return tuple(receipts)

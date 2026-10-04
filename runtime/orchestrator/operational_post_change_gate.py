@@ -16,6 +16,9 @@ from typing import Any
 from .monitor_health import evaluate_monitor_health_receipt
 from .read_only_host_diagnostic_contract import DiagnosticContractError, DiagnosticPolicy
 from .user_service_observer import UserServiceObserver, UserServiceObserverError
+from runtime.diagnostics.process_lifecycle import (
+    ProcessLifecycleDiagnosticError, load_process_lifecycle_snapshot,
+)
 
 OCP_SERVICE = "ocpv2.service"
 OCP_TIMER = "ocpv2.timer"
@@ -80,6 +83,7 @@ def evaluate_post_change_gate(
     timer_watch_enabled: bool,
     attention_health_receipt: dict[str, Any] | str | Path | None = None,
     timer_health_receipt: dict[str, Any] | str | Path | None = None,
+    process_lifecycle_snapshot: dict[str, Any] | str | Path | None = None,
     stale_after_seconds: int = 180,
     observer: UserServiceObserver | None = None,
     now: datetime | None = None,
@@ -141,6 +145,29 @@ def evaluate_post_change_gate(
     failures.extend(attention_failures)
     failures.extend(timer_failures)
 
+    process_lifecycle: dict[str, Any] | None = None
+    if process_lifecycle_snapshot is None:
+        failures.append("PROCESS_LIFECYCLE_SNAPSHOT_MISSING")
+    else:
+        try:
+            if isinstance(process_lifecycle_snapshot, dict):
+                # Persisted snapshot validation always uses the file path in production.
+                process_lifecycle = dict(process_lifecycle_snapshot)
+                blocking = int(process_lifecycle.get("blocking_count", -1))
+                if blocking < 0:
+                    raise ProcessLifecycleDiagnosticError("process lifecycle blocking count invalid")
+            else:
+                process_lifecycle = load_process_lifecycle_snapshot(
+                    process_lifecycle_snapshot,
+                    now=monitor_now,
+                    stale_after_seconds=stale_after_seconds,
+                )
+                blocking = int(process_lifecycle.get("blocking_count", -1))
+            if blocking > 0:
+                failures.append(f"PROCESS_LIFECYCLE_BLOCKED:{blocking}")
+        except (ProcessLifecycleDiagnosticError, ValueError, TypeError) as exc:
+            failures.append(f"PROCESS_LIFECYCLE_SNAPSHOT_INVALID:{exc}")
+
     legacy_compatibility: list[str] = []
     if attention_health_receipt is None and attention_watch_enabled:
         legacy_compatibility.append("ATTENTION_WATCH_BOOLEAN_COMPAT_ONLY")
@@ -159,6 +186,7 @@ def evaluate_post_change_gate(
         "diagnostic_required_units": sorted(REQUIRED_DIAGNOSTIC_UNITS),
         "diagnostic_missing_units": missing,
         "monitor_health_receipts": monitor_receipts,
+        "process_lifecycle_snapshot": process_lifecycle,
         "legacy_monitor_compatibility": legacy_compatibility,
         "external_monitors": {
             "attention_watch_enabled": bool(attention_watch_enabled),
@@ -179,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timer-watch-enabled", action="store_true")
     parser.add_argument("--attention-health-receipt")
     parser.add_argument("--timer-health-receipt")
+    parser.add_argument("--process-lifecycle-snapshot")
     parser.add_argument("--stale-after-seconds", type=int, default=180)
     args = parser.parse_args(argv)
     result = evaluate_post_change_gate(
@@ -187,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         timer_watch_enabled=args.timer_watch_enabled,
         attention_health_receipt=args.attention_health_receipt,
         timer_health_receipt=args.timer_health_receipt,
+        process_lifecycle_snapshot=args.process_lifecycle_snapshot,
         stale_after_seconds=args.stale_after_seconds,
     )
     print(json.dumps(result, sort_keys=True))

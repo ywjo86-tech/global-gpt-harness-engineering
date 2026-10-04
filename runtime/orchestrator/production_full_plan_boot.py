@@ -21,6 +21,7 @@ from .harness_state_root import discovery_roots, job_dedupe_key, job_state_root
 from .wait_recovery import (
     WaitRecoveryError, classify_wait_recovery, evaluate_provider_wait_recovery,
     evaluate_resource_wait_recovery, load_active_provider_wait_recovery_evidence,
+    retire_provider_wait_pointers_for_terminal_run,
 )
 
 
@@ -295,6 +296,15 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
         status = str(state.get("state"))
     if status in TERMINAL_STATES:
         terminal_reason = str(state.get("terminal_reason") or "")
+        try:
+            retired_provider_wait = retire_provider_wait_pointers_for_terminal_run(
+                job_state_root(job),
+                project_id=str(job["project_id"]),
+                run_id=str(job["run_id"]),
+                terminal_state=state,
+            )
+        except WaitRecoveryError:
+            retired_provider_wait = ()
         if status == "CANCELLED" and (
             terminal_reason == "RUNTIME_ACTIVATION_MIGRATION"
             or (terminal_reason == "MIGRATED_TO_SUCCESSOR" and not _migration_successor_is_registered(job, state))
@@ -314,6 +324,7 @@ def reconcile_job(job_path: str | Path, *, launch: bool = True) -> dict[str, Any
                 details={"source": "periodic_reconciler"},
             )
         return {"job": str(job_path), "action": "SKIP_TERMINAL", "state": status,
+                "retired_provider_wait_count": len(retired_provider_wait),
                 "recovered_previous_generation": recovered, "external_binding_drift": bool(external_binding_drift), "launched": False}
     if status not in ACTIVE_STATES:
         return {"job": str(job_path), "action": "BLOCKED", "state": status,

@@ -64,6 +64,7 @@ class OperationalPostChangeGateTests(unittest.TestCase):
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
                 attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
                 timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertEqual(result["status"],"PASS")
@@ -80,6 +81,7 @@ class OperationalPostChangeGateTests(unittest.TestCase):
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
                 attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
                 timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=FakeObserver(values), now=datetime(2026,10,4,12,0,0),
             )
         self.assertEqual(result["status"],"BLOCKED")
@@ -95,6 +97,7 @@ class OperationalPostChangeGateTests(unittest.TestCase):
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
                 attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
                 timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=FakeObserver(values), now=datetime(2026,10,4,12,0,0),
             )
         self.assertIn(f"{OCP_TIMER}:TRIGGER_STALE",result["failures"])
@@ -107,6 +110,7 @@ class OperationalPostChangeGateTests(unittest.TestCase):
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
                 attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
                 timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertEqual(result["status"],"BLOCKED")
@@ -120,6 +124,7 @@ class OperationalPostChangeGateTests(unittest.TestCase):
                 diagnostic_config=policy, attention_watch_enabled=False, timer_watch_enabled=True,
                 attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
                 timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertIn("ATTENTION_WATCH_DISABLED",result["failures"])
@@ -136,6 +141,20 @@ class OperationalPostChangeGateTests(unittest.TestCase):
         self.assertIn("ATTENTION_HEALTH:MONITOR_RECEIPT_MISSING",result["failures"])
         self.assertIn("RECONCILE_TIMER_HEALTH:MONITOR_RECEIPT_MISSING",result["failures"])
         self.assertIn("ATTENTION_WATCH_BOOLEAN_COMPAT_ONLY",result["legacy_monitor_compatibility"])
+
+    def test_process_lifecycle_blocker_prevents_false_green(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
+            result=evaluate_post_change_gate(
+                diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":2},
+                observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
+            )
+        self.assertEqual(result["status"],"BLOCKED")
+        self.assertIn("PROCESS_LIFECYCLE_BLOCKED:2",result["failures"])
 
     def test_stale_monitor_receipt_blocks_gate(self):
         stale = build_monitor_health_receipt(
@@ -154,6 +173,7 @@ class OperationalPostChangeGateTests(unittest.TestCase):
                 diagnostic_config=policy, attention_watch_enabled=True, timer_watch_enabled=True,
                 attention_health_receipt=stale,
                 timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
                 observer=FakeObserver(healthy_values()), now=datetime(2026,10,4,12,0,0),
             )
         self.assertIn("ATTENTION_HEALTH:MONITOR_RECEIPT_STALE",result["failures"])
