@@ -4,7 +4,7 @@ import argparse, json
 from datetime import datetime, timezone
 from pathlib import Path
 from .monitor_health import build_monitor_health_receipt, record_monitor_health_receipt
-from .operational_acceptance import build_operational_acceptance_record, OperationalAcceptanceStore
+from .operational_acceptance import build_operational_acceptance_record, OperationalAcceptanceStore, OperationalAcceptanceError
 from .operational_post_change_gate import evaluate_post_change_gate
 from .production_attention_watch import discover_pending_attention, discover_registered_jobs
 from .user_service_observer import UserServiceObserver
@@ -45,7 +45,15 @@ def main(argv=None)->int:
         full_plan_terminal_state=state,post_change_gate=gate,
         monitor_health_receipt_refs=(str(ap),str(tp)),
         runtime_release_identity_refs=(a.runtime_source,))
-    OperationalAcceptanceStore(a.state_root).save_once(rec)
+    store=OperationalAcceptanceStore(a.state_root)
+    try:
+        existing=store.load(a.project_id,a.run_id)
+    except OperationalAcceptanceError:
+        existing=None
+    if existing is None:
+        store.save_once(rec)
+    elif rec.status=="ACCEPTED" and existing.status=="ACCEPTED":
+        rec=existing
     (out/"operational-acceptance.json").write_text(json.dumps(rec.to_dict(),sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
     print(json.dumps({"post_change":gate["status"],"operational_acceptance":rec.status,
         "current_attention":len(current),"record_sha256":rec.record_sha256},sort_keys=True))
