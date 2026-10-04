@@ -337,6 +337,22 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertTrue(plan.deferred)
             self.assertEqual(plan.focused, ())
 
+    def test_source_only_python_scope_ignores_conftest_and_helpers_as_direct_targets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\n')
+            (root/'tests').mkdir()
+            (root/'tests/conftest.py').write_text('from pkg.service import VALUE\n')
+            (root/'tests/helper.py').write_text('from pkg.service import VALUE\n')
+            (root/'tests/test_consumer.py').write_text('def test_consumer(): assert True\n')
+            plan=resolve_validation_commands(root, ['src/pkg/service.py'], allow_deferred=True)
+            self.assertTrue(plan.deferred)
+            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertEqual(plan.focused, ())
+
     def test_source_only_python_scope_supports_approved_external_interpreter(self):
         with tempfile.TemporaryDirectory() as d:
             base=Path(d)

@@ -754,7 +754,7 @@ def _preflight(
         if policy_id == "IMMUTABLE_EXTERNAL_INTERPRETER":
             toolchain = manifest.get("validation_toolchain")
             profile_ids = toolchain.get("profile_ids", []) if isinstance(toolchain, Mapping) else []
-            if profile_ids == ["PYTHON_UNITTEST_EXTERNAL"]:
+            if profile_ids in (["PYTHON_UNITTEST_EXTERNAL"], ["PYTHON_PROJECT_SOURCE"]):
                 focused = toolchain.get("focused", [])
                 if not isinstance(focused, list) or not focused or not isinstance(focused[0], list) or not focused[0]:
                     raise LVReviewError("sealed external interpreter binding is missing")
@@ -1786,8 +1786,23 @@ def _production_committed_changes(root: Path, baseline: str, checkpoint: str) ->
     }
 
 
-def _run_command(argv: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
-    env = {"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"}
+def _source_validation_env(root: Path) -> dict[str, str]:
+    import_roots: list[str] = []
+    source_root = root / "src"
+    if source_root.is_dir() and not source_root.is_symlink():
+        import_roots.append(str(source_root))
+    import_roots.append(str(root))
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": os.pathsep.join(import_roots),
+    }
+
+
+def _run_command(
+    argv: list[str], cwd: Path, timeout: int, *, env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    env = dict(env) if env is not None else {"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"}
     with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(mode="w+b") as stderr_file:
         process = subprocess.Popen(
             argv,
@@ -1889,7 +1904,12 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
             return [], f"project-native validation toolchain unavailable: {exc}"
 
         def runner_fn(command_root: Path, argv: list[str]) -> Mapping[str, Any]:
-            result = _run_command(argv, command_root, 300)
+            validation_env = (
+                _source_validation_env(command_root)
+                if plan.profile_ids == ("PYTHON_PROJECT_SOURCE",)
+                else None
+            )
+            result = _run_command(argv, command_root, 300, env=validation_env)
             return {key: value for key, value in result.items() if key not in {"stdout", "stderr", "argv"}}
 
         groups = [plan.focused, plan.full, plan.compile]

@@ -2485,17 +2485,22 @@ def _candidate_validation_command(root: Path, command: Sequence[str]) -> list[st
     return normalized
 
 
-def _candidate_validation_env(sandbox: Path) -> dict[str, str]:
-    """Isolate candidate imports from live/editable project mappings and control-plane state."""
+def _source_validation_env(root: Path) -> dict[str, str]:
+    """Use only the governed project source roots for Python validation imports."""
     env = _validation_command_env()
     import_roots: list[str] = []
-    source_root = sandbox / "src"
+    source_root = root / "src"
     if source_root.is_dir() and not source_root.is_symlink():
         import_roots.append(str(source_root))
-    import_roots.append(str(sandbox))
+    import_roots.append(str(root))
     env["PYTHONPATH"] = os.pathsep.join(import_roots)
     env.pop("PYTHONHOME", None)
     return env
+
+
+def _candidate_validation_env(sandbox: Path) -> dict[str, str]:
+    """Isolate candidate imports from live/editable project mappings and control-plane state."""
+    return _source_validation_env(sandbox)
 
 
 def _provider_action_candidate_focused_validator(
@@ -3520,8 +3525,13 @@ def execute_production_worker(request: WorkerRequest, *,
             normalized = list(command)
             if normalized and normalized[0] == ".venv/bin/python":
                 normalized[0] = str(command_root / ".venv" / "bin" / "python")
+            validation_env = (
+                _source_validation_env(command_root)
+                if validation_plan.profile_ids == ("PYTHON_PROJECT_SOURCE",)
+                else _validation_command_env()
+            )
             result = _command(
-                command_root, normalized, env=_validation_command_env(),
+                command_root, normalized, env=validation_env,
                 classify_collection=_is_test_runner(normalized),
                 capture_feedback=feedback_sink is not None,
             )

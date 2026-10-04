@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -226,6 +227,32 @@ class LVRemediationTests(unittest.TestCase):
         payload["after_owned_content"][0]["size"] += 1
         remediation_worker_result_path(self.run).write_bytes(canon(payload))
         self.assertEqual(review_remediation(self.run)["status"], "BLOCKED")
+
+    def test_external_source_profile_restores_sealed_interpreter_for_remediation(self) -> None:
+        parent_path=self.harness/'_workspace/orchestration-runs'/self.parent/'package.manifest.json'
+        parent=json.loads(parent_path.read_text())
+        parent['interpreter_policy_id']='IMMUTABLE_EXTERNAL_INTERPRETER'
+        parent['validation_toolchain']={
+            'profile_ids':['PYTHON_PROJECT_SOURCE'],
+            'focused':[[sys.executable,'-m','pytest','-q','tests/test_model.py']],
+            'full':[[sys.executable,'-m','pytest','-q']],
+            'compile':[[sys.executable,'-m','compileall','-q','app/model.py']],
+            'deferred':False,
+        }
+        parent_path.write_bytes(canon(parent))
+        manifest={'parent_run_id':self.parent}
+        passing=[
+            {'exit_code':0,'timeout':False},
+            {'exit_code':0,'timeout':False},
+            {'exit_code':0,'timeout':False},
+        ]
+        with patch('runtime.orchestrator.lv_remediation._scan_owned_files', return_value=[]), patch(
+            'runtime.orchestrator.lv_remediation._run_tests', return_value=(passing, None)
+        ) as run_tests:
+            _run_checks(self.project, self.owned, manifest)
+        self.assertEqual(run_tests.call_args.args[1], Path(sys.executable))
+        self.assertEqual(run_tests.call_args.kwargs['runner'], 'unittest')
+        self.assertEqual(run_tests.call_args.kwargs['expected_profiles'], ['PYTHON_PROJECT_SOURCE'])
 
     def test_clean_untracked_owned_bytes_diff_check_passes(self) -> None:
         (self.project / "app/model.py").write_text("VALUE = 1\n")

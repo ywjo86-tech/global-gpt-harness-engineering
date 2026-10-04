@@ -221,6 +221,9 @@ def _read_only_python_test_targets(root: Path, owned_files: Sequence[str]) -> tu
     for candidate in sorted(tests_root.rglob("*.py"), key=lambda item: item.as_posix()):
         if not _safe_regular_file(root, candidate):
             continue
+        name = candidate.name
+        if not (name.startswith("test_") or name.endswith("_test.py")):
+            continue
         try:
             tree = ast.parse(candidate.read_text(encoding="utf-8"), filename=str(candidate))
         except (OSError, UnicodeError, SyntaxError):
