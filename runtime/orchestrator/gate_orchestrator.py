@@ -90,6 +90,30 @@ def _canonical_hash(value: object) -> str:
     return _sha(canonical_json_bytes(value))
 
 
+def _review_canonical_state_for_package(
+    manifest: Mapping[str, Any],
+    worker_payload: Mapping[str, Any],
+    canonical_state_override: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    if not isinstance(canonical_state_override, Mapping):
+        return canonical_state_override
+    manifest_checkpoint = manifest.get("checkpoint_commit")
+    state_checkpoint = canonical_state_override.get("checkpoint_commit")
+    if manifest_checkpoint == state_checkpoint:
+        return canonical_state_override
+    if (
+        worker_payload.get("schema_version") != "orchestration.product-completion-evidence.v1"
+        or worker_payload.get("status") not in {"completed", "COMPLETED"}
+        or worker_payload.get("baseline_head") != manifest_checkpoint
+        or worker_payload.get("checkpoint_commit") != state_checkpoint
+        or worker_payload.get("current_head") != state_checkpoint
+    ):
+        return canonical_state_override
+    normalized = dict(canonical_state_override)
+    normalized["checkpoint_commit"] = manifest_checkpoint
+    return normalized
+
+
 def _test_only_crash_after_capability_stage(stage: str) -> None:
     """Raise an unhandled test-only crash after durable stage persistence.
 
@@ -2105,13 +2129,18 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 raise GateControllerError("REVIEW request replay conflict")
         else:
             _atomic_json(review_request_path, review_request)
+        review_canonical_state_override = _review_canonical_state_for_package(
+            manifest,
+            worker_payload,
+            context.get("canonical_state_override"),
+        )
         publication = resolve_derived_preflight_publication(
             run_id, package_root=Path(state["package_root"]),
             source_root=Path(state["package_root"]) / "preflight",
             result_path=Path(state["worker_result_path"]),
             review_request_path=review_request_path,
             project_root=root,
-            canonical_state_override=context.get("canonical_state_override"),
+            canonical_state_override=review_canonical_state_override,
         )
         if publication.get("status") != "READY":
             raise GateControllerError(f"REVIEW preflight publication blocked: {publication}")
@@ -2127,7 +2156,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             package_root=Path(state["package_root"]),
             result_path=Path(state["worker_result_path"]), results_root=review_root,
             project_root=root,
-            canonical_state_override=context.get("canonical_state_override"),
+            canonical_state_override=review_canonical_state_override,
         )
         if review_result.get("status") not in {"PASS", "FAIL"}:
             raise GateControllerError(f"REVIEW blocked: {review_result}")
