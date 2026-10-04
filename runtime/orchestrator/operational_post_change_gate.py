@@ -76,6 +76,7 @@ def evaluate_post_change_gate(
     attention_watch_enabled: bool,
     timer_watch_enabled: bool,
     stale_after_seconds: int = 180,
+    monitor_health_receipt: str | Path | None = None,
     observer: UserServiceObserver | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -115,6 +116,29 @@ def evaluate_post_change_gate(
     if missing:
         failures.append("DIAGNOSTIC_COVERAGE_MISSING:" + ",".join(missing))
 
+    monitor_receipt_status = "NOT_CONFIGURED"
+    if monitor_health_receipt is not None:
+        monitor_receipt_status = "INVALID"
+        try:
+            receipt_path = Path(monitor_health_receipt)
+            value = json.loads(receipt_path.read_text(encoding="utf-8"))
+            observed_at = datetime.fromisoformat(str(value.get("observed_at") or "").replace("Z", "+00:00"))
+            age = max(0.0, (datetime.now(observed_at.tzinfo) - observed_at).total_seconds())
+            unsigned = {key: item for key, item in value.items() if key != "receipt_sha256"}
+            import hashlib
+            expected = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+            if value.get("schema_version") != "orchestration.attention-monitor-health.v1" or value.get("receipt_sha256") != expected:
+                failures.append("ATTENTION_MONITOR_RECEIPT_INVALID")
+            elif age > stale_after_seconds:
+                failures.append("ATTENTION_MONITOR_RECEIPT_STALE")
+            elif int(value.get("current_attention_count") or 0) > 0:
+                failures.append("CURRENT_ATTENTION_REQUIRED")
+                monitor_receipt_status = "ATTENTION_REQUIRED"
+            else:
+                attention_watch_enabled = True
+                monitor_receipt_status = "HEALTHY"
+        except Exception:
+            failures.append("ATTENTION_MONITOR_RECEIPT_INVALID")
     if not attention_watch_enabled:
         failures.append("ATTENTION_WATCH_DISABLED")
     if not timer_watch_enabled:
@@ -130,6 +154,7 @@ def evaluate_post_change_gate(
         "external_monitors": {
             "attention_watch_enabled": bool(attention_watch_enabled),
             "reconcile_timer_watch_enabled": bool(timer_watch_enabled),
+            "attention_monitor_receipt_status": monitor_receipt_status,
         },
         "failures": failures,
     }
@@ -140,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--diagnostic-config", required=True)
     parser.add_argument("--attention-watch-enabled", action="store_true")
     parser.add_argument("--timer-watch-enabled", action="store_true")
+    parser.add_argument("--monitor-health-receipt")
     parser.add_argument("--stale-after-seconds", type=int, default=180)
     args = parser.parse_args(argv)
     result = evaluate_post_change_gate(
@@ -147,6 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         attention_watch_enabled=args.attention_watch_enabled,
         timer_watch_enabled=args.timer_watch_enabled,
         stale_after_seconds=args.stale_after_seconds,
+        monitor_health_receipt=args.monitor_health_receipt,
     )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] == "PASS" else 2

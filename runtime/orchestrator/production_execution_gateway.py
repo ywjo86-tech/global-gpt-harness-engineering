@@ -838,7 +838,16 @@ class UnixSocketHostRunner:
             except OSError as exc:
                 raise GatewayError("UDS_LISTEN") from exc
             with server:
-                conn, _ = server.accept()
+                # Bound the pre-connect phase as well as execution.  Previously the
+                # timeout was only passed to the runtime handler after accept(), so an
+                # abandoned one-shot runner could listen forever when no client arrived.
+                server.settimeout(float(timeout))
+                try:
+                    conn, _ = server.accept()
+                except socket.timeout as exc:
+                    raise GatewayError("HOST_RUNNER_ACCEPT_TIMEOUT") from exc
+                finally:
+                    server.settimeout(None)
                 with conn:
                     if hasattr(socket, "SO_PEERCRED"):
                         _, uid, _ = struct.unpack("3i", conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))

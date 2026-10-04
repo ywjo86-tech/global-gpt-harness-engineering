@@ -25,6 +25,8 @@ CANARY_EXECUTOR_KIND = "DCC_LIVE_AUTO_CANARY"
 CANARY_PROJECT_ID = "DCC_LIVE_AUTO_CANARY"
 CANARY_GATES = ("CANARY-A", "CANARY-B", "CANARY-C")
 PAUSE_ENV = "GCH_LIVE_AUTO_CANARY_PAUSE_AFTER_GATE_A"
+PAUSE_TTL_ENV = "GCH_LIVE_AUTO_CANARY_PAUSE_TTL_SECONDS"
+DEFAULT_PAUSE_TTL_SECONDS = 300.0
 
 
 class LiveAutoCanaryError(ValueError):
@@ -111,8 +113,18 @@ def build_live_auto_canary_executor(job: Mapping[str, Any]):
         # Test/live qualification can intentionally strand B in RUNNING after A
         # to prove durable recovery. Pause happens before any B mutation.
         if gate_id != CANARY_GATES[0] and os.environ.get(PAUSE_ENV) == "1":
-            while True:
-                time.sleep(1.0)
+            # Recovery qualification may intentionally strand a successor Gate, but
+            # the child must never outlive its owner indefinitely.
+            try:
+                pause_ttl = float(os.environ.get(PAUSE_TTL_ENV, DEFAULT_PAUSE_TTL_SECONDS))
+            except (TypeError, ValueError) as exc:
+                raise LiveAutoCanaryError("canary pause TTL is invalid") from exc
+            if pause_ttl <= 0 or pause_ttl > 3600:
+                raise LiveAutoCanaryError("canary pause TTL is outside safe bounds")
+            deadline = time.monotonic() + pause_ttl
+            while time.monotonic() < deadline:
+                time.sleep(min(1.0, max(0.01, deadline - time.monotonic())))
+            raise LiveAutoCanaryError("canary intentional pause TTL expired")
 
         relative = Path("artifacts") / f"{gate_id}.txt"
         artifact = project / relative

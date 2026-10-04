@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import os
 import re
 from typing import Any
 
@@ -41,7 +43,31 @@ def refresh_operations_projection(project_root: str | Path, run_id: str | None =
         transport_state="OBSERVE_ONLY",
         status_flags=tuple(),
     )
-    return build_operations_read_model_from_console_snapshot(console, snapshot).to_dict()
+    diagnostic_health = None
+    acceptance_path = Path(os.environ.get(
+        "GCH_OPERATIONAL_ACCEPTANCE_PATH",
+        str(Path.home() / ".local/state/global-gpt-harness/operations/operational-acceptance.json"),
+    ))
+    if acceptance_path.is_file() and not acceptance_path.is_symlink():
+        try:
+            acceptance = json.loads(acceptance_path.read_text(encoding="utf-8"))
+            from runtime.orchestrator.operations_diagnostic_projection import build_diagnostic_health_projection
+            state = "HEALTHY" if acceptance.get("operational_acceptance") == "ACCEPTED" else "BLOCKED"
+            diagnostic_health = build_diagnostic_health_projection(
+                current_state={"freshness": "FRESH", "normalized_state": console.stage},
+                diagnostic_findings=[{
+                    "domain": "operational_acceptance",
+                    "state": state,
+                    "evidence_ref": str(acceptance_path),
+                }],
+                attention_events=[],
+                recovery_refs=[],
+            )
+        except (OSError, ValueError, TypeError):
+            diagnostic_health = None
+    return build_operations_read_model_from_console_snapshot(
+        console, snapshot, diagnostic_health=diagnostic_health
+    ).to_dict()
 
 
 def get_status(project_root: str | Path, run_id: str | None = None) -> dict[str, Any]:
