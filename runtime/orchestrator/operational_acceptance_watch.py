@@ -25,7 +25,7 @@ def main(argv=None)->int:
     current=[x for x in attention if str(x.get("state") or "") not in _TERMINAL]
     ar=build_monitor_health_receipt(monitor_name="ATTENTION_HEALTH",runtime_source_identity=a.runtime_source,
         search_root=a.search_root,registered_job_count=len(jobs),pending_current_event_count=len(current),
-        result="PASS" if not current else "BLOCKED")
+        result="PASS" if not current else "BLOCKED", scanned_at=now.isoformat(timespec="seconds"))
     ap=out/"attention-health.json"; record_monitor_health_receipt(ap,ar)
     obs=UserServiceObserver(allowed_units=frozenset({"global-gpt-harness-full-plan-reconcile.timer","global-gpt-harness-full-plan-reconcile.service"}))
     timer=obs.read("global-gpt-harness-full-plan-reconcile.timer")
@@ -34,7 +34,7 @@ def main(argv=None)->int:
               and timer.get("Result")=="success" and svc.get("Result")=="success" and svc.get("ExecMainStatus")=="0")
     tr=build_monitor_health_receipt(monitor_name="RECONCILE_TIMER_HEALTH",runtime_source_identity=a.runtime_source,
         search_root=a.search_root,registered_job_count=len(jobs),pending_current_event_count=0,
-        result="PASS" if timer_ok else "BLOCKED")
+        result="PASS" if timer_ok else "BLOCKED", scanned_at=now.isoformat(timespec="seconds"))
     tp=out/"reconcile-timer-health.json"; record_monitor_health_receipt(tp,tr)
     gate=evaluate_post_change_gate(diagnostic_config=a.diagnostic_config,attention_watch_enabled=True,timer_watch_enabled=True,
         attention_health_receipt=ap,timer_health_receipt=tp,stale_after_seconds=a.stale_after_seconds,now=now)
