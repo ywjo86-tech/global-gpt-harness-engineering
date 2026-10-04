@@ -2485,6 +2485,19 @@ def _candidate_validation_command(root: Path, command: Sequence[str]) -> list[st
     return normalized
 
 
+def _candidate_validation_env(sandbox: Path) -> dict[str, str]:
+    """Isolate candidate imports from live/editable project mappings and control-plane state."""
+    env = _validation_command_env()
+    import_roots: list[str] = []
+    source_root = sandbox / "src"
+    if source_root.is_dir() and not source_root.is_symlink():
+        import_roots.append(str(source_root))
+    import_roots.append(str(sandbox))
+    env["PYTHONPATH"] = os.pathsep.join(import_roots)
+    env.pop("PYTHONHOME", None)
+    return env
+
+
 def _provider_action_candidate_focused_validator(
     *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
 ) -> Callable[[Mapping[str, Any]], str]:
@@ -2542,7 +2555,7 @@ def _provider_action_candidate_focused_validator(
                 candidate_command = _candidate_validation_command(root, command)
                 result = subprocess.run(
                     candidate_command, cwd=sandbox, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    check=False, timeout=min(timeout, 180),
+                    check=False, timeout=min(timeout, 180), env=_candidate_validation_env(sandbox),
                 )
                 if result.returncode != 0:
                     return _bounded_validation_feedback(result.stdout, result.stderr)
@@ -2561,9 +2574,10 @@ def _sealed_external_validation_python(request: WorkerRequest) -> str | None:
     profiles = toolchain.get("profile_ids")
     if not isinstance(profiles, list):
         raise ProductionWorkerError("external Python validation contract is missing or mismatched")
-    if "PYTHON_UNITTEST_EXTERNAL" not in profiles:
+    external_python_profiles = {"PYTHON_UNITTEST_EXTERNAL", "PYTHON_PROJECT_SOURCE"}
+    if not any(profile in external_python_profiles for profile in profiles):
         return None
-    if profiles != ["PYTHON_UNITTEST_EXTERNAL"]:
+    if len(profiles) != 1 or profiles[0] not in external_python_profiles:
         raise ProductionWorkerError("external Python validation contract is missing or mismatched")
     executables: set[str] = set()
     for field in ("focused", "full", "compile"):

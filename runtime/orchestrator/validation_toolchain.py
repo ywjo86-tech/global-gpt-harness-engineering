@@ -214,7 +214,6 @@ def _read_only_python_test_targets(root: Path, owned_files: Sequence[str]) -> tu
         return any(
             module == owned
             or module.startswith(owned + ".")
-            or owned.startswith(module + ".")
             for owned in modules
         )
 
@@ -356,23 +355,70 @@ def resolve_validation_commands(
                 deferred = True
             else:
                 raise ValidationToolchainError("Python owned scope requires project venv or approved external interpreter")
-        elif read_only_py_tests and project_interpreter.is_file() and python_intent.branch in {"resolver", "pytest"}:
-            py_owned = [path for path in owned_files if path.endswith(".py")]
-            profiles.append("PYTEST_PROFILE" if python_intent.branch == "pytest" else "PYTHON_PYTEST")
-            focused_command = [".venv/bin/python", "-m", "pytest", "-q", *read_only_py_tests]
-            full_command = [".venv/bin/python", "-m", "pytest", "-q"]
-            if defer_evidence_manifest_integrity:
-                evidence_marker = "--ignore=tests/evidence/test_manifest.py"
-                focused_command.append(evidence_marker)
-                full_command.append(evidence_marker)
-            focused.append(tuple(focused_command))
-            full.append(tuple(full_command))
-            compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
-        elif allow_deferred:
-            profiles.append("PYTHON_PYTEST")
-            deferred = True
         else:
-            raise ValidationToolchainError("Python owned scope requires owned or deterministically imported focused tests")
+            project_config = root / "pyproject.toml"
+            tests_root = root / "tests"
+            source_root = root / "src"
+            runner = (
+                str(external_interpreter)
+                if external_interpreter is not None
+                else ".venv/bin/python" if project_interpreter.is_file() else None
+            )
+            if (
+                read_only_py_tests
+                and runner is not None
+                and python_intent.branch in {"resolver", "pytest", "external_unittest"}
+            ):
+                py_owned = [path for path in owned_files if path.endswith(".py")]
+                focused_command = [
+                    runner, "-m", "pytest", "-q", "-p", "no:cacheprovider", *read_only_py_tests,
+                ]
+                full_command = [runner, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                if defer_evidence_manifest_integrity:
+                    evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                    evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                    if (
+                        not evidence_test.is_file() or evidence_test.is_symlink()
+                        or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                    ):
+                        raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                    evidence_marker = "--ignore=tests/evidence/test_manifest.py"
+                    focused_command.append(evidence_marker)
+                    full_command.append(evidence_marker)
+                profiles.append("PYTHON_PROJECT_SOURCE")
+                focused.append(tuple(focused_command))
+                full.append(tuple(full_command))
+                compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
+            else:
+                project_source_validation = (
+                    _safe_regular_file(root, project_config)
+                    and tests_root.is_dir()
+                    and not tests_root.is_symlink()
+                    and runner is not None
+                )
+                if project_source_validation:
+                    pytest_command = [runner, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                    if defer_evidence_manifest_integrity:
+                        evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                        evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                        if (
+                            not evidence_test.is_file() or evidence_test.is_symlink()
+                            or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                        ):
+                            raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                        pytest_command.append("--ignore=tests/evidence/test_manifest.py")
+                    profiles.append("PYTHON_PROJECT_SOURCE")
+                    focused.append(tuple(pytest_command))
+                    full.append(tuple(pytest_command))
+                    compile_target = "src" if source_root.is_dir() and not source_root.is_symlink() else "."
+                    compile_commands.append((runner, "-m", "compileall", "-q", compile_target))
+                elif allow_deferred:
+                    profiles.append("PYTHON_PYTEST")
+                    deferred = True
+                else:
+                    raise ValidationToolchainError(
+                        "Python owned scope requires owned or deterministically imported focused tests"
+                    )
 
     evidence_only = bool(owned_files) and all(
         isinstance(path, str) and path.startswith("evidence/")

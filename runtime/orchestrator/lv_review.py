@@ -1851,7 +1851,7 @@ def _sealed_evidence_manifest_deferral(toolchain_contract: Mapping[str, Any] | N
     if not isinstance(toolchain_contract, Mapping):
         return False
     profiles = list(toolchain_contract.get("profile_ids") or [])
-    if profiles not in (["PYTHON_PROJECT_EVIDENCE"], ["PYTHON_PYTEST"], ["PYTEST_PROFILE"]):
+    if profiles not in (["PYTHON_PROJECT_EVIDENCE"], ["PYTHON_PROJECT_SOURCE"]):
         return False
     marker = "--ignore=tests/evidence/test_manifest.py"
     marked: list[bool] = []
@@ -1881,6 +1881,7 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
                 root,
                 owned_files,
                 allow_deferred=False,
+                python_executable=interpreter if runner == "unittest" else None,
                 defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
             )
             validate_profile_resolution(expected_profiles, plan.profile_ids)

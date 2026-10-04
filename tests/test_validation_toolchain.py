@@ -195,6 +195,32 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.compile[0],('.venv/bin/python','-m','compileall','-q','src'))
             self.assertFalse(plan.deferred)
 
+    def test_python_source_scope_without_owned_tests_uses_read_only_project_validation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'tests/evidence').mkdir(parents=True)
+            (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): pass\n')
+            (root/'evidence/implementation').mkdir(parents=True)
+            (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/a.py').write_text('VALUE = 1\n')
+            (root/'pyproject.toml').write_text('[project]\nname="fixture"\n')
+            plan=resolve_validation_commands(
+                root,['src/pkg/a.py'],
+                defer_evidence_manifest_integrity=True,
+            )
+            self.assertEqual(plan.profile_ids,('PYTHON_PROJECT_SOURCE',))
+            expected=(
+                '.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider',
+                '--ignore=tests/evidence/test_manifest.py',
+            )
+            self.assertEqual(plan.focused[0],expected)
+            self.assertEqual(plan.full[0],expected)
+            self.assertEqual(plan.compile[0],('.venv/bin/python','-m','compileall','-q','src'))
+            self.assertFalse(plan.deferred)
+
     def test_evidence_scope_without_python_project_markers_remains_fail_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
@@ -269,7 +295,9 @@ class ValidationToolchainTests(unittest.TestCase):
                 defer_evidence_manifest_integrity=True,
             )
             self.assertFalse(plan.deferred)
-            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertEqual(plan.profile_ids, ('PYTHON_PROJECT_SOURCE',))
+            self.assertIn('-p', plan.focused[0])
+            self.assertIn('no:cacheprovider', plan.focused[0])
             self.assertIn('tests/test_service.py', plan.focused[0])
             self.assertNotIn('tests/test_unrelated.py', plan.focused[0])
             self.assertIn('--ignore=tests/evidence/test_manifest.py', plan.focused[0])
@@ -294,6 +322,44 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.focused, ())
             self.assertEqual(plan.full, ())
             self.assertEqual(plan.compile, ())
+
+
+    def test_source_only_python_scope_does_not_treat_sibling_import_as_coverage(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\n')
+            (root/'tests').mkdir()
+            (root/'tests/test_other.py').write_text('from pkg import other\n')
+            plan=resolve_validation_commands(root, ['src/pkg/service.py'], allow_deferred=True)
+            self.assertTrue(plan.deferred)
+            self.assertEqual(plan.focused, ())
+
+    def test_source_only_python_scope_supports_approved_external_interpreter(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d)
+            root=base/'project'
+            root.mkdir()
+            external=base/'python'
+            external.write_text('#!/bin/sh\n')
+            external.chmod(0o755)
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\n')
+            (root/'tests').mkdir()
+            (root/'tests/test_service.py').write_text(
+                'from pkg.service import VALUE\n\ndef test_value(): assert VALUE == 1\n'
+            )
+            plan=resolve_validation_commands(
+                root, ['src/pkg/service.py'], allow_deferred=False,
+                python_executable=external,
+            )
+            self.assertFalse(plan.deferred)
+            self.assertEqual(plan.profile_ids, ('PYTHON_PROJECT_SOURCE',))
+            self.assertEqual(plan.focused[0][0], str(external.absolute()))
+            self.assertIn('tests/test_service.py', plan.focused[0])
+            self.assertEqual(plan.compile[0][0], str(external.absolute()))
 
 
 

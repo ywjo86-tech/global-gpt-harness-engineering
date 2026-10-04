@@ -252,9 +252,9 @@ class LVReviewTest(unittest.TestCase):
     def test_source_only_python_profile_preserves_sealed_evidence_manifest_deferral(self):
         marker='--ignore=tests/evidence/test_manifest.py'
         toolchain={
-            'profile_ids':['PYTHON_PYTEST'],
-            'focused':[['.venv/bin/python','-m','pytest','-q','tests/test_service.py',marker]],
-            'full':[['.venv/bin/python','-m','pytest','-q',marker]],
+            'profile_ids':['PYTHON_PROJECT_SOURCE'],
+            'focused':[['.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider','tests/test_service.py',marker]],
+            'full':[['.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider',marker]],
             'compile':[['.venv/bin/python','-m','compileall','-q','src/pkg/service.py']],
             'deferred':False,
         }
@@ -286,6 +286,55 @@ class LVReviewTest(unittest.TestCase):
             self.assertEqual(len(results), 3)
             self.assertTrue(all(item["exit_code"] == 0 for item in results))
             self.assertTrue(resolver.call_args.kwargs["defer_evidence_manifest_integrity"])
+
+    def test_native_review_preserves_source_scope_manifest_deferral(self) -> None:
+        from runtime.orchestrator.validation_toolchain import ValidationCommandSet
+        from runtime.orchestrator.lv_review import _run_tests
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = ValidationCommandSet(
+                ("PYTHON_PROJECT_SOURCE",),
+                ((".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--ignore=tests/evidence/test_manifest.py"),),
+                ((".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--ignore=tests/evidence/test_manifest.py"),),
+                ((".venv/bin/python", "-m", "compileall", "-q", "src"),),
+                False,
+            )
+            with patch("runtime.orchestrator.lv_review.resolve_validation_commands", return_value=plan) as resolver, patch(
+                "runtime.orchestrator.lv_review.run_command_group", return_value={"exit_code": 0, "timeout": False}
+            ):
+                results, error = _run_tests(
+                    root, Path(sys.executable), ["src/pkg/a.py"],
+                    expected_profiles=["PYTHON_PROJECT_SOURCE"],
+                    defer_evidence_manifest_integrity=True,
+                )
+            self.assertIsNone(error)
+            self.assertEqual(len(results), 3)
+            self.assertTrue(all(item["exit_code"] == 0 for item in results))
+            self.assertTrue(resolver.call_args.kwargs["defer_evidence_manifest_integrity"])
+
+    def test_native_source_review_reuses_approved_external_interpreter(self) -> None:
+        from runtime.orchestrator.validation_toolchain import ValidationCommandSet
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            external = root.parent / "approved-python"
+            plan = ValidationCommandSet(
+                ("PYTHON_PROJECT_SOURCE",),
+                ((str(external), "-m", "pytest", "-q", "tests/test_service.py"),),
+                ((str(external), "-m", "pytest", "-q"),),
+                ((str(external), "-m", "compileall", "-q", "src/pkg/service.py"),),
+                False,
+            )
+            with patch("runtime.orchestrator.lv_review.resolve_validation_commands", return_value=plan) as resolver, patch(
+                "runtime.orchestrator.lv_review.run_command_group", return_value={"exit_code": 0, "timeout": False}
+            ):
+                results, error = _run_tests(
+                    root, external, ["src/pkg/service.py"],
+                    runner="unittest",
+                    expected_profiles=["PYTHON_PROJECT_SOURCE"],
+                )
+            self.assertIsNone(error)
+            self.assertEqual(len(results), 3)
+            self.assertEqual(resolver.call_args.kwargs["python_executable"], external)
 
     def test_verification_only_test_scope_runs_without_product_import_target(self) -> None:
         with TemporaryDirectory() as directory:
