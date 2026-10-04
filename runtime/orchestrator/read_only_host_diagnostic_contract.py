@@ -29,7 +29,7 @@ _CONFIG_FIELDS = {"schema_version", "roots", "user_services", "limits"}
 _LIMIT_FIELDS = {"max_bytes", "max_lines", "timeout_seconds"}
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _SAFE_ROOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-_SAFE_SERVICE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}\.service\Z")
+_SAFE_SERVICE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}\.(?:service|timer)\Z")
 _SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 
