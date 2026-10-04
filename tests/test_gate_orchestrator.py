@@ -56,6 +56,27 @@ class GateOrchestratorTests(unittest.TestCase):
             selected = _find_exact_resume_namespace(root, expected)
             self.assertIsNotNone(selected)
             self.assertEqual(selected[0].name, "G1-LV3-1")
+    def test_review_canonical_state_uses_package_baseline_after_worker_checkpoint(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _review_canonical_state_for_package
+        baseline = "a" * 40
+        checkpoint = "b" * 40
+        manifest = {"checkpoint_commit": baseline}
+        worker = {
+            "schema_version": "orchestration.product-completion-evidence.v1",
+            "status": "completed",
+            "baseline_head": baseline,
+            "checkpoint_commit": checkpoint,
+            "current_head": checkpoint,
+        }
+        override = {"state": "GATE1_ACTIVE", "checkpoint_commit": checkpoint}
+        normalized = _review_canonical_state_for_package(manifest, worker, override)
+        self.assertEqual(normalized["checkpoint_commit"], baseline)
+        self.assertEqual(override["checkpoint_commit"], checkpoint)
+
+        mismatched = dict(worker, checkpoint_commit="c" * 40, current_head="c" * 40)
+        unchanged = _review_canonical_state_for_package(manifest, mismatched, override)
+        self.assertEqual(unchanged["checkpoint_commit"], checkpoint)
+
     def test_recovery_gateway_retry_id_reissues_only_failed_subexecution(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _recovery_gateway_retry_id
         with tempfile.TemporaryDirectory() as directory:

@@ -1847,15 +1847,41 @@ def _owned_python_test_files(root: Path, owned_files: list[str], changed_files: 
     return list(dict.fromkeys(targets))
 
 
+def _sealed_evidence_manifest_deferral(toolchain_contract: Mapping[str, Any] | None) -> bool:
+    if not isinstance(toolchain_contract, Mapping):
+        return False
+    if list(toolchain_contract.get("profile_ids") or []) != ["PYTHON_PROJECT_EVIDENCE"]:
+        return False
+    marker = "--ignore=tests/evidence/test_manifest.py"
+    marked: list[bool] = []
+    for group_name in ("focused", "full"):
+        commands = toolchain_contract.get(group_name)
+        if not isinstance(commands, list) or not commands:
+            return False
+        for command in commands:
+            if not isinstance(command, list) or any(not isinstance(item, str) for item in command):
+                raise LVReviewError("validation toolchain evidence-integrity deferral is malformed")
+            marked.append(marker in command)
+    if any(marked) and not all(marked):
+        raise LVReviewError("validation toolchain evidence-integrity deferral is inconsistent")
+    return bool(marked and all(marked))
+
+
 def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner: str = "pytest",
                allow_test_only: bool = False, expected_profiles: list[str] | None = None,
                changed_files: list[str] | None = None,
-               allow_no_test_scope: bool = False) -> tuple[list[dict[str, Any]], str | None]:
+               allow_no_test_scope: bool = False,
+               defer_evidence_manifest_integrity: bool = False) -> tuple[list[dict[str, Any]], str | None]:
     expected_profiles = list(expected_profiles or [])
     native_requested = bool(expected_profiles and expected_profiles not in (["PYTHON_PYTEST"], ["PYTHON_UNITTEST_EXTERNAL"]))
     if native_requested:
         try:
-            plan = resolve_validation_commands(root, owned_files, allow_deferred=False)
+            plan = resolve_validation_commands(
+                root,
+                owned_files,
+                allow_deferred=False,
+                defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
+            )
             validate_profile_resolution(expected_profiles, plan.profile_ids)
         except ValidationToolchainError as exc:
             return [], f"project-native validation toolchain unavailable: {exc}"
@@ -2896,6 +2922,7 @@ def review_run(
             expected_profiles=expected_profiles,
             changed_files=list(actual["changed_files"]),
             allow_no_test_scope=read_only_no_test_scope,
+            defer_evidence_manifest_integrity=_sealed_evidence_manifest_deferral(toolchain_contract),
         )
         test_ids = ("owned_tests", "wallet_pytest", "owned_imports")
         for index, identifier in enumerate(test_ids):
