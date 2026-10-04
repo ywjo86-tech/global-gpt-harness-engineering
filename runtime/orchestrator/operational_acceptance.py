@@ -130,6 +130,58 @@ class OperationalAcceptanceStore:
     def _path(self, record: OperationalAcceptanceRecordV1) -> Path:
         return self.base / record.project_id / f"{record.run_id}.json"
 
+    def _history_path(self, record: OperationalAcceptanceRecordV1) -> Path:
+        return self.base / record.project_id / record.run_id / f"{record.record_sha256}.json"
+
+    def _latest_path(self, project_id: str, run_id: str) -> Path:
+        return self.base / str(project_id) / str(run_id) / "latest.json"
+
+    def save_observation(self, record: OperationalAcceptanceRecordV1) -> OperationalAcceptanceRecordV1:
+        """Append immutable acceptance evidence and atomically advance latest."""
+        if record.record_sha256 != _digest(record.unsigned_dict()):
+            raise OperationalAcceptanceError("acceptance record digest mismatch")
+        history = self._history_path(record)
+        history.parent.mkdir(parents=True, exist_ok=True)
+        if history.parent.is_symlink():
+            raise OperationalAcceptanceError("acceptance history path unsafe")
+        if history.exists():
+            existing = json.loads(history.read_text(encoding="utf-8"))
+            if existing != record.to_dict():
+                raise OperationalAcceptanceError("conflicting acceptance history record")
+        else:
+            atomic_write_json(history, record.to_dict())
+        atomic_write_json(self._latest_path(record.project_id, record.run_id), record.to_dict())
+        return record
+
+    def load_latest(self, project_id: str, run_id: str) -> OperationalAcceptanceRecordV1:
+        latest = self._latest_path(project_id, run_id)
+        if latest.is_file() and not latest.is_symlink():
+            value = json.loads(latest.read_text(encoding="utf-8"))
+            return self._from_mapping(value)
+        return self.load(project_id, run_id)
+
+    @staticmethod
+    def _from_mapping(value: Mapping[str, Any]) -> OperationalAcceptanceRecordV1:
+        record = OperationalAcceptanceRecordV1(
+            schema_version=str(value["schema_version"]),
+            project_id=str(value["project_id"]),
+            run_id=str(value["run_id"]),
+            authority_core_sha256=str(value["authority_core_sha256"]),
+            full_plan_terminal_state_sha256=str(value["full_plan_terminal_state_sha256"]),
+            terminal_reason=str(value["terminal_reason"]),
+            post_change_gate_evidence_digest=str(value["post_change_gate_evidence_digest"]),
+            monitor_health_receipt_refs=tuple(value["monitor_health_receipt_refs"]),
+            process_lifecycle_diagnostic_refs=tuple(value["process_lifecycle_diagnostic_refs"]),
+            runtime_release_identity_refs=tuple(value["runtime_release_identity_refs"]),
+            status=str(value["status"]),
+            failures=tuple(value["failures"]),
+            created_at=str(value["created_at"]),
+            record_sha256=str(value["record_sha256"]),
+        )
+        if record.schema_version != OPERATIONAL_ACCEPTANCE_SCHEMA_V1 or record.record_sha256 != _digest(record.unsigned_dict()):
+            raise OperationalAcceptanceError("acceptance record invalid")
+        return record
+
     def save_once(self, record: OperationalAcceptanceRecordV1) -> OperationalAcceptanceRecordV1:
         if record.record_sha256 != _digest(record.unsigned_dict()):
             raise OperationalAcceptanceError("acceptance record digest mismatch")
@@ -150,22 +202,4 @@ class OperationalAcceptanceStore:
         if path.is_symlink() or not path.is_file():
             raise OperationalAcceptanceError("acceptance record missing")
         value = json.loads(path.read_text(encoding="utf-8"))
-        record = OperationalAcceptanceRecordV1(
-            schema_version=str(value["schema_version"]),
-            project_id=str(value["project_id"]),
-            run_id=str(value["run_id"]),
-            authority_core_sha256=str(value["authority_core_sha256"]),
-            full_plan_terminal_state_sha256=str(value["full_plan_terminal_state_sha256"]),
-            terminal_reason=str(value["terminal_reason"]),
-            post_change_gate_evidence_digest=str(value["post_change_gate_evidence_digest"]),
-            monitor_health_receipt_refs=tuple(value["monitor_health_receipt_refs"]),
-            process_lifecycle_diagnostic_refs=tuple(value["process_lifecycle_diagnostic_refs"]),
-            runtime_release_identity_refs=tuple(value["runtime_release_identity_refs"]),
-            status=str(value["status"]),
-            failures=tuple(value["failures"]),
-            created_at=str(value["created_at"]),
-            record_sha256=str(value["record_sha256"]),
-        )
-        if record.schema_version != OPERATIONAL_ACCEPTANCE_SCHEMA_V1 or record.record_sha256 != _digest(record.unsigned_dict()):
-            raise OperationalAcceptanceError("acceptance record invalid")
-        return record
+        return self._from_mapping(value)

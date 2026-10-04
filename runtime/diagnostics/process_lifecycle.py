@@ -234,7 +234,7 @@ def discover_managed_process_lifecycle(
                 "max_lifetime_seconds": max(30.0, timeout + 60.0),
                 "parent_pid": ppid,
             }
-        elif "ai-office-dashboard" in command and any(arg.startswith("/tmp/") for arg in argv):
+        elif ("ai-office-dashboard" in command or "ai_office_dashboard" in command) and any(arg.startswith("/tmp/") for arg in argv):
             owner = next((arg for arg in argv if arg.startswith("/tmp/")), command[:512])
             facts = {
                 "pid": pid,

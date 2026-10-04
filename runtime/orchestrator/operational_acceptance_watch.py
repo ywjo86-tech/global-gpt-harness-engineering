@@ -51,14 +51,7 @@ def main(argv=None)->int:
         process_lifecycle_diagnostic_refs=(str(process_snapshot_path),),
         runtime_release_identity_refs=(a.runtime_source,))
     store=OperationalAcceptanceStore(a.state_root)
-    try:
-        existing=store.load(a.project_id,a.run_id)
-    except OperationalAcceptanceError:
-        existing=None
-    if existing is None:
-        store.save_once(rec)
-    elif rec.status=="ACCEPTED" and existing.status=="ACCEPTED":
-        rec=existing
+    rec=store.save_observation(rec)
     (out/"operational-acceptance.json").write_text(json.dumps(rec.to_dict(),sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
     print(json.dumps({"post_change":gate["status"],"operational_acceptance":rec.status,
         "current_attention":len(current),"process_lifecycle_blocking":process_snapshot["blocking_count"],
