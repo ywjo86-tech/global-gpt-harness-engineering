@@ -50,7 +50,8 @@ def _timer_check(
         failures.append(f"{name}:RESULT_NOT_SUCCESS")
     age_seconds: float | None = None
     try:
-        age_seconds = max(0.0, (now - _parse_systemd_local_timestamp(data.get("LastTriggerUSec", ""))).total_seconds())
+        local_now = now.astimezone().replace(tzinfo=None) if now.tzinfo is not None else now
+        age_seconds = max(0.0, (local_now - _parse_systemd_local_timestamp(data.get("LastTriggerUSec", ""))).total_seconds())
         if age_seconds > stale_after_seconds:
             failures.append(f"{name}:TRIGGER_STALE")
     except ValueError:
@@ -120,7 +121,7 @@ def evaluate_post_change_gate(
         failures.append("DIAGNOSTIC_COVERAGE_MISSING:" + ",".join(missing))
 
     monitor_receipts: dict[str, Any] = {}
-    monitor_now = current.astimezone(timezone.utc) if current.tzinfo is not None else datetime.now(timezone.utc)
+    monitor_now = current.astimezone(timezone.utc) if current.tzinfo is not None else current.replace(tzinfo=timezone.utc)
     attention_receipt, attention_failures = evaluate_monitor_health_receipt(
         attention_health_receipt,
         monitor_name="ATTENTION_HEALTH",
