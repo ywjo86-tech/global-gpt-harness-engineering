@@ -70,11 +70,43 @@ Expected: all reads return typed bounded results; no mutation callback or new jo
 ## Phase C — Executable Approved Full Plan Activation canary
 
 1. Use one disposable committed canary spec/plan/requirement artifact plus Harness-sealed Gate approval/engine evidence with explicit user approval binding.
-2. Enable `OCP_FULL_PLAN_ACTIVATION_ENABLED=1` and one exact executable activation policy ref while Host Inspection and V1 activation remain independently controlled.
-3. Submit exactly one typed `APPROVED_FULL_PLAN_ACTIVATION` request.
-4. Verify one and only one generic `AUTO_RECONCILE` Full Plan job and one create-once executable activation receipt.
-5. Replay the identical sealed request and verify no second job is registered.
-6. Verify existing Full Plan boot/reconcile discovers the job; OCP must not launch it directly and OCP existing-run continuation must reject AUTO_RECONCILE ownership.
+2. Pre-bind the one exact executable activation policy ref while the persistent environment remains `OCP_FULL_PLAN_ACTIVATION_ENABLED=0`. Do not manually stop timers or edit the activation flag.
+3. After the separate live-operation approval, open one controlled activation window:
+
+   ```bash
+   STATE_ROOT="${GCH_STATE_ROOT:-$HOME/.local/state/global-gpt-harness}"
+   ENV_FILE="$HOME/.config/gch/ocpv2.env"
+
+   python3 -m runtime.orchestrator.ocpv2_activation_window open \
+     --state-root "$STATE_ROOT" \
+     --env-file "$ENV_FILE"
+   ```
+
+   OPEN durably records the prior `global-gpt-harness-full-plan-reconcile.timer` and `ocpv2.timer` states, schedules a transient systemd recovery watchdog for the bounded window, and pauses only timers that were active. The persistent env file remains activation-OFF.
+4. Only after the window is `ACTIVE`, submit exactly one typed `APPROVED_FULL_PLAN_ACTIVATION` request. **Do not submit it before OPEN**: a normal feature-OFF OCP poll publishes/acknowledges `FULL_PLAN_ACTIVATION_DISABLED`, consuming that request.
+5. Poll exactly once through the controlled window:
+
+   ```bash
+   python3 -m runtime.orchestrator.ocpv2_activation_window poll \
+     --state-root "$STATE_ROOT" \
+     --env-file "$ENV_FILE"
+   ```
+
+   POLL creates a temporary mode-0600 env copy with `OCP_FULL_PLAN_ACTIVATION_ENABLED=1` only for that one OCP process. The persistent env file is never switched to `1` and the temporary file is removed after the poll.
+6. If replay evidence is required, submit the identical sealed request while the same window remains ACTIVE and run `poll` again. Verify no second job is registered.
+7. Close the window immediately after the bounded poll/replay sequence:
+
+   ```bash
+   python3 -m runtime.orchestrator.ocpv2_activation_window close \
+     --state-root "$STATE_ROOT" \
+     --env-file "$ENV_FILE"
+   ```
+
+   CLOSE restores only the timers that were active at OPEN. If the operator/session disappears, the transient watchdog invokes `recover --force` after the bounded expiry; manual timer guessing is not part of the primary path.
+8. Verify one and only one generic `AUTO_RECONCILE` Full Plan job and one create-once executable activation receipt.
+9. Verify existing Full Plan boot/reconcile discovers the job; OCP must not launch it directly and OCP existing-run continuation must reject AUTO_RECONCILE ownership.
+
+Manual `systemctl --user stop ...timer` plus direct `sed`/file edits of `OCP_FULL_PLAN_ACTIVATION_ENABLED` are not a valid primary-path activation procedure. The controlled window marker plus watchdog are the required cleanup/recovery binding.
 
 ## Phase D — Governed mutation proof
 
@@ -90,8 +122,17 @@ Expected: exactly one execution owner performs the mutation; OCP itself has no d
 1. During the acceptance window, verify audit/history contains no RDC invocation for normal-path work.
 2. If explicitly approved and operationally safe, stop only the RDC remote bridge after OCP/Harness health is established; do not stop OCP, Full Plan, or Harness services.
 3. Repeat one bounded Host Inspection and confirm control/results still flow through OCP.
-4. Roll back executable Full Plan activation to `0`, then restore any separately changed Host Inspection/V1 settings to their approved baseline, preserving registered Full Plan state, activation receipts, outbox evidence, and logs.
-5. Confirm legacy V2 control and OCP polling remain healthy after rollback.
+4. Confirm the controlled activation window is `CLOSED` (or `RECOVERED`) and the persistent env still has `OCP_FULL_PLAN_ACTIVATION_ENABLED=0`, then restore any separately changed Host Inspection/V1 settings to their approved baseline, preserving registered Full Plan state, activation receipts, outbox evidence, and logs.
+5. Confirm the pre-window timer states were restored and legacy V2 control/OCP polling remain healthy after rollback.
+
+If an activation window is left `OPEN`, `ACTIVE`, or `RECOVERY_REQUIRED`, do not manually toggle the activation flag or guess the timer baseline. The scheduled transient watchdog performs expiry recovery automatically. For an explicitly approved immediate recovery, use:
+
+```bash
+python3 -m runtime.orchestrator.ocpv2_activation_window recover \
+  --state-root "$STATE_ROOT" \
+  --env-file "$ENV_FILE" \
+  --force
+```
 
 Any use of RDC for recovery terminates the current acceptance window; recover first, then start a fresh window.
 
