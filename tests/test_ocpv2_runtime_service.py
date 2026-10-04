@@ -457,6 +457,92 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         text = (REPO_ROOT / "deploy" / "operator-control-plane-v2" / "ocpv2.user.service.in").read_text(encoding="utf-8")
         self.assertIn("Environment=OCP_WORK_ACTIVATION_ENABLED=0", text)
 
+    def test_full_plan_activation_uses_serving_runtime_digest_when_project_head_differs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            service_root.mkdir(parents=True)
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="1" * 64)
+            selected = _runtime_release_for_full_plan_request(
+                service_root, request, service_release=service,
+            )
+            self.assertIs(selected, service)
+
+    def test_full_plan_activation_resolves_sibling_runtime_by_digest_when_project_head_differs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            project_head_root = releases / ("b" * 40)
+            target_root = releases / ("c" * 40)
+            service_root.mkdir(parents=True)
+            project_head_root.mkdir()
+            target_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            target = SimpleNamespace(
+                source_head="c" * 40, manifest_sha256="2" * 64, release_path=str(target_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+
+            def resolve(path):
+                path = Path(path)
+                if path == service_root:
+                    return service
+                if path == target_root:
+                    return target
+                raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_REQUIRED")
+
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=resolve,
+            ):
+                selected = _runtime_release_for_full_plan_request(
+                    service_root, request, service_release=service,
+                )
+            self.assertIs(selected, target)
+
+    def test_full_plan_activation_rejects_ambiguous_runtime_digest_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / "releases"
+            service_root = releases / ("a" * 40)
+            first_root = releases / ("c" * 40)
+            second_root = releases / ("d" * 40)
+            service_root.mkdir(parents=True)
+            first_root.mkdir()
+            second_root.mkdir()
+            service = SimpleNamespace(
+                source_head="a" * 40, manifest_sha256="1" * 64, release_path=str(service_root),
+            )
+            first = SimpleNamespace(
+                source_head="c" * 40, manifest_sha256="2" * 64, release_path=str(first_root),
+            )
+            second = SimpleNamespace(
+                source_head="d" * 40, manifest_sha256="2" * 64, release_path=str(second_root),
+            )
+            request = SimpleNamespace(expected_head="b" * 40, runtime_release_digest="2" * 64)
+
+            def resolve(path):
+                path = Path(path)
+                if path == first_root:
+                    return first
+                if path == second_root:
+                    return second
+                raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_REQUIRED")
+
+            with patch(
+                "runtime.orchestrator.ocpv2_runtime_service._runtime_release_for_root",
+                side_effect=resolve,
+            ), self.assertRaisesRegex(
+                RuntimeServiceError, "FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH",
+            ):
+                _runtime_release_for_full_plan_request(
+                    service_root, request, service_release=service,
+                )
+
     def test_full_plan_activation_resolves_exact_sibling_runtime_release(self):
         with tempfile.TemporaryDirectory() as directory:
             releases = Path(directory) / "releases"
