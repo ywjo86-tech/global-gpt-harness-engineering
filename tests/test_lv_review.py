@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from runtime.orchestrator.lv_execution_package import WORKER_RESULT_SCHEMA_VERSION, canonical_json_bytes
+from runtime.orchestrator.gate_orchestrator import _project_sealed_state_for_lv_invocation
 from runtime.orchestrator.lv_review import (
     REVIEW_REPORT_FIELDS,
     REVIEW_STATUS_FIELDS,
@@ -793,6 +794,38 @@ class LVReviewTest(unittest.TestCase):
                 patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
             ):
                 _assert_canonical_binding(root, manifest, canonical_state_override=override)
+            historical.assert_not_called()
+
+    def test_canonical_binding_same_lv_resume_keeps_immutable_package_checkpoint(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
+            mapping.canonical_source = root / str(manifest["canonical_plan_path"])
+            mapping.canonical_sha256 = str(manifest["canonical_plan_sha256"])
+            sealed = {
+                **state,
+                "project_id": mapping.project_id,
+                "selected_source": mapping.canonical_source,
+            }
+            transition = {
+                "schema_version": "orchestration.canonical-active-lv-transition.v1",
+                "baseline_head": manifest["checkpoint_commit"],
+                "current_head": "b" * 40,
+                "transition_type": "SYSTEM_TRANSITION",
+            }
+            resumed = _project_sealed_state_for_lv_invocation(
+                sealed,
+                transition_record=transition,
+                observed_head=transition["current_head"],
+                lv_resume=True,
+            )
+            self.assertEqual(resumed["checkpoint_commit"], manifest["checkpoint_commit"])
+            self.assertNotIn("transition", resumed)
+            with (
+                patch("runtime.orchestrator.lv_review.load_project_mapping", return_value=mapping),
+                patch("runtime.orchestrator.lv_review.evaluate_canonical_state") as historical,
+                patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
+            ):
+                _assert_canonical_binding(root, manifest, canonical_state_override=resumed)
             historical.assert_not_called()
 
     def test_preflight_attestation_preserves_canonical_state_override(self) -> None:
