@@ -75,6 +75,38 @@ def _config() -> SimpleNamespace:
 
 
 class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
+    def test_main_reports_degraded_when_base_execution_health_is_degraded(self):
+        config = SimpleNamespace(full_plan_activation_enabled=True)
+        result = {"mode": "ACTIVE", "received": 0, "validated": 0, "executed": 0}
+        printed = []
+        with patch.object(runtime.base, "load_runtime_config", return_value=config), \
+             patch.object(runtime, "run_once", return_value=result), \
+             patch.object(runtime.base, "full_plan_execution_health", return_value={
+                 "status": "DEGRADED", "reason": "RECONCILE_TIMER_NOT_ACTIVE"
+             }), \
+             patch("builtins.print", side_effect=lambda value, **kwargs: printed.append(value)):
+            rc = runtime.main(["--env-file", "/unused/test.env"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(printed[-1])
+        self.assertEqual(payload["status"], "DEGRADED")
+        self.assertEqual(payload["operational_health"]["reason"], "RECONCILE_TIMER_NOT_ACTIVE")
+
+    def test_main_reports_ok_when_base_execution_health_is_healthy(self):
+        config = SimpleNamespace(full_plan_activation_enabled=True)
+        result = {"mode": "ACTIVE", "received": 0, "validated": 0, "executed": 0}
+        printed = []
+        with patch.object(runtime.base, "load_runtime_config", return_value=config), \
+             patch.object(runtime, "run_once", return_value=result), \
+             patch.object(runtime.base, "full_plan_execution_health", return_value={
+                 "status": "HEALTHY", "reason": ""
+             }), \
+             patch("builtins.print", side_effect=lambda value, **kwargs: printed.append(value)):
+            rc = runtime.main(["--env-file", "/unused/test.env"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(printed[-1])
+        self.assertEqual(payload["status"], "OK")
+        self.assertEqual(payload["operational_health"]["status"], "HEALTHY")
+
     def test_predecessor_probe_requires_preserved_primary_identity_and_disabled_timer(self):
         with tempfile.TemporaryDirectory() as tmp:
             predecessor = Path(tmp) / "predecessor"

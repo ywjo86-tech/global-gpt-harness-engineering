@@ -1208,7 +1208,13 @@ def main(argv: list[str] | None = None) -> int:
     except (base.RuntimeServiceError, SuccessorStageRuntimeError, RemoteOperatorServiceError, ValueError, OSError) as exc:
         print(json.dumps({"status": "BLOCKED", "error": str(exc)}, sort_keys=True), file=os.sys.stderr)
         return 2
-    print(json.dumps({"status": "OK", **result}, sort_keys=True))
+    health = (
+        base.full_plan_execution_health()
+        if config.full_plan_activation_enabled
+        else {"status": "NOT_APPLICABLE", "reason": "FULL_PLAN_ACTIVATION_DISABLED"}
+    )
+    status = "OK" if health["status"] in {"HEALTHY", "NOT_APPLICABLE"} else "DEGRADED"
+    print(json.dumps({"status": status, "operational_health": health, **result}, sort_keys=True))
     return 0
 
 
