@@ -251,4 +251,50 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertFalse(plan.deferred)
 
 
+    def test_source_only_python_scope_uses_importing_tests_as_read_only_validation_targets(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\n')
+            (root/'tests/evidence').mkdir(parents=True)
+            (root/'tests/test_service.py').write_text('from pkg.service import VALUE\n\ndef test_value(): assert VALUE == 1\n')
+            (root/'tests/test_unrelated.py').write_text('def test_unrelated(): assert True\n')
+            (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): assert True\n')
+            (root/'evidence/implementation').mkdir(parents=True)
+            (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            plan=resolve_validation_commands(
+                root, ['src/pkg/service.py'], allow_deferred=True,
+                defer_evidence_manifest_integrity=True,
+            )
+            self.assertFalse(plan.deferred)
+            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertIn('tests/test_service.py', plan.focused[0])
+            self.assertNotIn('tests/test_unrelated.py', plan.focused[0])
+            self.assertIn('--ignore=tests/evidence/test_manifest.py', plan.focused[0])
+            self.assertIn('--ignore=tests/evidence/test_manifest.py', plan.full[0])
+            self.assertEqual(
+                plan.compile[0],
+                ('.venv/bin/python','-m','compileall','-q','src/pkg/service.py'),
+            )
+
+    def test_source_only_python_scope_without_importing_test_stays_deferred(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\n')
+            (root/'tests').mkdir()
+            (root/'tests/test_other.py').write_text('def test_other(): assert True\n')
+            plan=resolve_validation_commands(root, ['src/pkg/service.py'], allow_deferred=True)
+            self.assertTrue(plan.deferred)
+            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertEqual(plan.focused, ())
+            self.assertEqual(plan.full, ())
+            self.assertEqual(plan.compile, ())
+
+
+
 if __name__ == '__main__': unittest.main()

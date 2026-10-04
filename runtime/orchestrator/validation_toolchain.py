@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -181,6 +182,70 @@ def should_defer_evidence_manifest_integrity(
     )
 
 
+
+def _owned_python_modules(owned_files: Sequence[str]) -> tuple[str, ...]:
+    """Project 'src/' modules that the LV may mutate, without expanding write scope."""
+    modules: set[str] = set()
+    for raw in owned_files:
+        if not isinstance(raw, str) or not raw.startswith("src/") or not raw.endswith(".py"):
+            continue
+        path = PurePosixPath(raw)
+        parts = list(path.parts[1:])
+        if not parts:
+            continue
+        leaf = parts[-1][:-3]
+        if leaf == "__init__":
+            parts = parts[:-1]
+        else:
+            parts[-1] = leaf
+        if parts and all(part and part.isidentifier() for part in parts):
+            modules.add(".".join(parts))
+    return tuple(sorted(modules))
+
+
+def _read_only_python_test_targets(root: Path, owned_files: Sequence[str]) -> tuple[str, ...]:
+    """Select existing tests that import owned 'src/' modules; tests remain read-only."""
+    modules = _owned_python_modules(owned_files)
+    tests_root = root / "tests"
+    if not modules or not tests_root.is_dir() or tests_root.is_symlink():
+        return ()
+
+    def matches(module: str) -> bool:
+        return any(
+            module == owned
+            or module.startswith(owned + ".")
+            or owned.startswith(module + ".")
+            for owned in modules
+        )
+
+    selected: list[str] = []
+    for candidate in sorted(tests_root.rglob("*.py"), key=lambda item: item.as_posix()):
+        if not _safe_regular_file(root, candidate):
+            continue
+        try:
+            tree = ast.parse(candidate.read_text(encoding="utf-8"), filename=str(candidate))
+        except (OSError, UnicodeError, SyntaxError):
+            continue
+        referenced = False
+        for node in ast.walk(tree):
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names.append(node.module)
+                names.extend(
+                    f"{node.module}.{alias.name}"
+                    for alias in node.names
+                    if alias.name != "*"
+                )
+            if any(matches(name) for name in names):
+                referenced = True
+                break
+        if referenced:
+            selected.append(candidate.relative_to(root).as_posix())
+    return tuple(selected)
+
+
 def resolve_validation_commands(
     root: Path,
     owned_files: Sequence[str],
@@ -241,6 +306,7 @@ def resolve_validation_commands(
             compile_commands.append((*prefix, "run", "build"))
 
     py_tests = [path for path in owned_files if path.startswith("tests/") and path.endswith(".py")]
+    read_only_py_tests = list(_read_only_python_test_targets(root, owned_files)) if not py_tests else []
     if python_scope and not android and not node:
         python_intent = _python_validation_intent(validation_profile)
         project_interpreter = root / ".venv" / "bin" / "python"
@@ -290,11 +356,23 @@ def resolve_validation_commands(
                 deferred = True
             else:
                 raise ValidationToolchainError("Python owned scope requires project venv or approved external interpreter")
+        elif read_only_py_tests and project_interpreter.is_file() and python_intent.branch in {"resolver", "pytest"}:
+            py_owned = [path for path in owned_files if path.endswith(".py")]
+            profiles.append("PYTEST_PROFILE" if python_intent.branch == "pytest" else "PYTHON_PYTEST")
+            focused_command = [".venv/bin/python", "-m", "pytest", "-q", *read_only_py_tests]
+            full_command = [".venv/bin/python", "-m", "pytest", "-q"]
+            if defer_evidence_manifest_integrity:
+                evidence_marker = "--ignore=tests/evidence/test_manifest.py"
+                focused_command.append(evidence_marker)
+                full_command.append(evidence_marker)
+            focused.append(tuple(focused_command))
+            full.append(tuple(full_command))
+            compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
         elif allow_deferred:
             profiles.append("PYTHON_PYTEST")
             deferred = True
         else:
-            raise ValidationToolchainError("Python owned scope requires owned focused tests")
+            raise ValidationToolchainError("Python owned scope requires owned or deterministically imported focused tests")
 
     evidence_only = bool(owned_files) and all(
         isinstance(path, str) and path.startswith("evidence/")

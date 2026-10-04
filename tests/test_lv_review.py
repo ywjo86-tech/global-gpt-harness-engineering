@@ -37,6 +37,7 @@ from runtime.orchestrator.lv_review import (
     _owned_content_snapshot,
     _production_committed_changes,
     _validate_execution_root,
+    _sealed_evidence_manifest_deferral,
     publish_gate_preflight_attestation,
     preflight_run,
     review_run,
@@ -246,6 +247,21 @@ class LVReviewTest(unittest.TestCase):
             blocked, blocked_error = _run_tests(root, Path(sys.executable), [])
             self.assertEqual(blocked, [])
             self.assertEqual(blocked_error, "owned Python test/module scope is missing")
+
+
+    def test_source_only_python_profile_preserves_sealed_evidence_manifest_deferral(self):
+        marker='--ignore=tests/evidence/test_manifest.py'
+        toolchain={
+            'profile_ids':['PYTHON_PYTEST'],
+            'focused':[['.venv/bin/python','-m','pytest','-q','tests/test_service.py',marker]],
+            'full':[['.venv/bin/python','-m','pytest','-q',marker]],
+            'compile':[['.venv/bin/python','-m','compileall','-q','src/pkg/service.py']],
+            'deferred':False,
+        }
+        self.assertTrue(_sealed_evidence_manifest_deferral(toolchain))
+        inconsistent=dict(toolchain, full=[['.venv/bin/python','-m','pytest','-q']])
+        with self.assertRaisesRegex(LVReviewError, 'deferral is inconsistent'):
+            _sealed_evidence_manifest_deferral(inconsistent)
 
     def test_native_review_preserves_sealed_evidence_manifest_deferral(self) -> None:
         from runtime.orchestrator.validation_toolchain import ValidationCommandSet

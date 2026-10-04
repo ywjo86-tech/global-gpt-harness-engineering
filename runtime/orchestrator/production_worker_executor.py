@@ -2473,6 +2473,18 @@ def _bounded_validation_failure_evidence(
     }
 
 
+
+def _candidate_validation_command(root: Path, command: Sequence[str]) -> list[str]:
+    """Bind sealed project-venv commands to the real venv while candidate cwd stays isolated."""
+    normalized = list(command)
+    if normalized and normalized[0] == ".venv/bin/python":
+        interpreter = root / ".venv" / "bin" / "python"
+        if not interpreter.is_file() or not os.access(interpreter, os.X_OK):
+            raise ProductionWorkerError("candidate validation project interpreter is unavailable")
+        normalized[0] = str(interpreter.absolute())
+    return normalized
+
+
 def _provider_action_candidate_focused_validator(
     *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
 ) -> Callable[[Mapping[str, Any]], str]:
@@ -2527,8 +2539,9 @@ def _provider_action_candidate_focused_validator(
                 python_executable = commands[0][0]
                 commands = [[python_executable, "-m", "unittest", "-v", *candidate_test_modules]]
             for command in commands:
+                candidate_command = _candidate_validation_command(root, command)
                 result = subprocess.run(
-                    command, cwd=sandbox, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    candidate_command, cwd=sandbox, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     check=False, timeout=min(timeout, 180),
                 )
                 if result.returncode != 0:

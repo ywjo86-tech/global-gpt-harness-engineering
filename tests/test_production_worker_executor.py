@@ -24,7 +24,7 @@ from runtime.orchestrator.production_worker_executor import (
     _bounded_validation_failure_evidence,
     _focused_execution_metadata, _sealed_external_validation_python,
     _validation_command_env, _should_defer_evidence_manifest_integrity_for_request,
-    _test_runner_metadata, _bounded_validation_feedback,
+    _test_runner_metadata, _bounded_validation_feedback, _candidate_validation_command,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
 from runtime.orchestrator.lv_execution_package import canonical_json_bytes
@@ -45,6 +45,24 @@ def _usage() -> dict[str, int]:
 
 
 class ProductionWorkerExecutorTests(unittest.TestCase):
+
+    def test_candidate_validation_binds_project_venv_without_changing_candidate_cwd_contract(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            interpreter=root/'.venv/bin/python'
+            interpreter.parent.mkdir(parents=True)
+            interpreter.write_text('#!/bin/sh\n')
+            interpreter.chmod(0o755)
+            original=['.venv/bin/python','-m','pytest','-q','tests/test_service.py']
+            bound=_candidate_validation_command(root, original)
+            self.assertEqual(bound[0], str(interpreter.absolute()))
+            self.assertEqual(bound[1:], original[1:])
+            self.assertEqual(original[0], '.venv/bin/python')
+            self.assertEqual(
+                _candidate_validation_command(root, ['npm','test']),
+                ['npm','test'],
+            )
+
     def test_external_interpreter_policy_does_not_force_python_for_non_python_toolchain(self):
         request = SimpleNamespace(extra_context={
             "interpreter_policy_id": "IMMUTABLE_EXTERNAL_INTERPRETER",
