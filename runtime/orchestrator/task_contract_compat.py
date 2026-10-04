@@ -6,10 +6,13 @@ import re
 from pathlib import PurePosixPath
 from typing import Any, Mapping
 
-_TASK_HEADING = re.compile(r"(?m)^##\s+(TASK-\d{3})\b(?:\s+—\s*(.*?))?\s*$")
-_GATE_HEADING = re.compile(r"(?m)^##\s+(GATE-\d{3})\b.*$")
+_TASK_ID = r"TASK-(?:R\d{2}|\d{3})"
+_GATE_ID = r"GATE-(?:R\d{2}|\d{3})"
+_TASK_HEADING = re.compile(rf"(?m)^###?\s+({_TASK_ID})\b(?:\s+—\s*(.*?))?\s*$")
+_GATE_HEADING = re.compile(rf"(?m)^###?\s+({_GATE_ID})\b.*$")
 _CT_ROW = re.compile(r"(?m)^\|\s*(CT-\d{3})\s*\|\s*`?([^|`]+?)`?\s*\|[^\n]*$")
-_DEP_ROW = re.compile(r"(?m)^\|\s*(TASK-\d{3})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|")
+_CMP_HEADING = re.compile(r"(?m)^###\s+\d+(?:\.\d+)*\s+(CMP-R\d{2})\b.*$")
+_DEP_ROW = re.compile(rf"(?m)^\|\s*({_TASK_ID})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|")
 _PROJECTION_SCHEMA = "orchestration.task-lv-authority-projection.v1"
 _PROJECTION_POLICY = {
     "lv_identity": "TASK_ID",
@@ -36,7 +39,7 @@ def _section_map(text: str, pattern: re.Pattern[str]) -> dict[str, str]:
 
 
 def _field(section: str, name: str) -> str | None:
-    match = re.search(rf"(?m)^{re.escape(name)}:[ \t]*(.*)$", section)
+    match = re.search(rf"(?m)^[ \t]*(?:-\s*)?{re.escape(name)}:[ \t]*(.*)$", section)
     if not match:
         return None
     inline = match.group(1).strip()
@@ -57,6 +60,14 @@ def _field(section: str, name: str) -> str | None:
     return ", ".join(values)
 
 
+def _field_any(section: str, names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = _field(section, name)
+        if value is not None:
+            return value
+    return None
+
+
 def _expand_id_token(token: str, prefix: str) -> list[str]:
     clean = token.strip().strip("`")
     if not clean:
@@ -68,6 +79,16 @@ def _expand_id_token(token: str, prefix: str) -> list[str]:
         if end < start:
             raise TaskContractProjectionError(f"descending ID range is invalid: {clean}")
         return [f"{prefix}{value:03d}" for value in range(start, end + 1)]
+    r_pattern = rf"^{re.escape(prefix)}R(\d{{2}})~(?:{re.escape(prefix)})?R?(\d{{2}})$"
+    r_match = re.fullmatch(r_pattern, clean)
+    if r_match:
+        start, end = int(r_match.group(1)), int(r_match.group(2))
+        if end < start:
+            raise TaskContractProjectionError(f"descending ID range is invalid: {clean}")
+        return [f"{prefix}R{value:02d}" for value in range(start, end + 1)]
+    embedded = re.findall(rf"\b{re.escape(prefix)}(?:R\d{{2}}|\d{{3}})\b", clean)
+    if embedded:
+        return embedded
     return [clean] if clean.startswith(prefix) else []
 
 
@@ -82,10 +103,78 @@ def _ids(value: str | None, prefix: str) -> list[str]:
     return resolved
 
 
+def _related_requirement_ids(value: str | None) -> list[str]:
+    """Expand the bounded compact requirement syntax used by recovery TASKs.
+
+    Accepted requirement families are REQ/NFR/SEC/OPS only. A comma-delimited
+    group may inherit its family across slash-separated IDs and use an
+    inclusive same-family numeric range, for example ``REQ-010/015/017~019``.
+    Other reference families (for example GATE-004/005) are intentionally
+    ignored, preserving the previous projection boundary.
+    """
+    if not value:
+        return []
+    accepted = ("REQ", "NFR", "SEC", "OPS")
+    resolved: list[str] = []
+    for raw_group in re.split(r"[,\n]+", value):
+        group = raw_group.strip().strip("`").rstrip(".").strip()
+        if not group:
+            continue
+        lead = re.match(r"^(REQ|NFR|SEC|OPS)-", group)
+        if lead is None:
+            continue
+        family = lead.group(1)
+        for index, raw_part in enumerate(group.split("/")):
+            part = raw_part.strip().strip("`").rstrip(".").strip()
+            if not part:
+                raise TaskContractProjectionError(f"empty compact requirement ID segment: {group}")
+            if index == 0:
+                match = re.fullmatch(
+                    rf"{family}-(\d{{3}})(?:~(?:(REQ|NFR|SEC|OPS)-)?(\d{{3}}))?",
+                    part,
+                )
+                if match is None:
+                    raise TaskContractProjectionError(f"invalid compact requirement ID: {part}")
+                start = int(match.group(1))
+                end_family = match.group(2)
+                end = int(match.group(3)) if match.group(3) else start
+            else:
+                match = re.fullmatch(
+                    r"(?:(REQ|NFR|SEC|OPS)-)?(\d{3})(?:~(?:(REQ|NFR|SEC|OPS)-)?(\d{3}))?",
+                    part,
+                )
+                if match is None:
+                    raise TaskContractProjectionError(f"invalid compact requirement ID: {part}")
+                explicit_family = match.group(1)
+                start = int(match.group(2))
+                end_family = match.group(3)
+                end = int(match.group(4)) if match.group(4) else start
+                if explicit_family is not None and explicit_family != family:
+                    raise TaskContractProjectionError(f"compact requirement family mismatch: {part}")
+            if end_family is not None and end_family != family:
+                raise TaskContractProjectionError(f"compact requirement range family mismatch: {part}")
+            if end < start:
+                raise TaskContractProjectionError(f"descending compact requirement range is invalid: {part}")
+            for number in range(start, end + 1):
+                item = f"{family}-{number:03d}"
+                if item in resolved:
+                    raise TaskContractProjectionError(f"duplicate compact requirement ID: {item}")
+                resolved.append(item)
+    return resolved
+
+
 def _items(value: str | None) -> list[str]:
     if not value:
         return []
-    return [item.strip().strip("`") for item in re.split(r"[,\n]+", value) if item.strip()]
+    resolved: list[str] = []
+    for item in re.split(r"[,\n]+", value):
+        clean = item.strip()
+        if not clean:
+            continue
+        clean = clean.removesuffix(".").rstrip().strip("`")
+        if clean:
+            resolved.append(clean)
+    return resolved
 
 
 def _task_titles(text: str) -> dict[str, str]:
@@ -102,6 +191,32 @@ def _change_target_sources(text: str) -> dict[str, str]:
     return values
 
 
+def _component_target_sources(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for match in _CMP_HEADING.finditer(text):
+        target_id = match.group(1)
+        if target_id in values:
+            raise TaskContractProjectionError(f"duplicate Change Target definition: {target_id}")
+        values[target_id] = target_id
+    return values
+
+
+def _task_change_target_ids(section: str) -> list[str]:
+    raw = _field_any(section, ("Change Targets", "변경 대상"))
+    resolved = _ids(raw, "CT-")
+    for item in _ids(raw, "CMP-"):
+        if item not in resolved:
+            resolved.append(item)
+    return resolved
+
+
+def _task_validation_ids(section: str, *, task_id: str) -> list[str]:
+    resolved = _ids(_field_any(section, ("Validation", "검증")), "TEST-")
+    if resolved or not task_id.startswith("TASK-R"):
+        return resolved
+    return _ids(_field_any(section, ("Evidence", "증거")), "EV-")
+
+
 def _dependency_types(text: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for match in _DEP_ROW.finditer(text):
@@ -109,6 +224,25 @@ def _dependency_types(text: str) -> dict[str, str]:
         if task_id in values and values[task_id] != dependency_type:
             raise TaskContractProjectionError(f"duplicate TASK dependency type: {task_id}")
         values[task_id] = dependency_type
+    for task_id, section in _section_map(text, _TASK_HEADING).items():
+        if task_id in values or not task_id.startswith("TASK-R"):
+            continue
+        raw = _field_any(section, ("Dependencies", "의존성")) or ""
+        match = re.search(r"\b(SEQUENTIAL|PARALLEL_SAFE|FAN_IN|EXTERNAL)\b", raw)
+        if match:
+            values[task_id] = match.group(1)
+    return values
+
+
+def _evidence_gate_task_memberships(text: str) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    row_pattern = re.compile(rf"(?m)^\|\s*EV-[^|]+\|\s*({_TASK_ID})\s+owner\s*\|[^|]*\|[^|]*\|\s*[^|]*?/\s*R(\d{{2}})\s*\|")
+    for match in row_pattern.finditer(text):
+        task_id = match.group(1)
+        gate_id = f"GATE-R{match.group(2)}"
+        values.setdefault(gate_id, [])
+        if task_id not in values[gate_id]:
+            values[gate_id].append(task_id)
     return values
 
 
@@ -133,14 +267,16 @@ def analyze_task_stage_gate_contract(text: str, requested_gate_id: str) -> dict[
     tasks: dict[str, dict[str, Any]] = {}
     for task_id, section in tasks_raw.items():
         tasks[task_id] = {
-            "dependencies": _ids(_field(section, "Dependencies"), "TASK-"),
-            "required_capabilities": _items(_field(section, "Required Capabilities")),
-            "change_targets": _ids(_field(section, "Change Targets"), "CT-"),
+            "dependencies": _ids(_field_any(section, ("Dependencies", "의존성")), "TASK-"),
+            "required_capabilities": _items(_field_any(section, ("Required Capabilities", "필수 역량"))),
+            "change_targets": _task_change_target_ids(section),
         }
 
     gates: dict[str, list[str]] = {}
+    inferred_gate_tasks = _evidence_gate_task_memberships(text)
     for gate_id, section in gates_raw.items():
-        gates[gate_id] = _ids(_field(section, "Required Tasks"), "TASK-")
+        required_tasks = _ids(_field(section, "Required Tasks"), "TASK-")
+        gates[gate_id] = required_tasks or list(inferred_gate_tasks.get(gate_id, []))
 
     blockers: list[str] = []
     if requested_gate_id not in gates:
@@ -269,9 +405,17 @@ def validate_task_lv_authority_projection(
     if analysis is None or analysis["blockers"]:
         raise TaskContractProjectionError("canonical TASK contract is not projection-ready")
 
-    canonical_targets = _change_target_sources(text)
     projected_targets = projection.get("change_targets")
-    if not isinstance(projected_targets, Mapping) or set(projected_targets) != set(canonical_targets):
+    if not isinstance(projected_targets, Mapping) or not projected_targets:
+        raise TaskContractProjectionError("TASK-to-LV projection Change Target set mismatch")
+    projected_ids = set(projected_targets)
+    if all(re.fullmatch(r"CT-\d{3}", target_id) for target_id in projected_ids):
+        canonical_targets = _change_target_sources(text)
+    elif all(re.fullmatch(r"CMP-R\d{2}", target_id) for target_id in projected_ids):
+        canonical_targets = _component_target_sources(text)
+    else:
+        raise TaskContractProjectionError("TASK-to-LV projection Change Target family mismatch")
+    if projected_ids != set(canonical_targets):
         raise TaskContractProjectionError("TASK-to-LV projection Change Target set mismatch")
     normalized: dict[str, dict[str, Any]] = {}
     for target_id, source_expression in canonical_targets.items():
@@ -314,12 +458,36 @@ def resolve_task_lv_projection(
         section = tasks_raw.get(task_id)
         if section is None:
             raise TaskContractProjectionError(f"projected TASK is missing: {task_id}")
+        change_target_ids = _task_change_target_ids(section)
+        validation_ids = _task_validation_ids(section, task_id=task_id)
+        completion = _field_any(section, ("Completion Condition", "완료 조건"))
+        purpose = _field_any(section, ("Purpose", "목적")) or titles[task_id]
+        capabilities = _items(_field_any(section, ("Required Capabilities", "필수 역량")))
+        dependencies = _ids(_field_any(section, ("Dependencies", "의존성")), "TASK-")
+        execution_authority = (_field_any(section, ("Execution Authority", "실행 권한")) or "").strip().rstrip(".").upper()
+        if not change_target_ids:
+            if execution_authority != "READ_ONLY" and not execution_authority.startswith("READ_ONLY "):
+                raise TaskContractProjectionError(f"TASK Change Targets are missing: {task_id}")
+            if not completion or not capabilities:
+                raise TaskContractProjectionError(f"read-only TASK runtime authority fields are incomplete: {task_id}")
+            criteria = [completion]
+            if validation_ids:
+                criteria.append("Validation: " + ", ".join(validation_ids))
+            resolved.append({
+                "lv_id": task_id,
+                "purpose": purpose,
+                "dependencies": dependencies,
+                "owned_files": [],
+                "completion_criteria": criteria,
+                "execution": "READ_ONLY",
+                "tests": validation_ids,
+                "required_capabilities": capabilities,
+                "capability_contract": {"version": "v1", "mode": "DECLARED_NONE", "requirements": []},
+            })
+            continue
         dependency_type = dependency_types.get(task_id)
         if not dependency_type:
             raise TaskContractProjectionError(f"TASK dependency type is missing: {task_id}")
-        change_target_ids = _ids(_field(section, "Change Targets"), "CT-")
-        if not change_target_ids:
-            raise TaskContractProjectionError(f"TASK Change Targets are missing: {task_id}")
         owned_files: list[str] = []
         for target_id in change_target_ids:
             if target_id not in targets:
@@ -327,11 +495,6 @@ def resolve_task_lv_projection(
             for path in targets[target_id]["owned_files"]:
                 if path not in owned_files:
                     owned_files.append(path)
-        validation_ids = _ids(_field(section, "Validation"), "TEST-")
-        completion = _field(section, "Completion Condition")
-        purpose = _field(section, "Purpose") or titles[task_id]
-        capabilities = _items(_field(section, "Required Capabilities"))
-        dependencies = _ids(_field(section, "Dependencies"), "TASK-")
         if not completion or not validation_ids or not capabilities:
             raise TaskContractProjectionError(f"TASK runtime authority fields are incomplete: {task_id}")
         resolved.append({
@@ -345,6 +508,41 @@ def resolve_task_lv_projection(
             "required_capabilities": capabilities,
             "capability_contract": {"version": "v1", "mode": "DECLARED_NONE", "requirements": []},
         })
+    return resolved
+
+
+def resolve_read_only_task_gate(text: str, *, gate_id: str) -> list[dict[str, Any]]:
+    analysis = analyze_task_stage_gate_contract(text, gate_id)
+    if analysis is None or analysis["blockers"]:
+        raise TaskContractProjectionError(compatibility_block_reason(analysis or {"blockers": ["not a TASK contract"]}))
+    tasks_raw = _section_map(text, _TASK_HEADING)
+    titles = _task_titles(text)
+    resolved: list[dict[str, Any]] = []
+    for task_id in analysis["requested_gate_tasks"]:
+        section = tasks_raw.get(task_id)
+        if section is None:
+            raise TaskContractProjectionError(f"read-only TASK is missing: {task_id}")
+        execution_authority = (_field_any(section, ("Execution Authority", "실행 권한")) or "").strip().rstrip(".").upper()
+        change_target_ids = _task_change_target_ids(section)
+        capabilities = _items(_field_any(section, ("Required Capabilities", "필수 역량")))
+        if (execution_authority != "READ_ONLY" and not execution_authority.startswith("READ_ONLY ")) or change_target_ids:
+            raise TaskContractProjectionError("mutation-capable TASK requires approved TASK-to-LV authority projection")
+        completion = _field_any(section, ("Completion Condition", "완료 조건"))
+        if not completion or not capabilities:
+            raise TaskContractProjectionError(f"read-only TASK runtime authority fields are incomplete: {task_id}")
+        resolved.append({
+            "lv_id": task_id,
+            "purpose": _field_any(section, ("Purpose", "목적")) or titles[task_id],
+            "dependencies": _ids(_field_any(section, ("Dependencies", "의존성")), "TASK-"),
+            "owned_files": [],
+            "completion_criteria": [completion],
+            "execution": "READ_ONLY",
+            "tests": [],
+            "required_capabilities": capabilities,
+            "capability_contract": {"version": "v1", "mode": "DECLARED_NONE", "requirements": []},
+        })
+    if not resolved:
+        raise TaskContractProjectionError("read-only Gate resolved no TASKs")
     return resolved
 
 
@@ -366,13 +564,18 @@ def resolve_task_project_requirement_contract(
     if analysis is None or analysis["blockers"] or task_id not in analysis["requested_gate_tasks"]:
         raise TaskContractProjectionError(f"project requirement TASK is outside executable Gate authority: {gate_id}/{task_id}")
 
-    related = _field(section, "Related Requirements")
+    related = _field_any(section, ("Related Requirements", "관련"))
     if not related:
         raise TaskContractProjectionError(f"TASK Related Requirements are missing: {task_id}")
-    if "~" in related:
-        raise TaskContractProjectionError(f"TASK Related Requirements must use explicit IDs: {task_id}")
-    requirement_ids = re.findall(r"\b(?:REQ|NFR|SEC|OPS)-\d{3}\b", related)
-    if not requirement_ids or len(requirement_ids) != len(set(requirement_ids)):
+    if task_id.startswith("TASK-R"):
+        requirement_ids = _related_requirement_ids(related)
+    else:
+        if "~" in related:
+            raise TaskContractProjectionError(f"TASK Related Requirements must use explicit IDs: {task_id}")
+        requirement_ids = re.findall(r"\b(?:REQ|NFR|SEC|OPS)-\d{3}\b", related)
+        if len(requirement_ids) != len(set(requirement_ids)):
+            raise TaskContractProjectionError(f"TASK Related Requirements are missing or duplicated: {task_id}")
+    if not requirement_ids:
         raise TaskContractProjectionError(f"TASK Related Requirements are missing or duplicated: {task_id}")
 
     definitions: dict[str, dict[str, str]] = {}
@@ -388,13 +591,17 @@ def resolve_task_project_requirement_contract(
             raise TaskContractProjectionError(f"duplicate requirement definition: {requirement_id}")
         definitions[requirement_id] = value
 
-    completion = _field(section, "Completion Condition")
-    validation_ids = _ids(_field(section, "Validation"), "TEST-")
-    purpose = _field(section, "Purpose")
+    completion = _field_any(section, ("Completion Condition", "완료 조건"))
+    validation_ids = _task_validation_ids(section, task_id=task_id)
+    purpose = _field_any(section, ("Purpose", "목적"))
     if not completion or not validation_ids or not purpose:
         raise TaskContractProjectionError(f"TASK execution requirement fields are incomplete: {task_id}")
+    execution_authority = (_field_any(section, ("Execution Authority", "실행 권한")) or "").strip().rstrip(".").upper()
+    recovery_read_only = task_id.startswith("TASK-R") and (
+        execution_authority == "READ_ONLY" or execution_authority.startswith("READ_ONLY ")
+    )
     safe_owned = [_safe_owned_path(value) for value in owned_files]
-    if not safe_owned or len(safe_owned) != len(set(safe_owned)):
+    if len(safe_owned) != len(set(safe_owned)) or (not safe_owned and not recovery_read_only):
         raise TaskContractProjectionError(f"TASK execution owned scope is missing or duplicated: {task_id}")
 
     requirements: dict[str, dict[str, Any]] = {}

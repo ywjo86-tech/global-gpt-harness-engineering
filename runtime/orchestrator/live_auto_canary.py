@@ -25,6 +25,7 @@ CANARY_EXECUTOR_KIND = "DCC_LIVE_AUTO_CANARY"
 CANARY_PROJECT_ID = "DCC_LIVE_AUTO_CANARY"
 CANARY_GATES = ("CANARY-A", "CANARY-B", "CANARY-C")
 PAUSE_ENV = "GCH_LIVE_AUTO_CANARY_PAUSE_AFTER_GATE_A"
+PAUSE_TTL_ENV = "GCH_LIVE_AUTO_CANARY_PAUSE_TTL_SECONDS"
 
 
 class LiveAutoCanaryError(ValueError):
@@ -111,8 +112,13 @@ def build_live_auto_canary_executor(job: Mapping[str, Any]):
         # Test/live qualification can intentionally strand B in RUNNING after A
         # to prove durable recovery. Pause happens before any B mutation.
         if gate_id != CANARY_GATES[0] and os.environ.get(PAUSE_ENV) == "1":
-            while True:
+            ttl = float(os.environ.get(PAUSE_TTL_ENV) or "30")
+            if ttl <= 0:
+                raise LiveAutoCanaryError("canary pause TTL is invalid")
+            deadline = time.monotonic() + ttl
+            while time.monotonic() < deadline:
                 time.sleep(1.0)
+            raise LiveAutoCanaryError("canary pause lease expired")
 
         relative = Path("artifacts") / f"{gate_id}.txt"
         artifact = project / relative
@@ -281,7 +287,7 @@ class LiveAutoCanary:
 
     def run_gate_a_then_drop_foreground_owner(self, *, timeout_seconds: float = 30) -> dict[str, Any]:
         job_path = self.canonical_job_path or self.prepare()
-        env = dict(os.environ); env[PAUSE_ENV] = "1"
+        env = dict(os.environ); env[PAUSE_ENV] = "1"; env.setdefault(PAUSE_TTL_ENV, str(max(1.0, timeout_seconds)))
         process = subprocess.Popen(
             [str(self.python_executable), "-m", "runtime.orchestrator.production_full_plan_entry", "--job", str(job_path)],
             cwd=self.runtime_code_root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

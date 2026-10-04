@@ -136,6 +136,41 @@ class GitHubControlAdapterTests(unittest.TestCase):
         messages = adapter.receive()
         self.assertEqual([item.source_message_id for item in messages], ["2"])
 
+    def test_request_kind_filter_applies_before_poll_limit(self):
+        unrelated = [
+            comment(
+                comment_id=100 + index,
+                body="OCPV2_CONTROL_V2\n" + json.dumps(
+                    {"message_id": f"OTHER-{index}", "request_kind": "HOST_INSPECTION"},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+            for index in range(16)
+        ]
+        canary = comment(
+            comment_id=999,
+            body="OCPV2_CONTROL_V2\n" + json.dumps(
+                {
+                    "message_id": "P3-CANARY-1",
+                    "request_kind": "LIFECYCLE_V2_P3_CANARY_ACTIVATION",
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
+        adapter = GitHubControlAdapter(
+            config=config(poll_limit=16),
+            rest_client=FakeRESTClient(comments=tuple(unrelated + [canary])),
+            secret_scan=lambda payload: {},
+        )
+        messages = adapter.receive_request_kind(
+            "LIFECYCLE_V2_P3_CANARY_ACTIVATION",
+            limit=16,
+        )
+        self.assertEqual([item.source_message_id for item in messages], ["999"])
+        self.assertEqual(json.loads(messages[0].content.decode("utf-8"))["message_id"], "P3-CANARY-1")
+
     def test_source_code_repository_is_not_implicitly_accepted(self):
         with self.assertRaisesRegex(GitHubControlAdapterError, "public source repository"):
             config(allowed_repository_id=1254385549)

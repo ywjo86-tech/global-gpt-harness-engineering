@@ -1,0 +1,2845 @@
+# CURRENT_OPERATIONAL_STATE
+CURRENT_OPERATIONAL_STATE: AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE
+FINAL_EDP: ALL_PASS
+AI_OFFICE_STABLE_BASELINE: DECLARED
+PH7_PROVIDER_EXPANSION: PROVIDER_EXPANSION_RUNTIME_ALL_PASS
+GROQ: ACTIVE / FREE_TIER_ONLY
+RUNTIME_RELEASE: ACTIVE
+GRAPHIFY: PRODUCTION_READ_ONLY_ACTIVE
+CODEGRAPH: PRODUCTION_READ_ONLY_ACTIVE
+HOLMES_INSPIRED_RCA: ACTIVE_READ_ONLY
+CLI_ANYTHING: QUALIFIED_TOOL_IMPLEMENTATION
+CLI_HUB_DISCOVERY: QUALIFIED_READ_ONLY
+CLI_ANYTHING_GENERATOR: CANDIDATE_ONLY
+DIAGNOSTIC_INTELLIGENCE: ADVISORY
+VALIDATED_SOURCE_HEAD: 7946c4b32f2d027e5e6b48c1770f09097432fff8
+CURRENT_STATE_PROJECTION: docs/harness/CURRENT_OPERATIONAL_STATE.json
+FINAL_BASELINE_DECLARATION: docs/history/upgrades/2026-09-20-FINAL-OPERATIONAL/AI_OFFICE_HARNESS_FINAL_OPERATIONAL_BASELINE_DECLARATION.json
+NOTE: Earlier UPGRADE_REMAINS_OPEN/provider-expansion prohibitions below are preserved historical predecessor constraints and are superseded for current-state interpretation only by cited later approval/evidence.
+
+# AI Office Harness Upgrade — FULL PLAN EXECUTION CONTRACT
+
+TARGET_RUNTIME_FILE: docs/DEVELOPMENT_PLAN.txt
+CONTRACT_TYPE: FULL_PLAN_EXECUTION_CONTRACT
+CONTRACT_STATUS: READY_FOR_FULL_PLAN_EXECUTION
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-18
+APPROVED_CONTRACT_ARTIFACT: AI-OFFICE-HARNESS-PH5_AI_OFFICE_STABLE_BASELINE_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt
+DIAGNOSED_CONTRACT_BODY_SHA256: 9380668cb971622a8508d7a43e7284e4d7f6b7924a317f2793404fd4b91710f2
+FINAL_CONTRACT_BODY_SHA256: 9380668cb971622a8508d7a43e7284e4d7f6b7924a317f2793404fd4b91710f2
+SEMANTIC_BODY_HASH_SCOPE: UTF8_LF_EXACT_BETWEEN_MARKER_LINES
+
+<!-- SEMANTIC_BODY_BEGIN -->
+
+# EC-00 CONTRACT IDENTITY
+
+PROJECT_NAME: AI Office Harness Upgrade
+PROJECT_ID: PHASE5_AI_OFFICE_HARNESS_UPGRADE
+PROJECT_KEY: AI-OFFICE-HARNESS-PH5
+
+PROJECT_TYPE: EXISTING
+PROJECT_LIFECYCLE_MODE: UPGRADE
+
+TARGET_PROJECT_ROOT: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`
+CURRENT_VERSION: `MULTI_PROVIDER_FOUNDATION_BASELINE / PRE-PHASE-5 REQUALIFIED`
+TARGET_VERSION: `AI_OFFICE_STABLE_BASELINE`
+UPGRADE_SEQUENCE: `MULTI_PROVIDER_FOUNDATION_BASELINE → PHASE 5 Entry Revalidation → AOH-001/AOH-003 → AOH-002 → AOH-004 → AI_OFFICE_STABLE_BASELINE`
+
+SOURCE_IMPLEMENTATION_DESIGN_ARTIFACT: `AI-OFFICE-HARNESS-PH5_APPROVED_IMPLEMENTATION_DESIGN.md`
+SOURCE_IMPLEMENTATION_DESIGN_VERSION: D1.4
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_VERSION: D1.4
+SOURCE_IMPLEMENTATION_DESIGN_APPROVED_DATE: 2026-09-18
+SOURCE_IMPLEMENTATION_DESIGN_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_STATUS: APPROVED
+SOURCE_IMPLEMENTATION_DESIGN_HANDOFF_READINESS: READY
+SOURCE_IMPLEMENTATION_DESIGN_APPROVAL_AUTHORITY: USER
+SOURCE_IMPLEMENTATION_DESIGN_USER_DECISION: 최종승인
+
+TARGET_REPOSITORY: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`
+BASELINE_REF: verified source HEAD `7c14ce2fd4bbe32bb26ecb7b58252b23b1139d5c` plus sealed predecessor baseline evidence
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+EXECUTION_MODE: HYBRID
+OPERATOR_AUTHORITY: GPT_OPERATOR
+PROVIDER_SELECTION_AUTHORITY: MULTI_PROVIDER_ROUTER
+SKILL_PROVIDER_BINDING: PROHIBITED
+TASK_PROVIDER_ASSIGNMENT: PROHIBITED
+CAPABILITY_DECLARATION: REQUIRED_WHEN_MATERIAL
+ROUTING_POLICY_OWNERSHIP: MULTI_PROVIDER_LAYER
+PLANNER_PROVIDER_SELECTION: PROHIBITED
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+
+PROVIDER_MODEL_SELECTION: MULTI_PROVIDER_RUNTIME_ONLY
+PROVIDER_MODEL_RESELECTION: MULTI_PROVIDER_RUNTIME_ONLY
+PROVIDER_MODEL_FAILOVER: MULTI_PROVIDER_RUNTIME_ONLY
+PROVIDER_HEALTH_QUOTA_HANDLING: MULTI_PROVIDER_RUNTIME_ONLY
+ACTIVE_REGISTRY_LOOKUP: MULTI_PROVIDER_RUNTIME_ONLY
+SAME_SCOPE_PROVIDER_MODEL_REPLACEMENT_REAPPROVAL: NOT_REQUIRED
+
+## Source Authority / Current-State Binding
+### Source Projection ID-00 — Document Control
+
+PROJECT_NAME: AI Office Harness Upgrade  
+PROJECT_ID: PHASE5_AI_OFFICE_HARNESS_UPGRADE  
+PROJECT_KEY: AI-OFFICE-HARNESS-PH5  
+DOCUMENT_TYPE: IMPLEMENTATION_DESIGN
+
+DESIGN_VERSION: D1.4  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: D1.4  
+APPROVED_DATE: 2026-09-18  
+APPROVAL_AUTHORITY: USER  
+USER_DECISION: 최종승인
+
+CREATED_DATE: 2026-09-18  
+LAST_UPDATED_DATE: 2026-09-18
+
+PROJECT_TYPE: EXISTING  
+PROJECT_LIFECYCLE_MODE: UPGRADE
+
+TARGET_PROJECT_ROOT: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+CURRENT_VERSION: `MULTI_PROVIDER_FOUNDATION_BASELINE / PRE-PHASE-5 REQUALIFIED`  
+TARGET_VERSION: `AI_OFFICE_STABLE_BASELINE`  
+UPGRADE_SEQUENCE: `MULTI_PROVIDER_FOUNDATION_BASELINE → PHASE 5 Entry Revalidation → AOH-001/AOH-003 → AOH-002 → AOH-004 → AI_OFFICE_STABLE_BASELINE`
+
+APPROVED_PLAN_VERSION: DP-0.3  
+APPROVED_PLAN_APPROVED_VERSION: DP-0.3  
+APPROVED_PLAN_APPROVED_DATE: 2026-09-18  
+APPROVED_PLAN_SOURCE_REF: `AI-OFFICE-HARNESS-PH5_APPROVED_DEVELOPMENT_PLAN.md`
+
+TARGET_REPOSITORY: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+BASELINE_REF: verified source HEAD `7c14ce2fd4bbe32bb26ecb7b58252b23b1139d5c` plus sealed predecessor baseline evidence  
+ARTIFACT_FILENAME: `AI-OFFICE-HARNESS-PH5_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN  
+EXECUTION_MODE: HYBRID  
+OPERATOR_AUTHORITY: GPT_OPERATOR  
+PROVIDER_SELECTION_AUTHORITY: MULTI_PROVIDER_ROUTER  
+SKILL_PROVIDER_BINDING: PROHIBITED  
+TASK_PROVIDER_ASSIGNMENT: PROHIBITED  
+CAPABILITY_DECLARATION: REQUIRED_WHEN_MATERIAL  
+ROUTING_POLICY_OWNERSHIP: MULTI_PROVIDER_LAYER
+
+
+---
+### Source Projection ID-01 — Executive Summary
+
+## Purpose
+본 구현설계는 승인된 PHASE 5 개발계획을 기술적 HOW로 변환하여 AOH-001 Execution Integration, AOH-003 Observability Consumer Foundation, AOH-002 AI Office Operating Layer / Workflow & Governance Foundation, AOH-004 Integrated Qualification을 구현 가능한 구조로 정의한다. 이 문서는 설계만 수행하며 코드 수정, Worker/Test 실행, 배포, 병합, Git Push, baseline 선언을 수행하지 않는다.
+
+## Design Goal
+AI Office를 `AI Company Operating Layer + Workflow/Governance Runtime`으로 추가하되 기존 Full Plan, Multi-Provider Router, MPRF, Execution Backend Contract, Full MCP 권한을 이동시키지 않는다. AI Office는 requirement intake, office/workflow state, context assembly, system capability owner routing, agent/capability governance, Foundry, approval/risk/activation governance, recovery coordination, observability consumption, office-level reporting을 소유한다. 상태 변경은 오직 승인된 Execution Backend/Full MCP 또는 기존 bounded Manual Action 경로로 위임한다.
+
+## Expected Implementation Outcome
+구현 완료 상태에서는 (1) AI Office가 backend-neutral public execution contract만 사용하고, (2) action/provider observability source-of-truth가 분리된 채 소비 가능하며, (3) Full Plan 최종 assignment/Router 선택/MPRF runtime/Full MCP effect authority가 보존되고, (4) state-changing authority가 일시적으로 불가해도 read-only 진행과 typed wait/manual-action handoff가 가능하며, (5) Office Project Factory/Daily Loop/AOH-004 regression을 통과한 완전한 exit evidence만 `AI_OFFICE_STABLE_BASELINE` closure 후보를 생성할 수 있다.
+
+
+---
+### Source Projection ID-02 — Approved Development Plan Binding
+
+## Planning Authority
+
+AUTHORITATIVE_PLAN: `AI-OFFICE-HARNESS-PH5_APPROVED_DEVELOPMENT_PLAN.md`  
+PLAN_VERSION: DP-0.3  
+APPROVED_VERSION: DP-0.3  
+APPROVED_DATE: 2026-09-18  
+SOURCE_REF: approved Development Plan / RA-0.4 baseline binding  
+TARGET_REPOSITORY: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+BASELINE_REF: `7c14ce2fd4bbe32bb26ecb7b58252b23b1139d5c` plus sealed predecessor evidence
+
+## Project Identity Binding
+
+PROJECT_NAME: AI Office Harness Upgrade  
+PROJECT_ID: PHASE5_AI_OFFICE_HARNESS_UPGRADE  
+PROJECT_KEY: AI-OFFICE-HARNESS-PH5  
+PROJECT_TYPE: EXISTING  
+PROJECT_LIFECYCLE_MODE: UPGRADE  
+TARGET_PROJECT_ROOT: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering`  
+CURRENT_VERSION: `MULTI_PROVIDER_FOUNDATION_BASELINE / PRE-PHASE-5 REQUALIFIED`  
+TARGET_VERSION: `AI_OFFICE_STABLE_BASELINE`  
+UPGRADE_SEQUENCE: `MULTI_PROVIDER_FOUNDATION_BASELINE → PHASE 5 Entry Revalidation → AOH-001/AOH-003 → AOH-002 → AOH-004 → AI_OFFICE_STABLE_BASELINE`  
+IDENTITY_STATUS: VERIFIED
+
+## Preserved Planning Boundaries
+- User Intent, all REQ/NFR/SEC/OPS and Acceptance Conditions are preserved verbatim.
+- IN/OUT scope, constraints, success criteria, deliverables, project identity/root/lifecycle/version transition are unchanged.
+- Full Plan remains planning/task decomposition/final task-to-agent assignment authority.
+- Multi-Provider Router remains provider/model selection/reselection authority; this design declares capabilities only.
+- MPRF remains provider runtime owner and is consumed, not reimplemented.
+- Full MCP remains action/effect/reconciliation truth owner.
+- AI Office owns workflow/governance/approval/risk/foundry/office lifecycle/recovery coordination/report aggregation only.
+- Provider/model replacement under identical scope/capability/output/validation contract is not a design change.
+
+
+---
+### Source Projection ID-03 — Current State Verification
+
+## Current Architecture Summary
+Read-only verification at the approved target root confirmed a clean repository at exact HEAD `7c14ce2fd4bbe32bb26ecb7b58252b23b1139d5c`, branch `diagnosis/phase5-preflight-edp-20260918`. Existing code already contains the Provider Router request/decision envelope, MPRF provider-runtime contracts/observability, Full MCP authorization/effect/observability, Execution Backend gateway/adapter boundaries, production Manual Action, recovery, capability inventory and built-in agent registry. `runtime/ai_office/` is absent, so PHASE 5 AI Office operating-layer code is a genuine new boundary rather than an existing module to overwrite.
+
+## Relevant Components
+
+
+---
+
+| ID | Component / Module | Current Responsibility | Verification Status |
+|---|---|---|---|
+| SRC-CMP-001 | runtime/orchestrator/provider_router.py | Canonical RouterRequest/RouterDecision envelope and typed blocked action state | VERIFIED |
+| SRC-CMP-002 | runtime/mprf/ | Provider runtime contracts, execution client, lifecycle/checkpoint/failure/observability | VERIFIED |
+| SRC-CMP-003 | runtime/full_mcp/ | Action authorization, operations, effect/recovery/observability truth | VERIFIED |
+| SRC-CMP-004 | runtime/orchestrator/execution_contract.py | Governed execution contract/package/preflight binding | VERIFIED |
+| SRC-CMP-005 | runtime/orchestrator/production_execution_gateway.py | Transport-neutral production execution gateway + injected runtime handler | VERIFIED |
+| SRC-CMP-006 | runtime/orchestrator/full_mcp_backend_adapter.py | Execution runtime adapter to Full MCP with contract validation | VERIFIED |
+| SRC-CMP-007 | runtime/orchestrator/production_manual_action.py | Bounded GPT Operator-authorized manual mutation path | VERIFIED |
+| SRC-CMP-008 | runtime/orchestrator/operational_capability.py | Capability contract/inventory/agent registry/adoption governance | VERIFIED |
+| SRC-CMP-009 | runtime/agents/__init__.py | Built-in agent registry | VERIFIED |
+| SRC-CMP-010 | runtime/ai_office/ | No current implementation | ABSENT / PLANNED_CREATE |
+
+---
+
+
+## Relevant Interfaces
+
+
+---
+
+| ID | Interface | Current Behavior | Verification Status |
+|---|---|---|---|
+| SRC-IF-001 | RouterRequestV2 / RouterDecisionV2 | Canonical request/decision binding; blocked state contains no provider/model binding | VERIFIED |
+| SRC-IF-002 | ExecutionRuntimeHandler injection | Production gateway/adapter accepts injected execution runtime handler | VERIFIED |
+| SRC-IF-003 | PublicExecutionRequest/Result | Versioned public DTO currently protects Full MCP internals for existing public use cases | VERIFIED |
+| SRC-IF-004 | MPRF ProviderRuntimeEventV1 | Provider-runtime-only event schema with correlation identifiers | VERIFIED |
+| SRC-IF-005 | Full MCP execution event/result index | Action-runtime event/effect/audit truth with forbidden sensitive fields | VERIFIED |
+| SRC-IF-006 | Manual Action package/authorization | Digest/scope/source/command/Router decision binding required | VERIFIED |
+| SRC-IF-007 | Production capability inventory | Loads built-in agent registry and governed asset manifests | VERIFIED |
+
+---
+
+
+## Relevant Runtime Flow
+1. Full Plan establishes task/capability intent and assignment authority.
+2. Model execution uses the Router request/decision envelope; AI Office must never supply a provider/model choice.
+3. Provider runtime is owned by MPRF and emits provider-runtime events.
+4. State-changing action handoff is governed by Execution Backend contracts/adapters and Full MCP owns action/effect truth.
+5. If the action route is unavailable, existing bounded Manual Action can be authorized; read-only capability does not inherit mutation authority.
+6. Full MCP and MPRF already emit separate event domains with shared correlation identifiers; PHASE 5 must add a consumer boundary rather than merge them.
+
+## Relevant Dependencies
+
+
+---
+
+| Dependency | Purpose | Current Status |
+|---|---|---|
+| FULL_PLAN_STABLE_BASELINE | Planning/task decomposition/final assignment predecessor | VERIFIED / sealed predecessor authority |
+| EXECUTION_BACKEND_CONTRACT_FINAL | Backend-neutral execution handoff | RECONFIRMED in repository history |
+| MCP_STABLE_BASELINE | Action/effect authority predecessor | RECONFIRMED |
+| EXEC-AUTH-EXT-001 / PCA-002 | Public execution boundary predecessor | PASS/CLOSED per approved plan |
+| MULTI_PROVIDER_FOUNDATION_BASELINE | Provider runtime/router predecessor | APPROVED / SEALED / requalified; repository changelog confirms closure |
+
+---
+
+
+## Existing Tests
+
+
+---
+
+| Test / Test Area | Purpose | Status |
+|---|---|---|
+| tests/test_provider_router.py + production provider-router integration | Router request/decision authority and integration | SOURCE VERIFIED; not executed in this design project |
+| tests/test_public_execution_contract.py | Public contract binding/backend-internal negative space | SOURCE VERIFIED; not executed |
+| tests/test_production_manual_action.py | Manual Action scope/authorization/source binding | SOURCE VERIFIED; not executed |
+| tests/test_recovery_e2e.py and recovery suites | Recovery continuity | SOURCE VERIFIED; not executed |
+| tests/test_preph5mprf_integrated_e2e.py | Predecessor integrated qualification | SOURCE VERIFIED; not executed |
+| broad Full MCP/MPRF/provider-production suites | Regression baseline | Catalog VERIFIED; no test run performed |
+
+---
+
+
+## Current Limitations
+- No AI Office operating-layer package exists.
+- Existing public execution DTO is not itself an AI Office operating contract; a dedicated additive boundary is required to avoid leaking backend details.
+- Existing Full MCP and MPRF observability stores are source-domain specific; no consumer-ready AI Office correlation view exists.
+- Existing capability/agent registry is runtime-oriented and does not provide the PHASE 5 office-level eligibility/governance/foundry lifecycle API.
+- Baseline closure logic for AI Office does not exist.
+
+## Source Drift Status
+SOURCE_DRIFT_STATUS: CLEAR
+
+Design-time verification facts:
+- Verified root equals approved TARGET_PROJECT_ROOT.
+- Verified HEAD equals approved BASELINE_REF source HEAD.
+- Worktree status was clean at verification.
+- Current source contains the predecessor Router/MPRF/Full MCP/Execution Backend/Manual Action surfaces described by the approved plan.
+- No material requirement/scope/version/root drift was found.
+
+Execution must repeat this verification immediately before mutation. Any material mismatch becomes `SOURCE_DRIFT_DETECTED`; if WHAT/identity/scope/constraint/success/deliverable changes, return `PLAN_REVISION_REQUIRED`.
+
+
+---
+
+# EC-01 SCOPE / CONSTRAINTS / SUCCESS / DELIVERABLES
+
+## Source Projection ID-05 — Approved Scope and Constraints
+
+## IN SCOPE
+
+- AOH-001 Execution Integration
+- AOH-002 AI Office Operating Layer / Workflow & Governance
+- AOH-003 Observability Consumer Foundation
+- AOH-004 Integrated Qualification
+- Requirement Intake / Normalization
+- Office / Department Registry, Schedule / Run State
+- Task / Workflow State / Execution Coordination
+- Context Assembly and System Capability Routing within AI Office boundary
+- Agent / Capability Registry, Discovery / Eligibility, Find Agent, approved source adapter, Controlled Onboarding
+- AI Office Foundry, Office Project Definition, Operating Contract, Lifecycle, Scaffolding
+- Approval / Risk / Permission Policy and Pilot/Production Activation Governance
+- Failure Escalation / Recovery Coordination
+- Office KPI / Status / Report Aggregation
+- Contract-only Full MCP integration and MPRF/Router boundary preservation
+- Consumer-ready observability boundary
+- State-changing-provider-unavailable operating profile with approved Manual Action
+- Representative Office E2E / Daily Loop E2E / integrated regression / EDP closure
+- `AI_OFFICE_STABLE_BASELINE` closure package
+
+## OUT OF SCOPE
+
+- PHASE 6 Jarvis Upgrade + Project Continuity Memory
+- PHASE 7 Advanced Multi-Provider Runtime
+- PHASE 8 Governance/Instruction Optimization
+- Post-mainline AI Office Advancement
+- Additional provider activation or provider expansion
+- Dynamic/cost-aware routing / benchmarking/scoring / advanced automatic fallback
+- Database persistence platform, Dashboard, BI, Material UI, Storybook, Apache Superset
+- Provider/model execution hardcoding
+- Full MCP/MPRF/Provider Router authority transfer
+- Detailed implementation architecture/files/classes/commands
+- Deployment or automatic main merge/push
+
+## DEFERRED ITEMS
+
+- Detailed technical architecture and module/file decomposition — Implementation Design.
+- Storage/UI/analytics technology choices — owning future projects.
+- Main branch publication/deployment — execution/publication authority.
+- Advancement successor scope — future controlled revision.
+
+## FUTURE CANDIDATES
+
+- PHASE 6 Jarvis + Project Continuity Memory
+- PHASE 7 Advanced Multi-Provider Runtime
+- PHASE 8 Instruction Lifecycle Governance
+- Approved AI Office Advancement successor
+
+---
+
+## Approved Constraints
+
+## Technical Constraints
+
+- Existing project root is mandatory.
+- AI Office action path must remain contract-only through Execution Backend Contract to Full MCP.
+- Provider runtime path must preserve Full Plan required capability → Provider Router → MPRF → worker.
+- Full Plan owns final Task-to-Agent assignment.
+- MPRF must not be duplicated.
+- AOH-003 must remain a consumer boundary; persistence/dashboard/BI are excluded.
+
+## Compatibility Constraints
+
+- Preserve recovered AI Office V2.3 and Global Harness V2.6 roadmap authority.
+- Preserve sealed/requalified predecessor baselines.
+- Preserve Full Plan Gate semantics, Provider Router selection authority, MPRF provider runtime, Full MCP action/effect authority, approval/recovery/manual-action semantics.
+
+## Security Constraints
+
+- Fail closed on source/provider/authorization drift.
+- No read-only mutation authority.
+- No Router/Full MCP/MPRF authority bypass.
+- No approval bypass during recovery.
+- Controlled onboarding/activation must remain versioned and approval-bound.
+
+## Operational Constraints
+
+- The current state-changing-provider-unavailable condition must be supported without changing planning scope.
+- Bounded Manual Action must remain an explicit state-change mechanism when no automated state-changing route is eligible.
+- Implementation start must re-run Entry Gate/source drift verification.
+- Every mutation must produce verification evidence.
+
+## Business / Cost Constraints
+
+- Do not make replenishment of a single provider quota/token a planning prerequisite where required non-mutating capability can be satisfied through an already qualified route.
+- Do not add a new paid provider dependency in PHASE 5 planning.
+
+## Full Plan HYBRID Planning Constraints
+
+- EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN
+- EXECUTION_MODE: HYBRID
+- OPERATOR_AUTHORITY: GPT_OPERATOR
+- PROVIDER_SELECTION_AUTHORITY: MULTI_PROVIDER_ROUTER
+- SKILL_PROVIDER_BINDING: PROHIBITED
+- CAPABILITY_DECLARATION: ALLOWED
+- ROUTING_POLICY_OWNERSHIP: MULTI_PROVIDER_LAYER
+- PLANNER_PROVIDER_SELECTION: PROHIBITED
+- UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+
+Planning does not assign task-level Providers, models, commands, worker allocation or routing/fallback order. Implementation Design may define HOW while preserving these authority boundaries.
+
+---
+
+## Full Plan HYBRID Constraints — Design Normalization
+The template's provider-specific legacy examples are not adopted. The approved plan is authoritative:
+
+EXECUTION_CONTRACT: GLOBAL_GPT_HARNESS_FULL_PLAN  
+EXECUTION_MODE: HYBRID  
+OPERATOR_AUTHORITY: GPT_OPERATOR  
+PROVIDER_SELECTION_AUTHORITY: MULTI_PROVIDER_ROUTER  
+SKILL_PROVIDER_BINDING: PROHIBITED  
+TASK_PROVIDER_ASSIGNMENT: PROHIBITED  
+CAPABILITY_DECLARATION: REQUIRED_WHEN_MATERIAL  
+ROUTING_POLICY_OWNERSHIP: MULTI_PROVIDER_LAYER  
+PLANNER_PROVIDER_SELECTION: PROHIBITED  
+UNAPPROVED_PROVIDER_EXPANSION: PROHIBITED
+
+Rules:
+- Tasks declare Required Capabilities and Execution Authority only.
+- No task/provider/model mapping, priority, fallback chain, health/quota-based selection, registry lookup or failover logic is defined here.
+- Provider/model selection/reselection/failover/health/quota/registry lookup remains Multi-Provider layer responsibility.
+- Same-scope provider/model replacement does not require design revision.
+
+## Approved Success Criteria
+The project is considered successful when:
+
+- SC-001: All five recovered-roadmap PHASE 5 Entry Gate inputs are valid at implementation start and no material source drift is unresolved.
+- SC-002: AOH-001 contract-only integration PASSes with backend-specific dependency NONE, Full MCP internal dependency NONE, Provider Router Authority preserved, MPRF boundary preserved, authorization/effect compatibility PASS.
+- SC-003: AOH-003 produces a consumer-ready observability boundary with required correlation fields while preserving distinct Full MCP/MPRF sources of truth.
+- SC-004: AOH-002 Mainline Foundation provides requirement intake, office registry/run state, Context Assembly, System Capability Routing, agent/capability governance, Foundry/office lifecycle, approval/risk/activation governance, recovery coordination and office-level aggregation.
+- SC-005: Full Plan final task-to-agent assignment, Router provider/model selection, MPRF provider runtime and Full MCP action/effect authority remain unchanged.
+- SC-006: State-changing-provider-unavailable operation is validated without read-only mutation, silent fallback or provider hardcoding; approved Manual Action remains auditable/resumable.
+- SC-007: Office Project Factory representative E2E and Office Daily Loop representative E2E PASS.
+- SC-008: AOH-004 representative end-to-end flow and all roadmap qualification checks PASS.
+- SC-009: Required broad/Full MCP/MPRF/provider-production regressions PASS with blocker=0 and unresolved major=0; EDP coverage/traceability/negative-space closure conditions are met.
+- SC-010: `AI_OFFICE_STABLE_BASELINE` is declared and closed with the complete exit-evidence package; the local alias is declared only with identical exit evidence.
+- SC-011: No PHASE 6/7/8 or Advancement scope is silently activated.
+
+---
+
+## Approved Deliverables
+| ID | Deliverable | Related Requirements |
+|---|---|---|
+| DEL-001 | PHASE 5 Entry Gate & Source Integrity Revalidation Package | REQ-001/007/009, OPS-003/006/010 |
+| DEL-002 | AOH-001 Execution Integration Qualification Package | REQ-002~005/008/010/020~021, NFR-001~007, SEC-001~006 |
+| DEL-003 | AOH-003 Consumer-ready Observability Boundary & Qualification Evidence | REQ-016, NFR-008, OPS-004 |
+| DEL-004 | AOH-002 AI Office Operating Layer / Workflow & Governance Foundation Package | REQ-011~015/020~023, SEC-005~007, OPS-008 |
+| DEL-005 | Foundry / Agent / Office Lifecycle Representative Validation Package | REQ-012~014, SEC-007, OPS-007 |
+| DEL-006 | AOH-004 Integrated Qualification & Regression/EDP Evidence Package | REQ-006~008/017~019, NFR-003~005/008~009, SEC-003~007, OPS-005~010 |
+| DEL-007 | `AI_OFFICE_STABLE_BASELINE` Declaration / Closure Manifest Package | REQ-018~019, OPS-009 |
+
+---
+
+---
+
+# EC-02 REQUIREMENTS / ACCEPTANCE
+
+## Source Projection ID-04 — Approved Requirements
+
+## Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| REQ-001 | Perform PHASE 5 as an UPGRADE in the verified existing Harness root. | Target root is preserved; no sibling replacement root. | MUST |
+| REQ-002 | Do not require one specific state-changing provider to be available as a project prerequisite. | Read-only/reasoning/review/documentation work remains possible when state-changing provider is unavailable. | MUST |
+| REQ-003 | All model execution must use the Multi-Provider Router request/decision envelope. | No direct provider/model invocation or Router bypass. | MUST |
+| REQ-004 | Do not reroute mutation to read-only capability when automated state-changing provider is unavailable. | Mutations use approved Manual Action or separately authorized state-changing authority only. | MUST |
+| REQ-005 | AI Office must preserve Full MCP action authority and Router selection authority. | Existing authority owners remain unchanged. | MUST |
+| REQ-006 | PHASE 5 must not implicitly activate PHASE 6/7 capabilities. | Jarvis/advanced multiprovider functions remain out of scope/inactive. | MUST |
+| REQ-007 | PHASE 5 changes must fully trace to the recovered approved roadmap. | Roadmap-to-requirement-to-success traceability = 100%. | MUST |
+| REQ-008 | Preserve the requalified governed read-only production capability contract. | Router-approved read-only regression PASS, no mutation authority. | MUST |
+| REQ-009 | Revalidate all five roadmap PHASE 5 Entry Gate inputs before implementation. | All five inputs valid at implementation start. | MUST |
+| REQ-010 | AOH-001 must provide contract-only AI Office→Execution Backend→Full MCP integration and preserve Provider Router+MPRF boundary. | Mapping/backend-independence/auth/effect/provider-boundary gates PASS. | MUST |
+| REQ-011 | AOH-002 must provide requirement intake, office registry/schedule/run state, task/workflow state and execution coordination. | Representative workflow validation PASS. | MUST |
+| REQ-012 | AOH-002 must provide agent/capability registry, discovery/eligibility, Find Agent, source adapter and controlled onboarding. | Governance and versioned activation PASS; final assignment remains Full Plan. | MUST |
+| REQ-013 | AOH-002 must provide Foundry, Office Project Definition/Operating Contract/Lifecycle/Scaffolding. | Representative Office Project Factory E2E PASS. | MUST |
+| REQ-014 | AOH-002 must provide approval, risk/permission policy and pilot/production activation governance. | Dual-gate + human approval PASS. | MUST |
+| REQ-015 | AOH-002 must provide failure escalation, recovery coordination, office KPI/status/report aggregation and governance. | Authority-preserving recovery/reporting validation PASS. | MUST |
+| REQ-016 | AOH-003 must provide a consumer-ready observability boundary over Full MCP and MPRF event domains. | Correlation fields available; source-of-truth domains not duplicated/merged. | MUST |
+| REQ-017 | AOH-004 must verify the end-to-end representative flow from authorized requirement through observability/reporting. | Roadmap representative flow and qualification list PASS. | MUST |
+| REQ-018 | Declare `AI_OFFICE_STABLE_BASELINE` only after full PHASE 5 exit PASS. | Entire exit evidence bound to closure package. | MUST |
+| REQ-019 | Declare local alias only with identical canonical baseline exit evidence. | No partial-scope alias declaration. | MUST |
+| REQ-020 | Preserve Full Plan authority for planning/task decomposition/final task-to-agent assignment. | AI Office stops at candidate eligibility/context/governance boundary. | MUST |
+| REQ-021 | Consume MPRF as provider runtime foundation; do not reimplement it. | No duplicate MPRF lifecycle/failover/checkpoint runtime. | MUST |
+| REQ-022 | AOH-002 must provide Context Assembly from approved repository/baseline/run/workflow/foundry inputs without replacing source precedence or Full Plan planning authority. | Representative context assembly preserves source precedence and authority boundaries. | MUST |
+| REQ-023 | AOH-002 must provide System Capability Routing that connects capability needs to owning boundaries without provider/model selection or Full Plan bypass. | Capability routing is authority-consistent and AI Office direct provider/model selection = 0. | MUST |
+
+## Non-Functional Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| NFR-001 | Preserve fail-closed authority semantics. | No silent fallback/bypass. | MUST |
+| NFR-002 | State-changing paths, including Manual Action, must be deterministic, auditable and resumable. | Actor/approval/change/evidence/verification/recovery recorded. | MUST |
+| NFR-003 | Preserve Full Plan Gate semantics and canonical effect authority. | Gate/authority regression PASS. | MUST |
+| NFR-004 | Prevent material regression across broad, Full MCP, MPRF and Provider/Production suites. | Required regressions PASS; blocker/major 0. | MUST |
+| NFR-005 | Do not define provider/model priority, fallback chain or task-level executor in Planning. | No provider hardcoding/routing logic. | MUST |
+| NFR-006 | Use contract-only handoff through Execution Backend Contract/approved adapters. | No direct Full MCP internals dependency. | MUST |
+| NFR-007 | Preserve backend independence in AOH-001. | Backend-specific dependency does not leak into operating layer. | MUST |
+| NFR-008 | Preserve separate Full MCP and MPRF event source-of-truth domains. | Correlation without source duplication. | MUST |
+| NFR-009 | Apply Stable Core Protection and controlled-change precedence. | Core changes occur only after adapter/boundary alternatives and controlled change approval. | MUST |
+
+## Security Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| SEC-001 | Preserve Router request/decision envelope integrity. | Immutable/canonical routing validation remains enforced. | MUST |
+| SEC-002 | Separate read-only execution from state-changing authority. | Read-only mutation count = 0. | MUST |
+| SEC-003 | Recovery/reconciliation/automation must not bypass approvals. | Mandatory approval states persist. | MUST |
+| SEC-004 | Keep PHASE 7 reserved capabilities inactive. | No provider expansion/dynamic routing/benchmark/cost optimizer/advanced fallback. | MUST |
+| SEC-005 | Preserve post-PHASE-5 authorization lineage USER→AI Office Governance→Risk Envelope→Delegated Auth→Binding→Full MCP. | End-to-end authorization lineage verified. | MUST |
+| SEC-006 | Prohibit AI Office provider direct selection, Full MCP bypass and MPRF policy override. | Authority bypass count = 0. | MUST |
+| SEC-007 | Require approved-source/versioned/risk-governed Controlled Agent Onboarding. | Unauthorized agent activation count = 0. | MUST |
+
+## Operational Requirements
+
+| ID | Requirement | Acceptance Condition | Priority |
+|---|---|---|---|
+| OPS-001 | Treat state-changing provider unavailability as a typed operational condition. | No silent stop/unclassified failure. | MUST |
+| OPS-002 | Support bounded Manual Action change/evidence/verification handoff for state changes. | Reviewable change unit + post-action evidence. | MUST |
+| OPS-003 | Verify repository/branch/head/worktree identity before mutation. | Wrong source state fails closed. | MUST |
+| OPS-004 | Preserve canonical state and pending Manual Action through restart/recovery. | Resume without lost approval/action state. | MUST |
+| OPS-005 | Run EDP-style regression/negative-space/traceability diagnosis before PHASE 5 completion. | Blocker=0, unresolved major=0, coverage=100%, conflicts/broken refs=0. | MUST |
+| OPS-006 | Reverify material repository/roadmap drift as `SOURCE_DRIFT_DETECTED`. | No silent baseline drift acceptance. | MUST |
+| OPS-007 | Include Office Project Factory and Office Daily Loop representative E2E. | Both E2E PASS. | MUST |
+| OPS-008 | Separate Task fan-in authority from Office report aggregation. | No orchestration/reporting authority conflation. | MUST |
+| OPS-009 | Complete AOH-004 and functional regression before baseline declaration. | Full exit evidence bound. | MUST |
+| OPS-010 | Revalidate Entry Gate/current source at Implementation Design start. | Invalid/drifted gate fails closed. | MUST |
+
+---
+
+No requirement or Acceptance Condition may silently differ from the Approved Development Plan.
+
+---
+
+# EC-03 ARCHITECTURE / COMPONENTS / CHANGE TARGETS
+
+## Source Projection ID-06 — Architecture Design
+
+## Current Architecture Boundary
+The design boundary begins above the existing Full Plan/Router/MPRF/Execution Backend/Full MCP stack. Those owners remain canonical. AI Office is added as a new operating/governance layer that consumes public contracts and stores only office-domain state plus immutable references to external authority artifacts.
+
+## Target Architecture
+```text
+USER
+  ↓
+AI Office Governance / Office Lifecycle / Workflow State
+  ├─ Requirement Intake → Context Assembly → Full Plan handoff
+  ├─ System Capability Owner Routing → Full Plan / Router / MPRF / Execution Backend owners
+  ├─ Agent/Capability Eligibility + Foundry + Activation Governance
+  ├─ Execution Coordinator → public Execution Backend boundary → Full MCP action/effect authority
+  ├─ Observability Consumer ← Action-runtime public projection
+  │                         ← Provider-runtime public projection
+  ├─ Recovery Coordinator → owning recovery/action boundaries + same Gate
+  └─ Office KPI/Status/Report read models
+
+Full Plan: planning/decomposition/final assignment
+Multi-Provider Router: provider/model selection
+MPRF: provider runtime
+Full MCP: action/effect/reconciliation truth
+```
+
+## Preserved Architecture
+- Existing Router request/decision authority and canonical envelope.
+- Existing MPRF provider runtime, registry/lifecycle/failure/checkpoint semantics.
+- Existing Full MCP action/effect/authorization/reconciliation semantics.
+- Existing Execution Backend Contract and Manual Action semantics.
+- Full Plan Gate/fan-in/final-assignment semantics.
+
+## Changed Architecture
+- Add additive orchestration public boundaries for AI Office execution and observability.
+- Add `runtime/ai_office` domain with office state/governance/foundry/recovery/reporting coordination.
+- Add new AI Office validation/E2E/negative-space tests.
+
+## New Architecture Elements
+- AI Office versioned contracts and durable office state.
+- Public execution facade + adapter.
+- Public dual-domain observability facade.
+- Capability/agent governance projection.
+- Foundry/Office Project Factory.
+- Risk/permission/activation governance.
+- Recovery/reporting projections.
+- Integrated qualification and closure candidate validator.
+
+## Architecture Decisions
+| ID | Decision | Related Requirements | Rationale |
+|---|---|---|---|
+| ARC-001 | Authority-preserving overlay: AI Office is operating/governance layer, not alternate planner/router/runtime/backend. | REQ-003/005/020/021, SEC-006 | Prevents canonical authority duplication. |
+| ARC-002 | All AI Office state-changing intents cross a versioned Execution Backend public boundary bound to the verified backend-neutral `ExecutionRuntimeHandler` injection point (or an exact semantics-preserving public equivalent after source revalidation); AI Office never imports Full MCP internals or selects/constructs a concrete backend. | REQ-005/010, NFR-006/007 | Makes AOH-001 deterministic while preserving contract-only integration and backend independence. |
+| ARC-003 | Capability routing is owner-boundary routing only; provider/model selection and reroute remain outside AI Office. | REQ-002/003/004/008/023, NFR-005 | Preserves Router authority and read-only/state-change separation. |
+| ARC-004 | AI Office owns only office/workflow/governance state in a local durable journal/snapshot store with references to external authority artifacts. | REQ-011/022, OPS-004 | Enables restart/resume without copying external truth. |
+| ARC-005 | Observability uses two immutable source-domain projections plus a correlation view; no merged canonical event store. | REQ-016, NFR-008 | Preserves Full MCP/MPRF sources of truth. |
+| ARC-006 | Agent/capability management is registry/eligibility/governance only; final task-to-agent assignment remains Full Plan. | REQ-012/020/023, SEC-007 | Avoids competing orchestrator. |
+| ARC-007 | Foundry separates declarative project/scaffold intent from effects; mutations use AOH-001 execution path. | REQ-013, OPS-007 | Prevents direct filesystem/Git effects from Foundry. |
+| ARC-008 | Risk/permission and human approval are explicit durable gates before state-changing/activation transitions. | REQ-014, SEC-003/005/007 | Fail-closed approval lineage. |
+| ARC-009 | Recovery is coordination-only; owning runtimes perform provider recovery/action reconciliation and the same Gate is re-evaluated. | REQ-015, OPS-001/002/004 | Prevents recovery authority bypass. |
+| ARC-010 | Office reporting aggregation is read-model projection and never acts as Full Plan fan-in/completion authority. | REQ-015, OPS-008 | Separates reporting from orchestration. |
+| ARC-011 | Persistence remains lightweight filesystem artifacts; no database/dashboard/BI platform is introduced. | REQ-018/019, NFR-002 | Respects explicit scope exclusions and deterministic evidence binding. |
+| ARC-012 | Stable Core Protection: additive boundary/new AI Office modules first; existing Router/MPRF/Full MCP core changes require controlled-change justification. | NFR-004/009, OPS-005/006/009 | Reduces regression blast radius and enforces change precedence. |
+
+---
+## Source Projection ID-07 — Component Design
+
+| ID | Component | Responsibility | Related Requirements | Change Type |
+|---|---|---|---|---|
+| CMP-001 | Multi-Provider Router boundary | Sole provider/model request/decision selection authority; AI Office stores only decision refs. | REQ-003/005/008/020/023, SEC-001/006 | PRESERVE |
+| CMP-002 | MPRF provider runtime | Provider runtime registry/lifecycle/health/quota/failure/checkpoint/observability owner. | REQ-016/021, NFR-008, SEC-006 | PRESERVE |
+| CMP-003 | Full MCP action/effect runtime | Action authorization/effect/reconciliation/validation truth owner. | REQ-005/010/016, SEC-005/006 | PRESERVE |
+| CMP-004 | Execution Backend Contract boundary | Existing backend-neutral action handoff and `ExecutionRuntimeHandler` composition boundary; concrete Full MCP adapter remains downstream composition owned outside AI Office. | REQ-005/010, NFR-003/006/007 | PRESERVE |
+| CMP-005 | AI Office/Public contracts | Versioned office, execution and observability DTOs with canonical digests and forbidden-field rules. | REQ-010/011/016 | CREATE |
+| CMP-006 | AI Office durable state store | Office/workflow/governance journal and snapshot persistence, restart-safe. | REQ-011, OPS-004, NFR-002 | CREATE |
+| CMP-007 | Requirement Intake & Context Assembly | Approved-source normalization and deterministic context package creation. | REQ-011/022 | CREATE |
+| CMP-008 | Office Registry & Workflow Coordinator | Office/department/schedule/run/workflow lifecycle; external assignment refs only. | REQ-011/020, OPS-008 | CREATE |
+| CMP-009 | Capability/Agent Governance | System capability owner routing, Find Agent, candidate eligibility and controlled onboarding facade. | REQ-012/020/021/023, SEC-007 | CREATE |
+| CMP-010 | AI Office Foundry | Office project definition/operating contract/lifecycle/scaffold-intent factory. | REQ-013, OPS-007 | CREATE |
+| CMP-011 | Approval/Risk/Permission Governance | Risk envelope, permission policy, human approval, pilot/production activation gates. | REQ-014, SEC-003/005/007 | CREATE |
+| CMP-012 | AI Office Execution Coordinator | Contract-only action coordination through Execution Backend; manual-action wait/handoff. | REQ-002/004/005/010, OPS-001/002 | CREATE |
+| CMP-013 | Observability Consumer | Correlates public action/provider observation refs without source truth merge. | REQ-016, NFR-008 | CREATE |
+| CMP-014 | Recovery Coordinator | Office failure escalation/recovery state and same-gate coordination refs. | REQ-015, OPS-004 | CREATE |
+| CMP-015 | Office Reporting Aggregator | Office KPI/status/report projection separate from Full Plan fan-in. | REQ-015, OPS-008 | CREATE |
+| CMP-016 | Qualification & Closure | E2E/regression/negative-space/traceability and baseline closure candidate validators. | REQ-006/007/017/018/019, OPS-005/007/009 | CREATE |
+
+## Component Details
+
+### CMP-004 — Execution Backend Contract Boundary
+Responsibility: Preserve the verified `runtime/orchestrator/production_execution_gateway.py` backend-neutral `ExecutionRuntimeHandler` injection point as the exact AOH-001 downstream port. The new office adapter validates/translates public office DTOs and invokes only the injected handler.  
+Inputs: `OfficeExecutionRequestV1`, validated execution/authorization bindings, injected `ExecutionRuntimeHandler`.  
+Outputs: backend-neutral execution response projected to `OfficeExecutionResultV1`.  
+Dependencies: existing Execution Backend Contract/public execution semantics; concrete runtime composition remains external.  
+State Behavior: translation/validation only; no direct action/effect state ownership.  
+Error Behavior: missing/invalid handler, binding mismatch, backend-specific field leakage or unsupported semantics -> typed BLOCKED/contract error.  
+Compatibility: if implementation-start source revalidation shows the verified port changed without material WHAT drift, use the exact semantics-preserving public equivalent and record the source-binding change; material authority drift triggers `SOURCE_DRIFT_DETECTED`.  
+Preserved Behavior: no `runtime.full_mcp` import, no direct `FullMCPBackendAdapter` construction/selection, no provider/model selection in AI Office or the office adapter.
+
+### CMP-005 — AI Office/Public Contracts
+Responsibility: Define frozen/versioned DTOs, safe IDs, canonical JSON/digest rules, source refs and forbidden-field constraints.  
+Inputs: approved requirement/identity/auth/observation references.  
+Outputs: validated immutable DTOs.  
+Dependencies: standard library; orchestration public contracts only.  
+State Behavior: pure validation; no effects.  
+Error Behavior: malformed/unknown version/binding mismatch fails closed.  
+Compatibility: versioned V1 schemas; additive future versions require explicit compatibility.  
+Preserved Behavior: no provider/model/backend internals exposed.
+
+### CMP-006 — AI Office Durable State Store
+Responsibility: Persist AI Office-owned state under `_workspace/ai-office/<project_run_id>/` using append-only transition journal plus atomic snapshot, file lock, canonical digest and monotonic revision.  
+Inputs: validated domain state transition.  
+Outputs: `OfficeStateSnapshotV1` + transition refs.  
+Dependencies: CMP-005.  
+State Behavior: create-once run identity, append-only transitions, atomic snapshot replace.  
+Error Behavior: digest-chain/revision/identity mismatch blocks load/append.  
+Compatibility: no database dependency; external authority data stored only as refs/digests.  
+Preserved Behavior: Full MCP/MPRF stores remain separate.
+
+### CMP-007 — Requirement Intake & Context Assembly
+Responsibility: Bind approved requirement refs and assemble deterministic context using explicit source precedence: current user decision > approved plan > verified repository/baseline > verified run/workflow/foundry state > explicit technical assumptions.  
+Inputs: source refs/digests.  
+Outputs: `RequirementEnvelopeV1`, `ContextAssemblyV1`.  
+Dependencies: CMP-005/006 and existing validated context/source mechanisms.  
+State Behavior: cache by input digest only; no semantic source rewriting.  
+Error Behavior: stale/missing/higher-precedence conflict -> blocked/source-drift disposition.  
+Compatibility: Full Plan receives context but remains planning authority.
+
+### CMP-008 — Office Registry & Workflow Coordinator
+Responsibility: Manage office/department definitions, schedules, run state and workflow state; record Full Plan outputs as external refs.  
+Inputs: requirement/context, governance refs, external task/assignment refs.  
+Outputs: OfficeRun/Workflow state transitions.  
+State Behavior: controlled state machine with WAITING_APPROVAL, WAITING_STATE_CHANGE_AUTHORITY and RECOVERY_COORDINATION branches.  
+Error Behavior: illegal transitions rejected.  
+Preserved Behavior: no task decomposition, final assignment or fan-in decision.
+
+### CMP-009 — Capability/Agent Governance
+Responsibility: Map capability need to owning system boundary; expose Find Agent/candidate eligibility; wrap existing source/adoption mechanisms.  
+Inputs: required capabilities, execution authority, registry/inventory/provenance refs.  
+Outputs: owner-boundary dispatch + candidate set.  
+State Behavior: candidate status is versioned and approval-bound.  
+Error Behavior: unknown owner/source/version/permission -> blocked.  
+Preserved Behavior: Router selects provider/model; Full Plan assigns agent; MPRF remains provider runtime.
+
+### CMP-010 — AI Office Foundry
+Responsibility: Create versioned Office Project Definition, Operating Contract, lifecycle and declarative scaffold intent.  
+Inputs: approved project definition/template/governance refs.  
+Outputs: `OfficeOperatingContractV1`, `ScaffoldIntentV1`.  
+State Behavior: DRAFT→GOVERNED→SCAFFOLD_PENDING→SCAFFOLD_VERIFIED→PILOT/PRODUCTION gates.  
+Error Behavior: no direct effect when execution/approval refs absent.  
+Preserved Behavior: all mutations use CMP-012.
+
+### CMP-011 — Approval/Risk/Permission Governance
+Responsibility: Evaluate scope/risk/permission and human approval freshness, then emit durable governance decisions.  
+Inputs: requested action/capability scope, requirement refs, user approval record.  
+Outputs: `RiskEnvelopeV1`, `GovernanceDecisionV1`, `ActivationGateV1`.  
+State Behavior: fail-closed dual gate.  
+Error Behavior: stale/missing approval, scope expansion or permission mismatch -> BLOCKED.  
+Preserved Behavior: does not replace Full MCP authorization validation.
+
+### CMP-012 — AI Office Execution Coordinator
+Responsibility: Convert governed action/scaffold intent to public Execution Backend request and store result/manual-action refs.  
+Inputs: intent + governance decision + execution contract/package refs.  
+Outputs: OfficeExecutionRequest/Result refs and workflow transition.  
+State Behavior: READY→EXECUTION_PENDING→COMPLETED/BLOCKED/FAILED or WAITING_STATE_CHANGE_AUTHORITY.  
+Error Behavior: typed blocked state, no silent fallback.  
+Preserved Behavior: no direct Full MCP import/effect handling/provider selection.
+
+### CMP-013 — Observability Consumer
+Responsibility: Correlate action/provider source projections into a read model.  
+Inputs: ActionRuntimeObservationRefV1 and ProviderRuntimeObservationRefV1.  
+Outputs: CorrelatedObservationV1.  
+State Behavior: append office observation refs only; sources immutable.  
+Error Behavior: correlation/source digest mismatch rejects.  
+Preserved Behavior: distinct source domains remain canonical.
+
+### CMP-014 — Recovery Coordinator
+Responsibility: Track escalation/remediation/validation/review/same-gate refs.  
+Inputs: failure/observation/workflow/approval refs.  
+Outputs: RecoveryCoordinationV1 and workflow state.  
+Preserved Behavior: no provider recovery policy, action replay or Gate decision.
+
+### CMP-015 — Reporting Aggregator
+Responsibility: Produce office KPI/status/report read models.  
+Inputs: office snapshots, workflow/observation/recovery refs.  
+Outputs: OfficeReportV1.  
+Preserved Behavior: no task fan-in/completion/action truth.
+
+### CMP-016 — Qualification & Closure
+Responsibility: Define E2E/regression/security/traceability qualification and baseline closure candidate/evidence equality rules.  
+Inputs: all validation/evidence refs.  
+Outputs: qualification report structure and BaselineClosureCandidateV1.  
+Preserved Behavior: does not itself run tests or declare baseline in design phase.
+
+
+---
+## Source Projection ID-10 — Change Targets
+
+## Verified Change Targets
+
+| Target ID | Path / Module | Action | Related Task | Verification |
+|---|---|---|---|---|
+| CT-001 | /home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering | VERIFY | TASK-001 | VERIFIED root |
+| CT-002 | CHANGELOG.txt | VERIFY | TASK-001 | VERIFIED; predecessor closure records present |
+| CT-003 | docs/DEVELOPMENT_PLAN.txt | VERIFY | TASK-001 | VERIFIED current predecessor execution contract |
+| CT-004 | runtime/orchestrator/provider_router.py | PRESERVE | TASK-001/TASK-009 | VERIFIED existing Router request/decision boundary |
+| CT-005 | runtime/mprf/ | PRESERVE | TASK-001/TASK-005/TASK-009 | VERIFIED existing MPRF runtime/observability package |
+| CT-006 | runtime/full_mcp/ | PRESERVE | TASK-001/TASK-003/TASK-005 | VERIFIED existing action/effect/authorization/observability package |
+| CT-007 | runtime/orchestrator/office_execution_contract.py | CREATE | TASK-002 | PLANNED_CREATE; parent verified |
+| CT-008 | tests/test_ai_office_execution_contract.py | CREATE | TASK-002 | PLANNED_CREATE; tests parent verified |
+| CT-009 | runtime/orchestrator/office_execution_backend_adapter.py | CREATE | TASK-003 | PLANNED_CREATE; parent verified |
+| CT-010 | tests/test_ai_office_execution_integration.py | CREATE | TASK-003 | PLANNED_CREATE |
+| CT-011 | runtime/ai_office/execution_coordinator.py | CREATE | TASK-004 | PLANNED_CREATE; runtime/ai_office absent at design verification |
+| CT-012 | tests/test_ai_office_manual_action_coordination.py | CREATE | TASK-004 | PLANNED_CREATE |
+| CT-013 | runtime/orchestrator/public_observability_contract.py | CREATE | TASK-005 | PLANNED_CREATE |
+| CT-014 | runtime/orchestrator/observability_source_adapters.py | CREATE | TASK-005 | PLANNED_CREATE |
+| CT-015 | tests/test_ai_office_observability_boundary.py | CREATE | TASK-005 | PLANNED_CREATE |
+| CT-016 | runtime/ai_office/__init__.py | CREATE | TASK-004 | PLANNED_CREATE; minimal package shell created before AI Office coordinator |
+| CT-017 | runtime/ai_office/contracts.py | CREATE | TASK-006 | PLANNED_CREATE |
+| CT-018 | runtime/ai_office/state_store.py | CREATE | TASK-006 | PLANNED_CREATE |
+| CT-019 | runtime/ai_office/requirement_intake.py | CREATE | TASK-007 | PLANNED_CREATE |
+| CT-020 | runtime/ai_office/context_assembly.py | CREATE | TASK-007 | PLANNED_CREATE |
+| CT-021 | runtime/ai_office/workflow.py | CREATE | TASK-008 | PLANNED_CREATE |
+| CT-022 | runtime/ai_office/capability_governance.py | CREATE | TASK-009 | PLANNED_CREATE |
+| CT-023 | tests/test_ai_office_capability_governance.py | CREATE | TASK-009 | PLANNED_CREATE |
+| CT-024 | runtime/ai_office/agent_onboarding.py | CREATE | TASK-010 | PLANNED_CREATE |
+| CT-025 | runtime/ai_office/foundry.py | CREATE | TASK-011 | PLANNED_CREATE |
+| CT-026 | tests/test_ai_office_foundry.py | CREATE | TASK-011 | PLANNED_CREATE |
+| CT-027 | runtime/ai_office/governance.py | CREATE | TASK-012 | PLANNED_CREATE |
+| CT-028 | runtime/ai_office/recovery_coordinator.py | CREATE | TASK-013 | PLANNED_CREATE |
+| CT-029 | runtime/ai_office/reporting.py | CREATE | TASK-014 | PLANNED_CREATE |
+| CT-030 | tests/test_ai_office_project_factory_e2e.py | CREATE | TASK-015 | PLANNED_CREATE |
+| CT-031 | tests/test_ai_office_daily_loop_e2e.py | CREATE | TASK-015 | PLANNED_CREATE |
+| CT-032 | tests/test_ai_office_authority_negative_space.py | CREATE | TASK-016 | PLANNED_CREATE |
+| CT-033 | tests/test_ai_office_integrated_qualification.py | CREATE | TASK-016 | PLANNED_CREATE |
+| CT-034 | runtime/ai_office/baseline_closure.py | CREATE | TASK-017 | PLANNED_CREATE |
+| CT-035 | tests/test_ai_office_state_store.py | CREATE | TASK-006 | PLANNED_CREATE |
+| CT-036 | tests/test_ai_office_requirement_context.py | CREATE | TASK-007 | PLANNED_CREATE |
+| CT-037 | tests/test_ai_office_workflow.py | CREATE | TASK-008 | PLANNED_CREATE |
+| CT-038 | tests/test_ai_office_agent_onboarding.py | CREATE | TASK-010 | PLANNED_CREATE |
+| CT-039 | tests/test_ai_office_governance.py | CREATE | TASK-012 | PLANNED_CREATE |
+| CT-040 | tests/test_ai_office_recovery_coordination.py | CREATE | TASK-013 | PLANNED_CREATE |
+| CT-041 | tests/test_ai_office_reporting.py | CREATE | TASK-014 | PLANNED_CREATE |
+| CT-042 | tests/test_ai_office_baseline_closure.py | CREATE | TASK-017 | PLANNED_CREATE |
+
+## Unverified Targets
+N/A — all existing targets referenced by the design were verified read-only; new targets are explicitly marked PLANNED_CREATE and are not misrepresented as existing paths.
+
+
+---
+
+# EC-04 INTERFACES / EXECUTION FLOW
+
+## Source Projection ID-08 — Interface Design
+
+| ID | Interface | Source | Target | Purpose | Related Requirements |
+|---|---|---|---|---|---|
+| IF-001 | RequirementEnvelopeV1 | Approved planning source | AI Office Intake | Digest-bound requirement normalization without semantic rewrite | REQ-007/011 |
+| IF-002 | OfficeRun/Workflow State API | AI Office modules | AI Office State Store | Atomic versioned state transitions | REQ-011, OPS-004 |
+| IF-003 | ContextAssemblyV1 | Requirement/Run/Foundry refs | Full Plan handoff | Source-precedence-preserving context package | REQ-022 |
+| IF-004 | CapabilityNeedV1 | AI Office Workflow | System Capability Router | Declare capability/execution authority needs only | REQ-023, NFR-005 |
+| IF-005 | AgentCandidateSetV1 | Capability Governance | Full Plan | Eligibility/context only; no final assignment | REQ-012/020 |
+| IF-006 | OfficeExecutionRequestV1 | AI Office Execution Coordinator | Execution Backend Contract `ExecutionRuntimeHandler` port | Backend-neutral authorized action handoff through injected runtime handler | REQ-005/010, NFR-006/007 |
+| IF-007 | OfficeExecutionResultV1 | Execution Backend Contract | AI Office Workflow | Typed status/effect/audit refs without Full MCP internals | REQ-010 |
+| IF-008 | ActionRuntimeObservationRefV1 | Action-runtime source adapter | AI Office Observability | Sanitized source ref/digest/correlation projection | REQ-016, NFR-008 |
+| IF-009 | ProviderRuntimeObservationRefV1 | Provider-runtime source adapter | AI Office Observability | Sanitized source ref/digest/correlation projection | REQ-016/021, NFR-008 |
+| IF-010 | CorrelatedObservationV1 | AI Office Observability | Reporting/Recovery | Cross-domain correlation by refs only | REQ-016 |
+| IF-011 | GovernanceDecisionV1 | Risk/Permission Governance | Workflow/Execution Coordinator | Dual-gate permission + human approval state | REQ-014, SEC-003/005 |
+| IF-012 | OfficeProjectDefinitionV1 | Foundry input | Foundry lifecycle | Versioned project/operating contract definition | REQ-013 |
+| IF-013 | ScaffoldIntentV1 | Foundry | Execution Coordinator | Declarative scaffold changes; no direct effect | REQ-013 |
+| IF-014 | RecoveryCoordinationV1 | Workflow/Observation | Recovery owners/Gate | Escalation/remediation/same-gate refs | REQ-015, SEC-003 |
+| IF-015 | OfficeReportV1 | AI Office state/observation refs | Office consumer | KPI/status/report projection, no fan-in authority | REQ-015, OPS-008 |
+| IF-016 | BaselineClosureCandidateV1 | Qualification | Execution approval/closure project | Complete evidence-set binding for canonical baseline and alias | REQ-018/019, OPS-009 |
+| IF-017 | ManualActionHandoffRefV1 / NonMutatingContinuationRefV1 | AOH-001 public execution boundary | AI Office Execution Coordinator | Typed mutation-unavailable handoff and provider-neutral continuation record | REQ-002/004/008, OPS-001/002 |
+
+## Interface Details
+
+### IF-001 — RequirementEnvelopeV1
+Input: `requirement_id`, `source_ref`, `source_digest`, `planning_authority_ref`, `constraints_refs`, `correlation_id`.  
+Output: canonical immutable envelope + `envelope_digest`.  
+Contract: source digest and approved requirement ID must match authority register; free-form normalization cannot alter acceptance semantics.  
+Error Handling: unknown ID/digest mismatch -> `SOURCE_BINDING_BLOCKED`.  
+Security: no secrets/provider/model data.
+
+### IF-002 — OfficeRun / Workflow State API
+Input: `office_id`, `department_id`, `run_id`, `workflow_item_id`, current state/version, requested transition, schedule ref, external Full Plan assignment/fan-in refs when present.  
+Output: immutable `OfficeRegistryV1`, `OfficeRunV1` and `WorkflowItemV1` projections plus next version and transition digest.  
+Contract: compare-and-advance semantics require the supplied current version/digest; only ID-09 declared transitions are valid. Assignment/fan-in values are external authority references and cannot be synthesized or altered by this API.  
+Error Handling: stale version, undeclared transition, identity mismatch, or attempted assignment/completion authority mutation -> BLOCKED.  
+Ownership: AI Office office/workflow lifecycle state only; Full Plan retains task decomposition, final assignment, fan-in and completion authority.
+
+### IF-003 — ContextAssemblyV1
+Input: repository identity ref, baseline ref, requirement refs, run/workflow/foundry refs, explicit assumption refs.  
+Output: ordered context item refs + source-precedence version + digest.  
+Contract: precedence is explicit and deterministic; content is references/digests where possible.  
+Error Handling: conflicting higher authority/stale source -> block.  
+Compatibility: Full Plan consumes context without transferring planning authority.
+
+### IF-004 — CapabilityNeedV1
+Input: `capability_need_id`, `required_capabilities[]`, `execution_authority`, `purpose_ref`, `scope_ref`.  
+Output: owner boundary enum `{FULL_PLAN, MULTI_PROVIDER_ROUTER, MPRF, EXECUTION_BACKEND, AI_OFFICE}` or typed block; no provider/model identity.  
+Security: provider/model fields are forbidden.
+
+### IF-005 — AgentCandidateSetV1
+Input: `CapabilityNeedV1`, governed capability/agent inventory refs and digests, approved source/version/permission/risk eligibility facts.  
+Output: ordered-by-stable-identity candidate records containing agent/capability identity, version, capability match, permission/risk eligibility disposition and evidence refs; no provider/model identity and no selected/final assignee field.  
+Contract: candidates are eligibility/context only. Candidate inclusion requires current governed inventory evidence; absence or ambiguity yields an empty/blocked candidate disposition rather than inferred eligibility.  
+Error Handling: stale inventory, unapproved source/version, permission mismatch, duplicate identity, or provider/model/final-assignment field -> BLOCKED.  
+Ownership: AI Office candidate governance only; Full Plan alone performs final task-to-agent assignment.
+
+### IF-006 — OfficeExecutionRequestV1
+Input: project/run/workflow/task refs, operation intent ref, `expected_effect_semantics`, governance/risk/delegated-auth/binding refs, execution package/contract refs, correlation ID.  
+Output: canonical request digest.  
+Contract: state-changing request requires governance and authorization lineage; the orchestration-side adapter accepts an injected backend-neutral `ExecutionRuntimeHandler` and never imports/selects/constructs the concrete Full MCP backend. The public boundary contains no Full MCP internal paths/classes and no provider/model fields.  
+Error Handling: missing lineage, stale source, effect mismatch, absent/nonconforming runtime handler or backend-specific leakage -> BLOCKED.
+
+### IF-007 — OfficeExecutionResultV1
+Input: public execution result from adapter.  
+Output: status `{COMPLETED,BLOCKED,FAILED,PENDING}`, result/effect/audit/reconciliation refs.  
+Contract: identity/correlation request binding exact.  
+Security: no raw stdout/stderr/secrets/internal object handles.
+
+### IF-017 — Mutation-Unavailable Handoff / Non-Mutating Continuation
+Input: blocked state-changing execution disposition, capability/execution-authority need, dependency-safety result, existing Manual Action package/authorization ref when present, external Full Plan/Router handoff ref for non-mutating continuation.  
+Output: `ManualActionHandoffRefV1` or `NonMutatingContinuationRefV1`, each identity/correlation/digest bound.  
+Contract: both DTOs are defined in `runtime/orchestrator/office_execution_contract.py` before the AI Office coordinator is created. The continuation DTO contains required capabilities and `READ_ONLY` execution authority but forbids provider/model fields; the manual-action DTO references existing bounded authorization/package evidence and never embeds mutation authority itself.  
+Error Handling: mixed read-only/state-changing capability, missing dependency-safety binding, stale Manual Action authorization, or provider/model field -> BLOCKED.  
+Ownership: this interface records disposition/handoff only; Full Plan/Router select execution route and existing Manual Action owns bounded manual mutation.
+
+### IF-008 / IF-009 — Observation Source Refs
+Input: source-owned event/result record.  
+Output: `source_domain`, `source_ref`, `event_digest`, `correlation_id`, `operation_request_id`, `task_execution_id`, `sequence`, bounded status/fact projection.  
+Contract: source adapter validates source schema/digest before projection; projection never becomes source-domain canonical event.  
+Error Handling: malformed source or digest mismatch -> observation blocked.
+
+### IF-010 — CorrelatedObservationV1
+Input: validated `ActionRuntimeObservationRefV1` and/or `ProviderRuntimeObservationRefV1` sharing bound project/run/task-execution/correlation identity.  
+Output: correlation view containing source-ref sets, correlation identity, bounded status summary and a deterministic correlation digest.  
+Contract: at least one validated source ref is required; each source retains its original `source_domain`, `source_ref`, sequence and digest. The correlation view never rewrites either source as canonical truth and cannot manufacture missing action/provider facts.  
+Error Handling: identity/correlation mismatch, duplicate conflicting source ref, digest failure, or attempted cross-domain truth synthesis -> BLOCKED.  
+Ownership: consumer/read-model correlation only; Full MCP and MPRF remain independent sources of truth.
+
+### IF-011 — GovernanceDecisionV1
+Input: risk envelope, permission set, human approval ref/digest/freshness, scope binding.  
+Output: `decision={ALLOW,BLOCK,APPROVAL_REQUIRED}`, activation scope, decision digest.  
+Security: cannot infer permission from necessity; no approval synthesis.
+
+### IF-012 — OfficeProjectDefinitionV1
+Input: office/project identity, approved requirement/context refs, approved template refs/digests, operating policy refs, lifecycle version and intended project-root binding.  
+Output: immutable project definition containing identity, operating-contract ref/digest, template/source refs, lifecycle initial state, allowed scaffold scope and definition digest.  
+Contract: definition is declarative and effect-free; target root must remain within the approved project/Foundry scope and no sibling replacement root, deployment or publication intent is implied.  
+Error Handling: unapproved template/source, identity/root conflict, lifecycle-version mismatch, or effect-bearing field -> BLOCKED.  
+Ownership: Foundry definition/lifecycle contract only; filesystem/Git effects require IF-013→IF-006 governed execution.
+
+### IF-013 — ScaffoldIntentV1
+Input: project definition, approved templates, intended path set, expected changes, validation refs.  
+Output: declarative scaffold effect intent and scope digest.  
+Contract: direct I/O methods are absent; execution occurs only through IF-006.
+
+### IF-014 — RecoveryCoordinationV1
+Input: failure class/source ref, affected workflow refs, approval state, remediation/focused-test/regression/review/same-gate refs.  
+Output: recoverable coordination state.  
+Contract: recovery stage advancement requires preceding refs; bypass prohibited.
+
+### IF-015 — OfficeReportV1
+Input: immutable AI Office state/observation/recovery refs.  
+Output: office KPI/status/report plus source refs.  
+Contract: report is a read model; no task completion/fan-in mutations.
+
+### IF-016 — BaselineClosureCandidateV1
+Input: complete required evidence IDs/digests and canonical identity.  
+Output: closure candidate digest + alias equality disposition.  
+Contract: exact required evidence set, Blocker=0, unresolved Major=0, traceability=100%, canonical/alias evidence equality.  
+Error Handling: partial/mismatched evidence -> NO_GO candidate only.
+
+
+---
+## Source Projection ID-09 — Data / Control / State Flow
+
+## Data Flow
+1. Approved requirement/source reference enters IF-001; no requirement text is silently changed.
+2. Context Assembly binds repository/baseline/run/workflow/foundry inputs and emits a deterministic context digest.
+3. Office workflow hands context to Full Plan and stores only returned planning/task/assignment references.
+4. Capability governance classifies required capabilities and owner boundary; candidate agent eligibility may be attached, but final assignment remains external.
+5. Governance produces risk/permission/human-approval decision for any activation/state-changing path.
+6. Foundry/workflow emits declarative action or scaffold intent.
+7. Execution Coordinator converts the governed intent to IF-006; orchestration adapter hands it to the approved Execution Backend/Full MCP path.
+8. Execution result is stored as a reference, while action-runtime and provider-runtime source events remain in their own domains.
+9. Observability Consumer correlates source refs; Recovery Coordinator reacts to typed failures without executing recovery effects itself.
+10. Reporting creates office-level read models. Qualification consumes test/evidence refs; closure candidate is built only from complete exit evidence.
+
+## Control Flow
+1. `TASK-001/GATE-001` source/entry revalidation.
+2. AOH-001 (TASK-002~004) and AOH-003 (TASK-005) proceed in parallel-safe ownership areas.
+3. `FI-001` requires GATE-002 and GATE-003 before AOH-002 core starts.
+4. AOH-002 core contracts/state/context/workflow/governance establish base; capability/onboarding/foundry/recovery/reporting build on them with bounded parallelism.
+5. Representative E2Es and security negative-space definitions fan in to AOH-004 qualification.
+6. Only GATE-005 GO permits the execution-stage closure process to declare `AI_OFFICE_STABLE_BASELINE`.
+
+## State Transitions
+
+
+---
+
+| Current State | Event | Next State | Failure State |
+|---|---|---|---|
+| NEW | requirement accepted | INTAKE_READY | INTAKE_BLOCKED |
+| INTAKE_READY | context assembled | CONTEXT_READY | SOURCE_BINDING_BLOCKED |
+| CONTEXT_READY | Full Plan handoff referenced | PLAN_COORDINATED | PLAN_HANDOFF_BLOCKED |
+| PLAN_COORDINATED | eligibility/governance ready | EXECUTION_PENDING | WAITING_APPROVAL |
+| EXECUTION_PENDING | state-change route unavailable | WAITING_STATE_CHANGE_AUTHORITY | BLOCKED |
+| WAITING_STATE_CHANGE_AUTHORITY | approved Manual Action result ref or authorized route becomes available | EXECUTION_PENDING | BLOCKED |
+| EXECUTION_PENDING | public execution accepted | EXECUTION_IN_PROGRESS | BLOCKED |
+| EXECUTION_IN_PROGRESS | result/observation refs complete | REVIEW_PENDING | RECOVERY_COORDINATION |
+| RECOVERY_COORDINATION | recovery sequence completed and same gate reevaluated | REVIEW_PENDING | FAILED |
+| REVIEW_PENDING | gate GO | COMPLETE | BLOCKED |
+
+---
+
+# EC-05 IMPLEMENTATION TASKS / DEPENDENCIES / EXECUTION STRUCTURE
+
+## Source Projection ID-11 — Implementation Tasks
+
+---
+
+## TASK-001 — PHASE 5 Entry Gate & Source Integrity Revalidation
+
+Purpose: Re-verify the five predecessor inputs, repository identity, approved-plan binding, branch/HEAD/worktree state, and roadmap/source drift before any implementation mutation.
+
+Related Requirements:
+- REQ-001
+- REQ-007
+- REQ-009
+- OPS-003
+- OPS-006
+- OPS-010
+
+Related Architecture:
+- ARC-001
+- ARC-012
+
+Related Components:
+- CMP-001
+- CMP-002
+- CMP-003
+- CMP-004
+
+Dependencies:
+- EXTERNAL: approved predecessor seals
+- No implementation task dependency
+
+Change Targets:
+- CT-001
+- CT-002
+- CT-003
+- CT-004
+- CT-005
+- CT-006
+
+Inputs:
+- Approved Development Plan DP-0.3
+- verified repository root/HEAD
+- PHASE 5 Entry Gate predecessor input 1: `FULL_PLAN_STABLE_BASELINE` sealed authority
+- PHASE 5 Entry Gate predecessor input 2: `EXECUTION_BACKEND_CONTRACT_FINAL` reconfirmed authority
+- PHASE 5 Entry Gate predecessor input 3: `MCP_STABLE_BASELINE` reconfirmed authority
+- PHASE 5 Entry Gate predecessor input 4: `EXEC-AUTH-EXT-001` PASS with `PCA-002` CLOSED
+- PHASE 5 Entry Gate predecessor input 5: `MULTI_PROVIDER_FOUNDATION_BASELINE` approved/sealed/requalified authority
+
+Required Capabilities:
+- reasoning
+- read_only
+- evidence_analysis
+
+Execution Authority: READ_ONLY
+
+Expected Output:
+- Entry-gate verification record design-time handoff
+- SOURCE_DRIFT_DETECTED disposition when material mismatch exists
+
+Validation:
+- TEST-001
+
+Ownership Boundary: Repository/source identity verification only; no source mutation and no baseline declaration.
+
+Preserved Areas:
+- All existing runtime code
+- Git history
+- sealed predecessor evidence
+
+Forbidden Areas:
+- Any mutation
+- baseline repair
+- source rebinding by assumption
+
+Completion Condition: All identity values match, worktree/source are acceptable, predecessor authority is verifiable, and SOURCE_DRIFT_STATUS=CLEAR; otherwise fail closed.
+
+
+---
+
+## TASK-002 — AOH-001 Public Execution Boundary Contract
+
+Purpose: Create a provider-neutral AI Office execution request/result contract at the orchestration public boundary so AI Office never imports Full MCP internals or backend-specific types.
+
+Related Requirements:
+- REQ-002
+- REQ-003
+- REQ-004
+- REQ-005
+- REQ-008
+- REQ-010
+- REQ-020
+- NFR-006
+- NFR-007
+- SEC-006
+- OPS-001
+- OPS-002
+
+Related Architecture:
+- ARC-001
+- ARC-002
+
+Related Components:
+- CMP-004
+- CMP-005
+- CMP-012
+
+Dependencies:
+- TASK-001
+
+Change Targets:
+- CT-007
+- CT-008
+
+Inputs:
+- Approved authorization lineage
+- Execution Backend Contract public identity
+- Office execution intent fields
+
+Required Capabilities:
+- reasoning
+- implementation
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- Versioned OfficeExecutionRequestV1/ResultV1 DTOs
+- Versioned ManualActionHandoffRefV1/NonMutatingContinuationRefV1 DTOs for typed unavailable-state disposition
+- strict validation and forbidden-field rules
+- backend-neutral port protocol
+
+Validation:
+- TEST-002
+- TEST-003
+
+Ownership Boundary: Only the public boundary contract; no provider routing and no action execution.
+
+Preserved Areas:
+- Existing execution contract semantics
+- Full MCP internals
+- Router authority
+
+Forbidden Areas:
+- Direct runtime.full_mcp dependency from AI Office
+- provider/model fields
+- effect authority duplication
+
+Completion Condition: Contract validates canonical identity/auth/effect semantics plus typed unavailable-state/manual-action/non-mutating-continuation refs; all public DTOs contain no backend-specific or provider/model selection fields.
+
+
+---
+
+## TASK-003 — AOH-001 Execution Backend Adapter & Authorization Binding
+
+Purpose: Implement the orchestration-side adapter that maps the public AI Office execution boundary to the approved Execution Backend Contract while preserving USER→AI Office Governance→Risk Envelope→Delegated Auth→Binding→Full MCP lineage.
+
+Related Requirements:
+- REQ-005
+- REQ-010
+- REQ-020
+- NFR-003
+- NFR-006
+- NFR-007
+- SEC-005
+- SEC-006
+
+Related Architecture:
+- ARC-002
+- ARC-008
+- ARC-012
+
+Related Components:
+- CMP-004
+- CMP-011
+- CMP-012
+
+Dependencies:
+- TASK-002
+
+Change Targets:
+- CT-009
+- CT-010
+
+Inputs:
+- OfficeExecutionRequestV1
+- active authorization/risk references
+- verified `runtime.orchestrator.production_execution_gateway.ExecutionRuntimeHandler` injection point (or exact semantics-preserving public equivalent after TASK-001 source revalidation)
+- externally composed downstream runtime handler reference; concrete backend identity is not an AI Office input field
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- OfficeExecutionBackendAdapter that receives an injected backend-neutral `ExecutionRuntimeHandler`
+- authorization/effect binding validation
+- typed blocked results
+- import/composition negative-space guard proving no `runtime.full_mcp` import and no direct `FullMCPBackendAdapter` construction/selection in AI Office/public adapter code
+
+Validation:
+- TEST-004
+
+Ownership Boundary: Orchestration adapter owns translation only; Full MCP keeps action/effect truth.
+
+Preserved Areas:
+- Existing FullMCPBackendAdapter behavior
+- Full Plan Gate semantics
+
+Forbidden Areas:
+- Direct action execution in AI Office
+- backend selection or concrete backend construction in AI Office/public adapter
+- direct `runtime.full_mcp` import or direct `FullMCPBackendAdapter` dependency in AI Office/public adapter
+- approval synthesis
+
+Completion Condition: Representative request reaches the execution backend only through the injected backend-neutral `ExecutionRuntimeHandler` port; AI Office/public adapter has no direct Full MCP or concrete-backend dependency, and exact authorization lineage is preserved.
+
+
+---
+
+## TASK-004 — AOH-001 Unavailable State-Change Authority & Manual Action Coordination
+
+Purpose: Bind typed ACTION_PROVIDER_BLOCKED-equivalent operational state to AI Office workflow and the existing GPT Operator Manual Action handoff without converting read-only capability into mutation authority.
+
+Related Requirements:
+- REQ-002
+- REQ-004
+- REQ-010
+- NFR-001
+- NFR-002
+- SEC-002
+- OPS-001
+- OPS-002
+- OPS-003
+
+Related Architecture:
+- ARC-003
+- ARC-009
+- ARC-011
+
+Related Components:
+- CMP-012
+- CMP-014
+
+Dependencies:
+- TASK-003
+
+Change Targets:
+- CT-011
+- CT-012
+- CT-016
+
+Inputs:
+- Router decision reference
+- Office workflow state reference
+- pre-defined ManualActionHandoffRefV1/NonMutatingContinuationRefV1 contracts from CT-007
+- existing Manual Action package/authorization reference
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- typed WAITING_STATE_CHANGE_AUTHORITY state
+- provider-neutral NonMutatingContinuationRefV1 recording capability need, READ_ONLY execution authority, dependency-safety and the external Full Plan/Multi-Provider Router handoff reference without provider/model fields
+- ManualActionHandoffRefV1
+- resume transition contract
+
+Validation:
+- TEST-005
+- TEST-006
+
+Ownership Boundary: AI Office coordinates and records handoff/continuation state only. Non-mutating continuation is delegated to the existing Full Plan → Multi-Provider Router authority path; AI Office does not choose a provider/model. Existing Manual Action executor remains the only bounded manual mutation mechanism.
+
+Preserved Areas:
+- Read-only capability boundary
+- Manual Action validation rules
+
+Forbidden Areas:
+- Automatic mutation fallback
+- manual action execution inside AI Office
+- router override
+
+Completion Condition: Unavailable mutation route becomes an auditable/resumable wait or approved manual-action handoff while dependency-safe read-only/reasoning/review/documentation work remains dispatchable through the external Router-owned path; read-only mutation count remains zero and AI Office provider/model selection count remains zero.
+
+
+---
+
+## TASK-005 — AOH-003 Public Observability Boundary
+
+Purpose: Create consumer-safe projection contracts/adapters over action-runtime and provider-runtime event domains with correlation references but no merged source of truth.
+
+Related Requirements:
+- REQ-016
+- REQ-021
+- NFR-008
+- SEC-006
+
+Related Architecture:
+- ARC-005
+- ARC-012
+
+Related Components:
+- CMP-002
+- CMP-003
+- CMP-005
+- CMP-013
+
+Dependencies:
+- TASK-001
+
+Change Targets:
+- CT-013
+- CT-014
+- CT-015
+
+Inputs:
+- Full MCP sanitized event/result records
+- MPRF provider-runtime events
+- correlation identifiers
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- ActionRuntimeObservationRefV1
+- ProviderRuntimeObservationRefV1
+- CorrelatedObservationV1
+- source adapter facades
+
+Validation:
+- TEST-007
+- TEST-008
+- TEST-009
+
+Ownership Boundary: Projection/reference layer only; source event stores remain canonical in their owning domains.
+
+Preserved Areas:
+- Full MCP observability store
+- MPRF observability store
+
+Forbidden Areas:
+- Copying raw source event logs into AI Office
+- inventing provider/action truth
+- cross-domain mutation
+
+Completion Condition: Consumer can correlate both domains by identity while each projection retains immutable source_domain/source_ref/event_digest and no source payload is re-authored as canonical truth.
+
+
+---
+
+## TASK-006 — AI Office Core Contracts & Durable Office State Store
+
+Purpose: Create the AI Office domain contracts and durable local state store for office/workflow/governance state using atomic/hash-chained file persistence under the existing workspace; no database platform.
+
+Related Requirements:
+- REQ-011
+- OPS-004
+- NFR-002
+
+Related Architecture:
+- ARC-004
+- ARC-011
+
+Related Components:
+- CMP-005
+- CMP-006
+
+Dependencies:
+- TASK-004
+- TASK-005
+
+Change Targets:
+- CT-017
+- CT-018
+- CT-035
+
+Inputs:
+- Project/run identity
+- approved plan/baseline refs
+- domain DTOs
+
+Required Capabilities:
+- reasoning
+- implementation
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- versioned office DTOs
+- append-only transition journal
+- atomic snapshot store
+- restart rehydration validation
+
+Validation:
+- TEST-010
+
+Ownership Boundary: AI Office state only; no action/provider source truth is persisted as owned state.
+
+Preserved Areas:
+- Existing _workspace conventions
+- source-domain event stores
+
+Forbidden Areas:
+- database introduction
+- raw secrets
+- action/provider truth duplication
+
+Completion Condition: Office state survives restart with digest-chain integrity and pending approval/manual-action references intact.
+
+
+---
+
+## TASK-007 — Requirement Intake & Context Assembly
+
+Purpose: Implement approved-source requirement intake and deterministic Context Assembly from repository/baseline/run/workflow/foundry references while preserving source precedence and Full Plan planning authority.
+
+Related Requirements:
+- REQ-011
+- REQ-022
+
+Related Architecture:
+- ARC-004
+
+Related Components:
+- CMP-007
+
+Dependencies:
+- TASK-006
+
+Change Targets:
+- CT-019
+- CT-020
+- CT-036
+
+Inputs:
+- approved requirement/source refs
+- verified repository identity
+- run/workflow/foundry state refs
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- RequirementEnvelopeV1
+- ContextAssemblyV1
+- source precedence validator
+
+Validation:
+- TEST-011
+- TEST-012
+- TEST-013
+
+Ownership Boundary: Normalizes references and context; does not rewrite requirements or perform task decomposition.
+
+Preserved Areas:
+- Approved plan semantics
+- ProductionContextBuilder source validation
+
+Forbidden Areas:
+- new planning authority
+- unbound free-form source precedence
+- provider/model selection
+
+Completion Condition: Same inputs produce stable context digest; stale or lower-precedence source cannot override approved authority.
+
+
+---
+
+## TASK-008 — Office Registry, Schedule, Run & Workflow State
+
+Purpose: Implement Office/Department registry, schedule/run lifecycle and workflow coordination state that records Full Plan assignment references without becoming the final task-to-agent assignment authority.
+
+Related Requirements:
+- REQ-011
+- REQ-020
+- OPS-008
+
+Related Architecture:
+- ARC-004
+- ARC-010
+
+Related Components:
+- CMP-008
+
+Dependencies:
+- TASK-007
+
+Change Targets:
+- CT-021
+- CT-037
+
+Inputs:
+- Office definitions
+- RequirementEnvelopeV1
+- ContextAssemblyV1
+- external Full Plan assignment refs
+
+Required Capabilities:
+- reasoning
+- implementation
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- OfficeRegistryV1
+- OfficeRunV1
+- WorkflowItemV1
+- state transition validators
+
+Validation:
+- TEST-014
+
+Ownership Boundary: Owns office workflow lifecycle and coordination only; Full Plan owns decomposition/final assignment/fan-in.
+
+Preserved Areas:
+- Full Plan assignment artifacts
+- Gate semantics
+
+Forbidden Areas:
+- agent assignment algorithm
+- task fan-in execution
+- provider routing
+
+Completion Condition: Representative workflow transitions are deterministic and any assignment is stored only as an external authority reference.
+
+
+---
+
+## TASK-009 — System Capability Routing & Agent/Capability Eligibility Governance
+
+Purpose: Implement capability-need classification to owning system boundaries and candidate agent/capability eligibility using existing inventories/registries, without provider/model selection or final assignment.
+
+Related Requirements:
+- REQ-003
+- REQ-008
+- REQ-012
+- REQ-020
+- REQ-021
+- REQ-023
+- SEC-001
+- SEC-006
+
+Related Architecture:
+- ARC-003
+- ARC-006
+
+Related Components:
+- CMP-001
+- CMP-002
+- CMP-009
+
+Dependencies:
+- TASK-007
+- TASK-008
+
+Change Targets:
+- CT-022
+- CT-023
+
+Inputs:
+- CapabilityNeedV1
+- existing AGENT_REGISTRY inventory
+- operational capability inventory evidence
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- CapabilityDispatchDecisionV1
+- AgentCandidateV1 list
+- eligibility rationale refs
+- Find Agent query API
+
+Validation:
+- TEST-016
+
+Ownership Boundary: Routes capability ownership to Full Plan/Router/MPRF/Execution Backend/AI Office boundaries; does not pick a provider/model or assign an agent.
+
+Preserved Areas:
+- Existing agent registry
+- existing operational capability contracts
+
+Forbidden Areas:
+- provider/model fields in decision
+- final assignment
+- MPRF reimplementation
+
+Completion Condition: Every capability need resolves to an authority boundary or typed block; provider/model selection count in AI Office remains zero.
+
+
+---
+
+## TASK-010 — Controlled Agent Onboarding & Versioned Activation
+
+Purpose: Wrap approved source adapters and existing capability adoption controls with AI Office governance for source/version/risk/permission review before eligibility activation.
+
+Related Requirements:
+- REQ-012
+- SEC-007
+
+Related Architecture:
+- ARC-006
+- ARC-008
+
+Related Components:
+- CMP-009
+- CMP-011
+
+Dependencies:
+- TASK-009
+
+Change Targets:
+- CT-024
+- CT-038
+
+Inputs:
+- approved source candidate metadata
+- source provenance
+- risk/permission policy
+- human approval when required
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- security_review
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- AgentOnboardingRecordV1
+- activation version binding
+- unauthorized activation block
+
+Validation:
+- TEST-017
+- TEST-018
+
+Ownership Boundary: Onboarding governance only; actual source installation/adoption remains through existing governed capability mechanisms.
+
+Preserved Areas:
+- Existing skill/capability adoption supply-chain checks
+
+Forbidden Areas:
+- unapproved source activation
+- permission expansion by inference
+- provider registry expansion
+
+Completion Condition: Only approved-source/version/risk-governed candidates become eligible; unauthorized activation count is zero.
+
+
+---
+
+## TASK-011 — AI Office Foundry & Office Project Factory
+
+Purpose: Implement Office Project Definition, Operating Contract, lifecycle and scaffolding intent generation; all scaffold effects are delegated through AOH-001 execution integration.
+
+Related Requirements:
+- REQ-013
+- OPS-007
+
+Related Architecture:
+- ARC-007
+
+Related Components:
+- CMP-010
+- CMP-012
+
+Dependencies:
+- TASK-008
+- TASK-012
+
+Change Targets:
+- CT-025
+- CT-026
+
+Inputs:
+- OfficeProjectDefinitionV1
+- approved templates
+- governance decision
+- project root intent
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- OfficeOperatingContractV1
+- ScaffoldIntentV1
+- lifecycle transitions
+- factory orchestration adapter
+
+Validation:
+- TEST-019
+
+Ownership Boundary: Foundry defines/coordinates project lifecycle; it cannot mutate filesystem directly outside the execution contract.
+
+Preserved Areas:
+- Existing templates and project-isolation rules
+
+Forbidden Areas:
+- direct mkdir/write/git from Foundry
+- automatic deployment/publication
+- sibling replacement root
+
+Completion Condition: Representative project factory produces governed scaffold intent and completes only after execution-result/verification references satisfy lifecycle gate.
+
+
+---
+
+## TASK-012 — Approval, Risk, Permission & Pilot/Production Activation Governance
+
+Purpose: Implement dual-gate risk/permission evaluation plus explicit human approval for pilot/production activation and all governed state-changing handoffs.
+
+Related Requirements:
+- REQ-014
+- NFR-001
+- SEC-002
+- SEC-003
+- SEC-005
+- SEC-007
+
+Related Architecture:
+- ARC-008
+
+Related Components:
+- CMP-011
+
+Dependencies:
+- TASK-006
+- TASK-007
+
+Change Targets:
+- CT-027
+- CT-039
+
+Inputs:
+- requirement/context refs
+- risk policy
+- permission envelope
+- human approval record
+
+Required Capabilities:
+- reasoning
+- implementation
+- security_review
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- RiskEnvelopeV1
+- GovernanceDecisionV1
+- ActivationGateV1
+- approval freshness rules
+
+Validation:
+- TEST-020
+- TEST-021
+- TEST-022
+
+Ownership Boundary: AI Office governance owns approval/risk state but does not own Full MCP action authorization semantics.
+
+Preserved Areas:
+- Existing approval/gate authority
+
+Forbidden Areas:
+- approval synthesis
+- recovery bypass
+- scope expansion from technical need
+
+Completion Condition: Both policy gate and required human approval must be satisfied before activation; stale/missing approval fails closed.
+
+
+---
+
+## TASK-013 — Failure Escalation & Recovery Coordination
+
+Purpose: Implement office-level failure escalation and recovery coordination as references to owning recovery/action boundaries, preserving approvals and same-gate re-evaluation.
+
+Related Requirements:
+- REQ-015
+- NFR-002
+- SEC-003
+- OPS-001
+- OPS-002
+- OPS-004
+
+Related Architecture:
+- ARC-009
+
+Related Components:
+- CMP-014
+
+Dependencies:
+- TASK-004
+- TASK-006
+- TASK-012
+
+Change Targets:
+- CT-028
+- CT-040
+
+Inputs:
+- failure source ref
+- workflow state
+- approval/manual-action refs
+- same gate ref
+
+Required Capabilities:
+- reasoning
+- implementation
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- RecoveryCoordinationV1
+- escalation taxonomy mapping
+- resume checkpoint refs
+
+Validation:
+- TEST-023
+- TEST-024
+
+Ownership Boundary: Coordinates failure/recovery; execution, effect reconciliation, provider recovery and Gate decision stay with existing owners.
+
+Preserved Areas:
+- Existing recovery contract
+- Full MCP reconciliation
+- MPRF runtime recovery
+
+Forbidden Areas:
+- automatic action replay
+- approval bypass
+- provider failover policy
+
+Completion Condition: Recovery follows Failure→Diagnose→Remediate→Focused Validation→Regression→Independent Review→Same Gate Re-evaluation with no bypass.
+
+
+---
+
+## TASK-014 — Office KPI, Status & Report Aggregation
+
+Purpose: Implement office-level KPI/status/report aggregation from AI Office state and public observation references without performing Full Plan task fan-in.
+
+Related Requirements:
+- REQ-015
+- OPS-008
+
+Related Architecture:
+- ARC-010
+
+Related Components:
+- CMP-015
+
+Dependencies:
+- TASK-005
+- TASK-008
+- TASK-013
+
+Change Targets:
+- CT-029
+- CT-041
+
+Inputs:
+- office state snapshots
+- workflow refs
+- correlated observation refs
+- recovery refs
+
+Required Capabilities:
+- reasoning
+- implementation
+- review
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- OfficeStatusProjectionV1
+- OfficeKPIProjectionV1
+- OfficeReportV1
+
+Validation:
+- TEST-015
+- TEST-025
+
+Ownership Boundary: Aggregation/reporting only; no completion authority, task result merge, action truth or provider truth.
+
+Preserved Areas:
+- Full Plan fan-in results as external refs
+
+Forbidden Areas:
+- fan-in decision
+- Gate decision
+- canonical effect determination
+
+Completion Condition: Reports are reproducible from references and cannot change task/workflow authority state.
+
+
+---
+
+## TASK-015 — Representative Office Project Factory & Daily Loop E2E
+
+Purpose: Add representative E2E test fixtures covering authorized requirement→context→Full Plan handoff→eligibility→governance→execution integration→observability→reporting, including Office Project Factory and Daily Loop.
+
+Related Requirements:
+- REQ-017
+- OPS-007
+
+Related Architecture:
+- ARC-001
+- ARC-005
+- ARC-007
+- ARC-010
+
+Related Components:
+- CMP-016
+
+Dependencies:
+- TASK-003
+- TASK-005
+- TASK-008
+- TASK-009
+- TASK-010
+- TASK-011
+- TASK-012
+- TASK-013
+- TASK-014
+
+Change Targets:
+- CT-030
+- CT-031
+
+Inputs:
+- all AOH-001/002/003 public contracts
+- representative fixture data
+
+Required Capabilities:
+- reasoning
+- implementation
+- test
+- integration
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- E2E test definitions
+- negative-space fixture coverage
+
+Validation:
+- TEST-026
+- TEST-027
+
+Ownership Boundary: Test definition only in design; runtime execution occurs later under Full Plan approval.
+
+Preserved Areas:
+- Production source state
+- real provider availability
+
+Forbidden Areas:
+- test execution during design
+- provider/model pinning
+- deployment
+
+Completion Condition: Tests cover both required E2Es, authorization lineage, observability correlation, and forbidden authority paths.
+
+
+---
+
+## TASK-016 — AOH-004 Integrated Qualification, Regression & EDP Closure
+
+Purpose: Define and implement the qualification harness/tests for broad regression, authority negative-space, traceability and no-unauthorized-scope expansion; actual execution is deferred to execution project.
+
+Related Requirements:
+- REQ-006
+- REQ-007
+- REQ-008
+- REQ-017
+- NFR-003
+- NFR-004
+- NFR-005
+- NFR-009
+- SEC-001
+- SEC-002
+- SEC-003
+- SEC-004
+- SEC-005
+- SEC-006
+- SEC-007
+- OPS-005
+- OPS-006
+- OPS-009
+
+Related Architecture:
+- ARC-012
+
+Related Components:
+- CMP-016
+
+Dependencies:
+- TASK-015
+
+Change Targets:
+- CT-032
+- CT-033
+
+Inputs:
+- all task outputs
+- existing regression suites
+- traceability matrix
+
+Required Capabilities:
+- reasoning
+- implementation
+- test
+- review
+- security_review
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- qualification matrix
+- regression selection manifest
+- negative-space checks
+- traceability verifier
+
+Validation:
+- TEST-028
+- TEST-029
+- TEST-030
+- TEST-031
+
+Ownership Boundary: Qualification implementation only; tests are not executed and evidence is not generated in this design project.
+
+Preserved Areas:
+- Existing regression suites
+- sealed baseline records
+
+Forbidden Areas:
+- runtime PASS claims
+- baseline declaration before execution evidence
+
+Completion Condition: Qualification definition covers all exit criteria, Blocker/Major closure, conflicts/broken refs, and 100% MUST traceability.
+
+
+---
+
+## TASK-017 — Stable Baseline Closure Candidate & Alias Evidence Binding
+
+Purpose: Implement closure-manifest construction rules so AI_OFFICE_STABLE_BASELINE and any local alias can be declared only from identical complete AOH-004 exit-evidence references.
+
+Related Requirements:
+- REQ-018
+- REQ-019
+- OPS-009
+
+Related Architecture:
+- ARC-011
+- ARC-012
+
+Related Components:
+- CMP-016
+
+Dependencies:
+- TASK-016
+
+Change Targets:
+- CT-034
+- CT-042
+
+Inputs:
+- AOH-004 qualification evidence refs
+- approved baseline identity
+- closure policy
+
+Required Capabilities:
+- reasoning
+- implementation
+- review
+- filesystem_write
+
+Execution Authority: STATE_CHANGING
+
+Expected Output:
+- BaselineClosureCandidateV1
+- alias-evidence equality validator
+- closure precondition validator
+
+Validation:
+- TEST-032
+
+Ownership Boundary: Builds declaration candidate/validator only; actual baseline declaration/closure is execution-stage authority.
+
+Preserved Areas:
+- Current baseline lineage
+- Git publication/deployment authority
+
+Forbidden Areas:
+- declaring baseline in design
+- partial evidence alias
+- merge/push/deploy
+
+Completion Condition: Candidate cannot validate unless every exit-evidence reference is complete and local alias evidence set/digests are exactly identical to canonical baseline evidence.
+
+
+---
+## Source Projection ID-12 — Task Dependencies
+
+| Task | Dependency Type | Depends On | Reason |
+|---|---|---|---|
+| TASK-001 | EXTERNAL | Approved plan + predecessor seals | Entry source authority |
+| TASK-002 | SEQUENTIAL | TASK-001 | Public boundary only after entry verification |
+| TASK-003 | SEQUENTIAL | TASK-002 | Adapter depends on DTO contract |
+| TASK-004 | SEQUENTIAL | TASK-003 | Unavailable mutation/manual handoff consumes TASK-002 public handoff contracts and TASK-003 execution boundary |
+| TASK-005 | PARALLEL_SAFE | TASK-001 | Separate observability change area from AOH-001 |
+| TASK-006 | FAN_IN | TASK-004 + TASK-005 | AI Office core begins after execution+observability foundations |
+| TASK-007 | SEQUENTIAL | TASK-006 | Context uses core contracts/state |
+| TASK-008 | SEQUENTIAL | TASK-007 | Workflow uses intake/context |
+| TASK-009 | PARALLEL_SAFE | TASK-007 + TASK-008 | Capability governance has separate ownership area |
+| TASK-010 | SEQUENTIAL | TASK-009 | Onboarding builds on eligibility governance |
+| TASK-012 | PARALLEL_SAFE | TASK-006 + TASK-007 | Governance can proceed alongside workflow after core/context |
+| TASK-011 | FAN_IN | TASK-008 + TASK-012 | Foundry needs workflow and governance |
+| TASK-013 | FAN_IN | TASK-004 + TASK-006 + TASK-012 | Recovery needs execution/manual/state/governance contracts |
+| TASK-014 | FAN_IN | TASK-005 + TASK-008 + TASK-013 | Reporting needs observation/workflow/recovery refs |
+| TASK-015 | FAN_IN | TASK-003 + TASK-005 + TASK-008 + TASK-009 + TASK-010 + TASK-011 + TASK-012 + TASK-013 + TASK-014 | Representative E2Es need all AOH foundations |
+| TASK-016 | SEQUENTIAL | TASK-015 | Integrated qualification after representative flows |
+| TASK-017 | SEQUENTIAL | TASK-016 | Closure candidate only after qualification definition/results during execution |
+
+## Execution Order
+1. TASK-001.
+2. Parallel workstreams: AOH-001 TASK-002→003→004 and AOH-003 TASK-005.
+3. FI-001: GATE-002 + GATE-003.
+4. TASK-006→007→008; TASK-012 may begin after TASK-006/007; TASK-009 after 007/008; TASK-010 after 009.
+5. TASK-011 after workflow+governance; TASK-013 after execution/state/governance; TASK-014 after observability/workflow/recovery.
+6. FI-002: all AOH-002 functions.
+7. TASK-015→TASK-016→TASK-017.
+
+
+---
+## Source Projection ID-20 — Full Plan Execution Structure
+
+This section defines execution structure only. It does not execute the Full Plan or assign any provider/model.
+
+## Execution Sequence
+PLAN/VERIFY → IMPLEMENT → FOCUSED TEST → TARGETED REGRESSION → INDEPENDENT REVIEW → STAGE GATE
+
+## Phase / Task Mapping
+
+
+---
+
+| Execution Phase | Tasks | Required Capabilities | Validation | Gate |
+|---|---|---|---|---|
+| PLAN / VERIFY | TASK-001 | reasoning, read_only, evidence_analysis | TEST-001 | GATE-001 |
+| IMPLEMENT AOH-001 | TASK-002~004 | reasoning, implementation, filesystem_write, integration | TEST-002~006 | GATE-002 |
+| IMPLEMENT AOH-003 | TASK-005 | reasoning, implementation, filesystem_write, integration | TEST-007~009 | GATE-003 |
+| IMPLEMENT AOH-002 | TASK-006~014 | reasoning, implementation, filesystem_write, integration, security_review where material | TEST-010~025 | GATE-004 |
+| FOCUSED E2E | TASK-015 | reasoning, implementation, test, integration, filesystem_write | TEST-026~027 | GATE-005 input |
+| TARGETED/PROGRAM REGRESSION | TASK-016 | test, review, security_review | TEST-028~031 | GATE-005 input |
+| CLOSURE CANDIDATE | TASK-017 | reasoning, implementation, review | TEST-032 | GATE-005 |
+| INDEPENDENT REVIEW | all completed scopes | read_only, evidence_analysis, review, security_review | corresponding tests/evidence | same owning Gate |
+| STAGE GATE | GATE-001~005 | reasoning, read_only, evidence_analysis | required evidence set | GO/CONDITIONAL_GO/NO_GO |
+
+---
+
+# EC-06 VALIDATION
+
+## Source Projection ID-13 — Validation / Test Design
+
+## Validation Strategy
+Validation is layered: pure contract/state-machine unit checks first, module boundary/negative-space checks second, integration across public boundaries third, representative Office E2E fourth, then broad program regression/EDP traceability. Tests are designed here only; they are not executed in this project. Runtime PASS evidence can only be generated by the later execution project.
+
+## Test Contracts
+
+| ID | Level | Target | Related Requirements | Related Tasks | Pass Condition |
+|---|---|---|---|---|---|
+| TEST-001 | L2 Module | Entry Gate/source identity verifier | REQ-001/007/009, OPS-003/006/010 | TASK-001 | Exact root+HEAD+clean/source authority; drift produces fail-closed disposition. |
+| TEST-002 | L1 Unit | AOH-001 public execution/handoff canonical DTOs | REQ-002/004/008/010, NFR-006, OPS-001/002 | TASK-002 | OfficeExecutionRequestV1/ResultV1 and ManualActionHandoffRefV1/NonMutatingContinuationRefV1 schema/digest/identity/effect/auth bindings validate; continuation requires READ_ONLY authority and forbids provider/model fields; malformed or mixed-authority payloads reject. |
+| TEST-003 | L2 Module | Execution boundary backend independence | REQ-010, NFR-007 | TASK-002 | AI Office source contains no Full MCP internal import/type/path dependency. |
+| TEST-004 | L3 Integration | AI Office→Execution Backend authorization binding | REQ-005/010, NFR-003/006/007, SEC-005/006 | TASK-003 | Request maps through public boundary; authorization lineage/effect semantics exact; Full MCP remains downstream owner. |
+| TEST-005 | L2 Module | Unavailable state-change typed condition + positive non-mutating continuity | REQ-002/004/008, OPS-001 | TASK-004 | A blocked mutation route becomes typed wait/handoff with no silent fallback; an otherwise dependency-safe READ_ONLY/reasoning/review/documentation work item remains dispatchable to the Full Plan/Multi-Provider Router boundary, contains no provider/model choice, and cannot acquire mutation authority. |
+| TEST-006 | L3 Integration | Manual Action coordination and read-only separation | REQ-004/010, NFR-001/002, SEC-002, OPS-002/003 | TASK-004 | Only approved bounded Manual Action ref can resume state-changing workflow; read-only path cannot mutate. |
+| TEST-007 | L1 Unit | Public observability projection schemas | REQ-016, NFR-008 | TASK-005 | Source domain/ref/digest/correlation required; forbidden raw payload/action-provider cross-truth rejected. |
+| TEST-008 | L3 Integration | Dual-domain observability correlation | REQ-016/021, NFR-008, SEC-006 | TASK-005 | Action/provider observations correlate without source event duplication or ownership transfer. |
+| TEST-009 | L2 Module | Observability append/read negative space | REQ-016 | TASK-005 | Consumer cannot mutate source stores or emit canonical source-domain events. |
+| TEST-010 | L2 Module | AI Office state store restart/integrity | REQ-011, NFR-002, OPS-004 | TASK-006 | Atomic snapshot+journal digest chain rehydrates same state; corruption fails closed. |
+| TEST-011 | L1 Unit | Requirement intake source binding | REQ-011/022 | TASK-007 | Only approved source refs/digests accepted; semantics not silently rewritten. |
+| TEST-012 | L2 Module | Context source precedence | REQ-022 | TASK-007 | Approved plan/baseline precedence preserved; stale/lower authority source cannot override. |
+| TEST-013 | L2 Module | Context determinism and sanitization | REQ-022 | TASK-007 | Same refs produce same digest; secret/backend/provider fields excluded. |
+| TEST-014 | L2 Module | Office registry/run/workflow transitions | REQ-011 | TASK-008 | Only declared state transitions valid; restart-safe version increments. |
+| TEST-015 | L3 Integration | Full Plan assignment boundary & fan-in separation | REQ-020, OPS-008 | TASK-014 | AI Office records external assignment/fan-in refs but cannot create final assignment/completion decision. |
+| TEST-016 | L3 Integration | System Capability Routing/Find Agent governance | REQ-003/008/012/020/021/023, SEC-001/006 | TASK-009 | Need maps to owner boundary/candidate set; no provider/model choice or MPRF lifecycle duplication. |
+| TEST-017 | L2 Module | Controlled source/version onboarding | REQ-012, SEC-007 | TASK-010 | Unapproved source/version/risk state blocks eligibility. |
+| TEST-018 | L3 Integration | Onboarding uses existing adoption controls | REQ-012, SEC-007 | TASK-010 | AI Office governance wraps existing governed adoption path; unauthorized activation zero. |
+| TEST-019 | L2 Module | Foundry project definition/scaffold intent | REQ-013 | TASK-011 | Operating contract/lifecycle/scaffold intent versioned; no direct filesystem effect. |
+| TEST-020 | L2 Module | Risk/permission gate | REQ-014, NFR-001, SEC-002/005/007 | TASK-012 | Risk envelope and permission profile required; scope expansion rejected. |
+| TEST-021 | L3 Integration | Dual gate + human approval | REQ-014, SEC-003 | TASK-012 | Pilot/production activation requires policy gate and fresh human approval; recovery cannot bypass. |
+| TEST-022 | L2 Module | Approval freshness/replay protection | REQ-014 | TASK-012 | Stale/mismatched approval digest fails closed. |
+| TEST-023 | L3 Integration | Restart with pending approval/manual action | NFR-002, OPS-002/004 | TASK-013 | Pending state restores exactly with refs and no duplicated action. |
+| TEST-024 | L3 Integration | Recovery coordination authority preservation | REQ-015, SEC-003, OPS-001/004 | TASK-013 | Recovery flow references owning boundaries and same gate; no automatic replay/approval bypass. |
+| TEST-025 | L2 Module | KPI/status/report aggregation | REQ-015, OPS-008 | TASK-014 | Reports reproduce from refs and cannot change workflow/task completion authority. |
+| TEST-026 | L4 Production E2E | Office Project Factory representative E2E | REQ-013/017, OPS-007 | TASK-015 | Authorized definition→governance→scaffold intent→execution result ref→lifecycle/reporting completes with boundaries intact. |
+| TEST-027 | L4 Production E2E | Office Daily Loop representative E2E | REQ-017, OPS-007 | TASK-015 | Requirement→context→Full Plan handoff→eligibility→approval→execution/observe/report loop completes. |
+| TEST-028 | L3 Integration | Authority/security negative space | SEC-001~007 | TASK-016 | No direct provider/model selection, Full MCP bypass, MPRF override, read-only mutation, approval bypass, unauthorized onboarding. |
+| TEST-029 | L4 Production E2E | AOH-004 representative flow | REQ-017 | TASK-016 | End-to-end authorized requirement through observability/reporting satisfies roadmap qualification list. |
+| TEST-030 | L6 Program Regression | Broad/Full MCP/MPRF/provider-production regression selection | REQ-006/008, NFR-003/004/005/009, OPS-006/009 | TASK-016 | Required existing suites plus AI Office suites pass with no authority/core regression and no out-of-scope activation. |
+| TEST-031 | L6 Program Regression | EDP traceability/negative-space/conflict diagnosis | REQ-007, NFR-004, OPS-005 | TASK-016 | MUST coverage 100%, blocker 0, unresolved major 0, conflicts/broken refs 0. |
+| TEST-032 | L2 Module | Baseline closure/alias evidence equality | REQ-018/019, OPS-009 | TASK-017 | Closure candidate validates only on full exit evidence; alias evidence set/digests exactly equal canonical evidence. |
+
+## Validation Target Binding
+
+| Validation | Implementation Target | Owner Task |
+|---|---|---|
+| TEST-001 | Execution-time read-only verifier/evidence procedure; no design-project source file creation | TASK-001 |
+| TEST-002~003 | CT-008 `tests/test_ai_office_execution_contract.py` | TASK-002 |
+| TEST-004 | CT-010 `tests/test_ai_office_execution_integration.py` | TASK-003 |
+| TEST-005~006 | CT-012 `tests/test_ai_office_manual_action_coordination.py` | TASK-004 |
+| TEST-007~009 | CT-015 `tests/test_ai_office_observability_boundary.py` | TASK-005 |
+| TEST-010 | CT-035 `tests/test_ai_office_state_store.py` | TASK-006 |
+| TEST-011~013 | CT-036 `tests/test_ai_office_requirement_context.py` | TASK-007 |
+| TEST-014 | CT-037 `tests/test_ai_office_workflow.py` | TASK-008 |
+| TEST-016 | CT-023 `tests/test_ai_office_capability_governance.py` | TASK-009 |
+| TEST-017~018 | CT-038 `tests/test_ai_office_agent_onboarding.py` | TASK-010 |
+| TEST-019 | CT-026 `tests/test_ai_office_foundry.py` | TASK-011 |
+| TEST-020~022 | CT-039 `tests/test_ai_office_governance.py` | TASK-012 |
+| TEST-023~024 | CT-040 `tests/test_ai_office_recovery_coordination.py` | TASK-013 |
+| TEST-015, TEST-025 | CT-041 `tests/test_ai_office_reporting.py` | TASK-014 |
+| TEST-026 | CT-030 `tests/test_ai_office_project_factory_e2e.py` | TASK-015 |
+| TEST-027 | CT-031 `tests/test_ai_office_daily_loop_e2e.py` | TASK-015 |
+| TEST-028 | CT-032 `tests/test_ai_office_authority_negative_space.py` | TASK-016 |
+| TEST-029~031 | CT-033 `tests/test_ai_office_integrated_qualification.py` | TASK-016 |
+| TEST-032 | CT-042 `tests/test_ai_office_baseline_closure.py` | TASK-017 |
+
+Validation ownership rule: a Task may consume outputs from prior Tasks, but its completion Validation may not depend on a downstream Task. Cross-phase qualification remains in TASK-015/016 and does not retroactively become an earlier Task completion prerequisite.
+
+## Regression Requirements
+- Existing Full Plan core/gate/recovery/manual-action suites selected by AOH-004 must remain green.
+- Existing Full MCP public contract/authorization/observability/recovery suites must remain green.
+- Existing MPRF contract/lifecycle/checkpoint/failure/observability suites must remain green.
+- Existing provider-production integration suites required by the approved plan must remain green.
+- AI Office negative-space suite must prove no direct provider/model selection, no Full MCP bypass, no MPRF override, no read-only mutation, no approval bypass, no unauthorized onboarding, no later-phase activation.
+- Any controlled change to a protected existing core module expands focused+regression scope before GATE-005.
+
+## Manual Verification
+- Confirm generated public DTO documentation contains no provider/model assignment or backend-internal class/path names.
+- Inspect import graph for `runtime/ai_office` to confirm Full MCP/MPRF internals are not directly imported except through approved public source adapters located outside AI Office.
+- Confirm all CREATE paths remain within the approved existing repository root.
+- Confirm baseline closure candidate does not itself mutate Git, deploy, merge or push.
+
+
+---
+
+# EC-07 SECURITY
+
+## Source Projection ID-14 — Security Design
+
+## Security Design Rules
+
+| ID | Approved SEC Requirement | Security Design Rule | Related Task | Validation |
+|---|---|---|---|---|
+| SEC-D-001 | SEC-001 | AI Office never constructs provider/model decisions; any model execution reference must carry a canonical Router request/decision envelope digest. | TASK-009 | TEST-016/028 |
+| SEC-D-002 | SEC-002 | ExecutionAuthority READ_ONLY cannot produce OfficeExecutionRequest with STATE_CHANGING effect semantics; mutation requires authorized state-changing handoff. | TASK-004/TASK-012 | TEST-006/020/028 |
+| SEC-D-003 | SEC-003 | Recovery/automation transitions cannot move past approval-required states without the original/fresh approval digest and same-gate path. | TASK-012/TASK-013 | TEST-021/024/028 |
+| SEC-D-004 | SEC-004 | Closed capability/feature enums exclude reserved later-phase functions; qualification scans for accidental activation. | TASK-016 | TEST-028/030 |
+| SEC-D-005 | SEC-005 | Every state-changing request binds governance decision, risk envelope, delegated authorization/binding refs before Execution Backend handoff. | TASK-003/TASK-012 | TEST-004/020/028 |
+| SEC-D-006 | SEC-006 | Source/import and runtime negative-space tests prohibit direct Full MCP calls, MPRF policy override, or provider/model selection from AI Office. | TASK-002/TASK-005/TASK-009 | TEST-003/008/016/028 |
+| SEC-D-007 | SEC-007 | Agent activation requires approved source provenance, immutable version, risk/permission decision, activation version and approval refs. | TASK-010/TASK-012 | TEST-017/018/020/028 |
+
+## Security Constraints to Preserve
+- Fail closed on source/provider/authorization drift.
+- Read-only capability has zero mutation authority.
+- Router/Full MCP/MPRF authority bypass count must remain zero.
+- Recovery and reconciliation retain mandatory approvals.
+- Controlled onboarding is versioned, provenance-bound and permission/risk reviewed.
+- Durable office state stores references/digests rather than raw secrets/provider/action payloads.
+
+## Prohibited Security Changes
+- Adding new provider/model activation or selection policy.
+- Weakening Router envelope validation, Full MCP authorization, Manual Action binding or MPRF source-domain restrictions.
+- Adding dynamic routing/benchmark/cost optimization/advanced fallback.
+- Automatic approval, Gate bypass, baseline declaration, merge/push/deploy.
+
+
+---
+
+# EC-08 PERMISSIONS / CAPABILITIES
+
+## Source Projection ID-15 — Permission / Capability Design
+
+## Allowed Within Approved Scope
+
+
+---
+
+| ID | Action / Capability | Reason |
+|---|---|---|
+| PERM-001 | reasoning / read_only / evidence_analysis | Repository/source verification and design/validation analysis. |
+| PERM-002 | filesystem_write / implementation within planned AI Office/public-boundary/test targets | Required to implement approved PHASE 5 scope during later execution. |
+| PERM-003 | integration | Bind AI Office to existing public execution/observability/capability boundaries. |
+| PERM-004 | test | Run focused/E2E/regression tests during execution, not design. |
+| PERM-005 | security_review / review | Independent authority/negative-space/EDP validation. |
+| PERM-006 | bounded Manual Action under existing approval contract | Approved state-changing mechanism when automated state-changing authority is unavailable. |
+
+---
+
+
+## Separate Approval Required
+
+
+---
+
+| ID | Action | Why Separate Approval Is Required |
+|---|---|---|
+| PERM-007 | Any modification to existing Router/MPRF/Full MCP protected core beyond additive public adapter needs | Stable Core Protection requires controlled-change review and expanded regression. |
+| PERM-008 | Any new provider registry activation/provider expansion | Explicitly out of scope and separate Multi-Provider lifecycle. |
+| PERM-009 | Git commit/merge/push, deployment, publication, main-branch change | Execution/publication authority is outside this design approval. |
+| PERM-010 | Requirement/scope/constraint/success/deliverable/identity/root/version change | Requires Development Plan revision and user re-approval. |
+
+---
+
+
+## Prohibited Actions
+- Direct provider/model invocation or task-level provider/model assignment.
+- Capability→provider/model mapping, routing priority/fallback/health/quota logic in AI Office.
+- Read-only mutation.
+- Full MCP action/effect authority duplication or bypass.
+- MPRF provider runtime/policy duplication or override.
+- Full Plan final task-to-agent assignment or fan-in authority duplication.
+- PHASE 6/7/8 or Advancement scope activation.
+- Database/dashboard/BI/UI platform introduction.
+- Automatic merge/push/deploy/baseline declaration.
+
+## Provider-Neutral Capability Rule
+Task Required Capabilities are execution needs, not provider assignments. Multi-Provider Router remains selection authority. No named provider/model appears as a Task executor or ownership target in this design.
+
+
+---
+
+# EC-09 EVIDENCE
+
+## Source Projection ID-16 — Evidence Requirements
+
+| ID | Purpose | Source | Related Requirement | Related Task / Test | Expected Proof |
+|---|---|---|---|---|---|
+| EVD-001 | Entry identity | Repository + plan authority | REQ-001/009, OPS-003/010 | TASK-001/TEST-001 | root/HEAD/branch/worktree/plan version and exact approved-plan binding record |
+| EVD-002 | Predecessor baseline integrity | sealed predecessor records | REQ-009, NFR-009 | TASK-001/TEST-001 | five entry inputs and predecessor baseline status refs |
+| EVD-003 | Execution contract neutrality | source/test output | REQ-002/004/008/010, NFR-006/007 | TASK-002/TEST-002/003 | execution + unavailable-state handoff DTO schema, READ_ONLY continuation binding, and dependency/provider-model negative-space proof |
+| EVD-004 | Execution integration authority | integration result | REQ-005/010, SEC-005/006 | TASK-003/TEST-004 | authorization lineage, exact backend-neutral runtime-handler port binding, adapter negative-space, effect-owner refs |
+| EVD-005 | Progress under mutation unavailability | workflow result | REQ-002 | TASK-004/TEST-005 | read-only work remains eligible and mutation stage typed blocked |
+| EVD-006 | Manual Action/state-change safety | integration result | REQ-004, SEC-002, OPS-001/002/003 | TASK-004/TEST-006 | bounded handoff, source identity, approval, resume, zero read-only mutation |
+| EVD-007 | Action observability projection | action source adapter | REQ-016, NFR-008 | TASK-005/TEST-007/008 | source_domain/ref/digest/correlation projection |
+| EVD-008 | Provider observability projection | provider source adapter | REQ-016/021, NFR-008 | TASK-005/TEST-008/009 | separate source_domain/ref/digest/correlation projection |
+| EVD-009 | Office state/context durability | state/context tests | REQ-011/022, OPS-004 | TASK-006/007/TEST-010~013 | state digest-chain and context precedence/determinism results |
+| EVD-010 | Workflow/assignment separation | workflow tests | REQ-011/020, OPS-008 | TASK-008/TEST-014/015 | office transitions and external assignment-ref-only proof |
+| EVD-011 | Capability routing/eligibility | capability tests | REQ-003/008/012/023, SEC-001/006 | TASK-009/TEST-016 | owner-boundary decision/candidate set with no provider/model selection |
+| EVD-012 | Controlled onboarding | onboarding tests | REQ-012, SEC-007 | TASK-010/TEST-017/018 | approved source/version/risk/permission activation evidence |
+| EVD-013 | Foundry lifecycle | Foundry tests | REQ-013 | TASK-011/TEST-019 | definition/operating contract/scaffold-intent/lifecycle refs |
+| EVD-014 | Risk/approval/activation governance | governance tests | REQ-014, SEC-003/005/007 | TASK-012/TEST-020~022 | dual-gate + human approval + freshness refs |
+| EVD-015 | Restart/resume state | restart integration | NFR-002, OPS-002/004 | TASK-006/013/TEST-023 | pending approval/manual-action state rehydration proof |
+| EVD-016 | Recovery authority | recovery integration | REQ-015, SEC-003 | TASK-013/TEST-024 | ordered recovery and same-gate re-evaluation refs |
+| EVD-017 | Office reporting | report tests | REQ-015, OPS-008 | TASK-014/TEST-025 | report reproducibility and fan-in authority separation |
+| EVD-018 | Office Project Factory E2E | E2E run | REQ-013/017, OPS-007 | TASK-015/TEST-026 | factory representative flow result |
+| EVD-019 | Security negative space | security suite | SEC-001~007 | TASK-015/016/TEST-028 | bypass/mutation/activation prohibited-path counts all zero |
+| EVD-020 | Office Daily Loop & representative flow | E2E run | REQ-017, OPS-007 | TASK-015/016/TEST-027/029 | daily-loop and authorized-requirement-through-reporting results |
+| EVD-021 | Program regression | regression suite | REQ-006/008, NFR-003/004/005/009, OPS-006/009 | TASK-016/TEST-030 | required regression suite results and stable-core protection |
+| EVD-022 | EDP/traceability closure | diagnosis output | REQ-007, OPS-005 | TASK-016/TEST-031 | 100% MUST traceability, blocker/major/conflict/broken-ref closure |
+| EVD-023 | Baseline closure package | closure validator | REQ-018/019, OPS-009 | TASK-017/TEST-032 | complete canonical exit-evidence set and alias equality proof |
+
+This section defines required future execution evidence only. No runtime evidence is generated by this design project.
+
+
+---
+
+# EC-10 FAN-OUT / FAN-IN
+
+## Source Projection ID-17 — Fan-Out / Fan-In Design
+
+## Fan-Out Decision
+FAN_OUT: ALLOWED
+
+Reason: AOH-001 and AOH-003 have distinct ownership/change areas and share only verified predecessor contracts; they can proceed after TASK-001 and converge before AOH-002. Within AOH-002, capability governance and approval/risk governance can progress in bounded parallel areas once common contracts/context are stable.
+
+## Parallel Work Units
+
+
+---
+
+| Work Unit | Tasks | Ownership Boundary | Input | Expected Output | Forbidden Overlap |
+|---|---|---|---|---|---|
+| FW-001 | TASK-002/003/004 | Execution public boundary + AI Office execution coordination | Entry verification | AOH-001 contract/adapter/manual-action coordination | No observability source adapter or provider runtime modification |
+| FW-002 | TASK-005 | Observability public boundary | Entry verification | AOH-003 dual-domain projection | No execution adapter or source event ownership changes |
+| FW-003 | TASK-009/010 | Capability/agent governance | Core/context/workflow contracts | eligibility + controlled onboarding | No final assignment/provider selection |
+| FW-004 | TASK-012 | Risk/permission/activation governance | Core/context contracts | governance decisions | No execution effects/Full MCP auth replacement |
+
+---
+
+
+## Fan-In / Merge Points
+
+
+---
+
+| Merge Point | Inputs | Required Validation |
+|---|---|---|
+| FI-001 | FW-001 AOH-001 + FW-002 AOH-003 | GATE-002 GO + GATE-003 GO; public contracts compatible; source domains intact |
+| FI-002 | TASK-006~014 | TEST-010~025; ownership boundaries/contract versions consistent |
+| FI-003 | TASK-015 + TASK-016 + TASK-017 | AOH-004 E2E/regression/EDP + closure evidence contract |
+
+---
+
+# EC-11 GATES / REVIEW
+
+## Source Projection ID-18 — Gate Design
+
+## GATE-001 — PHASE 5 Entry Integrity
+Purpose: Confirm design/execution source identity and all predecessor inputs before any implementation mutation.  
+Required Tasks: TASK-001  
+Required Validation: TEST-001  
+Required Evidence: EVD-001, EVD-002  
+Required Review: independent source/identity review.  
+Decision States: GO | CONDITIONAL_GO | NO_GO  
+GO Condition: exact identity/baseline/source authority and no material drift.  
+CONDITIONAL_GO Condition: only non-material path-to-verify item with no WHAT/identity impact; must be resolved before dependent mutation.  
+NO_GO Condition: source drift, predecessor invalidity, wrong root/HEAD, unresolved material authority mismatch.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-002 — AOH-001 Execution Integration
+Purpose: Qualify contract-only backend-independent integration and state-change/manual-action safety.  
+Required Tasks: TASK-002~004  
+Required Validation: TEST-002~006  
+Required Evidence: EVD-003~006  
+Required Review: independent authority/backend-independence review.  
+GO Condition: no AI Office direct Full MCP dependency, authorization/effect binding PASS, typed unavailable mutation behavior, read-only mutation zero.  
+CONDITIONAL_GO Condition: documentation-only/non-runtime minor with all authority/security validations PASS.  
+NO_GO Condition: backend leakage, authority bypass, silent fallback, read-only mutation, unbound Manual Action.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-003 — AOH-003 Observability Boundary
+Purpose: Qualify consumer-ready dual-domain correlation without source-truth merge.  
+Required Tasks: TASK-005  
+Required Validation: TEST-007~009  
+Required Evidence: EVD-007, EVD-008  
+Required Review: source-domain ownership review.  
+GO Condition: both domains consumable/correlatable with immutable source refs/digests and no duplicated canonical events.  
+CONDITIONAL_GO Condition: non-material documentation issue only.  
+NO_GO Condition: source merge, raw sensitive payload duplication, domain ownership transfer.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-004 — AOH-002 Mainline Foundation
+Purpose: Qualify requirement/workflow/context/capability/foundry/governance/recovery/reporting foundation.  
+Required Tasks: TASK-006~014  
+Required Validation: TEST-010~025  
+Required Evidence: EVD-009~017  
+Required Review: independent functional/governance/authority review.  
+GO Condition: representative functions PASS and Full Plan/Router/MPRF/Full MCP authorities unchanged.  
+CONDITIONAL_GO Condition: minor non-authority defect with bounded remediation and no downstream activation.  
+NO_GO Condition: missing MUST capability, authority conflation, approval/onboarding/recovery bypass.  
+Gate Bypass: NOT ALLOWED
+
+## GATE-005 — AOH-004 Exit / Stable Baseline Readiness
+Purpose: Determine whether execution evidence is sufficient for canonical stable-baseline closure.  
+Required Tasks: TASK-015~017  
+Required Validation: TEST-026~032  
+Required Evidence: EVD-018~023  
+Required Review: independent EDP + security + regression review.  
+GO Condition: all required E2E/regression/security/traceability PASS, Blocker=0, unresolved Major=0, coverage=100%, conflicts/broken refs=0, full exit-evidence set complete and alias evidence identical.  
+CONDITIONAL_GO Condition: NOT PERMITTED for baseline declaration; any unresolved required exit item prevents closure.  
+NO_GO Condition: any failed required test, missing evidence, material regression/drift, authority bypass or partial alias evidence.  
+Gate Bypass: NOT ALLOWED
+
+
+---
+
+# EC-12 RECOVERY
+
+## Source Projection ID-19 — Recovery Design
+
+## RCV-001 — Source Drift / Entry Failure
+Trigger: root/HEAD/worktree/roadmap/predecessor authority materially differs from approved baseline.  
+Affected Tasks: TASK-001 and all downstream tasks.  
+Recovery Flow: Failure → Diagnose drift → Reverify authoritative source → determine HOW-only vs WHAT impact → focused source validation → independent review → GATE-001 re-evaluation.  
+Recovery Validation: TEST-001.  
+Recovery Gate: GATE-001.  
+Prohibited Bypass: treating drift as accepted, silently changing root/version/scope; WHAT impact requires PLAN_REVISION_REQUIRED.
+
+## RCV-002 — Execution Integration / State-Change Authority Unavailable
+Trigger: state-changing route is ineligible or execution adapter returns typed blocked state.  
+Affected Tasks: TASK-003/004 and workflows requiring mutation.  
+Recovery Flow: Failure → Diagnose condition → continue dependency-safe read-only work → either approved bounded Manual Action or wait for separately authorized state-changing capability → focused validation → regression → independent review → same Gate re-evaluation.  
+Recovery Validation: TEST-005/006/023.  
+Recovery Gate: GATE-002 or owning workflow Gate.  
+Prohibited Bypass: mutation via read-only capability, provider hardcoding, automatic authority substitution.
+
+## RCV-003 — Approval / Permission / Onboarding Failure
+Trigger: stale/missing approval, permission mismatch, unapproved source/version/risk state.  
+Affected Tasks: TASK-010/012 and dependents.  
+Recovery Flow: Failure → Diagnose exact binding → remediate source/risk/permission/approval record under approved scope → focused validation → regression → independent review → GATE-004 re-evaluation.  
+Recovery Validation: TEST-017~022.  
+Recovery Gate: GATE-004.  
+Prohibited Bypass: synthesized approval, permission expansion, unauthorized activation.
+
+## RCV-004 — Observability Correlation / Source Integrity Failure
+Trigger: event digest/source domain/correlation mismatch.  
+Affected Tasks: TASK-005/013/014.  
+Recovery Flow: Failure → Diagnose owning source adapter → correct projection only → focused validation → dual-domain regression → independent review → same Gate re-evaluation.  
+Recovery Validation: TEST-007~009/024/025.  
+Recovery Gate: GATE-003 or GATE-004.  
+Prohibited Bypass: rewriting source event, merging domains, using reporting data as canonical action/provider truth.
+
+## RCV-005 — AOH-004 Regression / Closure Failure
+Trigger: E2E/regression/negative-space/traceability/evidence equality fails.  
+Affected Tasks: TASK-015~017.  
+Recovery Flow: Failure → Diagnose finding → remediate approved HOW only → focused validation → targeted/full regression as blast radius requires → independent EDP review → GATE-005 re-evaluation.  
+Recovery Validation: TEST-026~032.  
+Recovery Gate: GATE-005.  
+Prohibited Bypass: baseline declaration with missing evidence, unresolved Major/Blocker, partial alias, or plan-boundary change.
+
+
+---
+
+# EC-13 TRACEABILITY
+
+## Source Projection ID-21 — Design Traceability
+
+| Requirement | Success Criterion | Architecture | Component | Task | Required Capability | Validation | Evidence | Gate | Deliverable |
+|---|---|---|---|---|---|---|---|---|---|
+| REQ-001 | SC-001 | ARC-001/ARC-012 | CMP-001/CMP-004 | TASK-001 | reasoning, read_only | TEST-001 | EVD-001 | GATE-001 | DEL-001 |
+| REQ-002 | SC-006 | ARC-003/ARC-009 | CMP-012/CMP-014 | TASK-004/TASK-013 | reasoning, implementation, integration | TEST-005/TEST-024 | EVD-005/EVD-016 | GATE-002/GATE-004 | DEL-002/DEL-004 |
+| REQ-003 | SC-005 | ARC-003 | CMP-001/CMP-009 | TASK-009 | reasoning, implementation | TEST-016 | EVD-011 | GATE-004 | DEL-004 |
+| REQ-004 | SC-006 | ARC-003/ARC-009 | CMP-012/CMP-014 | TASK-004/TASK-013 | reasoning, implementation | TEST-006/TEST-024 | EVD-006/EVD-016 | GATE-002/GATE-004 | DEL-002/DEL-004 |
+| REQ-005 | SC-005 | ARC-001/ARC-002 | CMP-001/CMP-003/CMP-012 | TASK-002/TASK-004 | reasoning, implementation | TEST-004/TEST-006 | EVD-004/EVD-006 | GATE-002 | DEL-002 |
+| REQ-006 | SC-011 | ARC-001/ARC-012 | CMP-016 | TASK-016 | reasoning, review | TEST-030 | EVD-021 | GATE-005 | DEL-006 |
+| REQ-007 | SC-009 | ARC-012 | CMP-016 | TASK-001/TASK-016 | reasoning, read_only, review | TEST-001/TEST-031 | EVD-001/EVD-022 | GATE-001/GATE-005 | DEL-001/DEL-006 |
+| REQ-008 | SC-006/SC-009 | ARC-003 | CMP-001/CMP-009 | TASK-009/TASK-016 | reasoning, implementation, review | TEST-016/TEST-030 | EVD-011/EVD-021 | GATE-004/GATE-005 | DEL-004/DEL-006 |
+| REQ-009 | SC-001 | ARC-001/ARC-012 | CMP-001/CMP-002/CMP-003/CMP-004 | TASK-001 | reasoning, read_only, evidence_analysis | TEST-001 | EVD-001/EVD-002 | GATE-001 | DEL-001 |
+| REQ-010 | SC-002 | ARC-002/ARC-012 | CMP-004/CMP-012 | TASK-002/TASK-003/TASK-004 | reasoning, implementation, integration | TEST-002/TEST-003/TEST-004/TEST-006 | EVD-003/EVD-004/EVD-006 | GATE-002 | DEL-002 |
+| REQ-011 | SC-004 | ARC-004 | CMP-006/CMP-007/CMP-008 | TASK-006/TASK-007/TASK-008 | reasoning, implementation, filesystem_write | TEST-010~014 | EVD-009/EVD-010 | GATE-004 | DEL-004 |
+| REQ-012 | SC-004/SC-005 | ARC-006 | CMP-009 | TASK-009/TASK-010 | implementation, integration, security_review | TEST-016/TEST-017/TEST-018 | EVD-011/EVD-012 | GATE-004 | DEL-004/DEL-005 |
+| REQ-013 | SC-004/SC-007 | ARC-007 | CMP-010 | TASK-011 | implementation, integration | TEST-019/TEST-026 | EVD-013/EVD-018 | GATE-004/GATE-005 | DEL-004/DEL-005 |
+| REQ-014 | SC-004/SC-005 | ARC-008 | CMP-011 | TASK-012 | implementation, security_review | TEST-020/TEST-021 | EVD-014 | GATE-004 | DEL-004/DEL-005 |
+| REQ-015 | SC-004 | ARC-009/ARC-010 | CMP-014/CMP-015 | TASK-013/TASK-014 | implementation, integration, review | TEST-024/TEST-025 | EVD-016/EVD-017 | GATE-004 | DEL-004 |
+| REQ-016 | SC-003 | ARC-005 | CMP-005/CMP-013 | TASK-005 | implementation, integration | TEST-007/TEST-008/TEST-009 | EVD-007/EVD-008 | GATE-003 | DEL-003 |
+| REQ-017 | SC-008 | ARC-001/ARC-005/ARC-010 | CMP-016 | TASK-015/TASK-016 | test, integration, review | TEST-026/TEST-027/TEST-029 | EVD-018/EVD-020 | GATE-005 | DEL-006 |
+| REQ-018 | SC-010 | ARC-011/ARC-012 | CMP-016 | TASK-017 | reasoning, implementation, review | TEST-032 | EVD-023 | GATE-005 | DEL-007 |
+| REQ-019 | SC-010 | ARC-011/ARC-012 | CMP-016 | TASK-017 | reasoning, implementation, review | TEST-032 | EVD-023 | GATE-005 | DEL-007 |
+| REQ-020 | SC-005 | ARC-001/ARC-006 | CMP-008/CMP-009 | TASK-008/TASK-009 | reasoning, implementation | TEST-015/TEST-016 | EVD-010/EVD-011 | GATE-004 | DEL-002/DEL-004 |
+| REQ-021 | SC-005 | ARC-001/ARC-005 | CMP-002/CMP-013 | TASK-005/TASK-009 | reasoning, implementation | TEST-008/TEST-016 | EVD-008/EVD-011 | GATE-003/GATE-004 | DEL-002/DEL-004 |
+| REQ-022 | SC-004/SC-005 | ARC-004 | CMP-007 | TASK-007 | implementation, integration | TEST-011/TEST-012 | EVD-009 | GATE-004 | DEL-004 |
+| REQ-023 | SC-004/SC-005 | ARC-003/ARC-006 | CMP-009 | TASK-009 | reasoning, implementation | TEST-016 | EVD-011 | GATE-004 | DEL-004 |
+| NFR-001 | SC-005/SC-006 | ARC-001/ARC-008 | CMP-011/CMP-012 | TASK-004/TASK-012 | implementation, security_review | TEST-006/TEST-020 | EVD-006/EVD-014 | GATE-002/GATE-004 | DEL-002/DEL-006 |
+| NFR-002 | SC-006 | ARC-009/ARC-011 | CMP-012/CMP-014 | TASK-004/TASK-013 | implementation, integration | TEST-006/TEST-023/TEST-024 | EVD-006/EVD-015/EVD-016 | GATE-002/GATE-004 | DEL-002 |
+| NFR-003 | SC-005/SC-009 | ARC-001 | CMP-004/CMP-016 | TASK-003/TASK-016 | integration, review | TEST-004/TEST-030 | EVD-004/EVD-021 | GATE-002/GATE-005 | DEL-002/DEL-006 |
+| NFR-004 | SC-009 | ARC-012 | CMP-016 | TASK-016 | test, review | TEST-030/TEST-031 | EVD-021/EVD-022 | GATE-005 | DEL-006 |
+| NFR-005 | SC-005/SC-006 | ARC-003 | CMP-009/CMP-012 | TASK-009/TASK-016 | reasoning, review | TEST-016/TEST-030 | EVD-011/EVD-021 | GATE-004/GATE-005 | DEL-002/DEL-006 |
+| NFR-006 | SC-002 | ARC-002 | CMP-004/CMP-012 | TASK-002/TASK-003 | implementation, integration | TEST-002/TEST-004 | EVD-003/EVD-004 | GATE-002 | DEL-002 |
+| NFR-007 | SC-002 | ARC-002/ARC-012 | CMP-004/CMP-012 | TASK-002/TASK-003 | implementation, integration | TEST-003/TEST-004 | EVD-003/EVD-004 | GATE-002 | DEL-002 |
+| NFR-008 | SC-003 | ARC-005 | CMP-013 | TASK-005 | implementation, integration | TEST-007/TEST-008/TEST-009 | EVD-007/EVD-008 | GATE-003 | DEL-003 |
+| NFR-009 | SC-005/SC-009 | ARC-012 | CMP-001/CMP-002/CMP-003/CMP-004 | TASK-001/TASK-016 | read_only, review | TEST-001/TEST-030 | EVD-002/EVD-021 | GATE-001/GATE-005 | DEL-002/DEL-006 |
+| SEC-001 | SC-005 | ARC-003/ARC-012 | CMP-001/CMP-009/CMP-016 | TASK-009/TASK-016 | implementation, security_review | TEST-016/TEST-028 | EVD-011/EVD-019 | GATE-004/GATE-005 | DEL-002/DEL-006 |
+| SEC-002 | SC-006 | ARC-003/ARC-008 | CMP-011/CMP-012 | TASK-004/TASK-012 | implementation, security_review | TEST-006/TEST-020/TEST-028 | EVD-006/EVD-014/EVD-019 | GATE-002/GATE-005 | DEL-002/DEL-006 |
+| SEC-003 | SC-005/SC-009 | ARC-008/ARC-009 | CMP-011/CMP-014 | TASK-012/TASK-013 | implementation, security_review | TEST-021/TEST-024/TEST-028 | EVD-014/EVD-016/EVD-019 | GATE-004/GATE-005 | DEL-004/DEL-006 |
+| SEC-004 | SC-011 | ARC-001/ARC-012 | CMP-016 | TASK-016 | review, security_review | TEST-028/TEST-030 | EVD-019/EVD-021 | GATE-005 | DEL-006 |
+| SEC-005 | SC-004/SC-005 | ARC-002/ARC-008 | CMP-011/CMP-012 | TASK-003/TASK-012 | implementation, security_review | TEST-004/TEST-020/TEST-028 | EVD-004/EVD-014/EVD-019 | GATE-002/GATE-005 | DEL-004/DEL-006 |
+| SEC-006 | SC-005 | ARC-001/ARC-003/ARC-012 | CMP-001/CMP-002/CMP-003/CMP-012/CMP-016 | TASK-002/TASK-005/TASK-009/TASK-016 | implementation, security_review | TEST-004/TEST-008/TEST-016/TEST-028 | EVD-004/EVD-008/EVD-011/EVD-019 | GATE-002/GATE-003/GATE-005 | DEL-002/DEL-006 |
+| SEC-007 | SC-004/SC-007 | ARC-006/ARC-008 | CMP-009/CMP-011 | TASK-010/TASK-012 | implementation, security_review | TEST-017/TEST-018/TEST-020/TEST-028 | EVD-012/EVD-014/EVD-019 | GATE-004/GATE-005 | DEL-005/DEL-006 |
+| OPS-001 | SC-006 | ARC-003/ARC-009 | CMP-012/CMP-014 | TASK-004/TASK-013 | implementation, integration | TEST-005/TEST-006/TEST-024 | EVD-005/EVD-006/EVD-016 | GATE-002/GATE-004 | DEL-002 |
+| OPS-002 | SC-006 | ARC-009/ARC-011 | CMP-012/CMP-014 | TASK-004/TASK-013 | implementation, integration | TEST-006/TEST-023/TEST-024 | EVD-006/EVD-015/EVD-016 | GATE-002/GATE-004 | DEL-002 |
+| OPS-003 | SC-001 | ARC-012 | CMP-004 | TASK-001/TASK-004 | read_only, integration | TEST-001/TEST-006 | EVD-001/EVD-006 | GATE-001/GATE-002 | DEL-001/DEL-002 |
+| OPS-004 | SC-006 | ARC-004/ARC-009/ARC-011 | CMP-006/CMP-014 | TASK-006/TASK-013 | implementation, integration | TEST-010/TEST-023/TEST-024 | EVD-009/EVD-015/EVD-016 | GATE-004 | DEL-002/DEL-003/DEL-004 |
+| OPS-005 | SC-009 | ARC-012 | CMP-016 | TASK-016 | test, review | TEST-030/TEST-031 | EVD-021/EVD-022 | GATE-005 | DEL-006 |
+| OPS-006 | SC-001 | ARC-012 | CMP-001/CMP-004/CMP-016 | TASK-001/TASK-016 | read_only, review | TEST-001/TEST-030 | EVD-001/EVD-021 | GATE-001/GATE-005 | DEL-001/DEL-006 |
+| OPS-007 | SC-007/SC-008 | ARC-007/ARC-010 | CMP-010/CMP-015/CMP-016 | TASK-015/TASK-016 | test, integration | TEST-026/TEST-027 | EVD-018/EVD-020 | GATE-005 | DEL-005/DEL-006 |
+| OPS-008 | SC-004/SC-005 | ARC-010 | CMP-008/CMP-015 | TASK-008/TASK-014 | implementation, review | TEST-015/TEST-025 | EVD-010/EVD-017 | GATE-004 | DEL-004/DEL-006 |
+| OPS-009 | SC-009/SC-010 | ARC-012 | CMP-016 | TASK-016/TASK-017 | test, review | TEST-030/TEST-031/TEST-032 | EVD-021/EVD-022/EVD-023 | GATE-005 | DEL-006/DEL-007 |
+| OPS-010 | SC-001 | ARC-012 | CMP-001/CMP-002/CMP-003/CMP-004 | TASK-001 | reasoning, read_only, evidence_analysis | TEST-001 | EVD-001/EVD-002 | GATE-001 | DEL-001 |
+
+Coverage rule: every MUST REQ/NFR/SEC/OPS has at least one Architecture→Component→Task→Capability→Validation→Evidence→Gate→Deliverable path. Every capability named in this matrix must be declared by at least one linked Task; validation may be owned by the linked Task or a downstream qualification Task. Provider/model names are not used as task executors.
+
+
+---
+
+# EC-14 PROJECTION INTEGRITY / SOURCE APPROVAL CONTROLS
+
+## Source Projection ID-22 — Plan Boundary Check
+
+## Requirement Changes
+UNAUTHORIZED_REQUIREMENT_CHANGE: NONE  
+Details: ID-04 reproduces approved requirements/acceptance conditions; design adds HOW only.
+
+## Scope Changes
+UNAUTHORIZED_SCOPE_CHANGE: NONE  
+Details: All tasks/targets remain within AOH-001~004 and approved AI Office responsibilities; later phases/platform/UI/provider expansion remain excluded.
+
+## Constraint Changes
+UNAUTHORIZED_CONSTRAINT_CHANGE: NONE  
+Details: authority, fail-closed, Manual Action, source drift and Stable Core constraints preserved.
+
+## Success Criteria Changes
+UNAUTHORIZED_SUCCESS_CRITERIA_CHANGE: NONE
+
+## Deliverable Changes
+UNAUTHORIZED_DELIVERABLE_CHANGE: NONE
+
+## Project Identity Changes
+UNAUTHORIZED_PROJECT_IDENTITY_CHANGE: NONE
+
+## Lifecycle / Root / Version Changes
+UNAUTHORIZED_LIFECYCLE_VERSION_CHANGE: NONE
+
+## HYBRID Policy Changes
+UNAUTHORIZED_HYBRID_POLICY_CHANGE: NONE  
+Details: Design normalizes the generic template to the approved Multi-Provider contract and intentionally omits template legacy provider-specific examples.
+
+PLAN_REVISION_REQUIRED: NO
+
+
+---
+## Source Projection ID-23 — Design Assumptions / Open Issues
+
+## Verified Facts
+- Approved plan DP-0.3 is APPROVED/APPROVED dated 2026-09-18.
+- Target root is an existing clean Git repository at exact approved source HEAD during design verification.
+- `runtime/ai_office/` is absent.
+- Router/MPRF/Full MCP/Execution Backend/Manual Action/capability registry source surfaces exist.
+- Current repository changelog records `MULTI_PROVIDER_FOUNDATION_BASELINE` as approved/sealed/declared and predecessor regression closure.
+
+## Technical Assumptions
+- ASM-D-001: New AI Office state uses lightweight file persistence under `_workspace/ai-office` because database platform is explicitly out of scope.
+- ASM-D-002: Execution Backend composition can inject the concrete downstream runtime handler behind the new public AI Office boundary without exposing that implementation to AI Office modules.
+- ASM-D-003: Public observability adapters may read owning-domain records and emit sanitized immutable projections; AI Office consumes only projections.
+- ASM-D-004: Existing capability/agent inventory/adoption mechanisms are reused as governance inputs; AI Office does not create a second installation/runtime subsystem.
+
+## Open Design Questions
+N/A — no unresolved question is required to begin implementation. Exact internal class names may change during HOW-only revision if source remains semantically equivalent; interface contracts/ownership in this design are authoritative.
+
+## Design Blockers
+N/A — BLOCKER 0 at design time.
+
+## Deferred Technical Decisions
+- DD-D-001: Exact performance tuning/retention limits for office state journals may be selected during implementation within deterministic/auditable/resumable NFRs.
+- DD-D-002: Publication/deployment timing remains execution/publication authority and is not designed here.
+- DD-D-003: Provider/model selection remains Multi-Provider Router runtime authority and is intentionally absent.
+
+
+---
+## Source Projection ID-24 — Implementation Design Diagnosis
+
+DIAGNOSIS_STATUS: PASS  
+DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL — SATISFIED_BY_USER_APPROVAL  
+DIAGNOSIS_VERSION: DIAG-1.4  
+DIAGNOSIS_ARTIFACT: `AI-OFFICE-HARNESS-PH5_DIAG-1.4_IMPLEMENTATION_DESIGN_DIAGNOSIS.md`  
+SOURCE_DRIFT_STATUS: CLEAR
+
+REQ_COVERAGE: PASS — 23/23  
+NFR_COVERAGE: PASS — 9/9  
+SEC_COVERAGE: PASS — 7/7  
+OPS_COVERAGE: PASS — 10/10  
+MUST_REQUIREMENT_COVERAGE: PASS — 49/49  
+ARCHITECTURE_COVERAGE: PASS — 12 ARC decisions  
+COMPONENT_COVERAGE: PASS — 16 components  
+INTERFACE_COVERAGE: PASS — 17 interfaces  
+TASK_COVERAGE: PASS — 17/17 tasks with complete task contracts and acyclic direct dependencies  
+REQUIRED_CAPABILITY_COVERAGE: PASS  
+EXECUTION_AUTHORITY_COVERAGE: PASS — every task READ_ONLY or STATE_CHANGING  
+VALIDATION_COVERAGE: PASS — 32 test contracts with explicit implementation-target binding; none executed in this project  
+PERMISSION_COVERAGE: PASS — 10 permission controls  
+EVIDENCE_COVERAGE: PASS — 23 future evidence requirements  
+GATE_COVERAGE: PASS — 5 gates / no bypass  
+RECOVERY_COVERAGE: PASS — 5 recovery scenarios  
+TRACEABILITY_COVERAGE: PASS — 49/49 MUST rows with Requirement→Success→Architecture→Component→Task→Capability→Validation→Evidence→Gate→Deliverable  
+PROJECT_IDENTITY_INTEGRITY: PASS  
+VERSION_INTEGRITY: PASS  
+HYBRID_POLICY_INTEGRITY: PASS  
+MULTI_PROVIDER_RESPONSIBILITY_SEPARATION: PASS  
+PROVIDER_MODEL_HARDCODING: NONE  
+ARTIFACT_NAMESPACE_INTEGRITY: PASS  
+PLAN_BOUNDARY_INTEGRITY: PASS  
+BLOCKER_COUNT: 0  
+MAJOR_COUNT: 0  
+MINOR_COUNT: 0  
+OPEN_FINDINGS: NONE.
+
+---
+## Source Projection ID-25 — User Approval
+
+Diagnosis PASS produced `READY_FOR_USER_APPROVAL`. The user explicitly granted final approval on 2026-09-18.
+
+Current state:  
+DESIGN_STATUS: APPROVED  
+APPROVAL_STATUS: APPROVED  
+APPROVED_VERSION: D1.4  
+APPROVED_DATE: 2026-09-18  
+APPROVAL_AUTHORITY: USER  
+USER_DECISION: 최종승인
+
+Final artifact: `AI-OFFICE-HARNESS-PH5_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+
+---
+## Source Projection ID-26 — Post-Approval Change Control
+
+Technical HOW-only change: Implementation Design Revision → Implementation Design Diagnosis → User Design Re-approval.
+
+Material change to Requirement / Scope / Constraint / Success Criterion / Deliverable / Project Identity / target root / version transition: Development Plan Revision → Development Plan Diagnosis → User Plan Re-approval → Implementation Design Revision → Implementation Design Diagnosis → User Design Re-approval.
+
+Provider/model replacement alone under identical scope/execution authority/capability/output/validation contract is not a design change.
+
+
+---
+## Source Projection ID-27 — Full Plan Handoff Readiness
+
+The next project is: `프로젝트 실행승인`
+
+Authoritative input after explicit user approval: `AI-OFFICE-HARNESS-PH5_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+The execution-approval project must deterministically transform this design into Full Plan execution contracts without newly designing Requirement, Architecture, Component, Interface, Task, Dependency, Required Capability, Change Target, Validation, Security, Permission, Evidence, Fan-Out/Fan-In, Gate, Recovery or Ownership Boundary.
+
+HANDOFF_READINESS: READY
+
+Reason: Independent diagnosis PASSed and explicit user final approval was granted on 2026-09-18. The approved design is ready to serve as the sole technical design authority for `프로젝트 실행승인`.  
+Required Return Point after approval: DESIGN_REVISION for HOW changes; PLAN_REVISION for material WHAT/identity changes; SOURCE_VERIFICATION if source drift appears.
+
+
+---
+## Source Projection ID-28 — Final Baseline Declaration
+
+When:
+
+`DESIGN_STATUS: APPROVED`
+
+and:
+
+`APPROVAL_STATUS: APPROVED`
+
+this document becomes the authoritative Implementation Design baseline for:
+
+`프로젝트 실행승인`
+
+Final authoritative artifact:
+
+`AI-OFFICE-HARNESS-PH5_APPROVED_IMPLEMENTATION_DESIGN.md`
+
+Required final H1:
+
+`# AI Office Harness Upgrade — Approved Implementation Design`
+
+FINAL_BASELINE_STATUS: APPROVED  
+FINAL_BASELINE_VERSION: D1.4  
+FINAL_BASELINE_APPROVED_DATE: 2026-09-18  
+HANDOFF_READINESS: READY
+
+Only the explicitly user-approved version may be used as authority.
+
+Not authoritative:
+- superseded drafts
+- old diagnosis reports
+- abandoned architecture alternatives
+- retired task structures
+- unapproved design changes
+
+## Contract Projection Integrity
+
+NO_SEMANTIC_EXPANSION: CONFIRMED
+NO_SEMANTIC_LOSS: CONFIRMED
+NO_UNAUTHORIZED_SCOPE_CHANGE: CONFIRMED
+PROJECT_IDENTITY_INTEGRITY: PASS
+VERSION_IDENTITY_INTEGRITY: PASS
+REQUIRED_CAPABILITY_INTEGRITY: PASS
+EXECUTION_AUTHORITY_INTEGRITY: PASS
+HYBRID_POLICY_INTEGRITY: PASS
+MULTI_PROVIDER_RESPONSIBILITY_INTEGRITY: PASS
+SOURCE_DRIFT_STATUS: CLEAR
+
+requirements_coverage: PASS — 49/49 MUST requirements
+tasks_coverage: PASS — 17/17
+required_capabilities_coverage: PASS
+validations_coverage: PASS — 32/32
+security_coverage: PASS — 7/7 SEC-D controls
+permissions_coverage: PASS — 10/10
+evidence_coverage: PASS — 23/23
+gates_coverage: PASS — 5/5, bypass prohibited
+recovery_coverage: PASS — 5/5
+traceability_coverage: PASS — 49/49 MUST rows
+
+HANDOFF_RESULT: READY_FOR_CONTRACT_DIAGNOSIS
+
+<!-- SEMANTIC_BODY_END -->
+
+# EC-15 CONTRACT DIAGNOSIS RESULT
+
+DIAGNOSIS_DECISION: PASS
+DIAGNOSIS_READINESS: READY_FOR_USER_APPROVAL
+BLOCKER_COUNT: 0
+MAJOR_COUNT: 0
+MINOR_COUNT: 0
+DIAGNOSED_CONTRACT_BODY_SHA256: 9380668cb971622a8508d7a43e7284e4d7f6b7924a317f2793404fd4b91710f2
+
+PASS means:
+`CONTRACT_STATUS: DIAGNOSED_PASS`
+
+PASS does not mean final execution approval and does not authorize activation or Full Plan execution.
+
+# EC-16 FINAL EXECUTION APPROVAL
+
+FINAL_EXECUTION_APPROVAL: APPROVED
+FINAL_APPROVAL_DATE: 2026-09-18
+USER_APPROVAL_EVIDENCE: User explicit final execution approval message: "최종승인" (2026-09-18)
+ACTIVATION_APPROVAL_SCOPE: Exact diagnosed Contract; UPGRADE activation; Runtime Preflight; approved Full Plan execution handoff through GPT_OPERATOR and MULTI_PROVIDER_ROUTER. No Stage Gate, permission, security, safety, validation, evidence, recovery, deployment, merge, push, or out-of-scope authority bypass.
+
+After APPROVED, only lifecycle metadata may change.
+
+FINAL_CONTRACT_BODY_SHA256: 9380668cb971622a8508d7a43e7284e4d7f6b7924a317f2793404fd4b91710f2
+
+Required after final approval:
+`FINAL_CONTRACT_BODY_SHA256 == DIAGNOSED_CONTRACT_BODY_SHA256`
+
+If mismatch:
+`POST_DIAGNOSIS_MUTATION_DETECTED`
+
+Successful post-approval promotion target:
+`CONTRACT_STATUS: READY_FOR_FULL_PLAN_EXECUTION`
+
+# EC-17 EXTERNAL HANDOFF REFERENCES
+
+APPROVED_CONTRACT_ARTIFACT: AI-OFFICE-HARNESS-PH5_AI_OFFICE_STABLE_BASELINE_APPROVED_FULL_PLAN_EXECUTION_CONTRACT.txt
+FULL_PLAN_EXECUTION_INSTRUCTION_ARTIFACT: AI-OFFICE-HARNESS-PH5_AI_OFFICE_STABLE_BASELINE_FULL_PLAN_EXECUTION_INSTRUCTION.md
+EXECUTION_APPROVAL_RESULT_ARTIFACT: AI-OFFICE-HARNESS-PH5_AI_OFFICE_STABLE_BASELINE_EXECUTION_APPROVAL_RESULT.md
+TARGET_CANONICAL_PATH: `/home/ywjo/AI-Workspace/project-workspace/global-gpt-harness-engineering/docs/DEVELOPMENT_PLAN.txt`
+
+FULL_FILE_SHA256_BINDING: BOUND_IN_FULL_PLAN_EXECUTION_INSTRUCTION_AND_EXECUTION_APPROVAL_RESULT
+
+Contract final readiness requires:
+- diagnosis PASS
+- explicit final execution approval
+- post-diagnosis semantic body integrity PASS
+- approved full-file artifact with external SHA-256 binding
+- provider-agnostic Full Plan execution instruction/hash binding
+- Project Identity/root/version binding PASS
+- Multi-Provider responsibility integrity PASS
+
+
+---
+## 2026-09-19 CONTRACT AMENDMENT — AI OFFICE HARNESS EDP EXTENSIBILITY REMEDIATION
+
+AUTHORITY: Current explicit user directive dated 2026-09-19, issued after review of the exhaustive Hybrid/Multi-Provider diagnosis.
+STATUS: AUTHORIZED_SCOPE_AMENDMENT / IMPLEMENTATION_REQUIRED / AI_OFFICE_HARNESS_UPGRADE_REMAINS_OPEN
+DIAGNOSIS_STANDARD: EDP-1.0
+BASELINE_HEAD: 5eb5b30be5889f3ddd4f0754404b237697eac231
+
+The prior PHASE 5 exclusion of PHASE 7 remains valid for new Provider activation, benchmarking/cost optimization, deployment, and external credential onboarding. The following foundation corrections are pulled forward because EDP demonstrated they are required to satisfy the already-approved provider-neutral Full Plan HYBRID operating principle:
+
+- remove compiled-in Codex/NVIDIA provider-domain constraints from MPRF/Router contracts while preserving explicit admission;
+- introduce provider adapter registry dispatch so a newly approved provider need not alter Router/Executor core branches;
+- remove effective Codex-first/NVIDIA-first/capability-cardinality/lexical selection bias;
+- correct production readiness propagation and bind MPRF lifecycle/capability facts to eligibility;
+- activate evidence-safe MPRF reroute with failed-provider exclusion;
+- permit INVALID_RESPONSE reroute only when effect reconciliation proves no effect;
+- durably preserve sanitized invalid Provider output before validation failure;
+- reconcile current governance state after remediation.
+
+PROHIBITED UNDER THIS AMENDMENT:
+- activating, credentialing, billing, deploying, or admitting any new external Provider in production;
+- moving Provider/model selection out of Multi-Provider Router;
+- moving runtime lifecycle authority out of MPRF;
+- moving effect authority out of Execution Backend/Full MCP;
+- weakening Manual Action, approval, checkpoint, Attention, Exit Guard, or immutable evidence safeguards;
+- merge/push/deployment without their existing separate authority.
+
+GO requires EDP ALL PASS with blocker=0, unresolved major=0, MUST/traceability/domain evidence coverage=100%, material cross-document conflicts=0, broken binding refs=0, adversarial new blocker/major=0, PASS-challenge open=0, focused and full regressions PASS.

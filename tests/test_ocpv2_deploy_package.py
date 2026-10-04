@@ -31,6 +31,8 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("OCP_GITHUB_TOKEN_FILE=", text)
         self.assertIn("OCP_STATE_ROOT=", text)
         self.assertIn("OCP_REPO_ROOT=/path/to/global-gpt-harness-engineering", text)
+        self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false"), 1)
+        self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG="), 1)
         lowered = text.lower()
         self.assertNotIn("ghp_", lowered)
         self.assertNotIn("github_pat_", lowered)
@@ -73,10 +75,57 @@ class OCPv2DeployPackageTests(unittest.TestCase):
             rendered = bootstrap.render_package(cfg, output_dir=output)
             service = rendered.service_path.read_text(encoding="utf-8")
             self.assertIn(f"WorkingDirectory={repo.resolve()}", service)
-            self.assertIn("-m runtime.orchestrator.ocpv2_runtime_service", service)
+            self.assertRegex(service, r"-m runtime\.orchestrator\.ocpv2_(?:runtime_service|successor_stage_runtime)")
             self.assertIn("--env-file %h/.config/gch/ocpv2.env", service)
             self.assertNotIn("bootstrap.py run-once", service)
             self.assertNotIn("@REPO_ROOT@", service)
+
+    def test_rendered_env_keeps_host_diagnostics_explicitly_off(self):
+        bootstrap = load_bootstrap()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            rendered = bootstrap.render_package(bootstrap.BootstrapConfig.disabled(repo_root=repo), output_dir=root / "rendered")
+            text = rendered.env_path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED=false"), 1)
+            self.assertEqual(text.count("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG="), 1)
+            parsed = bootstrap.config_from_env_file(rendered.env_path)
+            self.assertEqual(parsed.mode, "DISABLED")
+
+    def test_rendered_env_keeps_successor_stage_explicitly_off_and_parseable(self):
+        bootstrap = load_bootstrap()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            rendered = bootstrap.render_package(
+                bootstrap.BootstrapConfig.disabled(repo_root=repo),
+                output_dir=root / "rendered",
+            )
+            text = rendered.env_path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("OCP_SUCCESSOR_RELEASE_STAGE_ENABLED=0"), 1)
+            self.assertEqual(text.count("OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF="), 1)
+            parsed = bootstrap.config_from_env_file(rendered.env_path)
+            self.assertEqual(parsed.mode, "DISABLED")
+
+    def test_bootstrap_env_parser_accepts_new_activation_lifecycle_rollback_key(self):
+        bootstrap = load_bootstrap()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            repo = root / "repo"
+            repo.mkdir()
+            rendered = bootstrap.render_package(
+                bootstrap.BootstrapConfig.disabled(repo_root=repo),
+                output_dir=root / "rendered",
+            )
+            text = rendered.env_path.read_text(encoding="utf-8")
+            rendered.env_path.write_text(
+                text + "GCH_NEW_ACTIVATION_LIFECYCLE_MODE=LEGACY\n",
+                encoding="utf-8",
+            )
+            parsed = bootstrap.config_from_env_file(rendered.env_path)
+            self.assertEqual(parsed.mode, "DISABLED")
 
     def test_timer_runs_one_shot_service_every_30_seconds(self):
         timer = (DEPLOY_ROOT / "ocpv2.user.timer").read_text(encoding="utf-8")
@@ -139,6 +188,29 @@ class OCPv2DeployPackageTests(unittest.TestCase):
         self.assertIn("RemoteResultOutbox", source)
         self.assertIn("RemoteResultProjectionV1", source)
         self.assertIn("outbox", source)
+
+    def test_user_service_keeps_executable_activation_off_without_policy(self):
+        text = (DEPLOY_ROOT / "ocpv2.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("Environment=OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertNotIn("OCP_FULL_PLAN_ACTIVATION_POLICY_REF=", text)
+
+    def test_p3_control_service_is_manual_and_has_no_canary_authority(self):
+        text = (DEPLOY_ROOT / "ocpv2-p3-control.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("WorkingDirectory=@P3_CONTROL_SOURCE_ROOT@", text)
+        self.assertIn("ocpv2_p3_control_runtime", text)
+        self.assertIn("OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertIn("OCP_LIFECYCLE_V2_P3_CANARY_ACTIVATION_ENABLED=0", text)
+        self.assertNotIn("[Install]", text)
+        self.assertNotIn(".timer", text)
+
+    def test_stage_control_service_is_manual_and_has_no_p3_authority(self):
+        text = (DEPLOY_ROOT / "ocpv2-stage-control.user.service.in").read_text(encoding="utf-8")
+        self.assertIn("WorkingDirectory=@STAGE_CONTROL_SOURCE_ROOT@", text)
+        self.assertIn("ocpv2_stage_control_runtime", text)
+        self.assertIn("OCP_FULL_PLAN_ACTIVATION_ENABLED=0", text)
+        self.assertIn("OCP_LIFECYCLE_V2_P3_PROMOTION_ENABLED=0", text)
+        self.assertNotIn("[Install]", text)
+        self.assertNotIn(".timer", text)
 
 
 if __name__ == "__main__":

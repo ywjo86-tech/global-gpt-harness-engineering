@@ -8,14 +8,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mcp.client import Client
-from mcp.client.stdio import StdioServerParameters
+from tests.full_mcp import mcp_available
+
+try:
+    from mcp.client import Client
+    from mcp.client.stdio import StdioServerParameters
+except ModuleNotFoundError:
+    Client = None
+    StdioServerParameters = None
 
 from runtime.orchestrator.tool_authorization import TOOL_AUTH_CONTRACT_VERSION, ToolAuthorizationContract
 from runtime.full_mcp.contracts import InvocationContext, MCPMetaBinding, scope_digest
 from runtime.full_mcp.runtime import build_default_runtime, operation_definitions
 from runtime.full_mcp.validation_profiles import default_validation_catalog
-from runtime.full_mcp.stdio_entrypoint import run_stdio
+if mcp_available():
+    from runtime.full_mcp.stdio_entrypoint import run_stdio
+else:
+    run_stdio = None
 
 SHA_A="a"*64
 SHA_B="b"*64
@@ -70,6 +79,7 @@ def meta(context: InvocationContext, request_id: str) -> dict[str,str]:
     }
 
 
+@unittest.skipIf(Client is None or StdioServerParameters is None, "optional mcp package is not installed")
 class RuntimeCompositionTests(unittest.TestCase):
     def setUp(self)->None:
         self.temp=tempfile.TemporaryDirectory(); self.root=Path(self.temp.name); initialize_repo(self.root)
@@ -98,6 +108,7 @@ class RuntimeCompositionTests(unittest.TestCase):
         self.assertEqual(result["status"],"BLOCKED"); self.assertEqual(result["error"]["code"],"AUTHORIZATION_DENIED")
 
 
+@unittest.skipIf(Client is None or StdioServerParameters is None, "optional mcp package is not installed")
 class MCPStdioSmokeTests(unittest.IsolatedAsyncioTestCase):
     async def test_protocol_2026_07_28_closed_catalog_and_authorized_call(self)->None:
         with tempfile.TemporaryDirectory() as td:

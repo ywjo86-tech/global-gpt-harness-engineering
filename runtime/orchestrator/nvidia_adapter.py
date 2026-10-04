@@ -19,13 +19,16 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 DEFAULT_MAX_TOKENS = 2048
 
 
-def _failure(error_class: str, *, model: str = "", attempts: int = 0) -> dict[str, Any]:
+def _failure(
+    error_class: str, *, model: str = "", attempts: int = 0, provider_http_status: int | None = None,
+) -> dict[str, Any]:
     return {
         "status": "provider_failed",
         "mode": "nvidia",
         "provider": "nvidia",
         **({"model": model} if model else {}),
         "provider_error_class": error_class,
+        **({"provider_http_status": provider_http_status} if provider_http_status is not None else {}),
         "errors": [error_class],
         "provider_attempts": attempts,
     }
@@ -97,6 +100,7 @@ def run_nvidia_reasoning_task(
         messages.append({"role": "user", "content": f"File: {item['path']}\n{item['content']}"})
     opener = urlopen or urllib.request.urlopen
     last_error = "nvidia_network_error"
+    last_http_status: int | None = None
     attempts_used = 0
     model_attempts: dict[str, int] = {candidate: 0 for candidate in candidate_models}
     failover_trace: list[dict[str, Any]] = []
@@ -108,6 +112,7 @@ def run_nvidia_reasoning_task(
     for retry_round in range(1 + configured_retries):
         for candidate_model in candidate_models:
             attempts_used += 1
+            last_http_status = None
             model_attempts[candidate_model] += 1
             request_body: dict[str, Any] = {
                 "model": candidate_model,
@@ -152,6 +157,7 @@ def run_nvidia_reasoning_task(
                     "context_metadata": context.metadata,
                 }
             except urllib.error.HTTPError as exc:
+                last_http_status = int(exc.code)
                 if exc.code in {401, 403}:
                     last_error = "nvidia_auth_error"
                 elif exc.code == 408:
@@ -175,7 +181,10 @@ def run_nvidia_reasoning_task(
                 "model_attempt": model_attempts[candidate_model],
             })
             if last_error not in retryable_errors:
-                result = _failure(last_error, model=selected_model, attempts=attempts_used)
+                result = _failure(
+                    last_error, model=selected_model, attempts=attempts_used,
+                    provider_http_status=last_http_status,
+                )
                 result.update({
                     "routed_model": selected_model,
                     "model_failover_used": any(item["model"] != selected_model for item in failover_trace),
@@ -186,7 +195,10 @@ def run_nvidia_reasoning_task(
         if retry_round < configured_retries:
             time.sleep(configured_backoff * (2 ** retry_round))
 
-    result = _failure(last_error, model=selected_model, attempts=attempts_used)
+    result = _failure(
+        last_error, model=selected_model, attempts=attempts_used,
+        provider_http_status=last_http_status,
+    )
     result.update({
         "routed_model": selected_model,
         "model_failover_used": any(item["model"] != selected_model for item in failover_trace),

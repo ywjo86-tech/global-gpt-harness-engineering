@@ -161,6 +161,10 @@ class NvidiaAdapterTest(unittest.TestCase):
                 self.assertEqual(result["provider_error_class"], error_class)
                 self.assertEqual(result["provider_attempts"], expected_calls)
                 self.assertEqual(calls, expected_calls)
+                if error_class == "nvidia_client_error":
+                    self.assertEqual(result["provider_http_status"], 422)
+                else:
+                    self.assertNotIn("provider_http_status", result)
 
     def test_timeout_rotates_to_approved_fallback_model(self) -> None:
         calls: list[str] = []

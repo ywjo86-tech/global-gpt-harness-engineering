@@ -6,6 +6,7 @@ import json
 import hashlib
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.orchestrator.project_onboarding import OnboardingRegistry, ProjectOnboardingError
 from runtime.orchestrator.contract_adapter import ContractMappingError, load_project_mapping
@@ -63,6 +64,18 @@ class ProjectOnboardingTests(unittest.TestCase):
             self.assertEqual(report["status"], "ONBOARDING_BLOCKED")
             self.assertFalse(report["mutation_performed"])
             self.assertEqual(len(registry.entries()), 1)
+
+    def test_targeted_alias_resolution_ignores_unrelated_plan_sha_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); registry = OnboardingRegistry(base / "registry")
+            healthy = self.project(base, "healthy"); stale = self.project(base, "stale")
+            registry.register(healthy, "healthy")
+            registry.register(stale, "stale")
+            (stale / "IMPLEMENTATION_PLAN.md").write_text("changed", encoding="utf-8")
+            resolved = registry.resolve_alias("healthy")
+            self.assertEqual(resolved["alias"], "healthy")
+            with self.assertRaisesRegex(ProjectOnboardingError, "SHA drift"):
+                registry.entries()
 
     def test_plan_sha_drift_and_immutable_entry_are_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -158,6 +171,60 @@ class ProjectOnboardingTests(unittest.TestCase):
             self.assertIn("FIRST_GATE_WAITING_APPROVAL", state)
             self.assertNotIn("checkpoint", state.lower())
             self.assertNotIn("Exit", state)
+
+    def test_bootstrap_rolls_back_all_created_state_when_git_add_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = self.project(base, "rollback-project", "# plan\n")
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=project, capture_output=True, text=True, check=True,
+            )
+            subprocess.run(
+                ["git", "add", "--", "IMPLEMENTATION_PLAN.md"],
+                cwd=project, capture_output=True, text=True, check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-c", "user.name=Test", "-c",
+                    "user.email=test@example.invalid", "commit", "-m", "plan",
+                ],
+                cwd=project, capture_output=True, text=True, check=True,
+            )
+            mapping_root = base / "registry"
+            real_run = subprocess.run
+
+            def fail_git_add(args, *call_args, **call_kwargs):
+                if args[:2] == ["git", "add"]:
+                    raise subprocess.CalledProcessError(1, args, stderr="forced failure")
+                return real_run(args, *call_args, **call_kwargs)
+
+            with patch(
+                "runtime.orchestrator.project_onboarding.subprocess.run",
+                side_effect=fail_git_add,
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    OnboardingRegistry(mapping_root / "aliases").bootstrap(
+                        project, "rollback", mapping_root=mapping_root,
+                    )
+
+            self.assertFalse((mapping_root / f"{project.name}.json").exists())
+            self.assertFalse((mapping_root / "aliases" / "rollback.json").exists())
+            for relative in (
+                "CHANGELOG.txt",
+                "logs/app.log",
+                "docs/harness/orchestration-state.md",
+                "docs/APPROVAL_LOG.md",
+                "docs/GATE_STATE.md",
+            ):
+                self.assertFalse((project / relative).exists(), relative)
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=project, capture_output=True, text=True, check=True,
+                ).stdout,
+                "",
+            )
 
 
 if __name__ == "__main__":

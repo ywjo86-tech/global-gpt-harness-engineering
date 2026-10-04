@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import subprocess
@@ -8,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from runtime.orchestrator.resume_store import ResumeStore, RunBinding
 from runtime.orchestrator.production_full_plan_entry import (
     FullPlanJobError,
     build_gate_executor,
@@ -16,6 +18,7 @@ from runtime.orchestrator.production_full_plan_entry import (
     register_job,
     run_job,
     transient_systemd_command,
+    _source_lineage_for_context,
 )
 
 
@@ -48,6 +51,22 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             with self.assertRaises(FullPlanJobError): load_job(path)
 
 
+    def test_load_job_rejects_partial_runtime_release_binding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); path=self.make_job(root,("G1",)); payload=json.loads(path.read_text())
+            payload["runtime_release_digest"]="a"*64; path.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(FullPlanJobError,"runtime release"):
+                load_job(path)
+
+    def test_load_job_rejects_requirement_digest_coverage_mismatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); path=self.make_job(root,("G1",)); payload=json.loads(path.read_text())
+            payload["gates"][0]["requirement_evidence_paths_by_lv"]={"TASK-001":str(root/"r.json")}
+            payload["gates"][0]["requirement_evidence_sha256_by_lv"]={"TASK-002":"a"*64}
+            path.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(FullPlanJobError,"digest coverage"):
+                load_job(path)
+
     def test_load_job_rejects_missing_full_plan_opt_in(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); path = self.make_job(root, ("G1",))
@@ -63,6 +82,206 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
             result = preflight_job(job)
             self.assertEqual(result["status"], "PASS")
             self.assertEqual(Path(result["git_common_dir"]).resolve(), Path(job["git_common_dir"]).resolve())
+
+    def test_preflight_allows_only_exact_sealed_worker_checkpoint_on_resume(self):
+        with tempfile.TemporaryDirectory() as d:
+            temp = Path(d)
+            project = temp / "project"; project.mkdir()
+            state_root = temp / "state"; state_root.mkdir()
+            path = self.make_job(project, ("G1",))
+            (project / ".git" / "info" / "exclude").write_text("job.json\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.invalid"], check=True)
+            (project / "base.txt").write_text("base\n")
+            subprocess.run(["git", "-C", str(project), "add", "base.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "base"], check=True)
+            subprocess.run(["git", "-C", str(project), "branch", "-M", "main"], check=True)
+            ancestor = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
+            ).strip()
+            (project / "baseline.txt").write_text("baseline\n")
+            subprocess.run(["git", "-C", str(project), "add", "baseline.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "baseline"], check=True)
+            baseline = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
+            ).strip()
+            branch = subprocess.check_output(
+                ["git", "-C", str(project), "branch", "--show-current"], text=True
+            ).strip()
+            payload = json.loads(path.read_text())
+            payload["harness_root"] = str(state_root)
+            payload["expected_branch"] = branch
+            payload["expected_head"] = baseline
+            path.write_text(json.dumps(payload))
+            job = load_job(path)
+            path.unlink()
+
+            (project / "owned.py").write_text("changed\n")
+            subprocess.run(["git", "-C", str(project), "add", "owned.py"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "worker checkpoint"], check=True)
+            checkpoint = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
+            ).strip()
+            tree = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD^{tree}"], text=True
+            ).strip()
+            run_id = "run--g1"
+            result_root = state_root / "_workspace" / "orchestration-runs" / run_id / "T1"
+            result_root.mkdir(parents=True)
+            result = {
+                "status": "completed",
+                "project_id": "proj",
+                "gate_id": "G1",
+                "lv_id": "T1",
+                "run_id": run_id,
+                "baseline_head": baseline,
+                "checkpoint_commit": checkpoint,
+                "current_tree": tree,
+            }
+            result_path = result_root / "worker.result.json"
+            result_path.write_text(json.dumps(result, sort_keys=True, separators=(",", ":")))
+            result_sha = hashlib.sha256(result_path.read_bytes()).hexdigest()
+
+            binding = RunBinding(
+                "proj", "G1", "T1", run_id,
+                "a" * 64, "b" * 64, branch, baseline,
+                "c" * 64, {"owned.py": "d" * 64},
+            )
+            store = ResumeStore(state_root / "_workspace" / "global-gate-resume" / "T1", binding)
+            store.append("PACKAGE", "e" * 64)
+            store.append("PREFLIGHT", "f" * 64)
+            store.append("WORKER", result_sha, stage_payload={"checkpoint_commit": checkpoint})
+
+            context = {
+                "state": {"current_gate": "G1"},
+                "queue_item": {"gate_id": "G1", "gate_run_id": run_id, "resume": True},
+            }
+            self.assertEqual(preflight_job(job, resume_context=context)["status"], "PASS")
+
+            mismatched_binding_job = dict(job)
+            mismatched_binding_job["expected_head"] = ancestor
+            self.assertEqual(
+                preflight_job(mismatched_binding_job, resume_context=context)["reason"],
+                "SOURCE_HEAD_MISMATCH",
+            )
+
+            (project / "drift.txt").write_text("drift\n")
+            subprocess.run(["git", "-C", str(project), "add", "drift.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "unbound drift"], check=True)
+            self.assertEqual(
+                preflight_job(job, resume_context=context)["reason"],
+                "SOURCE_HEAD_MISMATCH",
+            )
+
+    def test_preflight_allows_exact_terminal_checkpoint_for_successor_gate(self):
+        with tempfile.TemporaryDirectory() as d:
+            temp = Path(d)
+            project = temp / "project"; project.mkdir()
+            state_root = temp / "state"; state_root.mkdir()
+            path = self.make_job(project, ("G1", "G2"))
+            (project / ".git" / "info" / "exclude").write_text("job.json\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.invalid"], check=True)
+            (project / "base.txt").write_text("base\n")
+            subprocess.run(["git", "-C", str(project), "add", "base.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "base"], check=True)
+            subprocess.run(["git", "-C", str(project), "branch", "-M", "main"], check=True)
+            baseline = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
+            ).strip()
+            branch = subprocess.check_output(
+                ["git", "-C", str(project), "branch", "--show-current"], text=True
+            ).strip()
+            payload = json.loads(path.read_text())
+            payload["harness_root"] = str(state_root)
+            payload["expected_branch"] = branch
+            payload["expected_head"] = baseline
+            path.write_text(json.dumps(payload))
+            job = load_job(path)
+            path.unlink()
+
+            (project / "owned.py").write_text("checkpoint\n")
+            subprocess.run(["git", "-C", str(project), "add", "owned.py"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "G1 terminal checkpoint"], check=True)
+            checkpoint = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD"], text=True
+            ).strip()
+            tree = subprocess.check_output(
+                ["git", "-C", str(project), "rev-parse", "HEAD^{tree}"], text=True
+            ).strip()
+
+            gate_run_id = "run--g1"
+            lv_id = "T1"
+            plan_sha = "c" * 64
+            result_root = state_root / "_workspace" / "orchestration-runs" / gate_run_id / lv_id
+            result_root.mkdir(parents=True)
+            result = {
+                "status": "completed", "project_id": "proj", "gate_id": "G1",
+                "lv_id": lv_id, "run_id": gate_run_id, "plan_sha256": plan_sha,
+                "baseline_head": baseline, "checkpoint_commit": checkpoint,
+                "current_head": checkpoint, "current_tree": tree,
+            }
+            result_path = result_root / "worker.result.json"
+            result_path.write_text(json.dumps(result, sort_keys=True, separators=(",", ":")))
+            result_sha = hashlib.sha256(result_path.read_bytes()).hexdigest()
+
+            binding = RunBinding(
+                "proj", "G1", lv_id, gate_run_id,
+                "a" * 64, plan_sha, branch, baseline,
+                "d" * 64, {"owned.py": "e" * 64},
+            )
+            store = ResumeStore(state_root / "_workspace" / "global-gate-resume" / lv_id, binding)
+            store.append("PACKAGE", "1" * 64)
+            store.append("PREFLIGHT", "2" * 64)
+            store.append("WORKER", result_sha, stage_payload={"checkpoint_commit": checkpoint})
+            store.append("REVIEW", "3" * 64, stage_payload={"status": "PASS"})
+            store.append(
+                "CHECKPOINT", "4" * 64, checkpoint=True,
+                stage_payload={"status": "CHECKPOINTED"},
+                checkpoint_payload={"lv_id": lv_id},
+            )
+            store.append("EXIT", "5" * 64, stage_payload={"status": "EXITED"})
+
+            handoff = {
+                "schema_version": "orchestration.gate.handoff.v2",
+                "project": "proj", "gate": "G1", "lv": lv_id, "run_id": gate_run_id,
+                "canonical_plan_sha256": plan_sha, "branch": branch, "head": baseline,
+                "artifact_sha256": result_sha,
+                "review": {"status": "PASS", "worker_result_sha256": result_sha},
+                "remaining_plan_items": [], "completed_plan_items": [lv_id],
+                "hard_stop": True,
+            }
+            handoff["handoff_sha256"] = hashlib.sha256(json.dumps(
+                handoff, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()).hexdigest()
+            artifact_root = state_root / "_workspace" / "global-gate" / "proj" / "artifact"
+            artifact_root.mkdir(parents=True)
+            (artifact_root / f"{gate_run_id}.handoff.json").write_text(
+                json.dumps(handoff, sort_keys=True, separators=(",", ":"))
+            )
+            store.append("HANDOFF", handoff["handoff_sha256"], stage_payload={"status": "SEALED"})
+
+            context = {
+                "state": {"completed_gates": ["G1"], "current_gate": "G2"},
+                "queue_item": {"gate_id": "G2", "gate_run_id": "run--g2", "resume": False},
+            }
+            self.assertEqual(preflight_job(job, resume_context=context)["status"], "PASS")
+            lineage = _source_lineage_for_context(job, context, checkpoint)
+            self.assertEqual(lineage, {
+                "lineage_kind": "SEALED_PREVIOUS_GATE",
+                "current_head": checkpoint,
+                "predecessor_digest": handoff["handoff_sha256"],
+                "predecessor_lv": lv_id,
+                "predecessor_run_id": gate_run_id,
+            })
+
+            (project / "drift.txt").write_text("drift\n")
+            subprocess.run(["git", "-C", str(project), "add", "drift.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "unbound successor drift"], check=True)
+            self.assertEqual(
+                preflight_job(job, resume_context=context)["reason"],
+                "SOURCE_HEAD_MISMATCH",
+            )
 
     def test_preflight_blocks_wrong_git_identity(self):
         with tempfile.TemporaryDirectory() as d:

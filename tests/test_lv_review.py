@@ -18,6 +18,8 @@ from runtime.orchestrator.lv_review import (
     REVIEW_STATUS_FIELDS,
     LVReviewError,
     _assert_canonical_binding,
+    _assert_package,
+    _directory_snapshot,
     _results_root,
     _scan_owned_files,
     _safe_read_result,
@@ -46,6 +48,109 @@ RUN_ID = "fixture-run-01"
 
 
 class LVReviewTest(unittest.TestCase):
+    def test_assert_package_allows_exact_provider_action_runtime_artifacts_but_rejects_symlink_dirs(self) -> None:
+        with TemporaryDirectory() as directory:
+            package = Path(directory) / "package"
+            package.mkdir()
+            package_input = {
+                "run_id": RUN_ID, "project_id": "P", "gate_id": "G1", "lv_id": "T1",
+                "execution_mode": "manual", "execution_authorization_required": True,
+            }
+            source = {}
+            prompt = b"worker prompt\n"
+            (package / "package.input.json").write_bytes(canonical_json_bytes(package_input))
+            (package / "source_snapshot.json").write_bytes(canonical_json_bytes(source))
+            (package / "worker_prompt.md").write_bytes(prompt)
+            manifest = {
+                **package_input, "package_status": "sealed",
+                "package_input_sha256": _sha256((package / "package.input.json").read_bytes()),
+                "source_snapshot_sha256": _sha256((package / "source_snapshot.json").read_bytes()),
+                "worker_prompt_sha256": _sha256(prompt),
+            }
+            manifest_bytes = canonical_json_bytes(manifest)
+            (package / "package.manifest.json").write_bytes(manifest_bytes)
+            manifest_sha = _sha256(manifest_bytes)
+            (package / "package.manifest.sha256").write_text(manifest_sha, encoding="ascii")
+            (package / "package.status").write_bytes(canonical_json_bytes({
+                "manifest_sha256": manifest_sha, "package_status": "sealed",
+            }))
+            (package / "provider-action-proposal.json").write_text("{}\n", encoding="utf-8")
+            (package / "provider-action-effects").mkdir()
+            (package / "provider-action-response-evidence").mkdir()
+            (package / "validation-remediation").mkdir()
+            _assert_package(package, RUN_ID)
+
+            effects = package / "provider-action-effects"
+            effects.rmdir()
+            real = Path(directory) / "external-effects"
+            real.mkdir()
+            effects.symlink_to(real, target_is_directory=True)
+            with self.assertRaisesRegex(LVReviewError, "sealed package"):
+                _assert_package(package, RUN_ID)
+
+    def test_directory_snapshot_hashes_nested_runtime_outputs_and_rejects_symlinks(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "package.manifest.json").write_text("manifest", encoding="utf-8")
+            ledger = root / "host-gateway-ledger"
+            ledger.mkdir()
+            evidence = ledger / "exec-1.json"
+            evidence.write_text("first", encoding="utf-8")
+            tool_effects = ledger / "tool-effects"
+            tool_effects.mkdir()
+            effect = tool_effects / "TE-1.receipt.json"
+            effect.write_text("sealed", encoding="utf-8")
+            remediation = root / "validation-remediation"
+            remediation.mkdir()
+            (remediation / "attempt-01.json").write_text("sealed", encoding="utf-8")
+
+            first = _directory_snapshot(root)
+            self.assertIn("host-gateway-ledger/exec-1.json", first)
+            self.assertIn("host-gateway-ledger/tool-effects/TE-1.receipt.json", first)
+            self.assertIn("validation-remediation/attempt-01.json", first)
+            evidence.write_text("second", encoding="utf-8")
+            self.assertNotEqual(first, _directory_snapshot(root))
+
+            unsafe = tool_effects / "unsafe-link"
+            unsafe.symlink_to(effect)
+            with self.assertRaisesRegex(LVReviewError, "unsafe entry"):
+                _directory_snapshot(root)
+
+    def test_sealed_package_accepts_known_provider_action_outputs_but_rejects_unknown_directory(self) -> None:
+        with TemporaryDirectory() as directory:
+            package = Path(directory) / "package"
+            package.mkdir()
+            package_input = {
+                "run_id": RUN_ID, "project_id": "p", "gate_id": "g", "lv_id": "lv",
+                "execution_mode": "manual", "execution_authorization_required": True,
+            }
+            prompt = b"worker prompt\n"
+            snapshot = canonical_json_bytes({"head": "a" * 40})
+            (package / "package.input.json").write_bytes(canonical_json_bytes(package_input))
+            (package / "worker_prompt.md").write_bytes(prompt)
+            (package / "source_snapshot.json").write_bytes(snapshot)
+            manifest = {
+                "run_id": RUN_ID, "package_status": "sealed",
+                "package_input_sha256": _sha256((package / "package.input.json").read_bytes()),
+                "worker_prompt_sha256": _sha256(prompt),
+                "source_snapshot_sha256": _sha256(snapshot),
+            }
+            manifest_bytes = canonical_json_bytes(manifest)
+            (package / "package.manifest.json").write_bytes(manifest_bytes)
+            manifest_sha = _sha256(manifest_bytes)
+            (package / "package.manifest.sha256").write_text(manifest_sha, encoding="ascii")
+            (package / "package.status").write_bytes(canonical_json_bytes({"manifest_sha256": manifest_sha, "package_status": "sealed"}))
+            (package / "provider-action-proposal.json").write_text("{}", encoding="utf-8")
+            (package / "provider-action-effects").mkdir()
+            (package / "provider-action-response-evidence").mkdir()
+            (package / "host-gateway-ledger").mkdir()
+
+            _assert_package(package, RUN_ID)
+
+            (package / "unexpected-runtime-output").mkdir()
+            with self.assertRaisesRegex(LVReviewError, "exactly six regular files"):
+                _assert_package(package, RUN_ID)
+
     def test_checkpoint_adoption_uses_sealed_provenance_without_worker_executor(self) -> None:
         payload = {
             "completion_mode": "VERIFIED_CHECKPOINT_ADOPTION", "checkpoint_commit": "a" * 40,
@@ -86,6 +191,61 @@ class LVReviewTest(unittest.TestCase):
         payload["governed_effect_evidence"] = [{"mutation_performed": True}]
         with self.assertRaisesRegex(LVReviewError, "verification-only provenance"):
             _validate_production_provenance(payload)
+
+    def test_provider_action_provenance_requires_governed_write_receipt(self) -> None:
+        payload = {
+            "completion_mode": "CODE_CHANGE",
+            "executor": {"identity": "provider-action-production", "version": "1"},
+            "owned_files": ["canary.txt"],
+            "changed_files": ["canary.txt"],
+            "commands": {
+                "worker": {
+                    "command": ["provider-action", "nvidia", "nvidia/nemotron-3-super-120b-a12b"],
+                    "exit_code": 0, "timeout": False,
+                },
+            },
+            "governed_effect_evidence": [{
+                "authorized": True,
+                "effect_id": "TE-fixture",
+                "evidence_refs": ["tool-effect://fixture/intent", "tool-effect://fixture/receipt"],
+                "intent_digest": "a" * 64,
+                "mutation_performed": True,
+                "operation": "PROJECT_OWNED_FILE_WRITE",
+                "receipt_digest": "b" * 64,
+                "receipt_intent_digest": "a" * 64,
+                "scope_ref": "canary.txt",
+                "security_passed": True,
+            }],
+        }
+        _validate_production_provenance(payload)
+
+        valid_effect = dict(payload["governed_effect_evidence"][0])
+        payload["governed_effect_evidence"] = []
+        with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
+            _validate_production_provenance(payload)
+
+        payload["governed_effect_evidence"] = [{**valid_effect, "receipt_intent_digest": "c" * 64}]
+        with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
+            _validate_production_provenance(payload)
+
+        payload["governed_effect_evidence"] = [{**valid_effect, "scope_ref": "outside.txt"}]
+        with self.assertRaisesRegex(LVReviewError, "provider action provenance"):
+            _validate_production_provenance(payload)
+
+    def test_read_only_no_owned_scope_marks_python_tests_not_applicable(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            results, error = _run_tests(
+                root, Path(sys.executable), [], allow_no_test_scope=True,
+            )
+            self.assertIsNone(error)
+            self.assertEqual(len(results), 3)
+            self.assertTrue(all(item.get("not_applicable") is True for item in results))
+            self.assertTrue(all(item.get("exit_code") == 0 for item in results))
+
+            blocked, blocked_error = _run_tests(root, Path(sys.executable), [])
+            self.assertEqual(blocked, [])
+            self.assertEqual(blocked_error, "owned Python test/module scope is missing")
 
     def test_verification_only_test_scope_runs_without_product_import_target(self) -> None:
         with TemporaryDirectory() as directory:
@@ -616,6 +776,51 @@ class LVReviewTest(unittest.TestCase):
                 patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
             ):
                 _assert_canonical_binding(root, manifest)
+
+    def test_canonical_binding_uses_sealed_override_for_historical_foreign_anchor(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, manifest, mapping, state, ledger = self._canonical_binding_fixture(Path(directory))
+            mapping.canonical_source = root / str(manifest["canonical_plan_path"])
+            mapping.canonical_sha256 = str(manifest["canonical_plan_sha256"])
+            override = {
+                **state,
+                "project_id": mapping.project_id,
+                "selected_source": mapping.canonical_source,
+            }
+            with (
+                patch("runtime.orchestrator.lv_review.load_project_mapping", return_value=mapping),
+                patch("runtime.orchestrator.lv_review.evaluate_canonical_state") as historical,
+                patch("runtime.orchestrator.lv_review._ledger_binding", return_value=ledger),
+            ):
+                _assert_canonical_binding(root, manifest, canonical_state_override=override)
+            historical.assert_not_called()
+
+    def test_preflight_attestation_preserves_canonical_state_override(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            package_root = base / "runs" / "project" / "gate" / "task"
+            source_root = package_root / "preflight"
+            source_root.mkdir(parents=True)
+            source = canonical_json_bytes({"schema_version": "orchestration.lv_preflight.evidence.v1"})
+            (source_root / "preflight.evidence.json").write_bytes(source)
+            (source_root / "preflight.evidence.sha256").write_text(_sha256(source), encoding="ascii")
+            (package_root / "package.manifest.json").write_bytes(canonical_json_bytes({}))
+            override = {"project_id": "SEALED-PROJECT"}
+
+            def reject_after_binding(*args: object, **kwargs: object) -> dict[str, object]:
+                self.assertIs(kwargs.get("canonical_state_override"), override)
+                raise LVReviewError("sentinel")
+
+            with patch("runtime.orchestrator.lv_review._preflight", side_effect=reject_after_binding):
+                result = publish_gate_preflight_attestation(
+                    RUN_ID,
+                    package_root=package_root,
+                    source_root=source_root,
+                    result_path=package_root / "worker.result.json",
+                    canonical_state_override=override,
+                )
+            self.assertEqual(result["status"], "REJECTED")
+            self.assertTrue(result["producer_contract_error"])
 
     def test_canonical_binding_allows_empty_owned_scope_for_exit_review(self) -> None:
         with TemporaryDirectory() as directory:

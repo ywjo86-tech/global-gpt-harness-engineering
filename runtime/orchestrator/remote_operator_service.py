@@ -7,12 +7,38 @@ permits it.  The callback remains responsible for the existing Full Plan / gatew
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Mapping
 
 from .operator_control import OperatorDirectiveV1
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2
+from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
+from .remote_control_envelope import (
+    APPROVED_FULL_PLAN_ACTIVATION_KIND,
+    GATE_APPROVAL_ISSUE_KIND,
+    APPROVED_WORK_ACTIVATION_KIND,
+    HOST_INSPECTION_KIND,
+    LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
+    LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND,
+    LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
+    LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
+    PROJECT_ONBOARDING_KIND,
+    SUCCESSOR_RELEASE_STAGE_KIND,
+    RemoteControlEnvelopeV1,
+    RemoteFullPlanActivationAuthorization,
+    RemoteGateApprovalIssueAuthorization,
+    RemoteLifecycleV2P3CanaryActivationAuthorization,
+    RemoteLifecycleV2P3CanaryValidateAuthorization,
+    RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization,
+    RemoteLifecycleV2P3PromotionAuthorization,
+    RemoteProjectOnboardingAuthorization,
+    RemoteSuccessorReleaseStageAuthorization,
+    RemoteWorkActivationAuthorization,
+    validate_remote_control_envelope,
+)
+from .remote_operator_envelope import RemoteControlEnvelope, RemoteOperatorEnvelopeV3
 from .remote_operator_ingress import IngressDecision
 from .remote_operator_transport import RawControlEnvelope, RemoteOperatorTransport
 
@@ -26,6 +52,7 @@ class ControlMode(str, Enum):
     OBSERVE_ONLY = "OBSERVE_ONLY"
     CONTROL_READ_ONLY = "CONTROL_READ_ONLY"
     CONTROL_MUTATION_CANARY = "CONTROL_MUTATION_CANARY"
+    LIFECYCLE_V2_P3_CANARY = "LIFECYCLE_V2_P3_CANARY"
     ACTIVE = "ACTIVE"
 
 
@@ -37,7 +64,7 @@ class CanaryScope:
     gate_id: str
     directive_id: str
 
-    def matches(self, envelope: RemoteOperatorEnvelopeV2, directive: OperatorDirectiveV1) -> bool:
+    def matches(self, envelope: RemoteControlEnvelope, directive: OperatorDirectiveV1) -> bool:
         return (
             envelope.project_id == self.project_id
             and envelope.run_id == self.run_id
@@ -53,9 +80,19 @@ class ServicePollResult:
     received: int = 0
     validated: int = 0
     executed: int = 0
+    diagnosed: int = 0
     projected: int = 0
     acknowledged: int = 0
     blocked: int = 0
+    inspected: int = 0
+    activated: int = 0
+    full_plan_activated: int = 0
+    onboarded: int = 0
+    successor_release_staged: int = 0
+    p3_promotion_admitted: int = 0
+    p3_canary_activated: int = 0
+    p3_canary_validate_registered: int = 0
+    p3_canary_validate_evidence_issued: int = 0
 
 
 class RemoteOperatorService:
@@ -63,26 +100,88 @@ class RemoteOperatorService:
         self,
         *,
         transport: RemoteOperatorTransport,
-        decode_envelope: Callable[[RawControlEnvelope], RemoteOperatorEnvelopeV2],
-        ingress: Callable[[RemoteOperatorEnvelopeV2], IngressDecision],
+        decode_envelope: Callable[[RawControlEnvelope], Any],
+        ingress: Callable[[RemoteControlEnvelope], IngressDecision],
         execute_authorized: Callable[
-            [RemoteOperatorEnvelopeV2, OperatorDirectiveV1], Mapping[str, Any]
+            [RemoteControlEnvelope, OperatorDirectiveV1], Mapping[str, Any]
         ],
-        canary_scope: CanaryScope | None = None,
-        after_projection_published: Callable[
-            [RemoteOperatorEnvelopeV2, Mapping[str, Any]], None
+        execute_read_only: Callable[
+            [RemoteControlEnvelope, OperatorDirectiveV1, ReadOnlyDiagnosticRequestV1], Mapping[str, Any]
         ] | None = None,
+        canary_scope: CanaryScope | None = None,
+        after_projection_published: Callable[[Any, Mapping[str, Any]], None] | None = None,
+        inspect_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        host_inspection_enabled: bool = False,
+        activate_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        work_activation_enabled: bool = False,
+        activation_policy_ref: str = "",
+        activate_full_plan_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        full_plan_activation_enabled: bool = False,
+        full_plan_activation_policy_ref: str = "",
+        issue_gate_approval_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        gate_approval_issue_enabled: bool = False,
+        gate_approval_issue_policy_ref: str = "",
+        onboard_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        project_onboarding_enabled: bool = False,
+        project_onboarding_policy_ref: str = "",
+        stage_successor_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        successor_release_stage_enabled: bool = False,
+        successor_release_stage_policy_ref: str = "",
+        admit_p3_promotion_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        lifecycle_v2_p3_promotion_enabled: bool = False,
+        lifecycle_v2_p3_promotion_policy_ref: str = "",
+        activate_p3_canary_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        lifecycle_v2_p3_canary_activation_enabled: bool = False,
+        lifecycle_v2_p3_canary_activation_policy_ref: str = "",
+        register_p3_canary_validate_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        lifecycle_v2_p3_canary_validate_enabled: bool = False,
+        lifecycle_v2_p3_canary_validate_policy_ref: str = "",
+        issue_p3_canary_validate_evidence_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        lifecycle_v2_p3_canary_validate_evidence_enabled: bool = False,
+        lifecycle_v2_p3_canary_validate_evidence_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
         self.ingress = ingress
         self.execute_authorized = execute_authorized
+        self.execute_read_only = execute_read_only
         self.canary_scope = canary_scope
         self.after_projection_published = after_projection_published
+        self.inspect_authorized = inspect_authorized
+        self.host_inspection_enabled = bool(host_inspection_enabled)
+        self.activate_authorized = activate_authorized
+        self.work_activation_enabled = bool(work_activation_enabled)
+        self.activation_policy_ref = str(activation_policy_ref or "")
+        self.activate_full_plan_authorized = activate_full_plan_authorized
+        self.full_plan_activation_enabled = bool(full_plan_activation_enabled)
+        self.full_plan_activation_policy_ref = str(full_plan_activation_policy_ref or "")
+        self.issue_gate_approval_authorized = issue_gate_approval_authorized
+        self.gate_approval_issue_enabled = bool(gate_approval_issue_enabled)
+        self.gate_approval_issue_policy_ref = str(gate_approval_issue_policy_ref or "")
+        self.onboard_authorized = onboard_authorized
+        self.project_onboarding_enabled = bool(project_onboarding_enabled)
+        self.project_onboarding_policy_ref = str(project_onboarding_policy_ref or "")
+        self.stage_successor_authorized = stage_successor_authorized
+        self.successor_release_stage_enabled = bool(successor_release_stage_enabled)
+        self.successor_release_stage_policy_ref = str(successor_release_stage_policy_ref or "")
+        self.admit_p3_promotion_authorized = admit_p3_promotion_authorized
+        self.lifecycle_v2_p3_promotion_enabled = bool(lifecycle_v2_p3_promotion_enabled)
+        self.lifecycle_v2_p3_promotion_policy_ref = str(lifecycle_v2_p3_promotion_policy_ref or "")
+        self.activate_p3_canary_authorized = activate_p3_canary_authorized
+        self.lifecycle_v2_p3_canary_activation_enabled = bool(lifecycle_v2_p3_canary_activation_enabled)
+        self.lifecycle_v2_p3_canary_activation_policy_ref = str(
+            lifecycle_v2_p3_canary_activation_policy_ref or ""
+        )
+        self.register_p3_canary_validate_authorized = register_p3_canary_validate_authorized
+        self.lifecycle_v2_p3_canary_validate_enabled = bool(lifecycle_v2_p3_canary_validate_enabled)
+        self.lifecycle_v2_p3_canary_validate_policy_ref = str(lifecycle_v2_p3_canary_validate_policy_ref or "")
+        self.issue_p3_canary_validate_evidence_authorized = issue_p3_canary_validate_evidence_authorized
+        self.lifecycle_v2_p3_canary_validate_evidence_enabled = bool(lifecycle_v2_p3_canary_validate_evidence_enabled)
+        self.lifecycle_v2_p3_canary_validate_evidence_policy_ref = str(lifecycle_v2_p3_canary_validate_evidence_policy_ref or "")
 
     @staticmethod
     def _projection(
-        envelope: RemoteOperatorEnvelopeV2,
+        envelope: RemoteControlEnvelope,
         result_class: str,
         *,
         detail: Mapping[str, Any] | None = None,
@@ -104,9 +203,163 @@ class RemoteOperatorService:
                 projection[str(key)] = value
         return projection
 
+    @staticmethod
+    def _inspection_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "orchestration.remote-inspection-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": envelope.payload.request_id,
+            "correlation_id": envelope.payload.correlation_id,
+            "project_alias": envelope.payload.project_alias,
+            "operation": envelope.payload.operation,
+            "request_digest": envelope.payload.request_digest,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _activation_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-activation-status-projection.v1",
+            "message_id": envelope.message_id,
+            "activation_request_id": payload.activation_request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _full_plan_activation_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-full-plan-activation-status-projection.v1",
+            "message_id": envelope.message_id,
+            "activation_request_id": payload.activation_request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _gate_approval_issue_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _project_onboarding_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-project-onboarding-status-projection.v1",
+            "message_id": envelope.message_id,
+            "alias": payload.alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _successor_release_stage_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-successor-release-stage-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "phase_request_digest": payload.phase_request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _p3_promotion_admission_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        return {
+            "schema_version": "orchestration.remote-p3-promotion-admission-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _p3_canary_activation_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        admission = payload.admission_request
+        return {
+            "schema_version": "orchestration.remote-p3-canary-activation-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": admission.project_alias,
+            "request_digest": payload.request_digest,
+            "candidate_run_id": admission.candidate_run_id,
+            "result_class": str(result_class),
+        }
+
+    @staticmethod
+    def _p3_canary_validate_status_projection(envelope: RemoteControlEnvelopeV1, result_class: str) -> dict[str, Any]:
+        payload = envelope.payload
+        return {"schema_version": "orchestration.remote-p3-canary-validate-registration-status-projection.v1", "message_id": envelope.message_id, "request_id": payload.request_id, "project_alias": payload.admission_request.project_alias, "request_digest": payload.request_digest, "candidate_run_id": payload.admission_request.candidate_run_id, "result_class": str(result_class)}
+
+    @staticmethod
+    def _p3_canary_validate_evidence_status_projection(envelope: RemoteControlEnvelopeV1, result_class: str) -> dict[str, Any]:
+        payload = envelope.payload
+        return {"schema_version": "orchestration.remote-p3-canary-validate-evidence-issue-status-projection.v1", "message_id": envelope.message_id, "request_id": payload.request_id, "project_alias": payload.admission_request.project_alias, "request_digest": payload.request_digest, "candidate_run_id": payload.admission_request.candidate_run_id, "result_class": str(result_class)}
+
+    @staticmethod
+    def _recover_expired_remote_control(
+        raw: RawControlEnvelope,
+        exc: Exception,
+    ) -> RemoteControlEnvelopeV1 | None:
+        """Recover only a fully authenticated expired v1 request, never malformed input."""
+        if str(exc) != "remote control request expired":
+            return None
+        try:
+            value = json.loads(raw.content.decode("utf-8"))
+            if not isinstance(value, Mapping):
+                return None
+            issued_raw = str(value.get("issued_at") or "")
+            issued_at = datetime.fromisoformat(issued_raw.replace("Z", "+00:00"))
+            envelope = validate_remote_control_envelope(value, now=issued_at)
+        except Exception:
+            return None
+        if (
+            envelope.transport.adapter_id != "GITHUB_CONTROL_V1"
+            or envelope.transport.channel_id != raw.source_channel_id
+            or envelope.transport.source_actor_id != raw.source_actor_id
+            or envelope.transport.source_message_id != raw.source_message_id
+        ):
+            return None
+        return envelope
+
     def _publish_and_ack(
         self,
-        envelope: RemoteOperatorEnvelopeV2,
+        envelope: Any,
         projection: Mapping[str, Any],
     ) -> None:
         self.transport.publish_projection(projection)
@@ -129,15 +382,339 @@ class RemoteOperatorService:
         if resolved_mode == ControlMode.DISABLED:
             return ServicePollResult(mode=resolved_mode.value)
 
-        received = validated = executed = projected = acknowledged = blocked = 0
+        received = validated = executed = diagnosed = projected = acknowledged = blocked = 0
+        inspected = activated = full_plan_activated = onboarded = successor_release_staged = 0
+        p3_promotion_admitted = p3_canary_activated = p3_canary_validate_registered = p3_canary_validate_evidence_issued = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
+            expired_remote_control = False
             try:
                 envelope = self.decode_envelope(raw)
+            except Exception as exc:
+                envelope = self._recover_expired_remote_control(raw, exc)
+                if envelope is None:
+                    raise RemoteOperatorServiceError("INGRESS_FAILED") from exc
+                expired_remote_control = True
+            validated += 1
+
+            if (
+                resolved_mode == ControlMode.LIFECYCLE_V2_P3_CANARY
+                and (
+                    not isinstance(envelope, RemoteControlEnvelopeV1)
+                    or envelope.request_kind != LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND
+                )
+            ):
+                continue
+
+            if expired_remote_control:
+                if envelope.request_kind == HOST_INSPECTION_KIND:
+                    projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_EXPIRED")
+                elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:
+                    projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_EXPIRED")
+                elif envelope.request_kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
+                    projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_EXPIRED")
+                elif envelope.request_kind == GATE_APPROVAL_ISSUE_KIND:
+                    projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_EXPIRED")
+                elif envelope.request_kind == PROJECT_ONBOARDING_KIND:
+                    projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_EXPIRED")
+                elif envelope.request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
+                    projection = self._successor_release_stage_status_projection(
+                        envelope, "SUCCESSOR_RELEASE_STAGE_EXPIRED"
+                    )
+                elif envelope.request_kind == LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND:
+                    projection = self._p3_promotion_admission_status_projection(
+                        envelope, "P3_PROMOTION_ADMISSION_EXPIRED"
+                    )
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND:
+                    projection = self._p3_canary_activation_status_projection(
+                        envelope, "P3_CANARY_ACTIVATION_EXPIRED"
+                    )
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND:
+                    projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_EXPIRED")
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
+                    projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_EXPIRED")
+                else:
+                    raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
+                self._publish_and_ack(envelope, projection)
+                projected += 1
+                acknowledged += 1
+                blocked += 1
+                continue
+
+            if isinstance(envelope, RemoteControlEnvelopeV1):
+                if envelope.request_kind == HOST_INSPECTION_KIND:
+                    if not self.host_inspection_enabled or self.inspect_authorized is None:
+                        projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_DISABLED")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.inspect_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("host inspection result projection is malformed")
+                            inspected += 1
+                        except Exception:
+                            projection = self._inspection_status_projection(envelope, "HOST_INSPECTION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == APPROVED_FULL_PLAN_ACTIVATION_KIND:
+                    if resolved_mode != ControlMode.ACTIVE:
+                        projection = self._full_plan_activation_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.full_plan_activation_enabled or self.activate_full_plan_authorized is None:
+                        projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteFullPlanActivationAuthorization)
+                        or not self.full_plan_activation_policy_ref
+                        or envelope.authorization.full_plan_activation_policy_ref != self.full_plan_activation_policy_ref
+                    ):
+                        projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.activate_full_plan_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("Full Plan activation result projection is malformed")
+                            full_plan_activated += 1
+                        except Exception:
+                            projection = self._full_plan_activation_status_projection(envelope, "FULL_PLAN_ACTIVATION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == GATE_APPROVAL_ISSUE_KIND:
+                    payload_mode = str(envelope.payload.mode)
+                    mode_allowed = (
+                        resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
+                        if payload_mode == "DRY_RUN" else resolved_mode == ControlMode.ACTIVE
+                    )
+                    if not mode_allowed:
+                        projection = self._gate_approval_issue_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.gate_approval_issue_enabled or self.issue_gate_approval_authorized is None:
+                        projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteGateApprovalIssueAuthorization)
+                        or not self.gate_approval_issue_policy_ref
+                        or envelope.authorization.gate_approval_issue_policy_ref != self.gate_approval_issue_policy_ref
+                    ):
+                        projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.issue_gate_approval_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("Gate approval issue projection is malformed")
+                        except Exception:
+                            projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:
+                    if resolved_mode != ControlMode.ACTIVE:
+                        projection = self._activation_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.work_activation_enabled or self.activate_authorized is None:
+                        projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteWorkActivationAuthorization)
+                        or not self.activation_policy_ref
+                        or envelope.authorization.activation_policy_ref != self.activation_policy_ref
+                    ):
+                        projection = self._activation_status_projection(envelope, "ACTIVATION_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.activate_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("work activation result projection is malformed")
+                            activated += 1
+                        except Exception:
+                            projection = self._activation_status_projection(envelope, "WORK_ACTIVATION_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == PROJECT_ONBOARDING_KIND:
+                    payload_mode = str(envelope.payload.mode)
+                    mode_allowed = (
+                        resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
+                        if payload_mode == "DRY_RUN"
+                        else resolved_mode == ControlMode.ACTIVE
+                    )
+                    if not mode_allowed:
+                        projection = self._project_onboarding_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.project_onboarding_enabled or self.onboard_authorized is None:
+                        projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteProjectOnboardingAuthorization)
+                        or not self.project_onboarding_policy_ref
+                        or envelope.authorization.project_onboarding_policy_ref != self.project_onboarding_policy_ref
+                    ):
+                        projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.onboard_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("project onboarding result projection is malformed")
+                            onboarded += 1
+                        except Exception:
+                            projection = self._project_onboarding_status_projection(envelope, "PROJECT_ONBOARDING_ERROR")
+                            blocked += 1
+                elif envelope.request_kind == SUCCESSOR_RELEASE_STAGE_KIND:
+                    payload_mode = str(envelope.payload.mode)
+                    mode_allowed = (
+                        resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
+                        if payload_mode == "DRY_RUN"
+                        else resolved_mode == ControlMode.ACTIVE
+                    )
+                    if not mode_allowed:
+                        projection = self._successor_release_stage_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.successor_release_stage_enabled or self.stage_successor_authorized is None:
+                        projection = self._successor_release_stage_status_projection(
+                            envelope, "SUCCESSOR_RELEASE_STAGE_DISABLED"
+                        )
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteSuccessorReleaseStageAuthorization)
+                        or not self.successor_release_stage_policy_ref
+                        or envelope.authorization.successor_release_stage_policy_ref
+                        != self.successor_release_stage_policy_ref
+                    ):
+                        projection = self._successor_release_stage_status_projection(
+                            envelope, "SUCCESSOR_RELEASE_STAGE_AUTHORIZATION_MISMATCH"
+                        )
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.stage_successor_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError(
+                                    "successor release stage result projection is malformed"
+                                )
+                            successor_release_staged += 1
+                        except Exception:
+                            projection = self._successor_release_stage_status_projection(
+                                envelope, "SUCCESSOR_RELEASE_STAGE_ERROR"
+                            )
+                            blocked += 1
+                elif envelope.request_kind == LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND:
+                    if resolved_mode not in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}:
+                        projection = self._p3_promotion_admission_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif (
+                        not self.lifecycle_v2_p3_promotion_enabled
+                        or self.admit_p3_promotion_authorized is None
+                    ):
+                        projection = self._p3_promotion_admission_status_projection(
+                            envelope, "P3_PROMOTION_ADMISSION_DISABLED"
+                        )
+                        blocked += 1
+                    elif (
+                        not isinstance(
+                            envelope.authorization,
+                            RemoteLifecycleV2P3PromotionAuthorization,
+                        )
+                        or not self.lifecycle_v2_p3_promotion_policy_ref
+                        or envelope.authorization.lifecycle_v2_p3_promotion_policy_ref
+                        != self.lifecycle_v2_p3_promotion_policy_ref
+                    ):
+                        projection = self._p3_promotion_admission_status_projection(
+                            envelope,
+                            "P3_PROMOTION_ADMISSION_AUTHORIZATION_MISMATCH",
+                        )
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.admit_p3_promotion_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError(
+                                    "P3 promotion admission result projection is malformed"
+                                )
+                            p3_promotion_admitted += 1
+                        except Exception:
+                            projection = self._p3_promotion_admission_status_projection(
+                                envelope, "P3_PROMOTION_ADMISSION_ERROR"
+                            )
+                            blocked += 1
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND:
+                    if resolved_mode != ControlMode.LIFECYCLE_V2_P3_CANARY:
+                        projection = self._p3_canary_activation_status_projection(
+                            envelope, "MODE_BLOCKED"
+                        )
+                        blocked += 1
+                    elif (
+                        not self.lifecycle_v2_p3_canary_activation_enabled
+                        or self.activate_p3_canary_authorized is None
+                    ):
+                        projection = self._p3_canary_activation_status_projection(
+                            envelope, "P3_CANARY_ACTIVATION_DISABLED"
+                        )
+                        blocked += 1
+                    elif (
+                        not isinstance(
+                            envelope.authorization,
+                            RemoteLifecycleV2P3CanaryActivationAuthorization,
+                        )
+                        or not self.lifecycle_v2_p3_canary_activation_policy_ref
+                        or envelope.authorization.lifecycle_v2_p3_canary_activation_policy_ref
+                        != self.lifecycle_v2_p3_canary_activation_policy_ref
+                    ):
+                        projection = self._p3_canary_activation_status_projection(
+                            envelope, "P3_CANARY_ACTIVATION_AUTHORIZATION_MISMATCH"
+                        )
+                        blocked += 1
+                    else:
+                        try:
+                            projection = self.activate_p3_canary_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError(
+                                    "P3 canary activation result projection is malformed"
+                                )
+                            p3_canary_activated += 1
+                        except Exception:
+                            projection = self._p3_canary_activation_status_projection(
+                                envelope, "P3_CANARY_ACTIVATION_ERROR"
+                            )
+                            blocked += 1
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND:
+                    if resolved_mode not in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}:
+                        projection = self._p3_canary_validate_status_projection(envelope, "MODE_BLOCKED"); blocked += 1
+                    elif not self.lifecycle_v2_p3_canary_validate_enabled or self.register_p3_canary_validate_authorized is None:
+                        projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_DISABLED"); blocked += 1
+                    elif not isinstance(envelope.authorization, RemoteLifecycleV2P3CanaryValidateAuthorization) or not self.lifecycle_v2_p3_canary_validate_policy_ref or envelope.authorization.lifecycle_v2_p3_canary_validate_policy_ref != self.lifecycle_v2_p3_canary_validate_policy_ref:
+                        projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_AUTHORIZATION_MISMATCH"); blocked += 1
+                    else:
+                        try:
+                            projection = self.register_p3_canary_validate_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("P3 validation registration result projection is malformed")
+                            p3_canary_validate_registered += 1
+                        except Exception:
+                            projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_ERROR"); blocked += 1
+                elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
+                    if resolved_mode not in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}:
+                        projection = self._p3_canary_validate_evidence_status_projection(envelope, "MODE_BLOCKED"); blocked += 1
+                    elif not self.lifecycle_v2_p3_canary_validate_evidence_enabled or self.issue_p3_canary_validate_evidence_authorized is None:
+                        projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_DISABLED"); blocked += 1
+                    elif not isinstance(envelope.authorization, RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization) or not self.lifecycle_v2_p3_canary_validate_evidence_policy_ref or envelope.authorization.lifecycle_v2_p3_canary_validate_evidence_policy_ref != self.lifecycle_v2_p3_canary_validate_evidence_policy_ref:
+                        projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_AUTHORIZATION_MISMATCH"); blocked += 1
+                    else:
+                        try:
+                            projection = self.issue_p3_canary_validate_evidence_authorized(envelope)
+                            if not isinstance(projection, Mapping):
+                                raise RemoteOperatorServiceError("P3 validation evidence issue result projection is malformed")
+                            p3_canary_validate_evidence_issued += 1
+                        except Exception:
+                            projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_ERROR"); blocked += 1
+                else:
+                    raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
+                self._publish_and_ack(envelope, projection)
+                projected += 1
+                acknowledged += 1
+                continue
+
+            try:
                 decision = self.ingress(envelope)
             except Exception as exc:
                 raise RemoteOperatorServiceError("INGRESS_FAILED") from exc
-            validated += 1
 
             if not decision.accepted:
                 projection = self._projection(envelope, decision.result_class)
@@ -151,12 +728,24 @@ class RemoteOperatorService:
             if directive is None:
                 raise RemoteOperatorServiceError("accepted ingress omitted directive")
 
+            is_diagnostic = isinstance(envelope, RemoteOperatorEnvelopeV3)
+
             if resolved_mode == ControlMode.OBSERVE_ONLY:
                 projection = self._projection(envelope, "OBSERVED")
             elif resolved_mode == ControlMode.CONTROL_READ_ONLY:
                 if directive.state_change_required:
                     projection = self._projection(envelope, "MODE_BLOCKED")
                     blocked += 1
+                elif is_diagnostic:
+                    if self.execute_read_only is None:
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_UNAVAILABLE")
+                        blocked += 1
+                    else:
+                        result = self.execute_read_only(envelope, directive, envelope.read_only_request)
+                        if not isinstance(result, Mapping):
+                            raise RemoteOperatorServiceError("diagnostic execution result is malformed")
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_COMPLETED", detail=result)
+                        diagnosed += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
             elif resolved_mode == ControlMode.CONTROL_MUTATION_CANARY:
@@ -174,8 +763,14 @@ class RemoteOperatorService:
                             detail=result,
                         )
                         executed += 1
+                elif is_diagnostic:
+                    projection = self._projection(envelope, "MODE_BLOCKED")
+                    blocked += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
+            elif resolved_mode == ControlMode.LIFECYCLE_V2_P3_CANARY:
+                projection = self._projection(envelope, "MODE_BLOCKED")
+                blocked += 1
             elif resolved_mode == ControlMode.ACTIVE:
                 if directive.state_change_required:
                     result = self.execute_authorized(envelope, directive)
@@ -187,9 +782,19 @@ class RemoteOperatorService:
                         detail=result,
                     )
                     executed += 1
+                elif is_diagnostic:
+                    if self.execute_read_only is None:
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_UNAVAILABLE")
+                        blocked += 1
+                    else:
+                        result = self.execute_read_only(envelope, directive, envelope.read_only_request)
+                        if not isinstance(result, Mapping):
+                            raise RemoteOperatorServiceError("diagnostic execution result is malformed")
+                        projection = self._projection(envelope, "READ_ONLY_DIAGNOSTIC_COMPLETED", detail=result)
+                        diagnosed += 1
                 else:
                     projection = self._projection(envelope, "READ_ONLY_ACCEPTED")
-            else:  # pragma: no cover - enum exhaustiveness guard
+            else:
                 raise RemoteOperatorServiceError("UNKNOWN_MODE")
 
             self._publish_and_ack(envelope, projection)
@@ -201,7 +806,17 @@ class RemoteOperatorService:
             received=received,
             validated=validated,
             executed=executed,
+            diagnosed=diagnosed,
             projected=projected,
             acknowledged=acknowledged,
             blocked=blocked,
+            inspected=inspected,
+            activated=activated,
+            full_plan_activated=full_plan_activated,
+            onboarded=onboarded,
+            successor_release_staged=successor_release_staged,
+            p3_promotion_admitted=p3_promotion_admitted,
+            p3_canary_activated=p3_canary_activated,
+            p3_canary_validate_registered=p3_canary_validate_registered,
+            p3_canary_validate_evidence_issued=p3_canary_validate_evidence_issued,
         )

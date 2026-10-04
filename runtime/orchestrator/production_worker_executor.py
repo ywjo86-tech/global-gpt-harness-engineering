@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .lv_execution_package import canonical_json_bytes
+from .contract_adapter import MAPPING_ROOT_ENV
 from .nvidia_adapter import run_nvidia_reasoning_task
 from .git_provenance import GitProvenanceError, touched_paths_between
 from .provider_router import (
@@ -26,12 +27,14 @@ from .provider_router import (
     ProviderRouterContractError,
     STATE_CHANGING_CAPABILITIES,
     normalize_capabilities_v2,
+    project_read_only_provider_capabilities,
     validate_router_envelope,
 )
 from .schemas import WorkerRequest
 from .tool_authorization import build_contract_candidate
 from .validation_toolchain import (
-    ValidationToolchainError, resolve_validation_commands, run_command_group, validate_profile_resolution,
+    ValidationToolchainError, resolve_validation_commands, run_command_group,
+    should_defer_evidence_manifest_integrity, validate_profile_resolution,
 )
 from .provider_action_execution import (
     PROVIDER_ACTION_BACKEND, ProviderActionExecutionError, execute_provider_action_proposal,
@@ -41,7 +44,7 @@ from .provider_execution_registry import (
 )
 from .production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, LOCAL_CHILD, GatewayError,
-    HostExecutionGateway, UnixSocketGatewayTransport, build_gateway_request,
+    HostExecutionGateway, ManagedHostRunner, UnixSocketGatewayTransport, build_gateway_request,
     resolve_gateway_socket_path, validate_gateway_request,
 )
 
@@ -2326,6 +2329,13 @@ def _command(root: Path, argv: list[str], timeout: int = 900, *,
                 "stderr_sha256": hashlib.sha256(b"").hexdigest()}
 
 
+def _validation_command_env() -> dict[str, str]:
+    """Remove Full Plan control-plane mapping state from product validation."""
+    env = dict(os.environ)
+    env.pop(MAPPING_ROOT_ENV, None)
+    return env
+
+
 def _skipped_command(label: str) -> dict[str, Any]:
     return {"command": [label], "exit_code": 0, "timeout": False, "skipped": True,
             "stdout_sha256": hashlib.sha256(b"").hexdigest(),
@@ -2432,6 +2442,37 @@ def _independent_verification_provenance(commands: Mapping[str, Any]) -> dict[st
     }
 
 
+def _bounded_validation_failure_evidence(
+    commands: Mapping[str, Any], feedback: Sequence[str],
+) -> dict[str, Any]:
+    """Persist only bounded, redacted validation diagnostics for failed verification."""
+    provenance = _independent_verification_provenance(commands)
+    if provenance["worker_verification_failure_step"] == "NONE":
+        return {}
+    selected: list[str] = []
+    remaining = MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS
+    for raw in feedback:
+        item = _redact(str(raw)).strip()
+        if not item or item in selected:
+            continue
+        bounded = item[:remaining]
+        if not bounded:
+            break
+        selected.append(bounded)
+        remaining -= len(bounded)
+        if remaining <= 0:
+            break
+    if not selected:
+        selected = ["validation command failed without classified exception text"]
+    return {
+        "schema_version": "orchestration.validation-failure-evidence.v1",
+        "failure_step": provenance["worker_verification_failure_step"],
+        "failure_category": provenance["worker_verification_failure_category"],
+        "exception_bucket": provenance["worker_verification_exception_bucket"],
+        "feedback": selected,
+    }
+
+
 def _provider_action_candidate_focused_validator(
     *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
 ) -> Callable[[Mapping[str, Any]], str]:
@@ -2502,7 +2543,14 @@ def _sealed_external_validation_python(request: WorkerRequest) -> str | None:
     policy = request.extra_context.get("interpreter_policy_id")
     if policy != "IMMUTABLE_EXTERNAL_INTERPRETER":
         return None
-    if not isinstance(toolchain, Mapping) or toolchain.get("profile_ids") != ["PYTHON_UNITTEST_EXTERNAL"]:
+    if not isinstance(toolchain, Mapping):
+        raise ProductionWorkerError("external Python validation contract is missing or mismatched")
+    profiles = toolchain.get("profile_ids")
+    if not isinstance(profiles, list):
+        raise ProductionWorkerError("external Python validation contract is missing or mismatched")
+    if "PYTHON_UNITTEST_EXTERNAL" not in profiles:
+        return None
+    if profiles != ["PYTHON_UNITTEST_EXTERNAL"]:
         raise ProductionWorkerError("external Python validation contract is missing or mismatched")
     executables: set[str] = set()
     for field in ("focused", "full", "compile"):
@@ -2744,6 +2792,17 @@ def _verification_only_authorized(request: WorkerRequest) -> bool:
     )
 
 
+def _should_defer_evidence_manifest_integrity_for_request(
+    request: WorkerRequest, root: Path, owned: list[str],
+) -> bool:
+    """Historical satisfied recertification must not re-seal legacy final evidence."""
+    binding = request.extra_context.get("canonical_authority_binding")
+    criteria = request.task.validation_criteria
+    if isinstance(binding, Mapping) and isinstance(binding.get("satisfied_recertification"), Mapping):
+        criteria = ()
+    return should_defer_evidence_manifest_integrity(root, owned, criteria)
+
+
 def _read_only_execution_authorized(request: WorkerRequest) -> bool:
     """Permit NVIDIA execution only for a sealed, non-mutating Router decision."""
     binding = request.extra_context.get("canonical_authority_binding")
@@ -2763,7 +2822,12 @@ def _read_only_execution_authorized(request: WorkerRequest) -> bool:
         routed_request, decision = validate_router_envelope(route)
     except ProviderRouterContractError:
         return False
-    capabilities = normalize_capabilities_v2(request.task.required_capabilities)
+    try:
+        capabilities = project_read_only_provider_capabilities(
+            request.task.required_capabilities
+        )
+    except ProviderRouterContractError:
+        return False
     return (
         decision.eligible
         and decision.stage in {"PREPARE", "VERIFY", "REVIEW"}
@@ -3019,6 +3083,9 @@ def execute_production_worker(request: WorkerRequest, *,
     if pending_paths and any(not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned) for path in pending_paths):
         raise ProductionWorkerError("production worker changed files outside owned scope")
     pre_result_partial_recovery = request.extra_context.get("pre_result_partial_recovery") is True
+    defer_evidence_manifest_integrity = _should_defer_evidence_manifest_integrity_for_request(
+        request, root, owned,
+    )
     if pre_result_partial_recovery:
         if int(request.extra_context.get("attempt", 0)) <= 1 or not pending_paths:
             raise ProductionWorkerError("pre-result partial recovery binding is invalid")
@@ -3033,6 +3100,7 @@ def execute_production_worker(request: WorkerRequest, *,
             resolve_validation_commands(
                 root, owned, allow_deferred=False,
                 python_executable=_sealed_external_validation_python(request),
+                defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
             )
         except (ValidationToolchainError, ProductionWorkerError):
             materialized_partial_recovery = False
@@ -3136,6 +3204,9 @@ def execute_production_worker(request: WorkerRequest, *,
                     request, decision=route_decision, baseline=baseline, owned=owned,
                     output_dir=output, provider_runner=provider_action_runner,
                     security_scan=_provider_action_security_scan, timeout=timeout,
+                    candidate_validator=_provider_action_candidate_focused_validator(
+                        root=root, baseline=baseline, owned=owned, request=request, timeout=timeout,
+                    ),
                 )
             except ProviderActionExecutionError as exc:
                 raise ProductionWorkerError(str(exc)) from exc
@@ -3184,11 +3255,19 @@ def execute_production_worker(request: WorkerRequest, *,
                         endpoint_path = resolve_gateway_socket_path(root, str(endpoint))
                     except GatewayError as exc:
                         raise ProductionWorkerError("unsafe HOST_GATEWAY socket endpoint") from exc
-                    gateway_transport = UnixSocketGatewayTransport(endpoint_path, workspace_root=root)
-                execution = _production_host_execution_gateway(gateway_transport).execute(
-                    gateway_request, prompt=prompt_bytes, last_message=execution_last,
-                    timeout=timeout, cancel_path=cancel_path,
-                )
+                    ledger_root = output / "host-gateway-ledger"
+                    with ManagedHostRunner(
+                        endpoint_path, ledger_root, workspace_root=root, timeout=timeout,
+                    ) as managed_transport:
+                        execution = _production_host_execution_gateway(managed_transport).execute(
+                            gateway_request, prompt=prompt_bytes, last_message=execution_last,
+                            timeout=timeout, cancel_path=cancel_path,
+                        )
+                else:
+                    execution = _production_host_execution_gateway(gateway_transport).execute(
+                        gateway_request, prompt=prompt_bytes, last_message=execution_last,
+                        timeout=timeout, cancel_path=cancel_path,
+                    )
             except GatewayError as exc:
                 raise ProductionWorkerError(str(exc)) from exc
             stdout, stderr = execution.stdout, execution.stderr
@@ -3396,6 +3475,7 @@ def execute_production_worker(request: WorkerRequest, *,
         validation_plan = resolve_validation_commands(
             root, owned, allow_deferred=False,
             python_executable=_sealed_external_validation_python(request),
+            defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
         )
         expected_profiles = sealed_toolchain.get("profile_ids", []) if isinstance(sealed_toolchain, Mapping) else []
         if expected_profiles:
@@ -3414,7 +3494,8 @@ def execute_production_worker(request: WorkerRequest, *,
             if normalized and normalized[0] == ".venv/bin/python":
                 normalized[0] = str(command_root / ".venv" / "bin" / "python")
             result = _command(
-                command_root, normalized, classify_collection=_is_test_runner(normalized),
+                command_root, normalized, env=_validation_command_env(),
+                classify_collection=_is_test_runner(normalized),
                 capture_feedback=feedback_sink is not None,
             )
             transient = result.pop("_transient_validation_feedback", "")
@@ -3501,6 +3582,7 @@ def execute_production_worker(request: WorkerRequest, *,
         try:
             validation_plan = resolve_validation_commands(
                 root, owned, allow_deferred=False, python_executable=_sealed_external_validation_python(request),
+                defer_evidence_manifest_integrity=defer_evidence_manifest_integrity,
             )
             if expected_profiles:
                 validate_profile_resolution(expected_profiles, validation_plan.profile_ids)
@@ -3546,6 +3628,11 @@ def execute_production_worker(request: WorkerRequest, *,
     process_evidence.update(_independent_verification_metadata(commands, len(request.task.validation_criteria)))
     process_evidence["independent_verification_steps"] = _independent_verification_steps(commands)
     process_evidence.update(_independent_verification_provenance(commands))
+    failure_evidence = _bounded_validation_failure_evidence(commands, validation_feedback)
+    if failure_evidence:
+        process_evidence["validation_failure_evidence"] = failure_evidence
+    else:
+        process_evidence.pop("validation_failure_evidence", None)
     process_path.write_bytes(canonical_json_bytes(process_evidence))
     validation_events = ["VALIDATION_STARTED"]
     validation_events.extend("VALIDATION_REMEDIATION_COMPLETED" for _ in range(validation_remediation_attempts))

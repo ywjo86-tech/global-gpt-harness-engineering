@@ -13,7 +13,10 @@ import json
 import os
 import socket
 import struct
+import subprocess
+import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -26,6 +29,11 @@ from .tool_authorization import (
 )
 
 GATEWAY_CONTRACT_VERSION = "HOST-GATEWAY.v1"
+EFFECT_RECONCILIATION_REQUEST_SCHEMA = "orchestration.effect-reconciliation-request.v1"
+EFFECT_RECONCILIATION_RESULT_SCHEMA = "orchestration.effect-reconciliation-result.v1"
+_EFFECT_RECONCILIATION_STATUSES = frozenset({"NOT_FOUND", "PENDING", "APPLIED", "FAILED", "UNKNOWN"})
+_SHA40_OR_64 = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 LOCAL_CHILD = "LOCAL_CHILD"
 HOST_GATEWAY = "HOST_GATEWAY"
 SUPPORTED_BACKENDS = frozenset({LOCAL_CHILD, HOST_GATEWAY})
@@ -70,6 +78,141 @@ def _request_id(payload: Mapping[str, Any]) -> str:
 def _required(payload: Mapping[str, Any], fields: tuple[str, ...]) -> None:
     if not isinstance(payload, Mapping) or any(field not in payload for field in fields):
         raise GatewayError("gateway schema is incomplete")
+
+
+def _effect_identity(value: object, label: str) -> str:
+    text = str(value or "")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,179}", text):
+        raise GatewayError(f"effect reconciliation {label} is invalid")
+    return text
+
+
+def build_effect_reconciliation_request(
+    *, project_id: str, run_id: str, task_id: str, cycle_id: str,
+    effect_intent_id: str, authority_binding_digest: str,
+    continuation_contract_digest: str, source_digest: str, environment_digest: str,
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": EFFECT_RECONCILIATION_REQUEST_SCHEMA,
+        "project_id": _effect_identity(project_id, "project_id"),
+        "run_id": _effect_identity(run_id, "run_id"),
+        "task_id": _effect_identity(task_id, "task_id"),
+        "cycle_id": _effect_identity(cycle_id, "cycle_id"),
+        "effect_intent_id": str(effect_intent_id or ""),
+        "authority_binding_digest": str(authority_binding_digest or ""),
+        "continuation_contract_digest": str(continuation_contract_digest or ""),
+        "source_digest": str(source_digest or ""),
+        "environment_digest": str(environment_digest or ""),
+    }
+    if (
+        not _SHA256.fullmatch(payload["effect_intent_id"])
+        or not _SHA256.fullmatch(payload["authority_binding_digest"])
+        or not _SHA256.fullmatch(payload["continuation_contract_digest"])
+        or not _SHA40_OR_64.fullmatch(payload["source_digest"])
+        or not _SHA256.fullmatch(payload["environment_digest"])
+    ):
+        raise GatewayError("effect reconciliation request digest binding is invalid")
+    payload["request_digest"] = _digest(payload)
+    return payload
+
+
+def validate_effect_reconciliation_request(payload: Mapping[str, Any]) -> dict[str, Any]:
+    fields = (
+        "schema_version", "project_id", "run_id", "task_id", "cycle_id",
+        "effect_intent_id", "authority_binding_digest", "continuation_contract_digest",
+        "source_digest", "environment_digest", "request_digest",
+    )
+    _required(payload, fields)
+    expected = build_effect_reconciliation_request(
+        project_id=str(payload["project_id"]), run_id=str(payload["run_id"]),
+        task_id=str(payload["task_id"]), cycle_id=str(payload["cycle_id"]),
+        effect_intent_id=str(payload["effect_intent_id"]),
+        authority_binding_digest=str(payload["authority_binding_digest"]),
+        continuation_contract_digest=str(payload["continuation_contract_digest"]),
+        source_digest=str(payload["source_digest"]),
+        environment_digest=str(payload["environment_digest"]),
+    )
+    if payload.get("schema_version") != EFFECT_RECONCILIATION_REQUEST_SCHEMA:
+        raise GatewayError("effect reconciliation request schema mismatch")
+    if payload.get("request_digest") != expected["request_digest"]:
+        raise GatewayError("effect reconciliation request digest mismatch")
+    return dict(payload)
+
+
+def build_effect_reconciliation_result(
+    request: Mapping[str, Any], *, status: str, canonical_effect_id: str = "",
+    canonical_receipt_ref: str = "", receipt_digest: str = "",
+    evidence_ref: str = "", observed_at: str = "",
+) -> dict[str, Any]:
+    request = validate_effect_reconciliation_request(request)
+    if status not in _EFFECT_RECONCILIATION_STATUSES:
+        raise GatewayError("effect reconciliation status is invalid")
+    if status == "APPLIED":
+        if (
+            not canonical_effect_id or not canonical_receipt_ref or not evidence_ref or not observed_at
+            or not _SHA256.fullmatch(str(receipt_digest or ""))
+        ):
+            raise GatewayError("APPLIED effect reconciliation requires canonical receipt evidence")
+    payload = {
+        "schema_version": EFFECT_RECONCILIATION_RESULT_SCHEMA,
+        "owning_domain": "FULL_MCP",
+        "project_id": request["project_id"], "run_id": request["run_id"],
+        "task_id": request["task_id"], "cycle_id": request["cycle_id"],
+        "effect_intent_id": request["effect_intent_id"],
+        "authority_binding_digest": request["authority_binding_digest"],
+        "continuation_contract_digest": request["continuation_contract_digest"],
+        "source_digest": request["source_digest"],
+        "environment_digest": request["environment_digest"],
+        "request_digest": request["request_digest"],
+        "status": status,
+        "canonical_effect_id": str(canonical_effect_id or ""),
+        "canonical_receipt_ref": str(canonical_receipt_ref or ""),
+        "receipt_digest": str(receipt_digest or ""),
+        "evidence_ref": str(evidence_ref or ""),
+        "observed_at": str(observed_at or ""),
+    }
+    payload["result_digest"] = _digest(payload)
+    return payload
+
+
+def validate_effect_reconciliation_result(
+    payload: Mapping[str, Any], *, expected_request: Mapping[str, Any],
+) -> dict[str, Any]:
+    request = validate_effect_reconciliation_request(expected_request)
+    fields = (
+        "schema_version", "owning_domain", "project_id", "run_id", "task_id", "cycle_id",
+        "effect_intent_id", "authority_binding_digest", "continuation_contract_digest",
+        "source_digest", "environment_digest", "request_digest", "status",
+        "canonical_effect_id", "canonical_receipt_ref", "receipt_digest",
+        "evidence_ref", "observed_at", "result_digest",
+    )
+    _required(payload, fields)
+    if payload.get("schema_version") != EFFECT_RECONCILIATION_RESULT_SCHEMA:
+        raise GatewayError("effect reconciliation result schema mismatch")
+    if payload.get("owning_domain") != "FULL_MCP":
+        raise GatewayError("effect reconciliation owning domain mismatch")
+    for key in (
+        "project_id", "run_id", "task_id", "cycle_id", "effect_intent_id",
+        "authority_binding_digest", "continuation_contract_digest",
+        "source_digest", "environment_digest", "request_digest",
+    ):
+        if payload.get(key) != request.get(key):
+            raise GatewayError("effect reconciliation binding mismatch")
+    status = payload.get("status")
+    if status not in _EFFECT_RECONCILIATION_STATUSES:
+        raise GatewayError("effect reconciliation result status is invalid")
+    if status == "APPLIED" and (
+        not payload.get("canonical_effect_id")
+        or not payload.get("canonical_receipt_ref")
+        or not payload.get("evidence_ref")
+        or not payload.get("observed_at")
+        or not _SHA256.fullmatch(str(payload.get("receipt_digest") or ""))
+    ):
+        raise GatewayError("APPLIED effect reconciliation receipt is invalid")
+    unsigned = dict(payload); digest = unsigned.pop("result_digest")
+    if not isinstance(digest, str) or _digest(unsigned) != digest:
+        raise GatewayError("effect reconciliation result digest mismatch")
+    return dict(payload)
 
 
 def resolve_gateway_socket_path(workspace_root: str | Path, endpoint: str) -> Path:
@@ -601,6 +744,69 @@ class UnixSocketGatewayTransport:
             raise GatewayError("host runner response payload is invalid") from exc
 
 
+class ManagedHostRunner:
+    """Per-request broker-native HOST_GATEWAY lifecycle; never a persistent daemon."""
+
+    def __init__(self, socket_path: str | Path, ledger_root: str | Path, *,
+                 workspace_root: str | Path, timeout: int) -> None:
+        self.socket_path = Path(socket_path).absolute()
+        self.ledger_root = Path(ledger_root).absolute()
+        self.workspace_root = Path(workspace_root).resolve()
+        self.timeout = max(1, int(timeout))
+        self.process: subprocess.Popen[bytes] | None = None
+
+    def __enter__(self) -> UnixSocketGatewayTransport:
+        if self.socket_path.exists() or self.socket_path.is_symlink():
+            raise GatewayError("host runner socket already exists")
+        runtime_root = Path(__file__).resolve().parents[2]
+        argv = [
+            sys.executable, "-m", "runtime.orchestrator.host_runner_entry",
+            "--socket", str(self.socket_path),
+            "--ledger", str(self.ledger_root),
+            "--timeout", str(self.timeout),
+        ]
+        self.process = subprocess.Popen(
+            argv, cwd=str(runtime_root), stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + min(5.0, float(self.timeout))
+        while time.monotonic() < deadline:
+            if self.socket_path.is_socket() and not self.socket_path.is_symlink():
+                return UnixSocketGatewayTransport(
+                    self.socket_path, workspace_root=self.workspace_root,
+                )
+            if self.process.poll() is not None:
+                self.close()
+                raise GatewayError("host runner exited before socket ready")
+            time.sleep(0.01)
+        self.close()
+        raise GatewayError("host runner socket startup timed out")
+
+    def close(self) -> None:
+        process = self.process
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+        for _ in range(50):
+            if not self.socket_path.exists():
+                break
+            time.sleep(0.01)
+        if self.socket_path.exists():
+            if self.socket_path.is_symlink() or not self.socket_path.is_socket():
+                raise GatewayError("host runner left unsafe socket path")
+            stat = self.socket_path.stat()
+            if stat.st_uid != os.getuid() or stat.st_mode & 0o077:
+                raise GatewayError("host runner left unsafe socket ownership or mode")
+            self.socket_path.unlink()
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+
 class UnixSocketHostRunner:
     """Single-request host runner for tests and an explicit future service entrypoint."""
 
@@ -614,6 +820,8 @@ class UnixSocketHostRunner:
         self.broker_native = broker_native; self.runtime_handler = runtime_handler
 
     def serve_once(self, *, timeout: int = 1800) -> None:
+        if timeout <= 0:
+            raise GatewayError("HOST_GATEWAY_TIMEOUT_INVALID")
         if self.socket_path.exists():
             raise GatewayError("runner socket already exists")
         # Linux AF_UNIX pathname is limited to 108 bytes including NUL.
@@ -632,7 +840,11 @@ class UnixSocketHostRunner:
             except OSError as exc:
                 raise GatewayError("UDS_LISTEN") from exc
             with server:
-                conn, _ = server.accept()
+                server.settimeout(float(timeout))
+                try:
+                    conn, _ = server.accept()
+                except socket.timeout as exc:
+                    raise GatewayError("HOST_GATEWAY_ACCEPT_TIMEOUT") from exc
                 with conn:
                     if hasattr(socket, "SO_PEERCRED"):
                         _, uid, _ = struct.unpack("3i", conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))

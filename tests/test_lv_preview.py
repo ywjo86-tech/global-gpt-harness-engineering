@@ -9,12 +9,18 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from runtime.orchestrator.cli import main
 from runtime.orchestrator.approval_hash import calculate_record_hash
 from runtime.orchestrator.contract_adapter import sha256_file, load_project_mapping, evaluate_canonical_state
-from runtime.orchestrator.lv_preview import LVPreviewValidationError, parse_lv_definition, preview_lv_read_only
+from runtime.orchestrator.lv_preview import (
+    LVPreviewValidationError,
+    _validate_sealed_project_authority_state,
+    parse_lv_definition,
+    preview_lv_read_only,
+)
 from runtime.orchestrator.read_only_inspector import ReadOnlyValidationError
 from tests import test_read_only_inspect as read_only_fixtures
 from tests.support.lv_preview_fixture import build_lv_preview_fixture
@@ -124,6 +130,143 @@ class LVPreviewTest(unittest.TestCase):
                  patch("runtime.orchestrator.lv_preview.evaluate_canonical_state", return_value=state):
                 preview = preview_lv_read_only(root, "GATE-1", "G1-LV3-1")
             self.assertEqual(preview["selected_lv"]["lv_id"], "G1-LV3-1")
+
+    def test_sealed_project_authority_does_not_reuse_historical_static_approval(self) -> None:
+        with TemporaryDirectory() as directory:
+            root, mapping_dir = self._fixture(Path(directory))
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir):
+                mapping = load_project_mapping(root)
+                state = dict(evaluate_canonical_state(mapping))
+            state.update(
+                state="GATE1_RESUME_READY",
+                transition_authorized=True,
+                gate_1_started=True,
+                approval_id="SEALED-APPROVAL",
+                approval_record_hash="a" * 64,
+            )
+            static_failure = ReadOnlyValidationError(
+                {
+                    "business_gate_state": {"status": "not_evaluated"},
+                    "business_lv_approval_state": {"status": "invalid_static_evidence"},
+                    "codex_runtime_sandbox_approval_state": {"business_approval_reused": False},
+                }
+            )
+            with patch("runtime.orchestrator.contract_adapter.MAPPING_DIR", mapping_dir), \
+                 patch("runtime.orchestrator.lv_preview.inspect_read_only", side_effect=static_failure), \
+                 patch("runtime.orchestrator.lv_preview._validate_sealed_project_authority_state") as sealed_validator:
+                with self.assertRaises(ReadOnlyValidationError):
+                    preview_lv_read_only(root, "GATE-1", "G1-LV3-1", canonical_state_override=state)
+                preview = preview_lv_read_only(
+                    root,
+                    "GATE-1",
+                    "G1-LV3-1",
+                    canonical_state_override=state,
+                    sealed_project_authority=True,
+                )
+            sealed_validator.assert_called_once()
+            self.assertEqual(
+                preview["business_gate_state"]["status"],
+                "historical_static_not_execution_authority",
+            )
+            self.assertEqual(
+                preview["business_lv_approval_state"]["status"],
+                "historical_static_not_execution_authority",
+            )
+            self.assertFalse(preview["business_lv_approval_state"]["reused_as_runtime_approval"])
+
+    def test_sealed_project_authority_state_revalidates_exact_gate_approval(self) -> None:
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "project"
+            root.mkdir()
+            plan = root / "DEVELOPMENT_PLAN.txt"
+            plan.write_text("plan", encoding="utf-8")
+            projection = root / "task-lv.json"
+            projection.write_text("{}", encoding="utf-8")
+            evidence = base / "state" / "_workspace" / "global-gate" / "PROJECT" / "approval" / "approval.json"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_text("{}", encoding="utf-8")
+            mapping = SimpleNamespace(
+                project_id="PROJECT",
+                canonical_source=plan,
+                canonical_sha256="a" * 64,
+                task_lv_projection_path=projection,
+                task_lv_projection_sha256="b" * 64,
+            )
+            state = {
+                "project_id": "PROJECT",
+                "state": "GATE1_RESUME_READY",
+                "transition_authorized": True,
+                "gate_1_started": True,
+                "gate_id": "GATE-R01",
+                "active_scope": ["TASK-R01"],
+                "approval_id": "APR-1",
+                "approval_record_hash": "c" * 64,
+                "requirements_sha256": "a" * 64,
+                "head": "d" * 40,
+                "checkpoint_commit": "e" * 40,
+                "branch": "main",
+                "approval_evidence_path": str(evidence),
+                "owned_files": [],
+            }
+            transition = {
+                "schema_version": "orchestration.canonical-active-lv-transition.v1",
+                "project_id": "PROJECT",
+                "gate_id": "GATE-R01",
+                "lv_id": "TASK-R01",
+                "run_id": "RUN-R01",
+                "approval_event_id": "APR-1",
+                "plan_sha256": "a" * 64,
+                "branch": "main",
+                "baseline_head": "d" * 40,
+                "current_head": "e" * 40,
+                "predecessor_completion_digest": "f" * 64,
+                "owned_file_scope": [],
+                "completion_conditions": ["done"],
+                "transition_type": "SYSTEM_TRANSITION",
+                "created_at": "2026-10-03T00:00:00+00:00",
+            }
+            import hashlib
+            transition["record_hash"] = hashlib.sha256(
+                json.dumps(transition, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            state["transition"] = transition
+            projected = [{
+                "lv_id": "TASK-R01",
+                "owned_files": [],
+                "purpose": "read only",
+                "dependencies": [],
+                "completion_criteria": ["done"],
+                "execution": "sequential",
+            }]
+            def git_result(argv, **kwargs):
+                stdout = ("e" * 40 + "\n") if argv[-1] == "HEAD" else "main\n"
+                return SimpleNamespace(stdout=stdout)
+
+            with patch("runtime.orchestrator.lv_preview.subprocess.run", side_effect=git_result), \
+                 patch("runtime.orchestrator.lv_preview.sha256_file", return_value="b" * 64), \
+                 patch("runtime.orchestrator.lv_preview.resolve_task_lv_projection", return_value=projected), \
+                 patch("runtime.orchestrator.gate_approval.load_approval_evidence", return_value={"payload": {}, "record_hash": "c" * 64}), \
+                 patch("runtime.orchestrator.gate_approval.validate_approval_evidence", return_value={"approval_id": "APR-1"}) as validator:
+                _validate_sealed_project_authority_state(root, mapping, "GATE-R01", "TASK-R01", state)
+            self.assertEqual(validator.call_args.kwargs["project_id"], "PROJECT")
+            self.assertEqual(validator.call_args.kwargs["gate_id"], "GATE-R01")
+            self.assertEqual(validator.call_args.kwargs["plan_sha256"], "a" * 64)
+            self.assertEqual(validator.call_args.kwargs["head"], "d" * 40)
+            self.assertEqual(validator.call_args.kwargs["lv_order"], ["TASK-R01"])
+            self.assertEqual(validator.call_args.kwargs["owned_files_by_lv"], {"TASK-R01": []})
+
+            invalid_transition = dict(state)
+            invalid_transition["transition"] = dict(state["transition"], schema_version="unexpected.v1")
+            with patch("runtime.orchestrator.lv_preview.subprocess.run", side_effect=git_result),                  patch("runtime.orchestrator.lv_preview.sha256_file", return_value="b" * 64),                  patch("runtime.orchestrator.lv_preview.resolve_task_lv_projection", return_value=projected),                  self.assertRaisesRegex(LVPreviewValidationError, "transition binding is malformed"):
+                _validate_sealed_project_authority_state(
+                    root, mapping, "GATE-R01", "TASK-R01", invalid_transition
+                )
+
+            invalid = dict(state)
+            invalid["project_id"] = "OTHER"
+            with self.assertRaisesRegex(LVPreviewValidationError, "project binding mismatch"):
+                _validate_sealed_project_authority_state(root, mapping, "GATE-R01", "TASK-R01", invalid)
 
     def test_other_lv_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:

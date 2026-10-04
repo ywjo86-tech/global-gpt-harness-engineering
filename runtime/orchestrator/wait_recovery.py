@@ -21,6 +21,7 @@ from .provider_router import (
 
 PROVIDER_WAIT_EVIDENCE_SCHEMA = "orchestration.provider-wait-recovery-evidence.v1"
 PROVIDER_WAIT_POINTER_SCHEMA = "orchestration.provider-wait-recovery-pointer.v1"
+PROVIDER_WAIT_RETIREMENT_SCHEMA = "orchestration.provider-wait-retirement.v1"
 
 
 class WaitRecoveryError(ValueError):
@@ -72,6 +73,7 @@ class ResourceWaitRecoveryDecision:
 
 
 _RULES = {
+    ("WAITING_RESOURCE", "OPERATOR_DISPATCH_ACK_PENDING"): ("DCC_OR_OPERATOR", True),
     ("WAITING_RESOURCE", "OPERATOR_TASK_RECEIPT_PENDING"): ("DCC_OR_OPERATOR", True),
     ("WAITING_RESOURCE", "CONTINUATION_RECOVERY_PENDING"): ("DCC_RECONCILER", True),
     ("WAITING_RESOURCE", "LOW_RESOURCE_BACKPRESSURE"): ("RESOURCE_RECOVERY", True),
@@ -150,8 +152,6 @@ def record_provider_wait_recovery_evidence(
             raise WaitRecoveryError("provider wait evidence path is unsafe")
         existing = json.loads(path.read_text(encoding="utf-8"))
         if existing != evidence:
-            # created_at makes exact replay different; accept an existing record only
-            # when every authority-bearing field is identical.
             left = {k: v for k, v in existing.items() if k not in {"created_at", "evidence_sha256"}}
             right = {k: v for k, v in evidence.items() if k not in {"created_at", "evidence_sha256"}}
             if left != right:
@@ -220,6 +220,41 @@ def load_active_provider_wait_recovery_evidence(
     return validated
 
 
+def retire_active_provider_wait_pointer(
+    state_root: str | Path, *, project_id: str, gate_run_id: str,
+    terminal_state: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    state = str(terminal_state.get("state") or "").upper()
+    if state not in {"COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}:
+        raise WaitRecoveryError("provider wait retirement requires terminal state")
+    base = _provider_wait_base(state_root, project_id, gate_run_id)
+    pointer_path = base / "active.json"
+    if not pointer_path.exists():
+        return None
+    if pointer_path.is_symlink() or not pointer_path.is_file():
+        raise WaitRecoveryError("provider wait pointer is unsafe")
+    evidence = load_active_provider_wait_recovery_evidence(
+        state_root,
+        project_id=project_id,
+        gate_run_id=gate_run_id,
+    )
+    unsigned = {
+        "schema_version": PROVIDER_WAIT_RETIREMENT_SCHEMA,
+        "project_id": evidence["project_id"],
+        "gate_run_id": evidence["gate_run_id"],
+        "lv_id": evidence["lv_id"],
+        "evidence_sha256": evidence["evidence_sha256"],
+        "terminal_state": state,
+        "terminal_state_sha256": str(terminal_state.get("state_sha256") or ""),
+        "retired_at": _now(),
+        "control_authority": "NONE",
+    }
+    unsigned["retirement_sha256"] = _digest(unsigned)
+    atomic_write_json(base / "retired-active.json", unsigned)
+    pointer_path.unlink()
+    return unsigned
+
+
 def evaluate_provider_wait_recovery(
     evidence: Mapping[str, Any], *, fresh_snapshot: ProviderEligibilitySnapshotV1,
     current_head: str,
@@ -262,3 +297,32 @@ def evaluate_resource_wait_recovery(
     if not resources_ok:
         return ResourceWaitRecoveryDecision(False, "RESOURCE_STILL_CONSTRAINED", state_sha, epoch)
     return ResourceWaitRecoveryDecision(True, "RESOURCE_RECOVERED", state_sha, epoch)
+
+
+def retire_provider_wait_pointers_for_terminal_run(
+    state_root: str | Path, *, project_id: str, run_id: str,
+    terminal_state: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    state = str(terminal_state.get("state") or "").upper()
+    if state not in {"COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}:
+        raise WaitRecoveryError("provider wait retirement requires terminal state")
+    project_root = (
+        Path(state_root).resolve() / "_workspace" / "provider-wait"
+        / _safe_id(project_id, "project ID")
+    )
+    if not project_root.is_dir() or project_root.is_symlink():
+        return ()
+    prefix = _safe_id(run_id, "run ID") + "--"
+    receipts: list[dict[str, Any]] = []
+    for base in sorted(project_root.iterdir()):
+        if not base.is_dir() or base.is_symlink() or not base.name.startswith(prefix):
+            continue
+        receipt = retire_active_provider_wait_pointer(
+            state_root,
+            project_id=project_id,
+            gate_run_id=base.name,
+            terminal_state=terminal_state,
+        )
+        if receipt is not None:
+            receipts.append(receipt)
+    return tuple(receipts)

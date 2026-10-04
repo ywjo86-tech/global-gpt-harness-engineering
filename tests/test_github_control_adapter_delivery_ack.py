@@ -90,6 +90,22 @@ class DurableDeliveryAckTests(unittest.TestCase):
                 "M1", source_message_id="444", content_sha256=content_sha(comment())
             ))
 
+    def test_pending_delivery_diagnostics_and_explicit_retirement_do_not_forge_ack(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            first = adapter(path, (comment(),))
+            self.assertEqual(len(first.receive()), 1)
+            diagnostic = first.classify_delivery_pending()
+            self.assertEqual(diagnostic["entries"][0]["classification"], "CURRENT_PENDING")
+            retirement = first.retire_delivery_pending_explicitly(
+                source_message_id="444",
+                message_id="M1",
+                content_sha256=content_sha(comment()),
+                evidence_ref="diagnostic:obsolete",
+            )
+            self.assertEqual(retirement["classification"], "OBSOLETE_WITH_EVIDENCE")
+            self.assertFalse(first.has_durable_ack("M1", source_message_id="444", content_sha256=content_sha(comment())))
+
     def test_recovery_publish_persists_exact_delivery_fingerprint(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "acks.json"
@@ -115,6 +131,52 @@ class DurableDeliveryAckTests(unittest.TestCase):
             self.assertFalse(edited.has_durable_ack(
                 "M1", source_message_id="444", content_sha256=content_sha(edited_item)
             ))
+
+    def test_receive_persists_pending_fingerprint_for_restart_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            original = comment()
+            first = adapter(path, (original,))
+            self.assertEqual(len(first.receive()), 1)
+            self.assertTrue(first.delivery_pending_path.is_file())
+
+            recovered = adapter(path, ())
+            recovered.publish_projection({"schema_version": "x", "message_id": "M1"})
+            recovered.acknowledge_delivery("M1")
+
+            self.assertEqual(len(recovered.rest_client.publish_calls), 1)
+            self.assertTrue(recovered.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(original)
+            ))
+            self.assertFalse(recovered.delivery_pending_path.exists())
+
+            exact = adapter(path, (original,))
+            self.assertEqual(exact.receive(), ())
+
+    def test_durable_ack_prevents_duplicate_publish_if_pending_cleanup_lagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "acks.json"
+            original = comment()
+            first = adapter(path, (original,))
+            self.assertEqual(len(first.receive()), 1)
+            pending_snapshot = first.delivery_pending_path.read_bytes()
+            first.publish_projection({"schema_version": "x", "message_id": "M1"})
+            first.acknowledge_delivery("M1")
+            self.assertTrue(first.has_durable_ack(
+                "M1", source_message_id="444", content_sha256=content_sha(original)
+            ))
+
+            # Simulate a crash after durable ACK commit but before pending-ledger cleanup.
+            first.delivery_pending_path.write_bytes(pending_snapshot)
+
+            recovered = adapter(path, ())
+            recovered.publish_projection({"schema_version": "x", "message_id": "M1"})
+            recovered.acknowledge_delivery("M1")
+
+            self.assertEqual(recovered.rest_client.publish_calls, [])
+            self.assertFalse(recovered.delivery_pending_path.exists())
+            exact = adapter(path, (original,))
+            self.assertEqual(exact.receive(), ())
 
     def test_edited_same_comment_is_not_hidden_by_durable_ack(self):
         with tempfile.TemporaryDirectory() as td:

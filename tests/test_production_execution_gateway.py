@@ -3,13 +3,16 @@ import tempfile
 import threading
 import subprocess
 import time
+import sys
 from pathlib import Path
 
 from runtime.orchestrator.production_execution_gateway import (
     GATEWAY_CONTRACT_VERSION, HOST_GATEWAY, GatewayError, HostExecutionGateway,
-    UnixSocketGatewayTransport, UnixSocketHostRunner,
+    ManagedHostRunner, UnixSocketGatewayTransport, UnixSocketHostRunner,
     build_gateway_request, build_gateway_result, validate_gateway_request,
-    validate_gateway_result, resolve_gateway_socket_path, _workspace_artifact_binding,
+    validate_gateway_result, build_effect_reconciliation_request,
+    build_effect_reconciliation_result, validate_effect_reconciliation_result,
+    resolve_gateway_socket_path, _workspace_artifact_binding,
     _digest, _safe_broker_block,
 )
 from runtime.orchestrator.tool_authorization import (
@@ -29,6 +32,49 @@ def request():
 
 
 class GatewayContractTests(unittest.TestCase):
+    def test_effect_reconciliation_result_requires_full_mcp_owner_and_exact_binding(self):
+        request = build_effect_reconciliation_request(
+            project_id="p", run_id="r", task_id="TASK-1", cycle_id="C1",
+            effect_intent_id="e"*64, authority_binding_digest="a"*64,
+            continuation_contract_digest="b"*64, source_digest="c"*40,
+            environment_digest="d"*64,
+        )
+        result = build_effect_reconciliation_result(
+            request, status="APPLIED", canonical_effect_id="TE-123",
+            canonical_receipt_ref="full-mcp://receipt/TE-123",
+            receipt_digest="f"*64, evidence_ref="full-mcp://evidence/TE-123",
+            observed_at="2026-10-01T10:00:00+00:00",
+        )
+        validated = validate_effect_reconciliation_result(result, expected_request=request)
+        self.assertEqual(validated["status"], "APPLIED")
+        self.assertEqual(validated["owning_domain"], "FULL_MCP")
+        self.assertEqual(validated["receipt_digest"], "f"*64)
+        for field, value in (
+            ("owning_domain", "LOCAL"),
+            ("effect_intent_id", "0"*64),
+            ("source_digest", "1"*40),
+            ("environment_digest", "2"*64),
+        ):
+            tampered = dict(result); tampered[field] = value
+            unsigned = dict(tampered); unsigned.pop("result_digest")
+            tampered["result_digest"] = _digest(unsigned)
+            with self.subTest(field=field), self.assertRaises(GatewayError):
+                validate_effect_reconciliation_result(tampered, expected_request=request)
+
+    def test_effect_reconciliation_applied_requires_canonical_receipt(self):
+        request = build_effect_reconciliation_request(
+            project_id="p", run_id="r", task_id="TASK-1", cycle_id="C1",
+            effect_intent_id="e"*64, authority_binding_digest="a"*64,
+            continuation_contract_digest="b"*64, source_digest="c"*40,
+            environment_digest="d"*64,
+        )
+        with self.assertRaises(GatewayError):
+            build_effect_reconciliation_result(
+                request, status="APPLIED", canonical_effect_id="TE-123",
+                canonical_receipt_ref="", receipt_digest="", evidence_ref="full-mcp://evidence/TE-123",
+                observed_at="2026-10-01T10:00:00+00:00",
+            )
+
     def test_broker_block_projection_is_content_free_and_fail_closed(self):
         self.assertEqual(_safe_broker_block({
             "stage": "HANDLE", "error_class": "ToolAuthorizationError",
@@ -170,6 +216,36 @@ class GatewayContractTests(unittest.TestCase):
         self.assertEqual(execution.stdout, b"safe")
         self.assertEqual(execution.gateway_request["execution_backend"], HOST_GATEWAY)
 
+    def test_managed_host_runner_exposes_one_shot_socket_without_background_daemon(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); sock = root / "runtime" / "managed.sock"; ledger = root / "ledger"
+            probe = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import socket, sys; "
+                        "s=socket.socket(socket.AF_UNIX); "
+                        "s.bind(sys.argv[1]); "
+                        "s.close()"
+                    ),
+                    str(sock),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if probe.returncode != 0:
+                self.skipTest("subprocess UDS bind is unavailable in this environment")
+            sock.unlink(missing_ok=True)
+            manager = ManagedHostRunner(sock, ledger, workspace_root=root, timeout=2)
+            with manager as transport:
+                self.assertIsInstance(transport, UnixSocketGatewayTransport)
+                self.assertTrue(sock.is_socket())
+                self.assertIsNotNone(manager.process)
+                self.assertIsNone(manager.process.poll())
+            self.assertFalse(sock.exists())
+            self.assertIsNotNone(manager.process.poll())
+
     def test_authenticated_uds_runner_round_trip_and_durable_ledger(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); sock = root / "runtime" / "gateway.sock"; ledger = root / "ledger"
@@ -217,6 +293,18 @@ class GatewayContractTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "supported contract"):
                 from runtime.orchestrator.production_worker_executor import CodexExecutionAdapter
                 CodexExecutionAdapter().probe_version(executor)
+
+    def test_host_runner_no_client_times_out_and_removes_socket(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "gateway.sock"
+            runner = UnixSocketHostRunner(sock, root / "ledger", executor=lambda *a, **k: None)
+            try:
+                with self.assertRaisesRegex(GatewayError, "HOST_GATEWAY_ACCEPT_TIMEOUT"):
+                    runner.serve_once(timeout=1)
+            except PermissionError:
+                self.skipTest("local sandbox does not permit AF_UNIX bind")
+            self.assertFalse(sock.exists())
 
     def test_gateway_request_contract_is_version_bound(self):
         req = request()

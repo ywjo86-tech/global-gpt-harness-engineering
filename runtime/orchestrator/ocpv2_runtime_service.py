@@ -11,20 +11,45 @@ import argparse
 import json
 import os
 import re
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from runtime.ai_office.activation import coordinate_approved_activation
+from runtime.ai_office.full_plan_activation import coordinate_approved_full_plan_activation
+from runtime.ai_office.state_store import AIOfficeStateStore
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
+from .approved_full_plan_binding import validate_approved_full_plan_binding
+from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
+from .full_plan_activation import FullPlanActivationStore, activate_approved_full_plan
+from .gate_approval_issuance import GateApprovalIssuer
+from .host_inspection_port import HostInspectionPort
+from .plan_activation import PlanActivationStore, activate_approved_work
+from .project_onboarding import OnboardingRegistry
+from .project_onboarding_remote import ProjectOnboardingAdmission
 from .ocpv2_canonical_recovery import recover_pending_canonical_results, resolve_registered_full_plan_completion
 from .ocpv2_canonical_resume import execute_registered_full_plan_continuation
-from .remote_operator_envelope import RemoteOperatorEnvelopeV2, validate_remote_envelope
+from .read_only_host_diagnostic import execute_read_only_host_diagnostic
+from .read_only_host_diagnostic_contract import DiagnosticContractError, DiagnosticPolicy, diagnostic_feature_enabled
+from .remote_diagnostic_outbox import RemoteDiagnosticOutbox, RemoteDiagnosticProjectionV1
+from .remote_control_envelope import RemoteControlEnvelopeV1, decode_remote_control_payload
+from .remote_operator_envelope import (
+    RemoteControlEnvelope, RemoteOperatorEnvelopeV3,
+    validate_remote_control_envelope as validate_remote_operator_control_envelope,
+)
 from .remote_operator_ingress import validate_ingress
-from .remote_operator_outbox import RemoteResultOutbox, RemoteResultProjectionV1
+from .remote_operator_outbox import (
+    RemoteActivationProjectionV1, RemoteFullPlanActivationProjectionV1, RemoteInspectionProjectionV1, RemoteProjectionV1,
+    RemoteResultOutbox, RemoteResultProjectionV1, parse_remote_projection,
+)
 from .remote_operator_receipt import RemoteOperatorReceiptStore
 from .remote_operator_recovery_binding import RemoteExecutionBindingStore
+from .production_run_authority import executor_runtime_identity
+from .runtime_release import RuntimeReleaseError, RuntimeReleaseManifest, verify_runtime_release
+from .user_service_observer import UserServiceObserver, UserServiceObserverError
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
 
 
@@ -39,11 +64,24 @@ _REQUIRED_ENV = {
 }
 _OPTIONAL_ENV = {
     "GCH_STATE_ROOT",
+    "GCH_NEW_ACTIVATION_LIFECYCLE_MODE",
     "OCP_CANARY_PROJECT_ID",
     "OCP_CANARY_RUN_ID",
     "OCP_CANARY_TASK_ID",
     "OCP_CANARY_GATE_ID",
     "OCP_CANARY_DIRECTIVE_ID",
+    "OCP_HOST_INSPECTION_ENABLED",
+    "OCP_WORK_ACTIVATION_ENABLED",
+    "OCP_WORK_ACTIVATION_POLICY_REF",
+    "OCP_FULL_PLAN_ACTIVATION_ENABLED",
+    "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
+    "OCP_GATE_APPROVAL_ISSUE_ENABLED",
+    "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
+    "OCP_PROJECT_ONBOARDING_ENABLED",
+    "OCP_PROJECT_ONBOARDING_POLICY_REF",
+    "HARNESS_CONTRACT_MAPPING_ROOT",
+    "GCH_READ_ONLY_HOST_DIAGNOSTIC_ENABLED",
+    "GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG",
 }
 _PROJECTION_SECRET = re.compile(
     rb"(?i)(api[_-]?key|authorization|bearer|password|token|credential|secret)\s*[:=]\s*([^\s,;}]+)"
@@ -52,6 +90,69 @@ _PROJECTION_SECRET = re.compile(
 
 class RuntimeServiceError(ValueError):
     pass
+
+
+_RECONCILE_SERVICE_UNIT = "global-gpt-harness-full-plan-reconcile.service"
+_RECONCILE_TIMER_UNIT = "global-gpt-harness-full-plan-reconcile.timer"
+
+
+def _parse_systemd_local_trigger(value: str) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("LAST_TRIGGER_MISSING")
+    body = text.rsplit(" ", 1)[0]
+    return datetime.strptime(body, "%a %Y-%m-%d %H:%M:%S")
+
+
+def full_plan_execution_health(
+    observer: UserServiceObserver | None = None,
+    *,
+    now: datetime | None = None,
+    stale_after_seconds: int = 180,
+) -> dict[str, Any]:
+    """Read-only health projection for the downstream Full Plan execution loop.
+
+    This deliberately has no repair authority.  It prevents OCP from claiming a
+    green control-plane status when approved Full Plan jobs cannot be picked up.
+    """
+    if stale_after_seconds <= 0:
+        raise ValueError("STALE_THRESHOLD_INVALID")
+    probe = observer or UserServiceObserver(
+        allowed_units=frozenset({_RECONCILE_SERVICE_UNIT, _RECONCILE_TIMER_UNIT})
+    )
+    try:
+        timer = probe.read(_RECONCILE_TIMER_UNIT)
+        service = probe.read(_RECONCILE_SERVICE_UNIT)
+    except UserServiceObserverError as exc:
+        return {
+            "status": "DEGRADED",
+            "reason": "RECONCILE_HEALTH_UNAVAILABLE",
+            "error": str(exc),
+        }
+
+    reasons: list[str] = []
+    if timer.get("ActiveState") != "active" or timer.get("SubState") not in {"waiting", "running"}:
+        reasons.append("RECONCILE_TIMER_NOT_ACTIVE")
+    try:
+        current = now or datetime.now()
+        age_seconds = max(
+            0.0,
+            (current - _parse_systemd_local_trigger(timer.get("LastTriggerUSec", ""))).total_seconds(),
+        )
+        if age_seconds > stale_after_seconds:
+            reasons.append("RECONCILE_TIMER_TRIGGER_STALE")
+    except ValueError:
+        age_seconds = None
+        reasons.append("RECONCILE_TIMER_TRIGGER_UNAVAILABLE")
+    if service.get("Result") != "success" or service.get("ExecMainStatus") != "0":
+        reasons.append("RECONCILE_SERVICE_NOT_HEALTHY")
+    return {
+        "status": "HEALTHY" if not reasons else "DEGRADED",
+        "reason": "" if not reasons else ",".join(reasons),
+        "timer_age_seconds": age_seconds,
+        "timer": timer,
+        "service": service,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +165,133 @@ class RuntimeConfig:
     token_file: Path | None
     state_root: Path | None
     environment: Mapping[str, str]
+    host_inspection_enabled: bool = False
+    work_activation_enabled: bool = False
+    activation_policy_ref: str = ""
+    full_plan_activation_enabled: bool = False
+    full_plan_activation_policy_ref: str = ""
+    gate_approval_issue_enabled: bool = False
+    gate_approval_issue_policy_ref: str = ""
+    diagnostic_enabled: bool = False
+    diagnostic_policy: DiagnosticPolicy | None = None
+    project_onboarding_enabled: bool = False
+    project_onboarding_policy_ref: str = ""
+
+
+def host_inspection_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable only on the exact explicit value `1`; absent/invalid stays fail-closed."""
+    return str(environment.get("OCP_HOST_INSPECTION_ENABLED") or "").strip() == "1"
+
+
+def work_activation_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable only on exact `1`; all other values fail closed."""
+    return str(environment.get("OCP_WORK_ACTIVATION_ENABLED") or "").strip() == "1"
+
+
+def full_plan_activation_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable executable Full Plan registration only on exact `1`."""
+    return str(environment.get("OCP_FULL_PLAN_ACTIVATION_ENABLED") or "").strip() == "1"
+
+
+def project_onboarding_enabled_from_environment(environment: Mapping[str, str]) -> bool:
+    """Enable create-once project onboarding only on the exact explicit value `1`."""
+    return str(environment.get("OCP_PROJECT_ONBOARDING_ENABLED") or "").strip() == "1"
+
+
+def new_activation_lifecycle_mode_from_environment(environment: Mapping[str, str]) -> str:
+    """Default only new Full Plan activations to V2; explicit LEGACY is the rollback seam."""
+    mode = str(environment.get("GCH_NEW_ACTIVATION_LIFECYCLE_MODE") or "V2").strip()
+    if mode not in {"V2", "LEGACY"}:
+        raise RuntimeServiceError("NEW_ACTIVATION_LIFECYCLE_MODE_INVALID")
+    return mode
+
+
+def _runtime_release_for_root(root: Path) -> RuntimeReleaseManifest:
+    manifest_path = root / "RUNTIME_RELEASE_MANIFEST.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_REQUIRED")
+    try:
+        value = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("manifest must be object")
+        manifest = RuntimeReleaseManifest.from_mapping(value)
+        return verify_runtime_release(root, manifest.source_head)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeServiceError("WORK_ACTIVATION_RUNTIME_RELEASE_INVALID") from exc
+
+
+def _runtime_release_for_full_plan_request(
+    configured_root: str | Path,
+    request: Any,
+    *,
+    service_release: RuntimeReleaseManifest | None = None,
+) -> RuntimeReleaseManifest:
+    """Resolve the immutable release explicitly bound by one Full Plan request.
+
+    OCP's own repo root remains the control-runtime identity.  A Full Plan
+    request may bind a sibling immutable release, but only by exact HEAD and
+    manifest digest; no runtime-current lookup or arbitrary path is allowed.
+    """
+    root = Path(configured_root).expanduser().absolute()
+    service_release = service_release or _runtime_release_for_root(root)
+    expected_head = str(getattr(request, "expected_head", "") or "")
+    expected_digest = str(getattr(request, "runtime_release_digest", "") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    if (
+        str(service_release.source_head) == expected_head
+        and str(service_release.manifest_sha256) == expected_digest
+        and Path(str(service_release.release_path or "")).absolute() == root
+    ):
+        return service_release
+
+    releases_root = root.parent
+    target = releases_root / expected_head
+    if (
+        releases_root.is_symlink()
+        or not releases_root.is_dir()
+        or target.is_symlink()
+        or not target.is_dir()
+        or target.resolve(strict=True) != target
+        or target.parent != releases_root
+    ):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    try:
+        release = _runtime_release_for_root(target)
+    except (RuntimeServiceError, OSError, ValueError) as exc:
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH") from exc
+    if (
+        str(release.source_head) != expected_head
+        or str(release.manifest_sha256) != expected_digest
+        or Path(str(release.release_path or "")).absolute() != target
+    ):
+        raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+    return release
+
+
+def finalize_remote_control_projection(
+    outbox: RemoteResultOutbox, projection: Mapping[str, Any],
+) -> None:
+    schema = str(projection.get("schema_version") or "")
+    if schema in {
+        "orchestration.remote-inspection-status-projection.v1",
+        "orchestration.remote-activation-status-projection.v1",
+        "orchestration.remote-full-plan-activation-status-projection.v1",
+        "orchestration.remote-gate-approval-issue-status-projection.v1",
+        "orchestration.remote-project-onboarding-status-projection.v1",
+        "orchestration.remote-successor-release-stage-status-projection.v1",
+        "orchestration.remote-p3-promotion-admission-status-projection.v1",
+        "orchestration.remote-p3-canary-activation-status-projection.v1",
+        "orchestration.remote-p3-canary-validate-registration-status-projection.v1",
+        "orchestration.remote-p3-canary-validate-evidence-issue-status-projection.v1",
+    }:
+        return
+    parsed = parse_remote_projection(projection)
+    if not isinstance(parsed, (RemoteInspectionProjectionV1, RemoteActivationProjectionV1, RemoteFullPlanActivationProjectionV1)):
+        raise RuntimeServiceError("REMOTE_CONTROL_PROJECTION_MISMATCH")
+    outbox.mark_published(parsed.projection_id, parsed.projection_sha256)
 
 
 def _projection_secret_findings(payload: bytes) -> dict[str, int]:
@@ -86,8 +314,8 @@ def _read_env_file(path: str | Path) -> dict[str, str]:
     if source.is_symlink() or not source.is_file():
         raise RuntimeServiceError("environment file must be a regular non-symlink file")
     result: dict[str, str] = {}
-    for raw in source.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
+    for raw_line in source.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
@@ -113,11 +341,27 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
         mode = ControlMode(file_env["OCP_MODE"])
     except ValueError as exc:
         raise RuntimeServiceError("UNKNOWN_MODE") from exc
+    try:
+        diagnostic_enabled = diagnostic_feature_enabled(file_env)
+    except DiagnosticContractError as exc:
+        raise RuntimeServiceError("invalid diagnostic feature flag") from exc
+    diagnostic_policy: DiagnosticPolicy | None = None
+    if diagnostic_enabled:
+        raw_config = str(file_env.get("GCH_READ_ONLY_HOST_DIAGNOSTIC_CONFIG", "")).strip()
+        if not raw_config:
+            raise RuntimeServiceError("diagnostic config is required when feature is enabled")
+        try:
+            diagnostic_policy = DiagnosticPolicy.load(Path(raw_config).expanduser())
+        except DiagnosticContractError as exc:
+            raise RuntimeServiceError("diagnostic config is invalid") from exc
     repo_root = Path(file_env["OCP_REPO_ROOT"]).expanduser().absolute()
     if repo_root.is_symlink() or not repo_root.is_dir():
         raise RuntimeServiceError("repo root must be an existing non-symlink directory")
     if mode == ControlMode.DISABLED:
-        return RuntimeConfig(mode, repo_root, 0, 0, (), None, None, environment)
+        return RuntimeConfig(
+            mode, repo_root, 0, 0, (), None, None, environment, False, False, "",
+            diagnostic_enabled=diagnostic_enabled, diagnostic_policy=diagnostic_policy,
+        )
     try:
         repository_id = int(file_env["OCP_GITHUB_CONTROL_REPOSITORY_ID"])
         pr_number = int(file_env["OCP_GITHUB_CONTROL_PR_NUMBER"])
@@ -137,7 +381,32 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     state_root.mkdir(parents=True, exist_ok=True)
     if state_root.is_symlink():
         raise RuntimeServiceError("OCP state root is unsafe")
-    return RuntimeConfig(mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment)
+    work_activation_enabled = work_activation_enabled_from_environment(environment)
+    activation_policy_ref = str(environment.get("OCP_WORK_ACTIVATION_POLICY_REF") or "").strip()
+    if work_activation_enabled:
+        _safe_id(activation_policy_ref, "work activation policy ref")
+    full_plan_activation_enabled = full_plan_activation_enabled_from_environment(environment)
+    full_plan_activation_policy_ref = str(environment.get("OCP_FULL_PLAN_ACTIVATION_POLICY_REF") or "").strip()
+    if full_plan_activation_enabled:
+        _safe_id(full_plan_activation_policy_ref, "Full Plan activation policy ref")
+    gate_approval_issue_enabled = str(environment.get("OCP_GATE_APPROVAL_ISSUE_ENABLED") or "").strip() == "1"
+    gate_approval_issue_policy_ref = str(environment.get("OCP_GATE_APPROVAL_ISSUE_POLICY_REF") or "").strip()
+    if gate_approval_issue_enabled:
+        _safe_id(gate_approval_issue_policy_ref, "Gate approval issue policy ref")
+    project_onboarding_enabled = project_onboarding_enabled_from_environment(environment)
+    project_onboarding_policy_ref = str(environment.get("OCP_PROJECT_ONBOARDING_POLICY_REF") or "").strip()
+    if project_onboarding_enabled:
+        _safe_id(project_onboarding_policy_ref, "project onboarding policy ref")
+    return RuntimeConfig(
+        mode, repo_root, repository_id, pr_number, actor_ids, token_file, state_root, environment,
+        host_inspection_enabled_from_environment(environment), work_activation_enabled, activation_policy_ref,
+        full_plan_activation_enabled, full_plan_activation_policy_ref,
+        diagnostic_enabled=diagnostic_enabled, diagnostic_policy=diagnostic_policy,
+        project_onboarding_enabled=project_onboarding_enabled,
+        project_onboarding_policy_ref=project_onboarding_policy_ref,
+        gate_approval_issue_enabled=gate_approval_issue_enabled,
+        gate_approval_issue_policy_ref=gate_approval_issue_policy_ref,
+    )
 
 
 def canary_scope_from_environment(mode: ControlMode | str, environment: Mapping[str, str]) -> CanaryScope | None:
@@ -160,8 +429,34 @@ def canary_scope_from_environment(mode: ControlMode | str, environment: Mapping[
     return CanaryScope(project_id, run_id, task_id, gate_id, directive_id)
 
 
+def _diagnostic_provenance(repo_root: str | Path) -> tuple[str, str]:
+    root = Path(repo_root).expanduser().absolute()
+    identity = executor_runtime_identity(root)
+    source_sha = str(identity.get("head") or "")
+    runtime_sha = str(identity.get("runtime_source_sha256") or "")
+    if not source_sha:
+        manifest_path = root / "RUNTIME_RELEASE_MANIFEST.json"
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise RuntimeServiceError("diagnostic provenance source is unavailable")
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            expected_head = str(payload.get("source_head") or "") if isinstance(payload, Mapping) else ""
+            manifest = verify_runtime_release(root, expected_head)
+        except (OSError, UnicodeError, json.JSONDecodeError, RuntimeReleaseError, ValueError) as exc:
+            raise RuntimeServiceError("diagnostic provenance release verification failed") from exc
+        source_sha = str(manifest.source_head or "")
+    if (
+        len(source_sha) not in {40, 64}
+        or any(ch not in "0123456789abcdef" for ch in source_sha)
+        or len(runtime_sha) != 64
+        or any(ch not in "0123456789abcdef" for ch in runtime_sha)
+    ):
+        raise RuntimeServiceError("diagnostic provenance is incomplete")
+    return source_sha, runtime_sha
+
+
 def execute_authorized_canonical(
-    envelope: RemoteOperatorEnvelopeV2 | Any,
+    envelope: RemoteControlEnvelope | Any,
     directive: Any,
     *,
     harness_state_root: str | Path,
@@ -242,11 +537,90 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     )
     receipts = RemoteOperatorReceiptStore(config.state_root / "receipts")
     outbox = RemoteResultOutbox(config.state_root / "outbox")
+    diagnostic_outbox = (
+        RemoteDiagnosticOutbox(config.state_root / "diagnostic-outbox")
+        if config.diagnostic_enabled else None
+    )
     binding_store = RemoteExecutionBindingStore(config.state_root / "execution-bindings")
     harness_state_root = resolve_harness_state_root(
         project_root=config.repo_root,
         environ=config.environment,
     )
+    inspection_port: HostInspectionPort | None = None
+    if config.host_inspection_enabled:
+        mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not mapping_root_raw:
+            raise RuntimeServiceError("HOST_INSPECTION_REGISTRY_REQUIRED")
+        mapping_root = Path(mapping_root_raw).expanduser().absolute()
+        if not mapping_root.is_dir() or mapping_root.is_symlink() or mapping_root.resolve() != mapping_root:
+            raise RuntimeServiceError("HOST_INSPECTION_REGISTRY_UNSAFE")
+        inspection_port = HostInspectionPort(
+            registry_root=mapping_root,
+            read_scopes=(".",),
+            allowed_service_units=frozenset({"ocpv2.service"}),
+            attention_search_root=harness_state_root,
+        )
+
+    activation_registry: OnboardingRegistry | None = None
+    activation_release: RuntimeReleaseManifest | None = None
+    activation_store: PlanActivationStore | None = None
+    full_plan_authority_root: Path | None = None
+    full_plan_activation_store: FullPlanActivationStore | None = None
+    onboarding_admission: ProjectOnboardingAdmission | None = None
+    gate_approval_issuer: GateApprovalIssuer | None = None
+    if config.work_activation_enabled:
+        mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not mapping_root_raw:
+            raise RuntimeServiceError("WORK_ACTIVATION_REGISTRY_REQUIRED")
+        mapping_root = Path(mapping_root_raw).expanduser().absolute()
+        if not mapping_root.is_dir() or mapping_root.is_symlink() or mapping_root.resolve() != mapping_root:
+            raise RuntimeServiceError("WORK_ACTIVATION_REGISTRY_UNSAFE")
+        activation_registry = OnboardingRegistry(mapping_root / "aliases")
+        activation_release = _runtime_release_for_root(config.repo_root)
+        activation_store = PlanActivationStore(harness_state_root)
+
+    if config.full_plan_activation_enabled:
+        authority_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not authority_root_raw:
+            raise RuntimeServiceError("FULL_PLAN_ACTIVATION_REGISTRY_REQUIRED")
+        full_plan_authority_root = Path(authority_root_raw).expanduser().absolute()
+        if (
+            not full_plan_authority_root.is_dir()
+            or full_plan_authority_root.is_symlink()
+            or full_plan_authority_root.resolve() != full_plan_authority_root
+        ):
+            raise RuntimeServiceError("FULL_PLAN_ACTIVATION_REGISTRY_UNSAFE")
+        if activation_release is None:
+            activation_release = _runtime_release_for_root(config.repo_root)
+        full_plan_activation_store = FullPlanActivationStore(harness_state_root)
+
+    if config.project_onboarding_enabled:
+        onboarding_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not onboarding_root_raw:
+            raise RuntimeServiceError("PROJECT_ONBOARDING_REGISTRY_REQUIRED")
+        onboarding_root = Path(onboarding_root_raw).expanduser().absolute()
+        if (
+            not onboarding_root.is_dir()
+            or onboarding_root.is_symlink()
+            or onboarding_root.resolve() != onboarding_root
+        ):
+            raise RuntimeServiceError("PROJECT_ONBOARDING_REGISTRY_UNSAFE")
+        onboarding_admission = ProjectOnboardingAdmission(
+            OnboardingRegistry(onboarding_root / "aliases"),
+            canonical_mapping_root=onboarding_root,
+        )
+
+    if config.gate_approval_issue_enabled:
+        issue_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not issue_root_raw:
+            raise RuntimeServiceError("GATE_APPROVAL_ISSUE_REGISTRY_REQUIRED")
+        issue_root = Path(issue_root_raw).expanduser().absolute()
+        if not issue_root.is_dir() or issue_root.is_symlink() or issue_root.resolve() != issue_root:
+            raise RuntimeServiceError("GATE_APPROVAL_ISSUE_REGISTRY_UNSAFE")
+        gate_approval_issuer = GateApprovalIssuer(
+            registry_root=issue_root, mapping_root=issue_root / "mappings",
+            harness_state_root=harness_state_root,
+        )
 
     def durable_acknowledged(message_id: str) -> bool:
         binding = binding_store.get(message_id)
@@ -258,7 +632,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             content_sha256=binding.control_content_sha256,
         )
 
-    def publish_pending(projection: RemoteResultProjectionV1) -> None:
+    def publish_pending(projection: RemoteProjectionV1) -> None:
         binding = binding_store.get(projection.message_id)
         if binding is None or binding.projection_id != projection.projection_id:
             raise RuntimeServiceError("RECONCILIATION_REQUIRED: outbox binding mismatch")
@@ -282,12 +656,32 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         durable_acknowledged=durable_acknowledged,
     )
 
+    # Read-only inspection and activation projections share the durable outbox with
+    # canonical REC-* results, but they intentionally have no mutation execution
+    # binding. Recover them through their normal transport lifecycle without invoking
+    # canonical prepare_recovery_delivery or any execution callback.
+    for projection in tuple(outbox.pending()):
+        if isinstance(projection, RemoteResultProjectionV1):
+            continue
+        adapter.publish_projection(projection.to_dict())
+        adapter.acknowledge_delivery(projection.message_id)
+        outbox.mark_published(projection.projection_id, projection.projection_sha256)
+
+    if diagnostic_outbox is not None:
+        def publish_pending_diagnostic(projection: RemoteDiagnosticProjectionV1) -> None:
+            adapter.publish_projection(projection.to_dict())
+            adapter.acknowledge_delivery(projection.message_id)
+        diagnostic_outbox.publish_pending(publish_pending_diagnostic)
+
     def decode(raw):
         try:
             value = json.loads(raw.content.decode("utf-8"))
         except Exception as exc:
             raise RuntimeServiceError("remote control payload is not valid JSON") from exc
-        envelope = validate_remote_envelope(value)
+        if str(value.get("schema_version") or "").startswith("orchestration.remote-operator-envelope."):
+            envelope = validate_remote_operator_control_envelope(value)
+        else:
+            envelope = decode_remote_control_payload(value)
         if (
             envelope.transport.adapter_id != "GITHUB_CONTROL_V1"
             or envelope.transport.channel_id != f"PR:{config.control_pr_number}"
@@ -325,8 +719,246 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             harness_state_root=harness_state_root,
         )
 
+    def execute_read_only(envelope, directive, request):
+        if (
+            not config.diagnostic_enabled
+            or config.diagnostic_policy is None
+            or diagnostic_outbox is None
+            or not isinstance(envelope, RemoteOperatorEnvelopeV3)
+            or request.request_digest != envelope.read_only_request_digest
+            or directive.state_change_required
+        ):
+            raise RuntimeServiceError("READ_ONLY_DIAGNOSTIC_NOT_AUTHORIZED")
+        source_sha, runtime_sha = _diagnostic_provenance(config.repo_root)
+        result = execute_read_only_host_diagnostic(
+            request,
+            config.diagnostic_policy,
+            project_id=envelope.project_id,
+            correlation_id=envelope.message_id,
+            source_sha=source_sha,
+            runtime_sha=runtime_sha,
+        )
+        projection = RemoteDiagnosticProjectionV1(
+            projection_id=f"DIAG-{envelope.message_id}", message_id=envelope.message_id,
+            directive_digest=envelope.directive_digest, project_id=envelope.project_id,
+            run_id=envelope.run_id, gate_id=envelope.gate_id, task_id=envelope.task_id,
+            request_digest=envelope.read_only_request_digest, diagnostic_result=result,
+            projected_at=result.captured_at,
+        )
+        diagnostic_outbox.enqueue(projection)
+        return result.to_dict()
+
+    def inspect(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if inspection_port is None:
+            raise RuntimeServiceError("HOST_INSPECTION_DISABLED")
+        result = inspection_port.inspect(envelope.payload)
+        projection = RemoteInspectionProjectionV1.from_result(result, message_id=envelope.message_id)
+        outbox.enqueue_projection(projection)
+        return projection.to_dict()
+
+    def activate(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if activation_registry is None or activation_release is None or activation_store is None:
+            raise RuntimeServiceError("WORK_ACTIVATION_DISABLED")
+        binding = validate_approved_work_binding(
+            envelope.payload, registry=activation_registry, runtime_release=activation_release,
+        )
+        office_store = AIOfficeStateStore(
+            harness_state_root, project_id=binding.project_id, run_id=binding.activation_request_id,
+        )
+        ai_context = coordinate_approved_activation(binding, office_store=office_store)
+        receipt = activation_store.record_or_load(
+            request_id=binding.activation_request_id, binding=binding,
+            registrar=lambda: activate_approved_work(
+                binding, ai_context=ai_context, harness_state_root=harness_state_root,
+                runtime_code_root=binding.runtime_code_root,
+            ),
+        )
+        projection = RemoteActivationProjectionV1.from_receipt(receipt, message_id=envelope.message_id)
+        outbox.enqueue_projection(projection)
+        return projection.to_dict()
+
+    def activate_full_plan(
+        envelope: RemoteControlEnvelopeV1,
+        *,
+        enqueue_projection: bool = True,
+    ) -> Mapping[str, Any]:
+        if (
+            full_plan_authority_root is None
+            or activation_release is None
+            or full_plan_activation_store is None
+        ):
+            raise RuntimeServiceError("FULL_PLAN_ACTIVATION_DISABLED")
+        request_release = _runtime_release_for_full_plan_request(
+            config.repo_root, envelope.payload, service_release=activation_release,
+        )
+        bundle = validate_approved_full_plan_binding(
+            envelope.payload,
+            authority_root=full_plan_authority_root,
+            runtime_release=request_release,
+            harness_state_root=harness_state_root,
+        )
+        office_store = AIOfficeStateStore(
+            harness_state_root, project_id=bundle.project_id, run_id=bundle.activation_request_id,
+        )
+        ai_context = coordinate_approved_full_plan_activation(bundle, office_store=office_store)
+        lifecycle_mode = new_activation_lifecycle_mode_from_environment(config.environment)
+        receipt = full_plan_activation_store.record_or_load(
+            request_id=bundle.activation_request_id,
+            bundle=bundle,
+            registrar=lambda: activate_approved_full_plan(
+                bundle,
+                ai_context=ai_context,
+                harness_state_root=harness_state_root,
+                lifecycle_mode=lifecycle_mode,
+            ),
+        )
+        projection = RemoteFullPlanActivationProjectionV1.from_receipt(
+            receipt, message_id=envelope.message_id,
+        )
+        if enqueue_projection:
+            outbox.enqueue_projection(projection)
+        return projection.to_dict()
+
+    def recover_full_plan(envelope):
+        """Read and verify an already-registered Full Plan activation."""
+        if (
+            full_plan_authority_root is None
+            or activation_release is None
+            or full_plan_activation_store is None
+        ):
+            raise RuntimeServiceError(
+                "FULL_PLAN_ACTIVATION_DISABLED"
+            )
+
+        recovery_payload = getattr(
+            envelope.payload,
+            "full_plan_activation",
+            envelope.payload,
+        )
+
+        request_release = _runtime_release_for_full_plan_request(
+            config.repo_root, recovery_payload, service_release=activation_release,
+        )
+        bundle = validate_approved_full_plan_binding(
+            recovery_payload,
+            authority_root=full_plan_authority_root,
+            runtime_release=request_release,
+            harness_state_root=harness_state_root,
+        )
+
+        receipt = full_plan_activation_store.load_existing(
+            bundle.activation_request_id
+        )
+
+        if receipt is None:
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_RECEIPT_MISSING"
+            )
+
+        if (
+            receipt.activation_request_id
+            != bundle.activation_request_id
+            or receipt.run_id != bundle.activation_request_id
+            or receipt.bundle_digest != bundle.bundle_digest
+            or receipt.executable_authority_bundle_digest
+            != bundle.bundle_digest
+        ):
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_BINDING_MISMATCH"
+            )
+
+        from pathlib import Path as _RecoveryPath
+        from .production_full_plan_entry import (
+            recover_registered_job_state_after_external_binding_drift,
+        )
+
+        try:
+            raw_job, _durable_state = (
+                recover_registered_job_state_after_external_binding_drift(
+                    _RecoveryPath(receipt.canonical_job_path)
+                )
+            )
+        except Exception as exc:
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_JOB_INVALID"
+            ) from exc
+
+        if (
+            str(raw_job.get("run_id") or "")
+            != bundle.activation_request_id
+            or str(raw_job.get("project_id") or "")
+            != bundle.project_id
+            or str(raw_job.get("activation_binding_digest") or "")
+            != bundle.request_digest
+            or str(
+                raw_job.get(
+                    "executable_authority_bundle_digest"
+                ) or ""
+            )
+            != bundle.bundle_digest
+        ):
+            raise RuntimeServiceError(
+                "FULL_PLAN_RECOVERY_JOB_BINDING_MISMATCH"
+            )
+
+        return {
+            "request_digest": bundle.request_digest,
+            "bundle_digest": bundle.bundle_digest,
+            "receipt": receipt.to_dict(),
+            "canonical_job": raw_job,
+        }
+
+    activate_full_plan.recover_existing = recover_full_plan
+
+    def onboard(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if onboarding_admission is None:
+            raise RuntimeServiceError("PROJECT_ONBOARDING_DISABLED")
+        result = onboarding_admission.execute(envelope.payload)
+        return {
+            "schema_version": "orchestration.remote-project-onboarding-status-projection.v1",
+            "message_id": envelope.message_id,
+            "alias": envelope.payload.alias,
+            "request_digest": envelope.payload.request_digest,
+            "mode": envelope.payload.mode,
+            "result_class": str(result.get("status") or "PROJECT_ONBOARDING_ERROR"),
+            "result": result,
+        }
+
+    def issue_gate_approval(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if gate_approval_issuer is None:
+            raise RuntimeServiceError("GATE_APPROVAL_ISSUE_DISABLED")
+        payload = envelope.payload
+        owner_comment = None
+        if payload.mode == "ISSUE":
+            owner_comment = next(
+                (comment for comment in rest_client.list_comments()
+                 if comment.get("id") == payload.owner_approval_comment_id), None,
+            )
+        result = gate_approval_issuer.execute(
+            payload, owner_approval_comment=owner_comment,
+            owner_actor_id=envelope.transport.source_actor_id,
+        )
+        return {
+            "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": result["status"],
+            "result": result,
+        }
+
     def after_projection_published(envelope, projection):
-        del projection
+        if isinstance(envelope, RemoteControlEnvelopeV1):
+            finalize_remote_control_projection(outbox, projection)
+            return
+        if isinstance(envelope, RemoteOperatorEnvelopeV3) and diagnostic_outbox is not None:
+            projection_id = f"DIAG-{envelope.message_id}"
+            for pending in diagnostic_outbox.pending():
+                if pending.projection_id == projection_id:
+                    diagnostic_outbox.mark_published(projection_id, pending.projection_sha256)
+                    break
         binding = binding_store.get(envelope.message_id)
         if binding is not None and binding.status != "PROJECTED":
             binding_store.mark_projected(envelope.message_id, binding.projection_id or None)
@@ -336,15 +968,31 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         decode_envelope=decode,
         ingress=ingress,
         execute_authorized=execute,
+        execute_read_only=execute_read_only if config.diagnostic_enabled else None,
         canary_scope=canary_scope_from_environment(config.mode, config.environment),
         after_projection_published=after_projection_published,
+        inspect_authorized=inspect,
+        host_inspection_enabled=config.host_inspection_enabled,
+        activate_authorized=activate,
+        work_activation_enabled=config.work_activation_enabled,
+        activation_policy_ref=config.activation_policy_ref,
+        activate_full_plan_authorized=activate_full_plan,
+        full_plan_activation_enabled=config.full_plan_activation_enabled,
+        full_plan_activation_policy_ref=config.full_plan_activation_policy_ref,
+        issue_gate_approval_authorized=issue_gate_approval,
+        gate_approval_issue_enabled=config.gate_approval_issue_enabled,
+        gate_approval_issue_policy_ref=config.gate_approval_issue_policy_ref,
+        onboard_authorized=onboard,
+        project_onboarding_enabled=config.project_onboarding_enabled,
+        project_onboarding_policy_ref=config.project_onboarding_policy_ref,
     )
 
 
 def run_once(config: RuntimeConfig) -> dict[str, Any]:
     if config.mode == ControlMode.DISABLED:
         return {"mode": "DISABLED", "received": 0, "validated": 0, "executed": 0,
-                "projected": 0, "acknowledged": 0, "blocked": 0}
+                "diagnosed": 0, "projected": 0, "acknowledged": 0, "blocked": 0,
+                "inspected": 0, "activated": 0, "full_plan_activated": 0, "onboarded": 0}
     service = _compose_service(config)
     result = service.poll_once(mode=config.mode)
     return {
@@ -352,9 +1000,14 @@ def run_once(config: RuntimeConfig) -> dict[str, Any]:
         "received": result.received,
         "validated": result.validated,
         "executed": result.executed,
+        "diagnosed": result.diagnosed,
         "projected": result.projected,
         "acknowledged": result.acknowledged,
         "blocked": result.blocked,
+        "inspected": result.inspected,
+        "activated": result.activated,
+        "full_plan_activated": result.full_plan_activated,
+        "onboarded": result.onboarded,
     }
 
 
@@ -368,7 +1021,13 @@ def main(argv: list[str] | None = None) -> int:
     except (RuntimeServiceError, RemoteOperatorServiceError, ValueError, OSError) as exc:
         print(json.dumps({"status": "BLOCKED", "error": str(exc)}, sort_keys=True), file=os.sys.stderr)
         return 2
-    print(json.dumps({"status": "OK", **result}, sort_keys=True))
+    health = (
+        full_plan_execution_health()
+        if config.full_plan_activation_enabled
+        else {"status": "NOT_APPLICABLE", "reason": "FULL_PLAN_ACTIVATION_DISABLED"}
+    )
+    status = "OK" if health["status"] in {"HEALTHY", "NOT_APPLICABLE"} else "DEGRADED"
+    print(json.dumps({"status": status, "operational_health": health, **result}, sort_keys=True))
     return 0
 
 

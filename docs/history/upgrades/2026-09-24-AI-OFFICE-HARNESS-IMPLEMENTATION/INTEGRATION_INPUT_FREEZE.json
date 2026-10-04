@@ -1,0 +1,12 @@
+{
+  "dashboard_head": "c13e257fcaffc2e994785499ced5b8efe71249b7",
+  "harness_head": "094c4ab87cfdbdf31745e1d78946a1c82bec7eeb",
+  "operations_schema": "orchestration.operations-read-model.v1",
+  "schema_version": "gch.ai-office-integration-input-freeze.v1",
+  "track_evidence_sha256": {
+    "A": "7eb3fff7d29fed5b6a5a8eed53300a9c8d6341e2774aa70e87900e58a004e981",
+    "B": "3f9dbcfb82b5e10ef7232cde258cb3f3ba7c06c394a9ed5d8cd11f00b1ae857d",
+    "C": "79654ae3046c17448899132ec10bcec5fb3a94d4ccc20ddfc408ae19a8c2a168",
+    "D": "ba34d9858a3290de301d4016125873c522cdd150e4d261256111bbb903897211"
+  }
+}

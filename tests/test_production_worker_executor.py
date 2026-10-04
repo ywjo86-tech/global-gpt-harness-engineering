@@ -1,4 +1,5 @@
-import os, json, hashlib, subprocess, tempfile, unittest
+import ast, inspect, os, json, hashlib, subprocess, tempfile, unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,7 +21,9 @@ from runtime.orchestrator.production_worker_executor import (
     _search_provenance, _search_record_matches,
     _independent_verification_steps,
     _independent_verification_provenance, _independent_verification_failure,
-    _focused_execution_metadata,
+    _bounded_validation_failure_evidence,
+    _focused_execution_metadata, _sealed_external_validation_python,
+    _validation_command_env, _should_defer_evidence_manifest_integrity_for_request,
     _test_runner_metadata, _bounded_validation_feedback,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
@@ -42,6 +45,38 @@ def _usage() -> dict[str, int]:
 
 
 class ProductionWorkerExecutorTests(unittest.TestCase):
+    def test_external_interpreter_policy_does_not_force_python_for_non_python_toolchain(self):
+        request = SimpleNamespace(extra_context={
+            "interpreter_policy_id": "IMMUTABLE_EXTERNAL_INTERPRETER",
+            "validation_toolchain": {
+                "profile_ids": ["NODE_NPM"],
+                "focused": [["npm", "--prefix", "backend", "test"]],
+                "full": [["npm", "--prefix", "backend", "test"]],
+                "compile": [["npm", "--prefix", "backend", "run", "build"]],
+                "deferred": False,
+            },
+        })
+        self.assertIsNone(_sealed_external_validation_python(request))
+
+    def test_validation_environment_does_not_inherit_active_contract_mapping_root(self):
+        with patch.dict(os.environ, {"HARNESS_CONTRACT_MAPPING_ROOT": "/tmp/live-mapping"}):
+            validation_env = _validation_command_env()
+        self.assertNotIn("HARNESS_CONTRACT_MAPPING_ROOT", validation_env)
+        if "PATH" in os.environ:
+            self.assertEqual(validation_env.get("PATH"), os.environ["PATH"])
+
+    def test_initial_and_remediation_provider_action_calls_both_validate_candidates_before_effect(self):
+        tree = ast.parse(inspect.getsource(execute_production_worker))
+        calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "execute_provider_action_proposal"
+        ]
+        self.assertGreaterEqual(len(calls), 2)
+        for call in calls:
+            self.assertIn("candidate_validator", {item.arg for item in call.keywords})
+
     def test_provider_action_security_scan_normalizes_structured_broker_results(self):
         self.assertTrue(_provider_action_security_scan({"status": "COMPLETED"}))
         self.assertTrue(_provider_action_security_scan(b"safe"))
@@ -145,6 +180,40 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
         self.assertEqual(steps[1]["verification_step_failure_category"], "COMMAND_NONZERO")
         self.assertNotIn("command", steps[1])
 
+    def test_validation_failure_evidence_is_bounded_redacted_and_stage_bound(self):
+        valid = {"exit_code": 0, "timeout": False}
+        commands = {
+            "focused_test": {"exit_code": 1, "timeout": False},
+            "full_regression": valid,
+            "compile_import": valid,
+            "git_diff_check": valid,
+        }
+        evidence = _bounded_validation_failure_evidence(
+            commands,
+            [
+                "ERROR: test_case | TRACE tests/test_x.py line 7 | AssertionError: mismatch | api_key=secret-material-value",
+                "ERROR: test_case | TRACE tests/test_x.py line 7 | AssertionError: mismatch | api_key=secret-material-value",
+            ],
+        )
+        self.assertEqual(evidence["schema_version"], "orchestration.validation-failure-evidence.v1")
+        self.assertEqual(evidence["failure_step"], "FOCUSED_TEST_EXECUTION")
+        self.assertEqual(evidence["failure_category"], "NONZERO_EXIT")
+        self.assertEqual(evidence["exception_bucket"], "PROCESS")
+        serialized = json.dumps(evidence)
+        self.assertIn("TRACE tests/test_x.py line 7", serialized)
+        self.assertNotIn("secret-material-value", serialized)
+        self.assertLessEqual(sum(len(item) for item in evidence["feedback"]), 4096)
+
+    def test_validation_failure_evidence_is_absent_on_pass(self):
+        valid = {"exit_code": 0, "timeout": False}
+        commands = {
+            "focused_test": valid,
+            "full_regression": valid,
+            "compile_import": valid,
+            "git_diff_check": valid,
+        }
+        self.assertEqual(_bounded_validation_failure_evidence(commands, ["unused"]), {})
+
     def test_issue060_independent_verification_failure_taxonomy_is_bounded(self):
         valid = {"exit_code": 0, "timeout": False}
         cases = (
@@ -230,11 +299,15 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             focused={"exit_code":1,"timeout":False,"test_exit_semantics":"COLLECTION_FAILED",
                      "collection_failure_phase":"PROJECT_MODULE_IMPORT",
                      "import_failure_family":"PROJECT_LOCAL_MODULE",
-                     "dependency_presence_class":"MISSING"}
+                     "dependency_presence_class":"MISSING",
+                     "_transient_validation_feedback":
+                         "ERROR: test_x | TRACE tests/test_x.py line 1 | "
+                         "LVPreviewValidationError: mapping mismatch | api_key=secret-material-value"}
             passing={"exit_code":0,"timeout":False}
-            probes=iter((focused, focused, passing, passing, passing, focused, focused))
+            probes=iter((dict(focused), dict(focused), dict(passing), dict(passing), dict(passing),
+                         dict(focused), dict(focused)))
             with patch("runtime.orchestrator.production_worker_executor._command",
-                       side_effect=lambda *args, **kwargs: next(probes)):
+                       side_effect=lambda *args, **kwargs: dict(next(probes))):
                 with self.assertRaises(ProductionWorkerError):
                     execute_production_worker(request,executor=runner)
             process=json.loads((root/"out/executor.process.json").read_text())
@@ -242,6 +315,10 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             self.assertEqual(process["import_failure_family"], "PROJECT_LOCAL_MODULE")
             self.assertEqual(process["dependency_presence_class"], "MISSING")
             self.assertEqual(process["focused_process_exit_class"], "NONZERO")
+            failure = process["validation_failure_evidence"]
+            self.assertEqual(failure["failure_step"], "FOCUSED_TEST_EXECUTION")
+            self.assertIn("LVPreviewValidationError", json.dumps(failure))
+            self.assertNotIn("secret-material-value", json.dumps(failure))
             self.assertFalse(any(key in process for key in ("focused_command", "focused_output", "focused_error")))
     def test_search_provenance_distinguishes_filesystem_and_stdin(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1648,6 +1725,23 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             self.assertEqual(set(result["changed_files"]),{"app/x.py","tests/test_x.py"})
             self.assertEqual(result["validation_events"], ["VALIDATION_STARTED", "FOCUSED_TEST_COMPLETED", "FULL_REGRESSION_COMPLETED", "WORKER_RESULT_SEALED"])
             self.assertFalse(subprocess.check_output(["git","-C",root,"status","--porcelain"],text=True))
+
+    def test_satisfied_recertification_defers_legacy_final_manifest_even_when_criteria_says_full_regression(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "tests/evidence").mkdir(parents=True)
+            (root / "tests/evidence/test_manifest.py").write_text("def test_manifest(): pass\n")
+            (root / "evidence/implementation").mkdir(parents=True)
+            (root / "evidence/implementation/MANIFEST_SHA256.json").write_text("{}")
+            task = SimpleNamespace(validation_criteria=["full regression remains green"])
+            normal = SimpleNamespace(extra_context={}, task=task)
+            recert = SimpleNamespace(
+                extra_context={"canonical_authority_binding": {"satisfied_recertification": {"lv_id": "TASK-001"}}},
+                task=task,
+            )
+            owned = ["tests/contracts/test_v031_baseline_immutability.py"]
+            self.assertFalse(_should_defer_evidence_manifest_integrity_for_request(normal, root, owned))
+            self.assertTrue(_should_defer_evidence_manifest_integrity_for_request(recert, root, owned))
 
     def test_verification_only_authority_allows_zero_delta_after_independent_checks(self):
         with tempfile.TemporaryDirectory() as d:

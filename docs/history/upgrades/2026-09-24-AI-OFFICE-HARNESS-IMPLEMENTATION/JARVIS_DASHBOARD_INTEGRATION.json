@@ -1,0 +1,8 @@
+{
+  "dashboard_authority": "NON_AUTHORITATIVE",
+  "dashboard_qualification_head": "c13e257fcaffc2e994785499ced5b8efe71249b7",
+  "direct_execution_authority": false,
+  "read_schema": "orchestration.operations-read-model.v1",
+  "schema_version": "gch.jarvis-dashboard-integration.v1",
+  "status": "PASS"
+}
