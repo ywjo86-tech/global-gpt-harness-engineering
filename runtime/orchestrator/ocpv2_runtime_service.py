@@ -226,49 +226,60 @@ def _runtime_release_for_full_plan_request(
     *,
     service_release: RuntimeReleaseManifest | None = None,
 ) -> RuntimeReleaseManifest:
-    """Resolve the immutable release explicitly bound by one Full Plan request.
+    """Resolve the immutable runtime release bound by one Full Plan request.
 
-    OCP's own repo root remains the control-runtime identity.  A Full Plan
-    request may bind a sibling immutable release, but only by exact HEAD and
-    manifest digest; no runtime-current lookup or arbitrary path is allowed.
+    expected_head belongs to the target project's source binding and must
+    never select a Harness runtime release. Runtime identity is the immutable
+    runtime_release_digest. Prefer the serving release when its manifest
+    digest matches; otherwise resolve exactly one verified sibling release by
+    that digest. Ambiguous or missing matches fail closed.
     """
     root = Path(configured_root).expanduser().absolute()
     service_release = service_release or _runtime_release_for_root(root)
-    expected_head = str(getattr(request, "expected_head", "") or "")
+    project_head = str(getattr(request, "expected_head", "") or "")
     expected_digest = str(getattr(request, "runtime_release_digest", "") or "")
-    if not re.fullmatch(r"[0-9a-f]{40}", expected_head):
+    if not re.fullmatch(r"[0-9a-f]{40}", project_head):
         raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
     if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
         raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+
     if (
-        str(service_release.source_head) == expected_head
-        and str(service_release.manifest_sha256) == expected_digest
+        str(service_release.manifest_sha256) == expected_digest
         and Path(str(service_release.release_path or "")).absolute() == root
     ):
         return service_release
 
     releases_root = root.parent
-    target = releases_root / expected_head
-    if (
-        releases_root.is_symlink()
-        or not releases_root.is_dir()
-        or target.is_symlink()
-        or not target.is_dir()
-        or target.resolve(strict=True) != target
-        or target.parent != releases_root
-    ):
+    if releases_root.is_symlink() or not releases_root.is_dir():
         raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
+
+    matches: list[RuntimeReleaseManifest] = []
     try:
-        release = _runtime_release_for_root(target)
-    except (RuntimeServiceError, OSError, ValueError) as exc:
+        candidates = sorted(releases_root.iterdir(), key=lambda path: path.name)
+    except OSError as exc:
         raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH") from exc
-    if (
-        str(release.source_head) != expected_head
-        or str(release.manifest_sha256) != expected_digest
-        or Path(str(release.release_path or "")).absolute() != target
-    ):
+
+    for target in candidates:
+        if target == root or not re.fullmatch(r"[0-9a-f]{40}", target.name):
+            continue
+        if target.is_symlink() or not target.is_dir():
+            continue
+        try:
+            if target.resolve(strict=True) != target or target.parent != releases_root:
+                continue
+            release = _runtime_release_for_root(target)
+        except (RuntimeServiceError, OSError, ValueError):
+            continue
+        if (
+            str(release.source_head) == target.name
+            and str(release.manifest_sha256) == expected_digest
+            and Path(str(release.release_path or "")).absolute() == target
+        ):
+            matches.append(release)
+
+    if len(matches) != 1:
         raise RuntimeServiceError("FULL_PLAN_ACTIVATION_RUNTIME_RELEASE_MISMATCH")
-    return release
+    return matches[0]
 
 
 def finalize_remote_control_projection(
