@@ -1850,7 +1850,7 @@ def _owned_python_test_files(root: Path, owned_files: list[str], changed_files: 
 def _sealed_evidence_manifest_deferral(toolchain_contract: Mapping[str, Any] | None) -> bool:
     if not isinstance(toolchain_contract, Mapping):
         return False
-    if list(toolchain_contract.get("profile_ids") or []) != ["PYTHON_PROJECT_EVIDENCE"]:
+    if list(toolchain_contract.get("profile_ids") or []) not in (["PYTHON_PROJECT_EVIDENCE"], ["PYTHON_PROJECT_SOURCE"]):
         return False
     marker = "--ignore=tests/evidence/test_manifest.py"
     marked: list[bool] = []
