@@ -5,12 +5,14 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.orchestrator.ocpv2_activation_window import (
     ACTIVATION_WINDOW_SCHEMA_V1,
     DEFAULT_OCP_TIMER,
     DEFAULT_RECONCILE_TIMER,
     OCPActivationWindowError,
+    SystemdTransientRecoveryScheduler,
     activation_flag_value,
     activation_window_path,
     close_activation_window,
@@ -248,6 +250,25 @@ class OCPActivationWindowTests(unittest.TestCase):
         self.assertTrue(controller.states[DEFAULT_RECONCILE_TIMER])
         self.assertFalse(controller.states[DEFAULT_OCP_TIMER])
         self.assertNotIn(("start", DEFAULT_OCP_TIMER), controller.events)
+
+    @patch("runtime.orchestrator.ocpv2_activation_window.subprocess.run")
+    def test_systemd_watchdog_schedules_forced_recovery(self, run):
+        scheduler = SystemdTransientRecoveryScheduler()
+        unit = scheduler.schedule(
+            window_id="TEST:WINDOW",
+            delay_seconds=90,
+            state_root=self.state,
+            env_file=self.env,
+        )
+
+        self.assertTrue(unit.startswith("gch-ocpv2-activation-window-recovery-"))
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ["systemd-run", "--user"])
+        self.assertIn("--on-active=90s", command)
+        self.assertIn("--collect", command)
+        self.assertIn("runtime.orchestrator.ocpv2_activation_window", command)
+        self.assertIn("recover", command)
+        self.assertIn("--force", command)
 
     def test_watchdog_schedule_failure_rolls_back_without_pausing_timers(self):
         controller = self._controller()
