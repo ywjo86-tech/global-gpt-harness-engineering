@@ -271,6 +271,31 @@ class LVReviewTest(unittest.TestCase):
             self.assertTrue(all(item["exit_code"] == 0 for item in results))
             self.assertTrue(resolver.call_args.kwargs["defer_evidence_manifest_integrity"])
 
+    def test_native_review_preserves_source_scope_manifest_deferral(self) -> None:
+        from runtime.orchestrator.validation_toolchain import ValidationCommandSet
+        from runtime.orchestrator.lv_review import _run_tests
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = ValidationCommandSet(
+                ("PYTHON_PROJECT_SOURCE",),
+                ((".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--ignore=tests/evidence/test_manifest.py"),),
+                ((".venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "--ignore=tests/evidence/test_manifest.py"),),
+                ((".venv/bin/python", "-m", "compileall", "-q", "src"),),
+                False,
+            )
+            with patch("runtime.orchestrator.lv_review.resolve_validation_commands", return_value=plan) as resolver, patch(
+                "runtime.orchestrator.lv_review.run_command_group", return_value={"exit_code": 0, "timeout": False}
+            ):
+                results, error = _run_tests(
+                    root, Path(sys.executable), ["src/pkg/a.py"],
+                    expected_profiles=["PYTHON_PROJECT_SOURCE"],
+                    defer_evidence_manifest_integrity=True,
+                )
+            self.assertIsNone(error)
+            self.assertEqual(len(results), 3)
+            self.assertTrue(all(item["exit_code"] == 0 for item in results))
+            self.assertTrue(resolver.call_args.kwargs["defer_evidence_manifest_integrity"])
+
     def test_verification_only_test_scope_runs_without_product_import_target(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

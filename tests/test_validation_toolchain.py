@@ -195,6 +195,32 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.compile[0],('.venv/bin/python','-m','compileall','-q','src'))
             self.assertFalse(plan.deferred)
 
+    def test_python_source_scope_without_owned_tests_uses_read_only_project_validation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'tests/evidence').mkdir(parents=True)
+            (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): pass\n')
+            (root/'evidence/implementation').mkdir(parents=True)
+            (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/a.py').write_text('VALUE = 1\n')
+            (root/'pyproject.toml').write_text('[project]\nname="fixture"\n')
+            plan=resolve_validation_commands(
+                root,['src/pkg/a.py'],
+                defer_evidence_manifest_integrity=True,
+            )
+            self.assertEqual(plan.profile_ids,('PYTHON_PROJECT_SOURCE',))
+            expected=(
+                '.venv/bin/python','-m','pytest','-q','-p','no:cacheprovider',
+                '--ignore=tests/evidence/test_manifest.py',
+            )
+            self.assertEqual(plan.focused[0],expected)
+            self.assertEqual(plan.full[0],expected)
+            self.assertEqual(plan.compile[0],('.venv/bin/python','-m','compileall','-q','src'))
+            self.assertFalse(plan.deferred)
+
     def test_evidence_scope_without_python_project_markers_remains_fail_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)

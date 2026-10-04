@@ -290,11 +290,38 @@ def resolve_validation_commands(
                 deferred = True
             else:
                 raise ValidationToolchainError("Python owned scope requires project venv or approved external interpreter")
-        elif allow_deferred:
-            profiles.append("PYTHON_PYTEST")
-            deferred = True
         else:
-            raise ValidationToolchainError("Python owned scope requires owned focused tests")
+            project_config = root / "pyproject.toml"
+            tests_root = root / "tests"
+            source_root = root / "src"
+            project_source_validation = (
+                _safe_regular_file(root, project_config)
+                and tests_root.is_dir()
+                and not tests_root.is_symlink()
+                and (project_interpreter.is_file() or external_interpreter is not None)
+            )
+            if project_source_validation:
+                runner = str(external_interpreter) if external_interpreter is not None else ".venv/bin/python"
+                pytest_command = [runner, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                if defer_evidence_manifest_integrity:
+                    evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                    evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                    if (
+                        not evidence_test.is_file() or evidence_test.is_symlink()
+                        or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                    ):
+                        raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                    pytest_command.append("--ignore=tests/evidence/test_manifest.py")
+                profiles.append("PYTHON_PROJECT_SOURCE")
+                focused.append(tuple(pytest_command))
+                full.append(tuple(pytest_command))
+                compile_target = "src" if source_root.is_dir() and not source_root.is_symlink() else "."
+                compile_commands.append((runner, "-m", "compileall", "-q", compile_target))
+            elif allow_deferred:
+                profiles.append("PYTHON_PYTEST")
+                deferred = True
+            else:
+                raise ValidationToolchainError("Python owned scope requires owned focused tests")
 
     evidence_only = bool(owned_files) and all(
         isinstance(path, str) and path.startswith("evidence/")
