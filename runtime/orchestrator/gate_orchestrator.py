@@ -2733,6 +2733,28 @@ def _verified_approved_baseline_satisfied_recertification(
     return record
 
 
+def _project_sealed_state_for_lv_invocation(
+    sealed_state: Mapping[str, Any],
+    *,
+    transition_record: Mapping[str, Any] | None,
+    observed_head: str,
+    lv_resume: bool,
+) -> dict[str, Any]:
+    """Project canonical state without rewriting an immutable resumed package.
+
+    A same-LV resume reuses the package sealed at its original source baseline.
+    The descendant Worker checkpoint is already authorized by the sealed
+    transition/ResumeStore lineage, so REVIEW must continue validating that
+    immutable package against its baseline checkpoint. Fresh successor LVs
+    still project the transition's current HEAD into the new package.
+    """
+    projected = dict(sealed_state)
+    if transition_record is not None and not lv_resume:
+        projected["checkpoint_commit"] = observed_head
+        projected["transition"] = dict(transition_record)
+    return projected
+
+
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
@@ -3174,9 +3196,12 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     branch=branch, head=head, full_plan_opt_in=full_plan_opt_in,
                     project_final_validation=project_final_validation,
                 )
-                if transition_record is not None:
-                    sealed_state["checkpoint_commit"] = observed_head
-                    sealed_state["transition"] = transition_record
+                sealed_state = _project_sealed_state_for_lv_invocation(
+                    sealed_state,
+                    transition_record=transition_record,
+                    observed_head=observed_head,
+                    lv_resume=lv_resume,
+                )
                 context["canonical_state_override"] = sealed_state
             else:
                 context["canonical_state_override"] = project_lv_execution_state(root, plan, auth, lv_id)
