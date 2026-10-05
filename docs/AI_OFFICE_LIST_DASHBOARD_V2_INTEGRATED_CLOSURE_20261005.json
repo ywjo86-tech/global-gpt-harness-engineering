@@ -1,0 +1,45 @@
+{
+  "schema_version": "ai-office.list-dashboard-v2-integrated-closure.v1",
+  "status": "PASS",
+  "closed_at": "2026-10-05T17:35:00+09:00",
+  "production_publisher_head": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+  "jarvis_ui_implementation_head": "7ed99eb6ec1dc82626b1f67f45f82a6aae18f076",
+  "jarvis_compact_producer_head": "91d4e019a514f5a08ae4bf9ef0c657e085fa5f82",
+  "runtime_current": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+  "runtime_lineage_from_435e705": "PASS_IS_ANCESTOR",
+  "extensions": {
+    "department_registry": "PRODUCTION_PROMOTED",
+    "business_schedule": "PRODUCTION_PROMOTED",
+    "report_index": "PRODUCTION_PROMOTED",
+    "jarvis_memory_llmwiki_compact_status": "PRODUCTION_PROMOTED",
+    "model_usage_cost_projection": "PRODUCTION_PROMOTED"
+  },
+  "live_contracts": {
+    "department_count": 7,
+    "schedule_source": "CANONICAL_BUSINESS_SCHEDULE_V1",
+    "report_source": "CANONICAL_OFFICE_REPORT_INDEX_V1",
+    "jarvis_status_source": "CANONICAL_JARVIS_COMPACT_STATUS_V1",
+    "model_usage_source": "CANONICAL_MODEL_USAGE_V1",
+    "model_cost": "UNAVAILABLE_NO_VERIFIED_RATE_CARD",
+    "spatial_office": "HOLD_BY_USER"
+  },
+  "operational_health": {
+    "http_matrix": "9/9 PASS",
+    "control_fail_closed": "503 CONTROL_UNAVAILABLE",
+    "attention": "PASS",
+    "reconcile": "PASS",
+    "post_change": "PASS",
+    "acceptance": "ACCEPTED",
+    "core_timers": "ACTIVE_WAITING_ENABLED",
+    "jarvis_restarts": 0,
+    "journal_warnings_since_model_usage_cutover": 0
+  },
+  "tests": {
+    "harness_integrated": "201 PASS + 8 subtests PASS",
+    "worker_and_model_usage": "131 PASS + 58 subtests PASS + 1 skipped",
+    "jarvis_integrated": "47/47 PASS",
+    "runtime_release_verify": "PASS"
+  },
+  "rollback_anchor": "/home/ywjo/AI-Workspace/backups/model-usage-finalize-20261005-173022",
+  "next_gate": "AI_OFFICE_LIST_DASHBOARD_V2_TRACK_CLOSED"
+}
