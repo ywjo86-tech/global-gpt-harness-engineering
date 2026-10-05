@@ -25,6 +25,7 @@ from runtime.orchestrator.production_worker_executor import (
     _focused_execution_metadata, _sealed_external_validation_python,
     _validation_command_env, _should_defer_evidence_manifest_integrity_for_request,
     _test_runner_metadata, _bounded_validation_feedback, _candidate_validation_command, _candidate_validation_env, _source_validation_env,
+    _provider_action_candidate_focused_validator,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
 from runtime.orchestrator.lv_execution_package import canonical_json_bytes
@@ -62,6 +63,58 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
                 _candidate_validation_command(root, ['npm','test']),
                 ['npm','test'],
             )
+
+    def test_candidate_focused_validator_preserves_sealed_pytest_for_pytest_function(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            target = root / "tests/evidence/test_guard.py"
+            target.parent.mkdir(parents=True)
+            target.write_text("def test_candidate():\n    assert False\n")
+            interpreter = root / ".venv/bin/python"
+            interpreter.parent.mkdir(parents=True)
+            interpreter.write_text(f"#!/bin/sh\nexec {sys.executable} \"$@\"\n")
+            interpreter.chmod(0o755)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "add", "tests/evidence/test_guard.py"], cwd=root, check=True)
+            subprocess.run([
+                "git", "-c", "user.name=Test", "-c", "user.email=test@localhost",
+                "commit", "-qm", "baseline",
+            ], cwd=root, check=True)
+            baseline = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            request = WorkerRequest(
+                project_root=str(root),
+                task=TaskSlice(
+                    thread_id="TASK-004", assigned_agent="implementation_agent",
+                    input="add deterministic guard", expected_output="truthful worker result",
+                    validation_criteria=["guard passes"], editable_scope=["tests/evidence/test_guard.py"],
+                    forbidden_scope=[], merge_point="GATE_EXIT",
+                ),
+                contract_summary={
+                    "project_id": "p", "gate_id": "G1", "lv_id": "TASK-004",
+                    "canonical_plan_sha256": "a" * 64,
+                },
+                state_snapshot={"branch": "sealed", "head": baseline},
+                extra_context={
+                    "validation_toolchain": {
+                        "profile_ids": ["PYTHON_PYTEST"],
+                        "focused": [[".venv/bin/python", "-m", "pytest", "-q", "tests/evidence/test_guard.py"]],
+                        "full": [[".venv/bin/python", "-m", "pytest", "-q"]],
+                        "compile": [[".venv/bin/python", "-m", "compileall", "-q", "tests/evidence/test_guard.py"]],
+                        "deferred": False,
+                    }
+                },
+            )
+            validator = _provider_action_candidate_focused_validator(
+                root=root, baseline=baseline, owned=["tests/evidence/test_guard.py"],
+                request=request, timeout=30,
+            )
+            proposal = {
+                "writes": [{
+                    "owned_file_id": "OWNED_0001", "relative_path": "",
+                    "content": "def test_candidate():\n    assert True\n",
+                }]
+            }
+            self.assertEqual(validator(proposal), "")
 
     def test_candidate_validation_environment_prefers_sandbox_source_and_strips_control_plane(self):
         with tempfile.TemporaryDirectory() as d:

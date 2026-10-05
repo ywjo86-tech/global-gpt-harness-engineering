@@ -2545,7 +2545,6 @@ def _provider_action_candidate_focused_validator(
                     target = sandbox / path
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(source.read_bytes())
-            candidate_test_modules: list[str] = []
             for write in writes:
                 file_id = str(write.get("owned_file_id", ""))
                 match = re.fullmatch(r"OWNED_(\d{4})", file_id)
@@ -2560,12 +2559,10 @@ def _provider_action_candidate_focused_validator(
                 target = sandbox / target_path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(str(write.get("content", "")), encoding="utf-8")
-                if target_path.startswith("tests/") and target_path.endswith(".py") and not base_path.endswith("/"):
-                    candidate_test_modules.append(target_path[:-3].replace("/", "."))
+            # Run the sealed focused toolchain exactly as registered. Rewriting a
+            # pytest target to unittest changes collection semantics and can turn
+            # a valid pytest function into RC=5 (no tests collected).
             commands = [list(item) for item in focused if isinstance(item, list) and item]
-            if candidate_test_modules and commands:
-                python_executable = commands[0][0]
-                commands = [[python_executable, "-m", "unittest", "-v", *candidate_test_modules]]
             for command in commands:
                 candidate_command = _candidate_validation_command(root, command)
                 result = subprocess.run(
