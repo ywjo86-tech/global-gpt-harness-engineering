@@ -810,6 +810,111 @@ def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] |
     return {"status": "PASS", "git_common_dir": common, "python": str(python_executable)}
 
 
+def resume_registered_job_after_verified_checkpoint_cleanup(
+    job_path: str | Path, recovery_evidence_path: str | Path,
+) -> dict[str, Any]:
+    """Resume an exact preflight-blocked retry after failed-LV worktree cleanup."""
+    requested = load_job(job_path)
+    canonical = canonical_job_path(requested)
+    if canonical.is_symlink() or not canonical.is_file():
+        raise FullPlanJobError("durable Full Plan job is not registered")
+    job = load_registered_job(canonical)
+
+    evidence_path = Path(recovery_evidence_path).resolve()
+    evidence = _load_json(evidence_path)
+    expected_fields = {
+        "schema_version", "project_id", "run_id", "gate_id", "lv_id",
+        "checkpoint_head", "blocked_state_sha256", "failed_patch_path",
+        "failed_patch_sha256", "changed_files", "restored_at", "record_sha256",
+    }
+    if set(evidence) != expected_fields or evidence.get("schema_version") != "orchestration.failed-lv-worktree-cleanup.v1":
+        raise FullPlanJobError("verified checkpoint recovery evidence shape invalid")
+    unsigned = {key: evidence[key] for key in evidence if key != "record_sha256"}
+    expected_record_sha = hashlib.sha256(
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    if evidence.get("record_sha256") != expected_record_sha:
+        raise FullPlanJobError("verified checkpoint recovery evidence digest mismatch")
+    for key in ("blocked_state_sha256", "failed_patch_sha256"):
+        if not isinstance(evidence.get(key), str) or not _SHA256.fullmatch(str(evidence[key])):
+            raise FullPlanJobError("verified checkpoint recovery evidence SHA invalid")
+    if not isinstance(evidence.get("checkpoint_head"), str) or not _HEAD.fullmatch(str(evidence["checkpoint_head"])):
+        raise FullPlanJobError("verified checkpoint recovery checkpoint invalid")
+    changed_files = evidence.get("changed_files")
+    if (
+        not isinstance(changed_files, list) or not changed_files
+        or any(not isinstance(item, str) or not item or Path(item).is_absolute() or ".." in Path(item).parts for item in changed_files)
+    ):
+        raise FullPlanJobError("verified checkpoint recovery changed-files invalid")
+    patch = Path(str(evidence.get("failed_patch_path") or "")).resolve()
+    if patch.is_symlink() or not patch.is_file() or sha256_file(patch) != evidence["failed_patch_sha256"]:
+        raise FullPlanJobError("verified checkpoint recovery patch evidence invalid")
+    if (
+        evidence.get("project_id") != job.get("project_id")
+        or evidence.get("run_id") != job.get("run_id")
+    ):
+        raise FullPlanJobError("verified checkpoint recovery run binding mismatch")
+
+    gate_ids = [str(item["gate_id"]) for item in job.get("gates", [])]
+    supervisor = DurableFullPlanSupervisor(
+        job_state_root(job), project_id=str(job["project_id"]), run_id=str(job["run_id"]),
+        gates=gate_ids, authority_core_sha256=str(job.get("authority_core_sha256") or ""),
+        **dict(job.get("policy") or {}),
+    )
+    state, _ = supervisor.load()
+    blocked = [
+        item for item in state.get("queue", [])
+        if item.get("status") == "BLOCKED" and item.get("resume") is True
+    ]
+    if (
+        state.get("state") != "BLOCKED"
+        or state.get("terminal_reason") != "PREFLIGHT_BLOCKED"
+        or state.get("last_error") != "SOURCE_HEAD_MISMATCH"
+        or state.get("state_sha256") != evidence.get("blocked_state_sha256")
+        or len(blocked) != 1
+        or blocked[0].get("gate_id") != evidence.get("gate_id")
+    ):
+        raise FullPlanJobError("verified checkpoint recovery durable state mismatch")
+
+    project = Path(str(job["project_root"])).resolve()
+    status = subprocess.run(
+        ["git", "-C", str(project), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    head = subprocess.run(
+        ["git", "-C", str(project), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if (
+        status.returncode != 0 or status.stdout.strip()
+        or head.returncode != 0 or head.stdout.strip() != evidence.get("checkpoint_head")
+    ):
+        raise FullPlanJobError("verified checkpoint recovery source is not restored")
+
+    preflight = preflight_job(
+        job, resume_context={"state": state, "queue_item": blocked[0]},
+    )
+    if preflight.get("status") != "PASS":
+        raise FullPlanJobError(
+            "verified checkpoint recovery preflight blocked:" + str(preflight.get("reason") or "UNKNOWN")
+        )
+
+    recovered = supervisor.resume_verified_checkpoint_preflight_block(
+        expected_state_sha256=str(state["state_sha256"]),
+        recovery_evidence_sha256=str(evidence["record_sha256"]),
+    )
+    return {
+        "status": "RECOVERING",
+        "project_id": str(job["project_id"]),
+        "run_id": str(job["run_id"]),
+        "gate_id": str(blocked[0]["gate_id"]),
+        "lv_id": str(evidence["lv_id"]),
+        "checkpoint_head": str(evidence["checkpoint_head"]),
+        "recovery_evidence_sha256": str(evidence["record_sha256"]),
+        "state_sha256": str(recovered["state_sha256"]),
+    }
+
+
 def build_gate_executor(job: Mapping[str, Any]):
     if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
         from .operator_plan_execution import build_operator_plan_executor

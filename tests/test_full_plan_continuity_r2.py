@@ -11,7 +11,7 @@ from pathlib import Path
 from runtime.orchestrator.production_attention import AttentionOutbox
 from runtime.orchestrator.production_full_plan_boot import FullPlanBootError, ensure_runtime_link, reconcile_job, systemd_user_timer
 from runtime.orchestrator.production_full_plan_entry import load_job, register_job
-from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor
+from runtime.orchestrator.production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
 from runtime.orchestrator.runtime_migration_handoff import MigrationPhase, MigrationStore
 from runtime.orchestrator.cli import main as cli_main
 
@@ -245,6 +245,43 @@ class FullPlanContinuityR2Tests(unittest.TestCase):
             self.assertEqual(reopened["queue"][0]["status"], "READY")
             self.assertTrue(reopened["queue"][0]["resume"])
             self.assertEqual(reopened["queue"][0]["attempt"], 2)
+
+
+    def test_verified_checkpoint_preflight_block_requires_cas_and_explicit_resume(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup = DurableFullPlanSupervisor(
+                d, project_id="proj", run_id="checkpoint-recovery", gates=["G1"], retry_budget=1,
+                gate_timeout_seconds=1, heartbeat_seconds=.03, lease_seconds=.08,
+                min_disk_free_bytes=0, min_inode_free=0, min_memory_available_bytes=0,
+            )
+            def preflight(context):
+                if int(context["queue_item"].get("attempt", 1)) == 1:
+                    return {"status": "PASS"}
+                return {"status": "BLOCK", "state": "BLOCKED", "reason": "SOURCE_HEAD_MISMATCH"}
+
+            def broken(_gate_id, _gate_run_id, _resume):
+                raise RuntimeError("production worker independent command verification failed")
+
+            out = sup.run(broken, preflight=preflight)
+            self.assertEqual(out.status, "BLOCKED")
+            self.assertEqual(out.state["terminal_reason"], "PREFLIGHT_BLOCKED")
+            self.assertEqual(out.state["last_error"], "SOURCE_HEAD_MISMATCH")
+            self.assertTrue(out.state["queue"][0]["resume"])
+            self.assertEqual(out.state["queue"][0]["attempt"], 2)
+            with self.assertRaisesRegex(ProductionFullPlanError, "CAS_MISMATCH"):
+                sup.resume_verified_checkpoint_preflight_block(
+                    expected_state_sha256="0" * 64,
+                    recovery_evidence_sha256="a" * 64,
+                )
+            reopened = sup.resume_verified_checkpoint_preflight_block(
+                expected_state_sha256=out.state["state_sha256"],
+                recovery_evidence_sha256="a" * 64,
+            )
+            self.assertEqual(reopened["state"], "RECOVERING")
+            self.assertEqual(reopened["queue"][0]["status"], "READY")
+            self.assertTrue(reopened["queue"][0]["resume"])
+            self.assertEqual(reopened["queue"][0]["attempt"], 2)
+            self.assertIsNone(reopened["last_error"])
 
 
     def test_periodic_reconciler_surfaces_runtime_migration_cancel_orphan_once(self):

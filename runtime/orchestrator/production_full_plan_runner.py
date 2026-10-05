@@ -1169,6 +1169,51 @@ class DurableFullPlanSupervisor:
         finally:
             self._release_run_lock(handle)
 
+    def resume_verified_checkpoint_preflight_block(
+        self, *, expected_state_sha256: str, recovery_evidence_sha256: str,
+    ) -> dict[str, Any]:
+        """Reopen only an exact SOURCE_HEAD_MISMATCH preflight block after verified cleanup."""
+        if not isinstance(expected_state_sha256, str) or len(expected_state_sha256) != 64:
+            raise ProductionFullPlanError("verified checkpoint recovery state digest invalid")
+        if not isinstance(recovery_evidence_sha256, str) or len(recovery_evidence_sha256) != 64:
+            raise ProductionFullPlanError("verified checkpoint recovery evidence digest invalid")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if state.get("state_sha256") != expected_state_sha256:
+                raise ProductionFullPlanError("VERIFIED_CHECKPOINT_RECOVERY_CAS_MISMATCH")
+            if (
+                state.get("state") != "BLOCKED"
+                or state.get("terminal_reason") != "PREFLIGHT_BLOCKED"
+                or state.get("last_error") != "SOURCE_HEAD_MISMATCH"
+            ):
+                raise ProductionFullPlanError("verified checkpoint recovery state is not eligible")
+            candidates = [
+                item for item in state.get("queue", [])
+                if item.get("status") == "BLOCKED" and item.get("resume") is True
+            ]
+            if len(candidates) != 1:
+                raise ProductionFullPlanError("verified checkpoint recovery requires one blocked resume item")
+            item = candidates[0]
+            item["status"] = "READY"
+            item["last_error"] = None
+            state["state"] = "RECOVERING"
+            state["terminal_reason"] = None
+            state["last_error"] = None
+            state["lease"] = None
+            state["recovery_count"] = int(state.get("recovery_count", 0)) + 1
+            return self._persist(
+                state,
+                {
+                    "event": "VERIFIED_CHECKPOINT_PREFLIGHT_RECOVERY_RESUME",
+                    "gate_id": item["gate_id"],
+                    "attempt": item["attempt"],
+                    "recovery_evidence_sha256": recovery_evidence_sha256,
+                },
+            )
+        finally:
+            self._release_run_lock(handle)
+
     def resume_wait(self, expected_state: str) -> dict[str, Any]:
         handle = self._acquire_run_lock()
         try:
