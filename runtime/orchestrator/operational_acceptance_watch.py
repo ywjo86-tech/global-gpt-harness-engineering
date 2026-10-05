@@ -169,15 +169,27 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(rec.to_dict(), sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
+    delivery_path = out / "attention-delivery-health.json"
+    delivery_health = None
+    if delivery_path.is_file() and not delivery_path.is_symlink():
+        try:
+            loaded_delivery = json.loads(delivery_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_delivery, dict):
+                delivery_health = loaded_delivery
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            delivery_health = None
+
     system_rec = build_operational_system_acceptance(
         runtime_source_identity=a.runtime_source,
         expected_runtime_source_identity=expected_runtime,
         registered_project_count=len(current_jobs),
         post_change_gate=gate,
         current_attention_projection=current_attention,
+        attention_delivery_health=delivery_health,
         monitor_health_receipt_refs=(str(ap), str(tp)),
         process_lifecycle_diagnostic_refs=(str(process_snapshot_path),),
         created_at=now.isoformat(timespec="seconds"),
+        delivery_stale_after_seconds=a.stale_after_seconds,
     )
     system_path = record_operational_system_acceptance(
         a.state_root,

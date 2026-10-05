@@ -1,8 +1,9 @@
 """Runtime-bound system-level operational acceptance.
 
-V1 acceptance remains tied to a specific terminal Full Plan run.  This V2
-record answers a different question: is the *current* Harness operational
-runtime healthy enough to be represented as accepted at the system level?
+V1 acceptance remains tied to one terminal Full Plan run. This V2 record
+answers whether the current Harness runtime is safe to represent as accepted.
+It binds current attention, post-change evidence, runtime identity, and the
+outbound attention-delivery health contract.
 """
 from __future__ import annotations
 
@@ -13,11 +14,9 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .attention_delivery_runner import validate_attention_delivery_health
 from .durable_io import atomic_write_json
-from .operations_current_attention import (
-    CURRENT_ATTENTION_SOURCE_V1,
-    validate_current_attention_projection,
-)
+from .operations_current_attention import validate_current_attention_projection
 
 SYSTEM_ACCEPTANCE_SCHEMA_V2 = "orchestration.operational-system-acceptance.v2"
 
@@ -28,10 +27,7 @@ class OperationalSystemAcceptanceError(ValueError):
 
 def _canonical(value: object) -> bytes:
     return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
 
 
@@ -40,15 +36,15 @@ def _digest(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(_canonical(unsigned)).hexdigest()
 
 
-def _aware_timestamp(value: object) -> datetime:
+def _aware_timestamp(value: object, label: str = "timestamp") -> datetime:
     if not isinstance(value, str) or not value:
-        raise OperationalSystemAcceptanceError("created_at required")
+        raise OperationalSystemAcceptanceError(f"{label} required")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise OperationalSystemAcceptanceError("created_at invalid") from exc
+        raise OperationalSystemAcceptanceError(f"{label} invalid") from exc
     if parsed.tzinfo is None:
-        raise OperationalSystemAcceptanceError("created_at must be timezone-aware")
+        raise OperationalSystemAcceptanceError(f"{label} must be timezone-aware")
     return parsed.astimezone(timezone.utc)
 
 
@@ -62,6 +58,8 @@ class OperationalSystemAcceptanceV2:
     blocking_project_count: int
     post_change_gate_evidence_digest: str
     current_attention_projection_sha256: str
+    attention_delivery_status: str
+    attention_delivery_health_sha256: str
     monitor_health_receipt_refs: tuple[str, ...]
     process_lifecycle_diagnostic_refs: tuple[str, ...]
     status: str
@@ -91,9 +89,11 @@ def build_operational_system_acceptance(
     registered_project_count: int,
     post_change_gate: Mapping[str, Any],
     current_attention_projection: Mapping[str, Any],
+    attention_delivery_health: Mapping[str, Any] | None = None,
     monitor_health_receipt_refs: Sequence[str] = (),
     process_lifecycle_diagnostic_refs: Sequence[str] = (),
     created_at: str | None = None,
+    delivery_stale_after_seconds: int = 180,
 ) -> OperationalSystemAcceptanceV2:
     runtime = str(runtime_source_identity or "").strip()
     expected = str(expected_runtime_source_identity or "").strip()
@@ -107,8 +107,16 @@ def build_operational_system_acceptance(
         raise OperationalSystemAcceptanceError("registered project count invalid")
     if not isinstance(post_change_gate, Mapping):
         raise OperationalSystemAcceptanceError("post-change gate required")
+    if (
+        isinstance(delivery_stale_after_seconds, bool)
+        or not isinstance(delivery_stale_after_seconds, int)
+        or delivery_stale_after_seconds <= 0
+    ):
+        raise OperationalSystemAcceptanceError("delivery stale threshold invalid")
 
     attention = validate_current_attention_projection(current_attention_projection)
+    timestamp = created_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = _aware_timestamp(timestamp, "created_at")
     blocking_reasons: list[str] = []
 
     if runtime != expected:
@@ -125,9 +133,7 @@ def build_operational_system_acceptance(
         if str(item)
     ]
     if post_change_gate.get("status") != "PASS" or gate_failures:
-        blocking_reasons.extend(
-            f"POST_CHANGE:{item}" for item in gate_failures
-        )
+        blocking_reasons.extend(f"POST_CHANGE:{item}" for item in gate_failures)
         if not gate_failures:
             blocking_reasons.append("POST_CHANGE:BLOCKED")
 
@@ -140,15 +146,39 @@ def build_operational_system_acceptance(
     if project_ids:
         blocking_reasons.append(f"CURRENT_OPERATIONAL_BLOCKERS:{len(project_ids)}")
 
+    delivery_status = "UNAVAILABLE"
+    delivery_digest = hashlib.sha256(b"UNAVAILABLE").hexdigest()
+    if attention_delivery_health is None:
+        blocking_reasons.append("ATTENTION_DELIVERY:UNAVAILABLE")
+    else:
+        try:
+            delivery = validate_attention_delivery_health(dict(attention_delivery_health))
+        except (TypeError, ValueError):
+            blocking_reasons.append("ATTENTION_DELIVERY:INVALID")
+        else:
+            delivery_status = str(delivery.get("status") or "UNKNOWN")
+            delivery_digest = str(delivery.get("health_sha256") or "")
+            if delivery.get("runtime_source_identity") != expected:
+                blocking_reasons.append("ATTENTION_DELIVERY_RUNTIME_SOURCE_MISMATCH")
+            try:
+                observed = _aware_timestamp(delivery.get("observed_at"), "attention delivery observed_at")
+                age = (now - observed).total_seconds()
+                if age < -30 or age > delivery_stale_after_seconds:
+                    blocking_reasons.append("ATTENTION_DELIVERY:STALE")
+            except OperationalSystemAcceptanceError:
+                blocking_reasons.append("ATTENTION_DELIVERY:INVALID_TIMESTAMP")
+            if delivery_status != "PASS":
+                blocking_reasons.append(f"ATTENTION_DELIVERY:{delivery_status}")
+
     gate_digest = str(post_change_gate.get("gate_evidence_sha256") or "")
     if len(gate_digest) != 64:
         gate_digest = hashlib.sha256(_canonical(dict(post_change_gate))).hexdigest()
     attention_digest = str(attention.get("projection_sha256") or "")
     if len(attention_digest) != 64:
         raise OperationalSystemAcceptanceError("attention projection digest required")
+    if len(delivery_digest) != 64:
+        delivery_digest = hashlib.sha256(_canonical(attention_delivery_health or {})).hexdigest()
 
-    timestamp = created_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
-    _aware_timestamp(timestamp)
     reasons = tuple(dict.fromkeys(blocking_reasons))
     unsigned = {
         "schema_version": SYSTEM_ACCEPTANCE_SCHEMA_V2,
@@ -159,6 +189,8 @@ def build_operational_system_acceptance(
         "blocking_project_count": len(project_ids),
         "post_change_gate_evidence_digest": gate_digest,
         "current_attention_projection_sha256": attention_digest,
+        "attention_delivery_status": delivery_status,
+        "attention_delivery_health_sha256": delivery_digest,
         "monitor_health_receipt_refs": [
             str(item) for item in monitor_health_receipt_refs if str(item)
         ],
@@ -173,20 +205,14 @@ def build_operational_system_acceptance(
         schema_version=unsigned["schema_version"],
         created_at=unsigned["created_at"],
         runtime_source_identity=unsigned["runtime_source_identity"],
-        expected_runtime_source_identity=unsigned[
-            "expected_runtime_source_identity"
-        ],
+        expected_runtime_source_identity=unsigned["expected_runtime_source_identity"],
         registered_project_count=unsigned["registered_project_count"],
         blocking_project_count=unsigned["blocking_project_count"],
-        post_change_gate_evidence_digest=unsigned[
-            "post_change_gate_evidence_digest"
-        ],
-        current_attention_projection_sha256=unsigned[
-            "current_attention_projection_sha256"
-        ],
-        monitor_health_receipt_refs=tuple(
-            unsigned["monitor_health_receipt_refs"]
-        ),
+        post_change_gate_evidence_digest=unsigned["post_change_gate_evidence_digest"],
+        current_attention_projection_sha256=unsigned["current_attention_projection_sha256"],
+        attention_delivery_status=unsigned["attention_delivery_status"],
+        attention_delivery_health_sha256=unsigned["attention_delivery_health_sha256"],
+        monitor_health_receipt_refs=tuple(unsigned["monitor_health_receipt_refs"]),
         process_lifecycle_diagnostic_refs=tuple(
             unsigned["process_lifecycle_diagnostic_refs"]
         ),
@@ -202,25 +228,19 @@ def validate_operational_system_acceptance(
     if not isinstance(value, Mapping):
         raise OperationalSystemAcceptanceError("system acceptance mapping required")
     required = {
-        "schema_version",
-        "created_at",
-        "runtime_source_identity",
-        "expected_runtime_source_identity",
-        "registered_project_count",
-        "blocking_project_count",
-        "post_change_gate_evidence_digest",
-        "current_attention_projection_sha256",
-        "monitor_health_receipt_refs",
-        "process_lifecycle_diagnostic_refs",
-        "status",
-        "blocking_reasons",
+        "schema_version", "created_at", "runtime_source_identity",
+        "expected_runtime_source_identity", "registered_project_count",
+        "blocking_project_count", "post_change_gate_evidence_digest",
+        "current_attention_projection_sha256", "attention_delivery_status",
+        "attention_delivery_health_sha256", "monitor_health_receipt_refs",
+        "process_lifecycle_diagnostic_refs", "status", "blocking_reasons",
         "record_sha256",
     }
     if set(value) != required:
         raise OperationalSystemAcceptanceError("system acceptance shape mismatch")
     if value.get("schema_version") != SYSTEM_ACCEPTANCE_SCHEMA_V2:
         raise OperationalSystemAcceptanceError("system acceptance schema mismatch")
-    _aware_timestamp(value.get("created_at"))
+    _aware_timestamp(value.get("created_at"), "created_at")
     for key in ("runtime_source_identity", "expected_runtime_source_identity"):
         if not isinstance(value.get(key), str) or not value[key]:
             raise OperationalSystemAcceptanceError("system acceptance runtime identity missing")
@@ -230,12 +250,18 @@ def validate_operational_system_acceptance(
             raise OperationalSystemAcceptanceError("system acceptance count invalid")
     if value["blocking_project_count"] > value["registered_project_count"]:
         raise OperationalSystemAcceptanceError("blocking count exceeds registered projects")
+    if not isinstance(value.get("attention_delivery_status"), str) or not value["attention_delivery_status"]:
+        raise OperationalSystemAcceptanceError("attention delivery status invalid")
     if value.get("status") not in {"ACCEPTED", "BLOCKED"}:
         raise OperationalSystemAcceptanceError("system acceptance status invalid")
     reasons = value.get("blocking_reasons")
     if (
         value.get("status") == "ACCEPTED"
-        and (value.get("blocking_project_count") != 0 or reasons)
+        and (
+            value.get("blocking_project_count") != 0
+            or reasons
+            or value.get("attention_delivery_status") != "PASS"
+        )
     ):
         raise OperationalSystemAcceptanceError("accepted system record contains blockers")
     if value.get("status") == "BLOCKED" and not reasons:
@@ -252,6 +278,7 @@ def validate_operational_system_acceptance(
     for key in (
         "post_change_gate_evidence_digest",
         "current_attention_projection_sha256",
+        "attention_delivery_health_sha256",
         "record_sha256",
     ):
         digest = value.get(key)
@@ -268,9 +295,9 @@ def validate_operational_system_acceptance(
         registered_project_count=value["registered_project_count"],
         blocking_project_count=value["blocking_project_count"],
         post_change_gate_evidence_digest=value["post_change_gate_evidence_digest"],
-        current_attention_projection_sha256=value[
-            "current_attention_projection_sha256"
-        ],
+        current_attention_projection_sha256=value["current_attention_projection_sha256"],
+        attention_delivery_status=value["attention_delivery_status"],
+        attention_delivery_health_sha256=value["attention_delivery_health_sha256"],
         monitor_health_receipt_refs=tuple(value["monitor_health_receipt_refs"]),
         process_lifecycle_diagnostic_refs=tuple(
             value["process_lifecycle_diagnostic_refs"]
@@ -312,9 +339,7 @@ def record_operational_system_acceptance(
     else:
         existing = json.loads(history.read_text(encoding="utf-8"))
         if existing != validated.to_dict():
-            raise OperationalSystemAcceptanceError(
-                "conflicting system acceptance history"
-            )
+            raise OperationalSystemAcceptanceError("conflicting system acceptance history")
     return atomic_write_json(current, validated.to_dict())
 
 
