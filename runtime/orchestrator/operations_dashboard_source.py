@@ -20,6 +20,10 @@ from .operations_dashboard_schedule import read_operations_dashboard_today_sched
 from .operations_dashboard_reports import read_operations_dashboard_recent_reports
 from .operations_dashboard_jarvis_status import read_operations_dashboard_jarvis_status
 from .operations_dashboard_model_usage import read_operations_dashboard_model_usage
+from .operations_current_attention import (
+    attention_projection_to_dashboard_alerts,
+    read_current_attention_projection,
+)
 from .monitor_health import evaluate_monitor_health_receipt
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
@@ -382,6 +386,13 @@ def build_live_operations_dashboard_projection(
 ) -> dict[str, Any]:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     models, invalid = discover_ai_office_operations_read_models(state_root, now=current)
+    current_attention = read_current_attention_projection(
+        state_root,
+        now=current,
+        expected_runtime_source=expected_operational_runtime_source,
+        fresh_after_seconds=health_fresh_after_seconds,
+    )
+    attention_alerts = attention_projection_to_dashboard_alerts(current_attention)
     return build_operations_dashboard_projection(
         models,
         invalid_current=invalid,
@@ -399,5 +410,6 @@ def build_live_operations_dashboard_projection(
         today_schedule=read_operations_dashboard_today_schedule(state_root, now=current),
         recent_reports=read_operations_dashboard_recent_reports(state_root),
         jarvis_status=read_operations_dashboard_jarvis_status(state_root, now=current),
+        attention_alerts=attention_alerts,
         now=current,
     )

@@ -318,6 +318,7 @@ def build_operations_dashboard_projection(
     today_schedule: Mapping[str, Any] | None = None,
     recent_reports: Mapping[str, Any] | None = None,
     jarvis_status: Mapping[str, Any] | None = None,
+    attention_alerts: Sequence[Mapping[str, Any]] = (),
     now: datetime | None = None,
 ) -> dict[str, Any]:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -356,6 +357,20 @@ def build_operations_dashboard_projection(
                 "detail": row["current_work"] or "현재 상태 확인 필요",
                 "source_ref": "",
             })
+
+    for item in attention_alerts:
+        if not isinstance(item, Mapping):
+            raise OperationsDashboardProjectionError("attention alert must be a mapping")
+        title = str(item.get("title") or "").strip()
+        if not title:
+            raise OperationsDashboardProjectionError("attention alert title required")
+        alerts.append({
+            "kind": str(item.get("kind") or "USER_ATTENTION"),
+            "severity": str(item.get("severity") or "ERROR"),
+            "title": title,
+            "detail": str(item.get("detail") or ""),
+            "source_ref": str(item.get("source_ref") or ""),
+        })
 
     for key, expected in _EXPECTED_HEALTH.items():
         observed = health[key]
