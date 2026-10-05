@@ -15,6 +15,7 @@ from typing import Any
 
 from runtime.ai_office.state_store import AIOfficeStateStore, AIOfficeStateStoreError
 
+from .operations_dashboard_departments import read_operations_dashboard_departments
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
     build_operations_dashboard_projection,
@@ -249,5 +250,6 @@ def build_live_operations_dashboard_projection(
         invalid_current=invalid,
         system_health=read_operations_dashboard_health(state_root),
         system_resources=read_host_resource_projection(),
+        departments=read_operations_dashboard_departments(state_root),
         now=current,
     )
