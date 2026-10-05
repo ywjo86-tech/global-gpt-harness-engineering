@@ -19,6 +19,7 @@ from .operations_dashboard_departments import read_operations_dashboard_departme
 from .operations_dashboard_schedule import read_operations_dashboard_today_schedule
 from .operations_dashboard_reports import read_operations_dashboard_recent_reports
 from .operations_dashboard_jarvis_status import read_operations_dashboard_jarvis_status
+from .operations_dashboard_model_usage import read_operations_dashboard_model_usage
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
     build_operations_dashboard_projection,
@@ -252,7 +253,10 @@ def build_live_operations_dashboard_projection(
         models,
         invalid_current=invalid,
         system_health=read_operations_dashboard_health(state_root),
-        system_resources=read_host_resource_projection(),
+        system_resources={
+            **read_host_resource_projection(),
+            "model_usage_cost": read_operations_dashboard_model_usage(state_root, now=current),
+        },
         departments=read_operations_dashboard_departments(state_root),
         today_schedule=read_operations_dashboard_today_schedule(state_root, now=current),
         recent_reports=read_operations_dashboard_recent_reports(state_root),

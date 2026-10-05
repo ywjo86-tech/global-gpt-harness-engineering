@@ -9,6 +9,10 @@ from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from .operations_read_model import OperationsReadModelV1
+from .operations_dashboard_model_usage import (
+    unavailable_model_usage_projection,
+    validate_model_usage_projection,
+)
 
 DASHBOARD_SCHEMA_V2 = "jarvis.ai-office-dashboard-projection.v2"
 DASHBOARD_SOURCE_CONTRACT_V2 = "orchestration.operations-dashboard-aggregate.v2"
@@ -138,6 +142,10 @@ def _validate_resources(resources: Mapping[str, Any] | None) -> dict[str, Any]:
             raise OperationsDashboardProjectionError(f"{key} out of range")
         result[key] = round(number, 1)
     result["source"] = str(value.get("source") or "UNAVAILABLE")
+    model_usage = value.get("model_usage_cost")
+    result["model_usage_cost"] = validate_model_usage_projection(
+        model_usage if isinstance(model_usage, Mapping) else unavailable_model_usage_projection()
+    )
     return result
 
 
