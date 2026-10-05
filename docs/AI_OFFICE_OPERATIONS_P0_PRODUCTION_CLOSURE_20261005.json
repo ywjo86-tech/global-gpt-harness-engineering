@@ -1,0 +1,54 @@
+{
+  "schema_version": "ai-office.operations-p0-production-closure.v1",
+  "status": "PRODUCTION_PROMOTED_FAIL_CLOSED",
+  "closed_at": "2026-10-05T18:50:00+09:00",
+  "deployed_observability_release": "badb95f3a3bf2083aa2d9d122ec8b724246081e5",
+  "operational_runtime_current": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+  "runtime_current_changed": false,
+  "jarvis_release": "7ed99eb6ec1dc82626b1f67f45f82a6aae18f076",
+  "rollback_snapshot": "/home/ywjo/AI-Workspace/backups/ai-office-p0-operations-remediation-20261005-184124",
+  "verification": {
+    "deployed_tests": "122 PASS + 3 subtests PASS",
+    "http_matrix": "9/9 PASS",
+    "control_path": "503 CONTROL_UNAVAILABLE",
+    "feed_receipt_digest_match": true,
+    "jarvis_restarts": 0
+  },
+  "legacy_run_acceptance_v1": {
+    "status": "ACCEPTED",
+    "project_id": "AI-OFFICE-HARNESS-UPGRADE-OCP-20260924",
+    "run_id": "AI-OFFICE-PR33-B986450-SUCCESSOR-20261003-01",
+    "meaning": "historical run-bound compatibility evidence"
+  },
+  "system_acceptance_v2": {
+    "status": "BLOCKED",
+    "blocking_project_count": 2,
+    "blocking_reasons": [
+      "POST_CHANGE:ATTENTION_HEALTH:MONITOR_RECEIPT_BLOCKED",
+      "CURRENT_OPERATIONAL_BLOCKERS:2",
+      "ATTENTION_DELIVERY:ATTENTION_DELIVERY_UNCONFIGURED"
+    ]
+  },
+  "current_blockers": [
+    {
+      "project_id": "OCP-RDC-EXEC-CANARY-20260923-R2",
+      "run_id": "GPT-FP-ACT-20260923-02",
+      "state": "BLOCKED"
+    },
+    {
+      "project_id": "ai-commerce-m7-legacy-freeze-recovery-20261004",
+      "run_id": "AI-COMMERCE-M7-LEGACY-FREEZE-RECOVERY-63A2-RUN-20261004-06",
+      "state": "BLOCKED"
+    }
+  ],
+  "attention_delivery": {
+    "status": "ATTENTION_DELIVERY_UNCONFIGURED",
+    "current_eligible_count": 2,
+    "historical_unresolved_count": 64,
+    "control_authority": "NONE"
+  },
+  "spatial_office": "HOLD_BY_USER",
+  "next_gate": "CONFIGURE_CANONICAL_OUTBOUND_ATTENTION_TRANSPORT_BEFORE_OCP_EFFECT_ACTIVATION",
+  "ocp_activation_candidate_release": "f720446540e9fa125bc3d87515f6f1daedb9394f",
+  "ocp_activation_candidate_promoted": false
+}
