@@ -1,6 +1,6 @@
 {
   "schema_version": "ai-office.business-schedule-v1-qualification.v1",
-  "status": "PASS_PENDING_PRODUCTION_PROMOTION",
+  "status": "PRODUCTION_PROMOTED",
   "baseline_head": "3031be86aec80aa054744608d5202c0d2769814f",
   "implementation_head": "edb9d86f2447de642aaad776059e7cc41c7e909e",
   "focused_tests": "39/39 PASS",
@@ -49,10 +49,24 @@
     "canary_stopped_after_verification": true
   },
   "production_state": {
-    "mutated": false,
-    "schedule_store_present": false,
-    "dashboard_schedule": "UNAVAILABLE"
+    "mutated": true,
+    "schedule_registry_present": true,
+    "item_count": 0,
+    "dashboard_schedule": "CANONICAL_BUSINESS_SCHEDULE_V1_EMPTY",
+    "publisher_release_head": "21fc1743913b2157e90b1ca837607077aad53ca4",
+    "jarvis_expected_publisher_head": "21fc1743913b2157e90b1ca837607077aad53ca4",
+    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+    "rollback_backup": "/home/ywjo/AI-Workspace/backups/schedule-production-cutover-20261005-1545"
   },
   "spatial_office": "HOLD_BY_USER",
-  "next_gate": "PRODUCTION_SCHEDULE_PUBLISHER_PROMOTION_REQUIRES_EXPLICIT_RISK_APPROVAL"
+  "next_gate": "NONE_BUSINESS_SCHEDULE_V1_CLOSED",
+  "post_change_tests": {
+    "harness_schedule_department_publication": "65/65 PASS",
+    "jarvis_ai_office": "35/35 PASS",
+    "http_matrix": "PASS",
+    "control_fail_closed": "PASS_503",
+    "publisher_timer": "ACTIVE_WAITING_ENABLED",
+    "journal_warnings_since_cutover": 0
+  },
+  "promoted_at": "2026-10-05T15:50:04+09:00"
 }
