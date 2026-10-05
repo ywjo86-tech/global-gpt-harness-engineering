@@ -20,7 +20,8 @@ PROVIDER_ACTION_BACKEND = "PROVIDER_ACTION"
 MAX_PROPOSAL_WRITES = 64
 MAX_WRITE_BYTES = 256 * 1024
 MAX_PROPOSAL_BYTES = 1024 * 1024
-MAX_PROPOSAL_GENERATION_ATTEMPTS = 3
+MODEL_HEALTH_SCHEMA_V1 = "orchestration.provider-action-model-health.v1"
+MAX_OUTPUT_CORRECTION_ATTEMPTS = 3
 MAX_PROVIDER_ACTION_MODEL_TIMEOUT_SECONDS = 90.0
 _PROVIDER_ERROR_CLASS_ALIASES = {
     "nvidia_timeout": "PROVIDER_TIMEOUT",
@@ -536,6 +537,65 @@ def _write_private_json(path: Path, payload: Mapping[str, Any]) -> None:
         handle.write(data); handle.flush(); os.fsync(handle.fileno())
 
 
+def _approved_generation_models(decision: RouterDecisionV2) -> tuple[str, ...]:
+    models: list[str] = []
+    for model in (decision.model_ref, *decision.model_fallback_refs):
+        normalized = str(model or "").strip()
+        if normalized and normalized not in models:
+            models.append(normalized)
+    if not models:
+        raise ProviderActionExecutionError("provider ACTION approved model pool is empty")
+    return tuple(models)
+
+
+def _load_run_scoped_model_quarantine(
+    health_dir: Path, *, decision: RouterDecisionV2, approved_models: tuple[str, ...],
+) -> set[str]:
+    if not health_dir.exists():
+        return set()
+    quarantined: set[str] = set()
+    for path in sorted(health_dir.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ProviderActionExecutionError("provider ACTION model health evidence is invalid") from exc
+        if not isinstance(payload, Mapping) or payload.get("schema_version") != MODEL_HEALTH_SCHEMA_V1:
+            raise ProviderActionExecutionError("provider ACTION model health evidence is invalid")
+        if payload.get("provider_ref") != decision.provider_ref:
+            continue
+        model_ref = str(payload.get("model_ref", "")).strip()
+        if model_ref in approved_models and payload.get("health") == "QUARANTINED_FOR_RUN":
+            quarantined.add(model_ref)
+    return quarantined
+
+
+def _persist_run_scoped_model_health(
+    health_dir: Path, *, decision: RouterDecisionV2, model_ref: str,
+    failure_class: str, generation_attempt: int, source: str,
+    provider_http_status: int | None = None,
+) -> Path:
+    payload = {
+        "schema_version": MODEL_HEALTH_SCHEMA_V1,
+        "provider_ref": decision.provider_ref,
+        "model_ref": model_ref,
+        "health": "QUARANTINED_FOR_RUN",
+        "failure_class": failure_class,
+        "generation_attempt": generation_attempt,
+        "source": source,
+        "provider_http_status": provider_http_status,
+    }
+    health_dir.mkdir(parents=True, exist_ok=True)
+    label = re.sub(r"[^A-Za-z0-9_.-]+", "_", model_ref)[:96] or "model"
+    for ordinal in range(1, 1000):
+        path = health_dir / f"{label}-{ordinal:03d}.json"
+        try:
+            _write_private_json(path, payload)
+            return path
+        except FileExistsError:
+            continue
+    raise ProviderActionExecutionError("provider ACTION model health evidence namespace exhausted")
+
+
 def _sanitize_provider_response_text(value: object) -> str:
     text = str(value or "")
     redacted = _RESPONSE_SECRET_PATTERN.sub(lambda m: f"{m.group(1)}=[REDACTED_SECRET]", text)
@@ -646,16 +706,34 @@ def _generate_validated_proposal(
     generation_attempts = 0
     total_provider_attempts = 0
     prior_contract_error = ""
-    approved_models = (decision.model_ref, *decision.model_fallback_refs)
-    contract_rejected_models: set[str] = set()
+    approved_models = _approved_generation_models(decision)
+    health_dir = evidence_dir.parent / "provider-action-model-health"
+    run_quarantined_models = _load_run_scoped_model_quarantine(
+        health_dir, decision=decision, approved_models=approved_models,
+    )
+    contract_rejected_models = set(run_quarantined_models)
+    available_models = tuple(model for model in approved_models if model not in run_quarantined_models)
+    if not available_models:
+        raise ProviderActionExecutionError("provider ACTION generation failed:MODEL_POOL_EXHAUSTED")
     generation_models: list[str] = []
     allowed_ids = {target_owned_file_id} if target_owned_file_id else None
-    for generation_attempt in range(1, MAX_PROPOSAL_GENERATION_ATTEMPTS + 1):
+    generation_attempt_budget = max(len(available_models), MAX_OUTPUT_CORRECTION_ATTEMPTS)
+    last_output_rejected_model = ""
+    for generation_attempt in range(1, generation_attempt_budget + 1):
         generation_attempts = generation_attempt
         requested_model = next(
             (model for model in approved_models if model not in contract_rejected_models),
-            decision.model_ref,
+            "",
         )
+        if (
+            not requested_model
+            and prior_contract_error
+            and last_output_rejected_model
+            and last_output_rejected_model not in run_quarantined_models
+        ):
+            requested_model = last_output_rejected_model
+        if not requested_model:
+            raise ProviderActionExecutionError("provider ACTION generation failed:MODEL_POOL_EXHAUSTED")
         attempt_prompt = prompt if not prior_contract_error else _correction_prompt(prompt, prior_contract_error)
         result = provider_runner(
             prompt=attempt_prompt,
@@ -675,10 +753,26 @@ def _generate_validated_proposal(
         generation_models.append(requested_model)
         if result.get("status") != "completed":
             error = _normalize_provider_error_class(result.get("provider_error_class", "provider_failure"))
-            if error in _RETRYABLE_PROVIDER_ERRORS and generation_attempt < MAX_PROPOSAL_GENERATION_ATTEMPTS:
+            if error in _RETRYABLE_PROVIDER_ERRORS:
+                _persist_run_scoped_model_health(
+                    health_dir, decision=decision, model_ref=requested_model,
+                    failure_class=(
+                        "MODEL_UNAVAILABLE_HTTP_410"
+                        if result.get("provider_http_status") == 410 else error
+                    ),
+                    generation_attempt=generation_attempt, source="PROVIDER_FAILURE",
+                    provider_http_status=(
+                        result.get("provider_http_status")
+                        if isinstance(result.get("provider_http_status"), int) else None
+                    ),
+                )
                 contract_rejected_models.add(requested_model)
                 prior_contract_error = ""
-                continue
+                has_next_model = any(
+                    model not in contract_rejected_models for model in approved_models
+                )
+                if generation_attempt < generation_attempt_budget and has_next_model:
+                    continue
             raise ProviderActionExecutionError(f"provider ACTION generation failed:{error}")
         actual_model = str(result.get("model", requested_model)).strip() or requested_model
         if actual_model != requested_model:
@@ -701,9 +795,10 @@ def _generate_validated_proposal(
                     )
             break
         except ProviderActionExecutionError as exc:
-            if generation_attempt >= MAX_PROPOSAL_GENERATION_ATTEMPTS or not _retryable_output_contract_error(exc):
+            if not _retryable_output_contract_error(exc):
                 raise
             prior_contract_error = str(exc)
+            last_output_rejected_model = actual_model
             model_attempts = result.get("model_attempts", {})
             if isinstance(model_attempts, Mapping):
                 contract_rejected_models.update(
@@ -711,6 +806,8 @@ def _generate_validated_proposal(
                     if model in approved_models and isinstance(count, int) and count > 0
                 )
             contract_rejected_models.add(actual_model)
+            if generation_attempt >= generation_attempt_budget:
+                raise
     if proposal is None:
         raise ProviderActionExecutionError("provider ACTION proposal validation did not complete")
     return proposal, result, generation_attempts, total_provider_attempts, generation_models
