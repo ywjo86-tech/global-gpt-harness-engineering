@@ -448,7 +448,7 @@ def poll_activation_window_once(
                 [
                     sys.executable,
                     "-m",
-                    "runtime.orchestrator.ocpv2_runtime_service",
+                    "runtime.orchestrator.ocpv2_successor_stage_runtime",
                     "--env-file",
                     str(ephemeral),
                 ],
