@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
 from .lv_execution_package import canonical_json_bytes
+from .model_usage_evidence import normalize_turn_usage
 from .contract_adapter import MAPPING_ROOT_ENV
 from .nvidia_adapter import run_nvidia_reasoning_task
 from .git_provenance import GitProvenanceError, touched_paths_between
@@ -1329,6 +1330,8 @@ def _parse_structured_jsonl_impl(value: bytes, context: dict[str, Any], *,
     state = "START"
     terminal_seen = False
     parse_errors = 0
+    turn_usage: dict[str, int] | None = None
+    turn_usage_observed_at = ""
     for raw_line in value.splitlines():
         if not raw_line.strip():
             continue
@@ -1421,6 +1424,8 @@ def _parse_structured_jsonl_impl(value: bytes, context: dict[str, Any], *,
         elif event_type == "turn.completed":
             if state != "TURN" or active_items:
                 raise StructuredEventError("turn.completed ordering violation")
+            turn_usage = normalize_turn_usage(event["usage"])
+            turn_usage_observed_at = datetime.now(timezone.utc).isoformat()
             state = "TERMINAL"
             terminal_seen = True
         elif event_type == "turn.failed":
@@ -1448,7 +1453,12 @@ def _parse_structured_jsonl_impl(value: bytes, context: dict[str, Any], *,
     if parse_errors or not types or not terminal_seen:
         raise StructuredEventError("structured event stream has no terminal event")
     return _structured_metadata(
-        counts=counts, item_counts=item_counts, terminal_status="SUCCEEDED",
+        counts=counts,
+        item_counts=item_counts,
+        terminal_status="SUCCEEDED",
+        turn_usage=turn_usage,
+        turn_usage_observed_at=turn_usage_observed_at,
+        turn_usage_source="CODEX_TURN_COMPLETED",
     )
 
 
