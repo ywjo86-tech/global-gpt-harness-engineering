@@ -2,35 +2,50 @@
   "schema_version": "ai-office.business-schedule-v1-qualification.v1",
   "status": "PASS_PENDING_PRODUCTION_PROMOTION",
   "baseline_head": "3031be86aec80aa054744608d5202c0d2769814f",
-  "implementation_head": "125a6dfc5b0481931aa3ccb4d9a92f0cfec2517d",
-  "focused_tests": "34/34 PASS",
-  "expanded_regression": "166 PASS + 21 subtests PASS",
+  "implementation_head": "edb9d86f2447de642aaad776059e7cc41c7e909e",
+  "focused_tests": "39/39 PASS",
+  "expanded_regression": "171 PASS + 21 subtests PASS",
   "contract": {
     "item_schema": "ai-office.business-schedule-item.v1",
     "timezone_requirement": "timezone-aware only",
     "dashboard_day_boundary": "Asia/Seoul",
-    "dashboard_fields": ["time", "title", "status"],
+    "dashboard_fields": [
+      "time",
+      "title",
+      "status"
+    ],
     "revision_policy": "initial=0; updates must advance exactly +1",
     "missing_store_behavior": "UNAVAILABLE",
-    "corrupt_item_behavior": "FAIL_CLOSED"
+    "corrupt_item_behavior": "FAIL_CLOSED",
+    "registry_schema": "ai-office.business-schedule-registry.v1",
+    "empty_initialized_behavior": "CANONICAL empty items"
   },
   "qualification_feed": {
     "source_contract": "orchestration.operations-dashboard-aggregate.v2",
     "source_state": "CANONICAL_BUSINESS_SCHEDULE_V1",
     "item_count": 2,
     "digest_receipt_binding": "PASS",
-    "department_registry_compatibility": "PASS"
+    "department_registry_compatibility": "PASS",
+    "empty_initialized_source": "PASS_CANONICAL_EMPTY",
+    "populated_source": "PASS_CANONICAL_ITEMS"
   },
   "operator_cli": {
-    "commands": ["put", "validate"],
+    "commands": [
+      "init",
+      "put",
+      "validate"
+    ],
+    "registry_init_idempotent": true,
+    "registry_conflict_rejected": true,
     "same_content_idempotent": true,
     "revision_gap_rejected": true
   },
   "jarvis_canary": {
-    "port": 8027,
+    "port": 8028,
     "api": "PASS",
     "page": "PASS",
     "html_schedule_render": "PASS",
+    "candidate_head": "edb9d86f2447de642aaad776059e7cc41c7e909e",
     "canary_stopped_after_verification": true
   },
   "production_state": {
