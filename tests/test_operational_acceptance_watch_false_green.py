@@ -3,6 +3,8 @@ from __future__ import annotations
 from runtime.orchestrator.operational_acceptance_watch import (
     blocking_attention_events,
     current_registered_job_keys,
+    discover_current_state_blockers,
+    merge_operational_blockers,
 )
 
 
@@ -49,3 +51,29 @@ def test_only_latest_registered_run_per_project_blocks(tmp_path):
         current_job_keys=keys,
     )
     assert [item["event_id"] for item in blocking] == ["new"]
+
+
+def test_delivered_attention_cannot_clear_blocked_current_state(tmp_path):
+    registry = tmp_path / "_workspace" / "production-full-plan-jobs" / "P"
+    registry.mkdir(parents=True)
+    job_path = registry / "R.job.json"
+    job_path.write_text("{}")
+    state_dir = tmp_path / "_workspace" / "production-full-plan" / "P" / "R"
+    state_dir.mkdir(parents=True)
+    (state_dir / "state.json").write_text(
+        '{"state":"BLOCKED","terminal_reason":"RETRY_BUDGET_EXHAUSTED","current_gate":"G1"}'
+    )
+    jobs = [{
+        "project_id": "P",
+        "run_id": "R",
+        "job_path": str(job_path),
+        "harness_state_root": str(tmp_path),
+    }]
+
+    state_blockers = discover_current_state_blockers(jobs)
+    merged = merge_operational_blockers([], state_blockers)
+
+    assert len(merged) == 1
+    assert merged[0]["project_id"] == "P"
+    assert merged[0]["state"] == "BLOCKED"
+    assert merged[0]["reason"] == "RETRY_BUDGET_EXHAUSTED"
