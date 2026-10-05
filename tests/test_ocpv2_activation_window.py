@@ -405,6 +405,32 @@ class OCPActivationWindowTests(unittest.TestCase):
         with self.assertRaisesRegex(OCPActivationWindowError, "digest mismatch"):
             load_activation_window(self.state)
 
+    @patch("runtime.orchestrator.ocpv2_activation_window.subprocess.run")
+    def test_default_poll_matches_production_wrapper_and_lifecycle_v2(self, run):
+        controller = self._controller()
+        self._open(controller=controller)
+        run.return_value.returncode = 0
+        run.return_value.stdout = json.dumps({
+            "status": "OK",
+            "full_plan_activated": 0,
+            "blocked": 0,
+        })
+
+        result = poll_activation_window_once(
+            state_root=self.state,
+            env_file=self.env,
+        )
+
+        self.assertEqual(result["last_poll_exit_code"], 0)
+        command = run.call_args.args[0]
+        self.assertIn("runtime.orchestrator.ocpv2_successor_stage_runtime", command)
+        process_env = run.call_args.kwargs["env"]
+        self.assertEqual(
+            process_env["GCH_NEW_ACTIVATION_LIFECYCLE_MODE"],
+            "V2",
+        )
+        self.assertEqual(activation_flag_value(self.env), "0")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -444,11 +444,16 @@ def poll_activation_window_once(
                 os.pathsep + process_env["PYTHONPATH"]
                 if process_env.get("PYTHONPATH") else ""
             )
+            # Match the production OCP service contract. The persistent env-file
+            # intentionally keeps activation OFF; lifecycle V2 is supplied by
+            # the production systemd unit and must not be lost in this bounded
+            # one-shot path.
+            process_env.setdefault("GCH_NEW_ACTIVATION_LIFECYCLE_MODE", "V2")
             completed = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "runtime.orchestrator.ocpv2_runtime_service",
+                    "runtime.orchestrator.ocpv2_successor_stage_runtime",
                     "--env-file",
                     str(ephemeral),
                 ],
