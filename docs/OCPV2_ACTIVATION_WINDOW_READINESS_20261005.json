@@ -1,0 +1,19 @@
+{
+  "schema_version": "ocpv2.activation-window-readiness.v1",
+  "status": "READY_NOT_ACTIVATED",
+  "qualified_at": "2026-10-05T18:50:00+09:00",
+  "candidate_head": "f720446540e9fa125bc3d87515f6f1daedb9394f",
+  "candidate_release": "/home/ywjo/AI-Workspace/runtime/releases/f720446540e9fa125bc3d87515f6f1daedb9394f",
+  "qualification": "82 PASS + 9 subtests PASS",
+  "production_entrypoint_alignment": "ocpv2_successor_stage_runtime",
+  "persistent_activation_baseline": "OFF",
+  "activation_mode": "bounded ephemeral one-shot",
+  "watchdog_recovery": true,
+  "production_effect_activation": false,
+  "blocking_gate": "ATTENTION_DELIVERY_UNCONFIGURED",
+  "required_before_activation": [
+    "canonical outbound attention transport READY",
+    "fresh runtime-bound delivery health PASS",
+    "explicit production effect approval"
+  ]
+}
