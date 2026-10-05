@@ -7,6 +7,7 @@ existing OperationsReadModelV1 contract.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from runtime.ai_office.state_store import AIOfficeStateStore, AIOfficeStateStore
 from .operations_dashboard_departments import read_operations_dashboard_departments
 from .operations_dashboard_schedule import read_operations_dashboard_today_schedule
 from .operations_dashboard_reports import read_operations_dashboard_recent_reports
+from .operations_dashboard_jarvis_status import read_operations_dashboard_jarvis_status
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
     build_operations_dashboard_projection,
@@ -255,5 +257,10 @@ def build_live_operations_dashboard_projection(
         departments=read_operations_dashboard_departments(state_root),
         today_schedule=read_operations_dashboard_today_schedule(state_root, now=current),
         recent_reports=read_operations_dashboard_recent_reports(state_root),
+        jarvis_status=read_operations_dashboard_jarvis_status(
+            state_root,
+            now=current,
+            expected_producer_head=os.getenv("JARVIS_MEMORY_COMPACT_EXPECTED_PRODUCER_HEAD"),
+        ),
         now=current,
     )
