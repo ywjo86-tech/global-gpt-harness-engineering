@@ -20,10 +20,12 @@ class AttentionDeliveryRunnerTests(TestCase):
     def test_unconfigured_transport_fails_closed_without_marking_delivered(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); _,ev=self.fixture(root,"P","R","BLOCKED","broken")
-            out=root/"health.json"; result=run_once(search_root=root,output_path=out)
+            out=root/"health.json"; result=run_once(search_root=root,runtime_source_identity="runtime:test",output_path=out)
             self.assertEqual(result["status"],ATTENTION_DELIVERY_UNCONFIGURED)
             self.assertEqual(result["delivered_count"],0)
             self.assertEqual(result["control_authority"],"NONE")
+            self.assertEqual(result["runtime_source_identity"],"runtime:test")
+            self.assertEqual(len(result["health_sha256"]),64)
             self.assertTrue(out.is_file())
 
     def test_older_terminal_run_is_historical_but_latest_blocked_is_current(self):
