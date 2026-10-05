@@ -544,16 +544,71 @@ def recover_activation_window(
     )
 
 
+def run_controlled_activation_once(
+    *,
+    state_root: str | Path,
+    env_file: str | Path,
+    controller: UserServiceController | None = None,
+    scheduler: RecoveryScheduler | None = None,
+    now: datetime | None = None,
+    max_seconds: int = 300,
+    window_id: str | None = None,
+    runner: Callable[[Path], tuple[int, str]] | None = None,
+) -> dict[str, object]:
+    """Open, poll exactly once, and close a bounded activation transaction.
+
+    Persistent activation stays OFF.  The one OCP poll receives only an
+    ephemeral activation-enabled environment; the normal OCP/reconcile timers
+    are restored before this function returns.  A poll failure closes the
+    window as failed before propagating the error.
+    """
+    service = controller or SystemdUserServiceController()
+    opened = open_activation_window(
+        state_root=state_root,
+        env_file=env_file,
+        controller=service,
+        scheduler=scheduler,
+        now=now,
+        max_seconds=max_seconds,
+        window_id=window_id,
+    )
+    try:
+        poll_activation_window_once(
+            state_root=state_root,
+            env_file=env_file,
+            now=now,
+            runner=runner,
+        )
+    except BaseException:
+        try:
+            close_activation_window(
+                state_root=state_root,
+                env_file=env_file,
+                controller=service,
+                body_failed=True,
+            )
+        except BaseException as cleanup_exc:
+            raise OCPActivationWindowError(
+                "activation transaction failed and cleanup incomplete"
+            ) from cleanup_exc
+        raise
+    return close_activation_window(
+        state_root=state_root,
+        env_file=env_file,
+        controller=service,
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run or recover a controlled OCPv2 Full Plan activation window"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("open", "poll", "close", "recover"):
+    for name in ("open", "poll", "close", "recover", "run-once"):
         command = sub.add_parser(name)
         command.add_argument("--state-root", required=True)
         command.add_argument("--env-file", required=True)
-        if name == "open":
+        if name in {"open", "run-once"}:
             command.add_argument("--max-seconds", type=int, default=300)
         if name == "recover":
             command.add_argument("--force", action="store_true")
@@ -578,6 +633,12 @@ def main(argv: list[str] | None = None) -> int:
             result = close_activation_window(
                 state_root=args.state_root,
                 env_file=args.env_file,
+            )
+        elif args.command == "run-once":
+            result = run_controlled_activation_once(
+                state_root=args.state_root,
+                env_file=args.env_file,
+                max_seconds=args.max_seconds,
             )
         else:
             result = recover_activation_window(
