@@ -1,0 +1,30 @@
+{
+  "schema_version": "ai-office.jarvis-status-consumer-v1-qualification.v1",
+  "status": "PRODUCTION_PROMOTED",
+  "producer_source_head": "91d4e019a514f5a08ae4bf9ef0c657e085fa5f82",
+  "consumer_release_head": "659e6f5ac4709a4784d9aeb9417762991e068872",
+  "source_state": "CANONICAL_JARVIS_COMPACT_STATUS_V1",
+  "expected_publisher_head_required": true,
+  "freshness_max_age_seconds": 180,
+  "future_tolerance_seconds": 30,
+  "missing_source_behavior": "UNBOUND",
+  "stale_source_behavior": "UNKNOWN_STALE",
+  "tamper_behavior": "FAIL_CLOSED",
+  "post_change_tests": {
+    "consumer_deployed": "43/43 PASS",
+    "jarvis_ai_office": "35/35 PASS",
+    "http_matrix": "9/9 PASS",
+    "control_fail_closed": "PASS_503",
+    "journal_warnings": 0
+  },
+  "live_status": {
+    "webapp": "AVAILABLE",
+    "memory": "AVAILABLE",
+    "llmwiki": "AVAILABLE"
+  },
+  "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+  "rollback_backup": "/home/ywjo/AI-Workspace/backups/memory-compact-production-cutover-20261005-165122",
+  "spatial_office": "HOLD_BY_USER",
+  "next_gate": "NONE_JARVIS_STATUS_CONSUMER_V1_CLOSED",
+  "promoted_at": "2026-10-05T16:54:25+09:00"
+}
