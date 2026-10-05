@@ -21,6 +21,10 @@ from runtime.ai_office.full_plan_activation import coordinate_approved_full_plan
 from runtime.ai_office.state_store import AIOfficeStateStore
 from runtime.operator_transport.github_control_adapter import GitHubControlAdapter, GitHubControlConfig
 from runtime.operator_transport.github_rest_client import PUBLIC_SOURCE_REPOSITORY_ID, GitHubRESTClient
+from .activation_provenance import (
+    ActivationProvenanceError,
+    record_ocpv2_full_plan_activation_provenance,
+)
 from .approved_full_plan_binding import validate_approved_full_plan_binding
 from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
@@ -813,6 +817,9 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         )
         ai_context = coordinate_approved_full_plan_activation(bundle, office_store=office_store)
         lifecycle_mode = new_activation_lifecycle_mode_from_environment(config.environment)
+        existing_receipt = full_plan_activation_store.load_existing(
+            bundle.activation_request_id
+        )
         receipt = full_plan_activation_store.record_or_load(
             request_id=bundle.activation_request_id,
             bundle=bundle,
@@ -823,6 +830,22 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
                 lifecycle_mode=lifecycle_mode,
             ),
         )
+        try:
+            record_ocpv2_full_plan_activation_provenance(
+                harness_state_root,
+                receipt=receipt.to_dict(),
+                executor_component="OCPV2_RUNTIME_SERVICE",
+                control_path="REMOTE_FULL_PLAN_ACTIVATION",
+                policy_ref=config.full_plan_activation_policy_ref,
+                message_id=envelope.message_id,
+                runtime_source_head=request_release.source_head,
+                runtime_manifest_sha256=request_release.manifest_sha256,
+                replay_existing_receipt=existing_receipt is not None,
+            )
+        except ActivationProvenanceError as exc:
+            raise RuntimeServiceError(
+                "FULL_PLAN_ACTIVATION_PROVENANCE_FAILED"
+            ) from exc
         projection = RemoteFullPlanActivationProjectionV1.from_receipt(
             receipt, message_id=envelope.message_id,
         )
