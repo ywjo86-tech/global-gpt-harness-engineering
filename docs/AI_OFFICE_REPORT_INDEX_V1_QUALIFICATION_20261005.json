@@ -1,6 +1,6 @@
 {
   "schema_version": "ai-office.report-index-v1-qualification.v1",
-  "status": "PASS_PENDING_PRODUCTION_PROMOTION",
+  "status": "PRODUCTION_PROMOTED",
   "baseline_head": "e8155e3aca1fa6b9f2e5a2d5e428703722829414",
   "implementation_head": "e5d85f8d6a3ec8be49b41fbf6f499ad446336ba5",
   "focused_tests": "42/42 PASS",
@@ -24,13 +24,20 @@
     "populated_source": "PASS_CANONICAL_ITEMS",
     "report_count": 2,
     "sort_order": "published_at descending",
-    "dashboard_fields": ["title", "date"],
+    "dashboard_fields": [
+      "title",
+      "date"
+    ],
     "digest_receipt_binding": "PASS",
     "department_registry_compatibility": "PASS",
     "business_schedule_compatibility": "PASS"
   },
   "operator_cli": {
-    "commands": ["init", "add", "validate"],
+    "commands": [
+      "init",
+      "add",
+      "validate"
+    ],
     "registry_init_idempotent": true,
     "verified_OfficeReportV1_only": true,
     "same_content_idempotent": true,
@@ -44,10 +51,24 @@
     "canary_stopped_after_verification": true
   },
   "production_state": {
-    "mutated": false,
-    "report_index_registry_present": false,
-    "dashboard_recent_reports": "UNAVAILABLE"
+    "mutated": true,
+    "report_index_registry_present": true,
+    "report_count": 0,
+    "dashboard_recent_reports": "CANONICAL_OFFICE_REPORT_INDEX_V1",
+    "publisher_release_head": "385115aae7c02a0a5ddf5c0554a4d6d234c30417",
+    "jarvis_expected_publisher_head": "385115aae7c02a0a5ddf5c0554a4d6d234c30417",
+    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+    "rollback_backup": "/home/ywjo/AI-Workspace/backups/report-index-production-cutover-20261005-160901"
   },
   "spatial_office": "HOLD_BY_USER",
-  "next_gate": "PRODUCTION_REPORT_INDEX_PUBLISHER_PROMOTION_REQUIRES_EXPLICIT_RISK_APPROVAL"
+  "next_gate": "NONE_REPORT_INDEX_V1_CLOSED",
+  "post_change_tests": {
+    "report_index_and_dashboard": "42/42 PASS",
+    "jarvis_ai_office": "35/35 PASS",
+    "http_matrix": "9/9 PASS",
+    "control_fail_closed": "PASS_503",
+    "publisher_timer": "ACTIVE_WAITING_ENABLED",
+    "journal_warnings_since_cutover": 0
+  },
+  "promoted_at": "2026-10-05T16:11:30+09:00"
 }
