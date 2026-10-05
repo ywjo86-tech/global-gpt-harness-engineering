@@ -1,0 +1,38 @@
+{
+  "schema_version": "ai-office.jarvis-compact-status-consumer-qualification.v1",
+  "status": "PASS_PENDING_PRODUCTION_PROMOTION",
+  "baseline_head": "f08abce60da6eda729d2adf59533c1ac416699bc",
+  "implementation_head": "b865db4b25c5d5498d8205824c2334ffa10b7335",
+  "expanded_regression": "197 PASS + 21 subtests PASS",
+  "producer_head": "366487714ee8c4fef161dcc0748c0e465c5e32ef",
+  "contract": {
+    "missing_file": "UNBOUND",
+    "fresh_valid_file": "CANONICAL_JARVIS_COMPACT_STATUS_V1",
+    "stale_over_180_seconds": "UNKNOWN_STATUSES_WITH_STALE_SOURCE",
+    "digest_or_shape_tamper": "FAIL_CLOSED",
+    "future_timestamp_over_30_seconds": "FAIL_CLOSED",
+    "expected_publisher_head_missing": "FAIL_CLOSED",
+    "publisher_head_mismatch": "FAIL_CLOSED",
+    "symlink_status": "FAIL_CLOSED"
+  },
+  "integrated_feed": {
+    "jarvis_status": {
+      "webapp": "AVAILABLE",
+      "memory": "AVAILABLE",
+      "llmwiki": "AVAILABLE",
+      "source_state": "CANONICAL_JARVIS_COMPACT_STATUS_V1"
+    },
+    "business_schedule_compatibility": "PASS",
+    "report_index_compatibility": "PASS",
+    "department_registry_compatibility": "PASS",
+    "feed_receipt_digest_binding": "PASS"
+  },
+  "jarvis_canary": {
+    "port": 8030,
+    "api": "PASS",
+    "page": "PASS",
+    "spatial_office": "HOLD_BY_USER"
+  },
+  "production_mutated": false,
+  "next_gate": "PRODUCTION_COMPACT_STATUS_CONSUMER_PROMOTION_REQUIRES_EXPLICIT_RISK_APPROVAL"
+}
