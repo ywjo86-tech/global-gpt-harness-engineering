@@ -7,15 +7,27 @@ from datetime import datetime, timezone
 
 from runtime.ai_office.business_schedule import (
     BUSINESS_SCHEDULE_ITEM_SCHEMA_V1,
+    BUSINESS_SCHEDULE_REGISTRY_SCHEMA_V1,
     AIOfficeBusinessScheduleError,
     AIOfficeBusinessScheduleStore,
     BusinessScheduleItemV1,
+    BusinessScheduleRegistryV1,
 )
 from runtime.orchestrator.operations_dashboard_schedule import read_operations_dashboard_today_schedule
 from runtime.orchestrator.operations_dashboard_source import build_live_operations_dashboard_projection
 
 
 class DashboardScheduleAdapterTests(unittest.TestCase):
+    def _store(self, root):
+        store=AIOfficeBusinessScheduleStore(root)
+        store.publish_registry(BusinessScheduleRegistryV1(
+            BUSINESS_SCHEDULE_REGISTRY_SCHEMA_V1,
+            "global-ai-office",
+            "Asia/Seoul",
+            "schedule-registry:test",
+        ))
+        return store
+
     def _item(self, item_id, title, start_at, status="SCHEDULED"):
         return BusinessScheduleItemV1(
             BUSINESS_SCHEDULE_ITEM_SCHEMA_V1,
@@ -28,7 +40,7 @@ class DashboardScheduleAdapterTests(unittest.TestCase):
 
     def test_today_kst_filters_sorts_and_projects_bounded_fields(self):
         with tempfile.TemporaryDirectory() as td:
-            store=AIOfficeBusinessScheduleStore(td)
+            store=self._store(td)
             store.publish_item(self._item("later", "Later", "2026-10-05T16:30:00+09:00"))
             store.publish_item(self._item("early", "Early", "2026-10-05T09:00:00+09:00", "IN_PROGRESS"))
             store.publish_item(self._item("tomorrow", "Tomorrow", "2026-10-06T09:00:00+09:00"))
@@ -43,7 +55,7 @@ class DashboardScheduleAdapterTests(unittest.TestCase):
 
     def test_live_projection_consumes_canonical_schedule(self):
         with tempfile.TemporaryDirectory() as td:
-            store=AIOfficeBusinessScheduleStore(td)
+            store=self._store(td)
             store.publish_item(self._item("daily", "Daily", "2026-10-05T10:00:00+09:00"))
             projection=build_live_operations_dashboard_projection(
                 td, now=datetime(2026,10,5,3,tzinfo=timezone.utc)
@@ -53,7 +65,7 @@ class DashboardScheduleAdapterTests(unittest.TestCase):
 
     def test_corrupt_schedule_blocks_live_projection(self):
         with tempfile.TemporaryDirectory() as td:
-            store=AIOfficeBusinessScheduleStore(td)
+            store=self._store(td)
             path=store.publish_item(self._item("daily", "Daily", "2026-10-05T10:00:00+09:00"))
             value=json.loads(path.read_text())
             value["status"]="COMPLETED"

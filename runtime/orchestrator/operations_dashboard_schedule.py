@@ -17,10 +17,13 @@ def read_operations_dashboard_today_schedule(
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
     store = AIOfficeBusinessScheduleStore(state_root)
-    if not store.root.exists() and not store.root.is_symlink():
+    if not store.registry_path.exists() and not store.registry_path.is_symlink():
         return None
+    registry = store.load_registry()
 
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if registry.timezone_name != "Asia/Seoul":
+        raise ValueError("unsupported dashboard schedule timezone")
     today = current.astimezone(_KST).date()
     selected = []
     for item in store.load_items():

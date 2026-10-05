@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from .contracts import canonical_digest
 
+BUSINESS_SCHEDULE_REGISTRY_SCHEMA_V1 = "ai-office.business-schedule-registry.v1"
 BUSINESS_SCHEDULE_ITEM_SCHEMA_V1 = "ai-office.business-schedule-item.v1"
 _ALLOWED_STATUSES = {"SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "BLOCKED"}
 
@@ -42,6 +43,28 @@ def _timestamp(value: object) -> str:
     if parsed.tzinfo is None:
         raise AIOfficeBusinessScheduleError("start_at must be timezone-aware")
     return parsed.astimezone(timezone.utc).isoformat()
+
+
+@dataclass(frozen=True, slots=True)
+class BusinessScheduleRegistryV1:
+    schema_version: str
+    office_id: str
+    timezone_name: str
+    registry_ref: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != BUSINESS_SCHEDULE_REGISTRY_SCHEMA_V1:
+            raise AIOfficeBusinessScheduleError("unsupported business schedule registry schema")
+        object.__setattr__(self, "office_id", _safe_component(self.office_id, "office_id"))
+        timezone_name = _text(self.timezone_name, "timezone_name")
+        if timezone_name != "Asia/Seoul":
+            raise AIOfficeBusinessScheduleError("unsupported business schedule timezone")
+        object.__setattr__(self, "timezone_name", timezone_name)
+        object.__setattr__(self, "registry_ref", _text(self.registry_ref, "registry_ref"))
+
+    @property
+    def registry_digest(self) -> str:
+        return canonical_digest(asdict(self))
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +100,7 @@ class AIOfficeBusinessScheduleStore:
     def __init__(self, state_root: str | Path):
         root = Path(state_root).expanduser().resolve()
         self.root = root / "_workspace" / "ai-office-business-schedule"
+        self.registry_path = self.root / "registry.json"
         self.items_root = self.root / "items"
 
     def _ensure_safe_root(self) -> None:
@@ -88,7 +112,7 @@ class AIOfficeBusinessScheduleStore:
     @staticmethod
     def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
         if path.is_symlink():
-            raise AIOfficeBusinessScheduleError("unsafe schedule item path")
+            raise AIOfficeBusinessScheduleError("unsafe schedule output path")
         path.parent.mkdir(parents=True, exist_ok=True)
         data = (
             json.dumps(dict(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
@@ -111,6 +135,42 @@ class AIOfficeBusinessScheduleStore:
                 os.close(fd)
             if os.path.exists(temp_name):
                 os.unlink(temp_name)
+
+    def publish_registry(self, registry: BusinessScheduleRegistryV1) -> Path:
+        if not isinstance(registry, BusinessScheduleRegistryV1):
+            raise AIOfficeBusinessScheduleError("BusinessScheduleRegistryV1 required")
+        self._ensure_safe_root()
+        if self.registry_path.exists() or self.registry_path.is_symlink():
+            existing = self.load_registry()
+            if existing == registry:
+                return self.registry_path
+            raise AIOfficeBusinessScheduleError("schedule registry already exists with different content")
+        payload = asdict(registry)
+        payload["registry_digest"] = registry.registry_digest
+        self._atomic_json(self.registry_path, payload)
+        return self.registry_path
+
+    def load_registry(self) -> BusinessScheduleRegistryV1:
+        self._ensure_safe_root()
+        path = self.registry_path
+        if path.is_symlink() or not path.is_file():
+            raise AIOfficeBusinessScheduleError("schedule registry missing or unsafe")
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise AIOfficeBusinessScheduleError("schedule registry unreadable") from exc
+        expected = {"schema_version", "office_id", "timezone_name", "registry_ref", "registry_digest"}
+        if not isinstance(value, dict) or set(value) != expected:
+            raise AIOfficeBusinessScheduleError("schedule registry shape mismatch")
+        try:
+            registry = BusinessScheduleRegistryV1(
+                value["schema_version"], value["office_id"], value["timezone_name"], value["registry_ref"]
+            )
+        except (TypeError, ValueError, AIOfficeBusinessScheduleError) as exc:
+            raise AIOfficeBusinessScheduleError("schedule registry contract invalid") from exc
+        if str(value["registry_digest"]) != registry.registry_digest:
+            raise AIOfficeBusinessScheduleError("schedule registry digest mismatch")
+        return registry
 
     def _path(self, item_id: str) -> Path:
         return self.items_root / f"{_safe_component(item_id, item_id)}.json"
@@ -144,7 +204,7 @@ class AIOfficeBusinessScheduleStore:
     def publish_item(self, item: BusinessScheduleItemV1) -> Path:
         if not isinstance(item, BusinessScheduleItemV1):
             raise AIOfficeBusinessScheduleError("BusinessScheduleItemV1 required")
-        self._ensure_safe_root()
+        self.load_registry()
         path = self._path(item.item_id)
         if path.exists() or path.is_symlink():
             existing = self._load_item(path)
@@ -160,9 +220,7 @@ class AIOfficeBusinessScheduleStore:
         return path
 
     def load_items(self) -> tuple[BusinessScheduleItemV1, ...]:
-        self._ensure_safe_root()
-        if not self.root.exists():
-            return ()
+        self.load_registry()
         if not self.items_root.exists():
             return ()
         items = [self._load_item(path) for path in sorted(self.items_root.glob("*.json"))]
