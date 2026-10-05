@@ -6,7 +6,13 @@ from datetime import datetime, timezone
 
 from runtime.ai_office.state_store import AIOfficeStateStore
 from runtime.orchestrator.monitor_health import build_monitor_health_receipt
+from runtime.orchestrator.operations_current_attention import (
+    build_current_attention_projection,
+    current_attention_path,
+    record_current_attention_projection,
+)
 from runtime.orchestrator.operations_dashboard_projection import build_operations_dashboard_projection
+import runtime.orchestrator.operations_dashboard_source as dashboard_source
 from runtime.orchestrator.operations_dashboard_source import (
     discover_ai_office_operations_read_models,
     read_operations_dashboard_health,
@@ -183,3 +189,43 @@ def test_strict_health_reader_marks_stale_acceptance(tmp_path):
     assert health["reconcile"] == "PASS"
     assert health["post_change"] == "PASS"
     assert health["acceptance"] == "STALE"
+
+
+def test_live_projection_carries_typed_current_attention_into_alerts(tmp_path, monkeypatch):
+    now = datetime(2026, 10, 5, 8, 0, tzinfo=timezone.utc)
+    expected = "runtime:new"
+    attention = build_current_attention_projection(
+        runtime_source_identity=expected,
+        blockers=[{
+            "project_id": "P",
+            "run_id": "R",
+            "state": "BLOCKED",
+            "kind": "DEAD_LETTER",
+            "reason": "focused validation missing",
+            "current_gate": "G1",
+            "event_id": "a" * 64,
+        }],
+        observed_at=now,
+    )
+    record_current_attention_projection(current_attention_path(tmp_path), attention)
+    monkeypatch.setattr(
+        dashboard_source,
+        "read_operations_dashboard_jarvis_status",
+        lambda *args, **kwargs: {
+            "webapp": "AVAILABLE",
+            "memory": "AVAILABLE",
+            "llmwiki": "AVAILABLE",
+            "source_state": "CANONICAL_JARVIS_COMPACT_STATUS_V1",
+        },
+    )
+
+    projection = dashboard_source.build_live_operations_dashboard_projection(
+        tmp_path,
+        now=now + __import__("datetime").timedelta(seconds=30),
+        expected_operational_runtime_source=expected,
+    )
+
+    user_alerts = [item for item in projection["alerts"] if item["kind"] == "USER_ATTENTION"]
+    assert len(user_alerts) == 1
+    assert user_alerts[0]["title"] == "P / BLOCKED"
+    assert "focused validation missing" in user_alerts[0]["detail"]
