@@ -1,0 +1,35 @@
+{
+  "schema_version": "ai-office.list-dashboard-v2-final-closure.v1",
+  "status": "PRODUCTION_CLOSED",
+  "closed_at": "2026-10-05T17:31:44+09:00",
+  "scope": "AI Office List Dashboard V2 non-spatial production extensions",
+  "extensions": {
+    "department_projection": {"status": "PRODUCTION", "release_head": "5b0c6439ab1250c188e401b58c1271e076e69bcb"},
+    "business_schedule_projection": {"status": "PRODUCTION", "release_head": "21fc1743913b2157e90b1ca837607077aad53ca4"},
+    "report_index_adapter": {"status": "PRODUCTION", "release_head": "385115aae7c02a0a5ddf5c0554a4d6d234c30417"},
+    "jarvis_memory_llmwiki_compact_status": {"status": "PRODUCTION", "producer_head": "91d4e019a514f5a08ae4bf9ef0c657e085fa5f82", "consumer_head": "659e6f5ac4709a4784d9aeb9417762991e068872"},
+    "model_usage_cost_projection": {"status": "PRODUCTION", "publisher_head": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e", "cost_policy": "UNAVAILABLE_UNTIL_VERIFIED_RATE_CARD"}
+  },
+  "live_feed": {
+    "source_contract": "orchestration.operations-dashboard-aggregate.v2",
+    "publisher_head": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+    "system_health": {"attention": "PASS", "reconcile": "PASS", "post_change": "PASS", "acceptance": "ACCEPTED"},
+    "departments": "7 BOUND / IDLE",
+    "schedule": "CANONICAL_BUSINESS_SCHEDULE_V1",
+    "reports": "CANONICAL_OFFICE_REPORT_INDEX_V1",
+    "jarvis_status": "AVAILABLE / AVAILABLE / AVAILABLE",
+    "model_usage": "CANONICAL_MODEL_USAGE_V1 / 0 executions / 0 tokens at activation",
+    "spatial_office": "HOLD_BY_USER"
+  },
+  "safety_invariants": {
+    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+    "raw_full_plan_read_in_jarvis": "FORBIDDEN",
+    "unverified_cost_invention": "FORBIDDEN",
+    "memory_content_exposure": "FORBIDDEN",
+    "unknown_bindings": "MUST_REMAIN_UNBOUND_OR_UNAVAILABLE"
+  },
+  "final_regression": {"harness": "174 PASS + 58 subtests PASS + 1 skipped", "jarvis": "47/47 PASS"},
+  "known_unrelated_baseline_issue": "test_memory_policy.py cross-platform Windows path separator expectation",
+  "planned_non_spatial_extensions_remaining": 0,
+  "next_state": "OPERATIONS_MONITORING_ONLY"
+}
