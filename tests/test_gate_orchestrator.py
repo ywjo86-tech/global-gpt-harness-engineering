@@ -679,6 +679,30 @@ class GateOrchestratorTests(unittest.TestCase):
             result = compatibility_dry_run(self.root, "GATE-1")
         self.assertEqual(result["status"], "BLOCKED"); self.assertFalse(result["mutation_performed"])
 
+    def test_pre_result_partial_recovery_bypasses_recertification_preflight_only_for_sealed_partial(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _pre_result_partial_recovery_pending
+
+        sealed_partial = {
+            "classification": {
+                "status": "REJECTED_PRE_RESULT_PARTIAL",
+                "completion_eligible": False,
+            }
+        }
+        self.assertTrue(_pre_result_partial_recovery_pending(sealed_partial))
+        self.assertFalse(_pre_result_partial_recovery_pending(None))
+        self.assertFalse(_pre_result_partial_recovery_pending({
+            "classification": {
+                "status": "REJECTED_POST_RESULT_REQUEST_MISSING",
+                "completion_eligible": False,
+            }
+        }))
+        self.assertFalse(_pre_result_partial_recovery_pending({
+            "classification": {
+                "status": "REJECTED_PRE_RESULT_PARTIAL",
+                "completion_eligible": True,
+            }
+        }))
+
     def test_approved_baseline_satisfied_recertification_is_fail_closed(self) -> None:
         import subprocess
         from runtime.orchestrator.gate_orchestrator import (

@@ -2446,6 +2446,17 @@ def _sealed_completed_lv_lineage(
     return matches[0]
 
 
+def _pre_result_partial_recovery_pending(recovery: Mapping[str, Any] | None) -> bool:
+    if not isinstance(recovery, Mapping):
+        return False
+    classification = recovery.get("classification")
+    return (
+        isinstance(classification, Mapping)
+        and classification.get("completion_eligible") is False
+        and classification.get("status") == "REJECTED_PRE_RESULT_PARTIAL"
+    )
+
+
 def _verified_historical_satisfied_recertification(
     project_root: str | Path,
     harness_root: str | Path,
@@ -3230,15 +3241,16 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     ["git", "-C", str(root), "rev-parse", "HEAD"],
                     capture_output=True, text=True, check=True,
                 ).stdout.strip()
-                satisfied_recertification = _verified_historical_satisfied_recertification(
-                    root, harness_root, plan, auth,
-                    lv_id=lv_id, current_run_id=lv_run_id, current_head=current_head,
-                )
-                if satisfied_recertification is None:
-                    satisfied_recertification = _verified_approved_baseline_satisfied_recertification(
-                        root, plan, auth,
-                        lv_id=lv_id, current_head=current_head, approval_head=head,
+                if not _pre_result_partial_recovery_pending(recovery):
+                    satisfied_recertification = _verified_historical_satisfied_recertification(
+                        root, harness_root, plan, auth,
+                        lv_id=lv_id, current_run_id=lv_run_id, current_head=current_head,
                     )
+                    if satisfied_recertification is None:
+                        satisfied_recertification = _verified_approved_baseline_satisfied_recertification(
+                            root, plan, auth,
+                            lv_id=lv_id, current_head=current_head, approval_head=head,
+                        )
 
             if satisfied_recertification is not None:
                 resolved_codex_readiness = resolved_codex_probes = None
