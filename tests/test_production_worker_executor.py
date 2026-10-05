@@ -1,4 +1,4 @@
-import ast, inspect, os, json, hashlib, subprocess, tempfile, unittest
+import ast, inspect, os, json, hashlib, subprocess, sys, tempfile, unittest
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -24,7 +24,7 @@ from runtime.orchestrator.production_worker_executor import (
     _bounded_validation_failure_evidence,
     _focused_execution_metadata, _sealed_external_validation_python,
     _validation_command_env, _should_defer_evidence_manifest_integrity_for_request,
-    _test_runner_metadata, _bounded_validation_feedback,
+    _test_runner_metadata, _bounded_validation_feedback, _candidate_validation_command, _candidate_validation_env, _source_validation_env,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
 from runtime.orchestrator.lv_execution_package import canonical_json_bytes
@@ -45,6 +45,75 @@ def _usage() -> dict[str, int]:
 
 
 class ProductionWorkerExecutorTests(unittest.TestCase):
+
+    def test_candidate_validation_binds_project_venv_without_changing_candidate_cwd_contract(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            interpreter=root/'.venv/bin/python'
+            interpreter.parent.mkdir(parents=True)
+            interpreter.write_text('#!/bin/sh\n')
+            interpreter.chmod(0o755)
+            original=['.venv/bin/python','-m','pytest','-q','tests/test_service.py']
+            bound=_candidate_validation_command(root, original)
+            self.assertEqual(bound[0], str(interpreter.absolute()))
+            self.assertEqual(bound[1:], original[1:])
+            self.assertEqual(original[0], '.venv/bin/python')
+            self.assertEqual(
+                _candidate_validation_command(root, ['npm','test']),
+                ['npm','test'],
+            )
+
+    def test_candidate_validation_environment_prefers_sandbox_source_and_strips_control_plane(self):
+        with tempfile.TemporaryDirectory() as d:
+            base=Path(d)
+            live=base/'live'
+            sandbox=base/'sandbox'
+            (live/'src/pkg').mkdir(parents=True)
+            (sandbox/'src/pkg').mkdir(parents=True)
+            (live/'src/pkg/service.py').write_text("VALUE='live'\n")
+            (sandbox/'src/pkg/service.py').write_text("VALUE='candidate'\n")
+            with patch.dict(os.environ, {
+                'PYTHONPATH': str(live/'src'),
+                'HARNESS_CONTRACT_MAPPING_ROOT': '/tmp/live-mapping',
+                'PYTHONHOME': '/tmp/live-python-home',
+            }, clear=False):
+                env=_candidate_validation_env(sandbox)
+            self.assertNotIn('HARNESS_CONTRACT_MAPPING_ROOT', env)
+            self.assertNotIn('PYTHONHOME', env)
+            self.assertEqual(
+                env['PYTHONPATH'].split(os.pathsep),
+                [str(sandbox/'src'), str(sandbox)],
+            )
+            result=subprocess.run(
+                [sys.executable, '-c', 'from pkg.service import VALUE; print(VALUE)'],
+                cwd=sandbox, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), 'candidate')
+
+    def test_live_source_validation_environment_binds_project_src_and_strips_control_plane(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text("VALUE='live-source'\n")
+            with patch.dict(os.environ, {
+                'PYTHONPATH': '/tmp/untrusted-source',
+                'PYTHONHOME': '/tmp/untrusted-home',
+                'HARNESS_CONTRACT_MAPPING_ROOT': '/tmp/live-mapping',
+            }, clear=False):
+                env=_source_validation_env(root)
+            self.assertEqual(env['PYTHONPATH'].split(os.pathsep), [str(root/'src'), str(root)])
+            self.assertNotIn('PYTHONHOME', env)
+            self.assertNotIn('HARNESS_CONTRACT_MAPPING_ROOT', env)
+            result=subprocess.run(
+                [sys.executable, '-c', 'from pkg.service import VALUE; print(VALUE)'],
+                cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), 'live-source')
+
     def test_external_interpreter_policy_does_not_force_python_for_non_python_toolchain(self):
         request = SimpleNamespace(extra_context={
             "interpreter_policy_id": "IMMUTABLE_EXTERNAL_INTERPRETER",
@@ -57,6 +126,20 @@ class ProductionWorkerExecutorTests(unittest.TestCase):
             },
         })
         self.assertIsNone(_sealed_external_validation_python(request))
+
+    def test_external_interpreter_policy_supports_native_source_validation_profile(self):
+        executable='/opt/python/bin/python3'
+        request = SimpleNamespace(extra_context={
+            "interpreter_policy_id": "IMMUTABLE_EXTERNAL_INTERPRETER",
+            "validation_toolchain": {
+                "profile_ids": ["PYTHON_PROJECT_SOURCE"],
+                "focused": [[executable, "-m", "pytest", "-q", "tests/test_service.py"]],
+                "full": [[executable, "-m", "pytest", "-q"]],
+                "compile": [[executable, "-m", "compileall", "-q", "src/pkg/service.py"]],
+                "deferred": False,
+            },
+        })
+        self.assertEqual(_sealed_external_validation_python(request), executable)
 
     def test_validation_environment_does_not_inherit_active_contract_mapping_root(self):
         with patch.dict(os.environ, {"HARNESS_CONTRACT_MAPPING_ROOT": "/tmp/live-mapping"}):

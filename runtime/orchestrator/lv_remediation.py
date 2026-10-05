@@ -561,6 +561,7 @@ def _run_checks(root: Path, owned: list[str], manifest: dict[str, Any] | None = 
     interpreter = root / ".venv" / "bin" / "python"
     expected_profiles: list[str] = []
     toolchain: dict[str, Any] = {}
+    parent_manifest: dict[str, Any] = {}
     if manifest is not None:
         try:
             parent_manifest = _json(_harness_root() / "_workspace" / "orchestration-runs" / manifest["parent_run_id"] / "package.manifest.json")
@@ -573,14 +574,25 @@ def _run_checks(root: Path, owned: list[str], manifest: dict[str, Any] | None = 
     try:
         if not expected_profiles or expected_profiles == ["PYTHON_PYTEST"]:
             _validate_remediation_interpreter(root, manifest)
-        elif expected_profiles == ["PYTHON_UNITTEST_EXTERNAL"]:
+        elif (
+            expected_profiles == ["PYTHON_UNITTEST_EXTERNAL"]
+            or (
+                expected_profiles == ["PYTHON_PROJECT_SOURCE"]
+                and parent_manifest.get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER"
+            )
+        ):
             focused = toolchain.get("focused", [])
             if not isinstance(focused, list) or not focused or not isinstance(focused[0], list) or not focused[0]:
                 raise LVRemediationError("external remediation interpreter binding is missing")
             interpreter = Path(str(focused[0][0]))
         else:
             interpreter = Path("/usr/bin/python3")
-        test_results, test_error = _run_tests(root, interpreter, owned, expected_profiles=expected_profiles)
+        external_policy = parent_manifest.get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER"
+        test_results, test_error = _run_tests(
+            root, interpreter, owned,
+            runner="unittest" if external_policy else "pytest",
+            expected_profiles=expected_profiles,
+        )
     except Exception as exc:
         test_results, test_error = [], str(exc)
     for index, result in enumerate(test_results):
