@@ -24,6 +24,10 @@ from .operations_current_attention import (
     attention_projection_to_dashboard_alerts,
     read_current_attention_projection,
 )
+from .operational_system_acceptance import (
+    OperationalSystemAcceptanceError,
+    validate_operational_system_acceptance,
+)
 from .monitor_health import evaluate_monitor_health_receipt
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
@@ -231,16 +235,17 @@ def _strict_acceptance_status(
         return "UNAVAILABLE"
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return "UNAVAILABLE"
-    if not isinstance(value, dict):
-        return "UNAVAILABLE"
-
-    created_raw = value.get("created_at")
-    if not isinstance(created_raw, str) or not created_raw:
+        record = validate_operational_system_acceptance(value)
+    except (
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        OperationalSystemAcceptanceError,
+    ):
         return "BLOCKED"
+
     try:
-        created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+        created = datetime.fromisoformat(record.created_at.replace("Z", "+00:00"))
     except ValueError:
         return "BLOCKED"
     if created.tzinfo is None or created > now:
@@ -248,12 +253,13 @@ def _strict_acceptance_status(
     if (now - created.astimezone(timezone.utc)).total_seconds() > fresh_after_seconds:
         return "STALE"
 
-    refs = value.get("runtime_release_identity_refs")
-    if not isinstance(refs, list):
+    expected = str(expected_runtime_source or "").strip()
+    if expected and (
+        record.runtime_source_identity != expected
+        or record.expected_runtime_source_identity != expected
+    ):
         return "BLOCKED"
-    if expected_runtime_source and expected_runtime_source not in {str(item) for item in refs}:
-        return "BLOCKED"
-    return str(value.get("status") or value.get("result") or "UNKNOWN")
+    return record.status
 
 
 def read_operations_dashboard_health(
@@ -298,7 +304,7 @@ def read_operations_dashboard_health(
         expected_runtime_source=expected,
     )
     acceptance = _strict_acceptance_status(
-        root / "operational-acceptance.json",
+        root / "operational-system-acceptance.json",
         now=current,
         fresh_after_seconds=fresh_after_seconds,
         expected_runtime_source=expected,

@@ -13,6 +13,10 @@ from .operations_current_attention import (
     build_current_attention_projection,
     record_current_attention_projection,
 )
+from .operational_system_acceptance import (
+    build_operational_system_acceptance,
+    record_operational_system_acceptance,
+)
 from .operational_blockers import (
     blocking_attention_events,
     current_registered_job_keys,
@@ -165,22 +169,40 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(rec.to_dict(), sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
+    system_rec = build_operational_system_acceptance(
+        runtime_source_identity=a.runtime_source,
+        expected_runtime_source_identity=expected_runtime,
+        registered_project_count=len(current_jobs),
+        post_change_gate=gate,
+        current_attention_projection=current_attention,
+        monitor_health_receipt_refs=(str(ap), str(tp)),
+        process_lifecycle_diagnostic_refs=(str(process_snapshot_path),),
+        created_at=now.isoformat(timespec="seconds"),
+    )
+    system_path = record_operational_system_acceptance(
+        a.state_root,
+        system_rec,
+    )
+
     print(
         json.dumps(
             {
                 "post_change": gate["status"],
                 "operational_acceptance": rec.status,
+                "system_acceptance": system_rec.status,
                 "blocking_attention": len(operational_blockers),
                 "process_lifecycle_blocking": process_snapshot["blocking_count"],
                 "runtime_source": a.runtime_source,
                 "expected_runtime_source": expected_runtime,
                 "attention_projection": str(current_attention_path),
+                "system_acceptance_path": str(system_path),
                 "record_sha256": rec.record_sha256,
+                "system_record_sha256": system_rec.record_sha256,
             },
             sort_keys=True,
         )
     )
-    return 0 if rec.status == "ACCEPTED" else 2
+    return 0 if system_rec.status == "ACCEPTED" else 2
 
 
 if __name__ == "__main__":

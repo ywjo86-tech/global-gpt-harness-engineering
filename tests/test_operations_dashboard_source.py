@@ -12,6 +12,10 @@ from runtime.orchestrator.operations_current_attention import (
     record_current_attention_projection,
 )
 from runtime.orchestrator.operations_dashboard_projection import build_operations_dashboard_projection
+from runtime.orchestrator.operational_system_acceptance import (
+    build_operational_system_acceptance,
+    record_operational_system_acceptance,
+)
 import runtime.orchestrator.operations_dashboard_source as dashboard_source
 from runtime.orchestrator.operations_dashboard_source import (
     discover_ai_office_operations_read_models,
@@ -27,6 +31,30 @@ def _store(root, project, run, *, state="INTAKE_READY"):
         workflow_state=state,
     )
     return store
+
+
+def _write_system_acceptance(root, *, runtime, expected, created_at, blockers=()):
+    attention = build_current_attention_projection(
+        runtime_source_identity=runtime,
+        blockers=list(blockers),
+        observed_at=datetime.fromisoformat(created_at.replace("Z", "+00:00")),
+    )
+    gate = {
+        "status": "PASS" if not blockers else "BLOCKED",
+        "failures": [] if not blockers else ["ATTENTION_HEALTH:MONITOR_RECEIPT_BLOCKED"],
+        "expected_runtime_source_identity": expected,
+        "gate_evidence_sha256": "c" * 64,
+    }
+    record = build_operational_system_acceptance(
+        runtime_source_identity=runtime,
+        expected_runtime_source_identity=expected,
+        registered_project_count=max(1, len({str(x.get("project_id") or "") for x in blockers})),
+        post_change_gate=gate,
+        current_attention_projection=attention,
+        created_at=created_at,
+    )
+    record_operational_system_acceptance(root, record)
+    return record
 
 
 def _health(root):
@@ -128,11 +156,12 @@ def test_strict_health_reader_blocks_runtime_identity_mismatch(tmp_path):
         "status": "PASS",
         "expected_runtime_source_identity": "runtime:old",
     }))
-    (base / "operational-acceptance.json").write_text(json.dumps({
-        "status": "ACCEPTED",
-        "created_at": scanned,
-        "runtime_release_identity_refs": ["runtime:old"],
-    }))
+    _write_system_acceptance(
+        tmp_path,
+        runtime="runtime:old",
+        expected="runtime:old",
+        created_at=scanned,
+    )
 
     health = read_operations_dashboard_health(
         tmp_path,
@@ -172,11 +201,12 @@ def test_strict_health_reader_marks_stale_acceptance(tmp_path):
         "status": "PASS",
         "expected_runtime_source_identity": expected,
     }))
-    (base / "operational-acceptance.json").write_text(json.dumps({
-        "status": "ACCEPTED",
-        "created_at": "2026-10-05T07:00:00+00:00",
-        "runtime_release_identity_refs": [expected],
-    }))
+    _write_system_acceptance(
+        tmp_path,
+        runtime=expected,
+        expected=expected,
+        created_at="2026-10-05T07:00:00+00:00",
+    )
 
     health = read_operations_dashboard_health(
         tmp_path,
