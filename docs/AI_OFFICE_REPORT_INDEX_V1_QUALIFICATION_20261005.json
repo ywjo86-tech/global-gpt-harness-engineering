@@ -1,0 +1,53 @@
+{
+  "schema_version": "ai-office.report-index-v1-qualification.v1",
+  "status": "PASS_PENDING_PRODUCTION_PROMOTION",
+  "baseline_head": "e8155e3aca1fa6b9f2e5a2d5e428703722829414",
+  "implementation_head": "e5d85f8d6a3ec8be49b41fbf6f499ad446336ba5",
+  "focused_tests": "42/42 PASS",
+  "expanded_regression": "188 PASS + 21 subtests PASS",
+  "contract": {
+    "registry_schema": "ai-office.report-index-registry.v1",
+    "entry_schema": "ai-office.report-index-entry.v1",
+    "accepted_report_schema": "ai-office.report.v1",
+    "index_policy": "append-only report_id; same content idempotent; conflicting overwrite rejected",
+    "published_at_requirement": "timezone-aware only",
+    "missing_registry_behavior": "UNAVAILABLE",
+    "empty_initialized_behavior": "CANONICAL empty items",
+    "reviewer_report_ingestion": "REJECTED_BY_SCHEMA",
+    "symlink_source": "REJECTED",
+    "tamper_behavior": "FAIL_CLOSED"
+  },
+  "qualification_feed": {
+    "source_contract": "orchestration.operations-dashboard-aggregate.v2",
+    "source_state": "CANONICAL_OFFICE_REPORT_INDEX_V1",
+    "empty_initialized_source": "PASS_CANONICAL_EMPTY",
+    "populated_source": "PASS_CANONICAL_ITEMS",
+    "report_count": 2,
+    "sort_order": "published_at descending",
+    "dashboard_fields": ["title", "date"],
+    "digest_receipt_binding": "PASS",
+    "department_registry_compatibility": "PASS",
+    "business_schedule_compatibility": "PASS"
+  },
+  "operator_cli": {
+    "commands": ["init", "add", "validate"],
+    "registry_init_idempotent": true,
+    "verified_OfficeReportV1_only": true,
+    "same_content_idempotent": true,
+    "conflicting_report_id_rejected": true
+  },
+  "jarvis_canary": {
+    "port": 8029,
+    "api": "PASS",
+    "page": "PASS",
+    "html_report_cards_render": "PASS",
+    "canary_stopped_after_verification": true
+  },
+  "production_state": {
+    "mutated": false,
+    "report_index_registry_present": false,
+    "dashboard_recent_reports": "UNAVAILABLE"
+  },
+  "spatial_office": "HOLD_BY_USER",
+  "next_gate": "PRODUCTION_REPORT_INDEX_PUBLISHER_PROMOTION_REQUIRES_EXPLICIT_RISK_APPROVAL"
+}
