@@ -35,20 +35,24 @@
     "jarvis_compact_status": "PASS",
     "dashboard_schema_top_level_changed": false,
     "extension_path": "system_resources.model_usage_cost",
-    "runtime_current_changed": false
+    "runtime_current_changed": true
   },
   "production_state": {
     "mutated": true,
     "model_usage_registry_present": true,
     "canonical_historical_usage_available": false,
-    "dashboard_usage_currently": "CANONICAL_MODEL_USAGE_V1 / 0 executions / 0 tokens at activation",
-    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+    "dashboard_usage_currently": "CANONICAL_MODEL_USAGE_V1 / 0 executions / 0 tokens after activation",
+    "runtime_current": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
     "publisher_release_head": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
     "registry_activated_at": "2026-10-05T08:26:17+00:00",
     "registry_digest": "8ad6178781b4e75c2aab5e77a41d71d166b4a7c8a0f5f295a78c7fa09bfc7dbb",
     "post_change_http": "9/9 PASS",
     "approval_control": "503 CONTROL_UNAVAILABLE fail-closed",
-    "worker_runtime_regression": "186 PASS + 58 subtests PASS + 1 skipped"
+    "worker_runtime_regression": "174 PASS + 58 subtests PASS + 1 skipped",
+    "reconcile_after_runtime_promotion": "PASS",
+    "journal_warnings": 0,
+    "rollback_backup": "/home/ywjo/AI-Workspace/backups/model-usage-finalize-20261005-173022"
   },
-  "next_gate": "CLOSED"
+  "next_gate": "CLOSED",
+  "closed_at": "2026-10-05T17:34:19+09:00"
 }
