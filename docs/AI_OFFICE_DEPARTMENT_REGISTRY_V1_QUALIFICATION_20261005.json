@@ -1,6 +1,6 @@
 {
   "schema_version": "ai-office.department-registry-v1-qualification.v1",
-  "status": "PASS_PENDING_PRODUCTION_PROMOTION",
+  "status": "PRODUCTION_PROMOTED",
   "implementation_head": "984a676fe081874b085a50aaf96ad37ab6d7a85a",
   "baseline_head": "9227fe7b83fa8fed00601a60901cee0b81aa66d2",
   "focused_tests": "36/36 PASS",
@@ -30,13 +30,20 @@
     "canary_stopped_after_verification": true
   },
   "production_state": {
-    "department_registry_present": false,
+    "department_registry_present": true,
+    "department_count": 7,
     "explicit_department_run_bindings_present": false,
-    "dashboard_behavior": "UNCHANGED_UNBOUND",
-    "production_mutated": false
+    "binding_count": 0,
+    "current_run_count": 0,
+    "dashboard_behavior": "BOUND_IDLE_NO_FAKE_PROGRESS",
+    "production_mutated": true,
+    "publisher_release_head": "5b0c6439ab1250c188e401b58c1271e076e69bcb",
+    "jarvis_expected_publisher_head": "5b0c6439ab1250c188e401b58c1271e076e69bcb",
+    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+    "rollback_backup": "/home/ywjo/AI-Workspace/backups/department-production-cutover-20261005-1516"
   },
   "spatial_office": "HOLD_BY_USER",
-  "next_gate": "PRODUCTION_REGISTRY_AND_PUBLISHER_PROMOTION_REQUIRES_EXPLICIT_RISK_APPROVAL",
+  "next_gate": "NONE_DEPARTMENT_REGISTRY_V1_CLOSED",
   "operator_cli": {
     "status": "PASS",
     "commands": [
@@ -47,5 +54,14 @@
     "idempotent_same_content": true,
     "conflicting_overwrite_rejected": true,
     "binding_target_must_be_valid_canonical_state": true
-  }
+  },
+  "post_change_tests": {
+    "harness_department_publication": "46/46 PASS",
+    "jarvis_ai_office": "35/35 PASS",
+    "http_matrix": "PASS",
+    "control_fail_closed": "PASS_503",
+    "publisher_timer": "ACTIVE_WAITING_ENABLED",
+    "journal_warnings_since_cutover": 0
+  },
+  "promoted_at": "2026-10-05T15:23:31+09:00"
 }
