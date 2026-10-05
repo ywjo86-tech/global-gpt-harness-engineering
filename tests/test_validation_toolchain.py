@@ -353,6 +353,47 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
             self.assertEqual(plan.focused, ())
 
+    def test_source_only_python_scope_ignores_nonexecuting_imports(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\\n')
+            (root/'tests').mkdir()
+            (root/'tests/test_type_only.py').write_text(
+                'from typing import TYPE_CHECKING\\n'
+                'if TYPE_CHECKING:\\n    from pkg.service import VALUE\\n'
+                'def test_placeholder(): assert True\\n'
+            )
+            (root/'tests/test_false_branch.py').write_text(
+                'if False:\\n    from pkg.service import VALUE\\n'
+                'def test_placeholder(): assert True\\n'
+            )
+            (root/'tests/test_function_import.py').write_text(
+                'def helper():\\n    from pkg.service import VALUE\\n    return VALUE\\n'
+                'def test_placeholder(): assert True\\n'
+            )
+            plan=resolve_validation_commands(root, ['src/pkg/service.py'], allow_deferred=True)
+            self.assertTrue(plan.deferred)
+            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertEqual(plan.focused, ())
+
+    def test_source_only_python_scope_ignores_test_named_helper_without_tests(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'src/pkg').mkdir(parents=True)
+            (root/'src/pkg/service.py').write_text('VALUE = 1\\n')
+            (root/'tests').mkdir()
+            (root/'tests/test_helpers.py').write_text('from pkg.service import VALUE\\n')
+            (root/'tests/test_consumer.py').write_text('def test_consumer(): assert True\\n')
+            plan=resolve_validation_commands(root, ['src/pkg/service.py'], allow_deferred=True)
+            self.assertTrue(plan.deferred)
+            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertEqual(plan.focused, ())
+
     def test_source_only_python_scope_supports_approved_external_interpreter(self):
         with tempfile.TemporaryDirectory() as d:
             base=Path(d)
