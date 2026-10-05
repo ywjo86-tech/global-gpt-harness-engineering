@@ -17,6 +17,7 @@ from runtime.ai_office.state_store import AIOfficeStateStore, AIOfficeStateStore
 
 from .operations_dashboard_departments import read_operations_dashboard_departments
 from .operations_dashboard_schedule import read_operations_dashboard_today_schedule
+from .operations_dashboard_reports import read_operations_dashboard_recent_reports
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
     build_operations_dashboard_projection,
@@ -253,5 +254,6 @@ def build_live_operations_dashboard_projection(
         system_resources=read_host_resource_projection(),
         departments=read_operations_dashboard_departments(state_root),
         today_schedule=read_operations_dashboard_today_schedule(state_root, now=current),
+        recent_reports=read_operations_dashboard_recent_reports(state_root),
         now=current,
     )
