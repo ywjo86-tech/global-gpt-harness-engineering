@@ -28,6 +28,13 @@ def parser() -> argparse.ArgumentParser:
         "--publisher-source-head",
         required=True,
     )
+    value.add_argument(
+        "--expected-operational-runtime-head",
+        help=(
+            "Expected Harness operational runtime identity for health binding. "
+            "Defaults to --publisher-source-head."
+        ),
+    )
     value.add_argument("--output")
     value.add_argument("--receipt-output")
     return value
@@ -50,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     projection = build_live_operations_dashboard_projection(
-        state_root
+        state_root,
+        expected_operational_runtime_source=(
+            args.expected_operational_runtime_head
+            or args.publisher_source_head
+        ),
     )
     projection_path, receipt_path = (
         publish_operations_dashboard_bundle(

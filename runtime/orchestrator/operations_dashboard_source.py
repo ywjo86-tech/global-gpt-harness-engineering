@@ -20,6 +20,7 @@ from .operations_dashboard_schedule import read_operations_dashboard_today_sched
 from .operations_dashboard_reports import read_operations_dashboard_recent_reports
 from .operations_dashboard_jarvis_status import read_operations_dashboard_jarvis_status
 from .operations_dashboard_model_usage import read_operations_dashboard_model_usage
+from .monitor_health import evaluate_monitor_health_receipt
 from .operations_dashboard_projection import (
     InvalidCurrentWorkObservationV1,
     build_operations_dashboard_projection,
@@ -169,13 +170,143 @@ def _read_health_value(path: Path, *keys: str) -> str:
     return "UNKNOWN"
 
 
-def read_operations_dashboard_health(state_root: str | Path) -> dict[str, str]:
+def _strict_monitor_status(
+    path: Path,
+    *,
+    monitor_name: str,
+    now: datetime,
+    fresh_after_seconds: int,
+    expected_runtime_source: str,
+) -> str:
+    if path.is_symlink() or not path.is_file():
+        return "UNAVAILABLE"
+    receipt, failures = evaluate_monitor_health_receipt(
+        path,
+        monitor_name=monitor_name,
+        now=now,
+        fresh_after_seconds=fresh_after_seconds,
+    )
+    if receipt is None:
+        return "BLOCKED"
+    if any("MONITOR_RECEIPT_STALE" in item for item in failures):
+        return "STALE"
+    if failures:
+        return "BLOCKED"
+    if (
+        expected_runtime_source
+        and str(receipt.get("runtime_source_identity") or "") != expected_runtime_source
+    ):
+        return "BLOCKED"
+    return str(receipt.get("result") or "UNKNOWN")
+
+
+def _strict_post_change_status(path: Path, *, expected_runtime_source: str) -> str:
+    if path.is_symlink() or not path.is_file():
+        return "UNAVAILABLE"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "UNAVAILABLE"
+    if not isinstance(value, dict):
+        return "UNAVAILABLE"
+    if expected_runtime_source:
+        bound = str(value.get("expected_runtime_source_identity") or "")
+        if bound != expected_runtime_source:
+            return "BLOCKED"
+    return str(value.get("status") or value.get("result") or "UNKNOWN")
+
+
+def _strict_acceptance_status(
+    path: Path,
+    *,
+    now: datetime,
+    fresh_after_seconds: int,
+    expected_runtime_source: str,
+) -> str:
+    if path.is_symlink() or not path.is_file():
+        return "UNAVAILABLE"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "UNAVAILABLE"
+    if not isinstance(value, dict):
+        return "UNAVAILABLE"
+
+    created_raw = value.get("created_at")
+    if not isinstance(created_raw, str) or not created_raw:
+        return "BLOCKED"
+    try:
+        created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return "BLOCKED"
+    if created.tzinfo is None or created > now:
+        return "BLOCKED"
+    if (now - created.astimezone(timezone.utc)).total_seconds() > fresh_after_seconds:
+        return "STALE"
+
+    refs = value.get("runtime_release_identity_refs")
+    if not isinstance(refs, list):
+        return "BLOCKED"
+    if expected_runtime_source and expected_runtime_source not in {str(item) for item in refs}:
+        return "BLOCKED"
+    return str(value.get("status") or value.get("result") or "UNKNOWN")
+
+
+def read_operations_dashboard_health(
+    state_root: str | Path,
+    *,
+    now: datetime | None = None,
+    expected_runtime_source: str = "",
+    fresh_after_seconds: int = 180,
+) -> dict[str, str]:
     root = Path(state_root).expanduser().resolve() / "operations-v2"
+
+    # Preserve the old bounded reader for callers that are not performing a
+    # production freshness/binding evaluation.
+    if now is None and not expected_runtime_source:
+        return {
+            "attention": _read_health_value(root / "attention-health.json", "result", "status"),
+            "reconcile": _read_health_value(root / "reconcile-timer-health.json", "result", "status"),
+            "post_change": _read_health_value(root / "post-change-gate.json", "status", "result"),
+            "acceptance": _read_health_value(root / "operational-acceptance.json", "status", "result"),
+        }
+
+    if fresh_after_seconds <= 0:
+        raise OperationsDashboardSourceError("health freshness threshold invalid")
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    expected = str(expected_runtime_source or "").strip()
+    attention = _strict_monitor_status(
+        root / "attention-health.json",
+        monitor_name="ATTENTION_HEALTH",
+        now=current,
+        fresh_after_seconds=fresh_after_seconds,
+        expected_runtime_source=expected,
+    )
+    reconcile = _strict_monitor_status(
+        root / "reconcile-timer-health.json",
+        monitor_name="RECONCILE_TIMER_HEALTH",
+        now=current,
+        fresh_after_seconds=fresh_after_seconds,
+        expected_runtime_source=expected,
+    )
+    post_change = _strict_post_change_status(
+        root / "post-change-gate.json",
+        expected_runtime_source=expected,
+    )
+    acceptance = _strict_acceptance_status(
+        root / "operational-acceptance.json",
+        now=current,
+        fresh_after_seconds=fresh_after_seconds,
+        expected_runtime_source=expected,
+    )
+    if attention != "PASS" or reconcile != "PASS":
+        if post_change == "PASS":
+            post_change = "BLOCKED"
     return {
-        "attention": _read_health_value(root / "attention-health.json", "result", "status"),
-        "reconcile": _read_health_value(root / "reconcile-timer-health.json", "result", "status"),
-        "post_change": _read_health_value(root / "post-change-gate.json", "status", "result"),
-        "acceptance": _read_health_value(root / "operational-acceptance.json", "status", "result"),
+        "attention": attention,
+        "reconcile": reconcile,
+        "post_change": post_change,
+        "acceptance": acceptance,
     }
 
 
@@ -246,13 +377,20 @@ def build_live_operations_dashboard_projection(
     state_root: str | Path,
     *,
     now: datetime | None = None,
+    expected_operational_runtime_source: str = "",
+    health_fresh_after_seconds: int = 180,
 ) -> dict[str, Any]:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     models, invalid = discover_ai_office_operations_read_models(state_root, now=current)
     return build_operations_dashboard_projection(
         models,
         invalid_current=invalid,
-        system_health=read_operations_dashboard_health(state_root),
+        system_health=read_operations_dashboard_health(
+            state_root,
+            now=current,
+            expected_runtime_source=expected_operational_runtime_source,
+            fresh_after_seconds=health_fresh_after_seconds,
+        ),
         system_resources={
             **read_host_resource_projection(),
             "model_usage_cost": read_operations_dashboard_model_usage(state_root, now=current),

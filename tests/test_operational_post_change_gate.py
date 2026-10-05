@@ -216,5 +216,25 @@ class OperationalPostChangeGateTests(unittest.TestCase):
         self.assertIn("ATTENTION_HEALTH:MONITOR_RECEIPT_STALE",result["failures"])
 
 
+
+    def test_runtime_source_mismatch_blocks_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
+            result=evaluate_post_change_gate(
+                diagnostic_config=policy,
+                attention_watch_enabled=True,
+                timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
+                expected_runtime_source_identity="runtime:new",
+                observer=FakeObserver(healthy_values()),
+                now=datetime(2026,10,4,12,0,0,tzinfo=timezone.utc),
+            )
+        self.assertEqual(result["status"],"BLOCKED")
+        self.assertIn("ATTENTION_HEALTH:RUNTIME_SOURCE_MISMATCH",result["failures"])
+        self.assertIn("RECONCILE_TIMER_HEALTH:RUNTIME_SOURCE_MISMATCH",result["failures"])
+
 if __name__=="__main__":
     unittest.main()

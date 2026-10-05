@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 
 from runtime.ai_office.state_store import AIOfficeStateStore
+from runtime.orchestrator.monitor_health import build_monitor_health_receipt
 from runtime.orchestrator.operations_dashboard_projection import build_operations_dashboard_projection
 from runtime.orchestrator.operations_dashboard_source import (
     discover_ai_office_operations_read_models,
@@ -97,3 +98,88 @@ def test_health_reader_is_bounded_and_missing_is_visible(tmp_path):
 
     (tmp_path / "operations-v2" / "reconcile-timer-health.json").unlink()
     assert read_operations_dashboard_health(tmp_path)["reconcile"] == "UNAVAILABLE"
+
+
+def test_strict_health_reader_blocks_runtime_identity_mismatch(tmp_path):
+    base = tmp_path / "operations-v2"
+    base.mkdir(parents=True, exist_ok=True)
+    scanned = "2026-10-05T08:00:00+00:00"
+    for name, filename in (
+        ("ATTENTION_HEALTH", "attention-health.json"),
+        ("RECONCILE_TIMER_HEALTH", "reconcile-timer-health.json"),
+    ):
+        receipt = build_monitor_health_receipt(
+            monitor_name=name,
+            runtime_source_identity="runtime:old",
+            search_root=tmp_path,
+            registered_job_count=1,
+            pending_current_event_count=0,
+            result="PASS",
+            scanned_at=scanned,
+        )
+        (base / filename).write_text(json.dumps(receipt.to_dict()))
+    (base / "post-change-gate.json").write_text(json.dumps({
+        "status": "PASS",
+        "expected_runtime_source_identity": "runtime:old",
+    }))
+    (base / "operational-acceptance.json").write_text(json.dumps({
+        "status": "ACCEPTED",
+        "created_at": scanned,
+        "runtime_release_identity_refs": ["runtime:old"],
+    }))
+
+    health = read_operations_dashboard_health(
+        tmp_path,
+        now=datetime(2026, 10, 5, 8, 0, 30, tzinfo=timezone.utc),
+        expected_runtime_source="runtime:new",
+        fresh_after_seconds=180,
+    )
+
+    assert health == {
+        "attention": "BLOCKED",
+        "reconcile": "BLOCKED",
+        "post_change": "BLOCKED",
+        "acceptance": "BLOCKED",
+    }
+
+
+def test_strict_health_reader_marks_stale_acceptance(tmp_path):
+    base = tmp_path / "operations-v2"
+    base.mkdir(parents=True, exist_ok=True)
+    scanned = "2026-10-05T08:00:00+00:00"
+    expected = "runtime:current"
+    for name, filename in (
+        ("ATTENTION_HEALTH", "attention-health.json"),
+        ("RECONCILE_TIMER_HEALTH", "reconcile-timer-health.json"),
+    ):
+        receipt = build_monitor_health_receipt(
+            monitor_name=name,
+            runtime_source_identity=expected,
+            search_root=tmp_path,
+            registered_job_count=1,
+            pending_current_event_count=0,
+            result="PASS",
+            scanned_at=scanned,
+        )
+        (base / filename).write_text(json.dumps(receipt.to_dict()))
+    (base / "post-change-gate.json").write_text(json.dumps({
+        "status": "PASS",
+        "expected_runtime_source_identity": expected,
+    }))
+    (base / "operational-acceptance.json").write_text(json.dumps({
+        "status": "ACCEPTED",
+        "created_at": "2026-10-05T07:00:00+00:00",
+        "runtime_release_identity_refs": [expected],
+    }))
+
+    health = read_operations_dashboard_health(
+        tmp_path,
+        now=datetime(2026, 10, 5, 8, 0, 30, tzinfo=timezone.utc),
+        expected_runtime_source=expected,
+        fresh_after_seconds=180,
+    )
+
+    assert health["attention"] == "PASS"
+    assert health["reconcile"] == "PASS"
+    assert health["post_change"] == "PASS"
+    assert health["acceptance"] == "STALE"

@@ -84,6 +84,7 @@ def evaluate_post_change_gate(
     attention_health_receipt: dict[str, Any] | str | Path | None = None,
     timer_health_receipt: dict[str, Any] | str | Path | None = None,
     process_lifecycle_snapshot: dict[str, Any] | str | Path | None = None,
+    expected_runtime_source_identity: str | None = None,
     stale_after_seconds: int = 180,
     observer: UserServiceObserver | None = None,
     now: datetime | None = None,
@@ -145,6 +146,15 @@ def evaluate_post_change_gate(
     failures.extend(attention_failures)
     failures.extend(timer_failures)
 
+    expected_runtime = str(expected_runtime_source_identity or "").strip()
+    if expected_runtime:
+        for monitor_label, receipt in (
+            ("ATTENTION_HEALTH", attention_receipt),
+            ("RECONCILE_TIMER_HEALTH", timer_receipt),
+        ):
+            if receipt is not None and str(receipt.get("runtime_source_identity") or "") != expected_runtime:
+                failures.append(f"{monitor_label}:RUNTIME_SOURCE_MISMATCH")
+
     process_lifecycle: dict[str, Any] | None = None
     if process_lifecycle_snapshot is None:
         failures.append("PROCESS_LIFECYCLE_SNAPSHOT_MISSING")
@@ -192,6 +202,7 @@ def evaluate_post_change_gate(
             "attention_watch_enabled": bool(attention_watch_enabled),
             "reconcile_timer_watch_enabled": bool(timer_watch_enabled),
         },
+        "expected_runtime_source_identity": expected_runtime or None,
         "failures": failures,
     }
     result["gate_evidence_sha256"] = hashlib.sha256(
@@ -208,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--attention-health-receipt")
     parser.add_argument("--timer-health-receipt")
     parser.add_argument("--process-lifecycle-snapshot")
+    parser.add_argument("--expected-runtime-source-identity")
     parser.add_argument("--stale-after-seconds", type=int, default=180)
     args = parser.parse_args(argv)
     result = evaluate_post_change_gate(
@@ -217,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         attention_health_receipt=args.attention_health_receipt,
         timer_health_receipt=args.timer_health_receipt,
         process_lifecycle_snapshot=args.process_lifecycle_snapshot,
+        expected_runtime_source_identity=args.expected_runtime_source_identity,
         stale_after_seconds=args.stale_after_seconds,
     )
     print(json.dumps(result, sort_keys=True))
