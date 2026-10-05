@@ -107,6 +107,13 @@ class AIOfficeDepartmentRegistryStore:
         self._ensure_safe_root()
         if self.registry_path.is_symlink():
             raise AIOfficeDepartmentRegistryError("unsafe registry path")
+        if self.registry_path.exists():
+            existing = self.load_registry()
+            if existing == registry:
+                return self.registry_path
+            raise AIOfficeDepartmentRegistryError(
+                "registry already exists with different content"
+            )
         payload = asdict(registry)
         payload["department_ids"] = list(registry.department_ids)
         payload["registry_digest"] = registry.registry_digest
@@ -236,6 +243,13 @@ class AIOfficeDepartmentRegistryStore:
         path = self._binding_path(binding.department_id)
         if path.is_symlink():
             raise AIOfficeDepartmentRegistryError("unsafe binding path")
+        if path.exists():
+            existing = self._load_binding(path, registry=registry)
+            if existing == binding:
+                return path
+            raise AIOfficeDepartmentRegistryError(
+                "binding already exists with different content"
+            )
         payload = asdict(binding)
         payload["binding_digest"] = binding.binding_digest
         self._atomic_json(path, payload)
