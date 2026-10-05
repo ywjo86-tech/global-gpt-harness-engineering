@@ -1,0 +1,60 @@
+{
+  "components": [
+    {
+      "binding_mode": "PINNED_COMPATIBLE",
+      "compatibility_evidence_refs": [
+        "qualification:operations-remediation-233-pass"
+      ],
+      "component_id": "attention-delivery",
+      "expected_source_head": "824175137b55c3a43fcd0eb70854f58f92a2106e",
+      "unit": "global-gpt-harness-attention-delivery.service"
+    },
+    {
+      "binding_mode": "PINNED_COMPATIBLE",
+      "compatibility_evidence_refs": [
+        "qualification:operations-remediation-233-pass"
+      ],
+      "component_id": "dashboard-publisher",
+      "expected_source_head": "824175137b55c3a43fcd0eb70854f58f92a2106e",
+      "unit": "global-gpt-harness-ai-office-dashboard-publisher.service"
+    },
+    {
+      "binding_mode": "CURRENT_RUNTIME",
+      "compatibility_evidence_refs": [],
+      "component_id": "full-plan-reconcile",
+      "expected_source_head": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+      "unit": "global-gpt-harness-full-plan-reconcile.service"
+    },
+    {
+      "binding_mode": "PINNED_COMPATIBLE",
+      "compatibility_evidence_refs": [
+        "qualification:ocpv2-production-baseline-20261005"
+      ],
+      "component_id": "ocpv2",
+      "expected_source_head": "63a2a6bfb6d4858fa6515176faf03ab38c29f6f7",
+      "unit": "ocpv2.service"
+    },
+    {
+      "binding_mode": "PINNED_COMPATIBLE",
+      "compatibility_evidence_refs": [
+        "qualification:operations-remediation-233-pass"
+      ],
+      "component_id": "operational-acceptance",
+      "expected_source_head": "824175137b55c3a43fcd0eb70854f58f92a2106e",
+      "unit": "global-gpt-harness-operational-acceptance.service"
+    },
+    {
+      "binding_mode": "PINNED_COMPATIBLE",
+      "compatibility_evidence_refs": [
+        "qualification:timer-recovery-guard-20261005"
+      ],
+      "component_id": "timer-recovery",
+      "expected_source_head": "32e6fdadd7b18e80f416af47565f5f6aabdf8625",
+      "unit": "global-gpt-harness-operations-timer-recovery.service"
+    }
+  ],
+  "current_runtime_source_identity": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+  "manifest_sha256": "44d71c1f129d047a38d8bd1bd07c5676b0ea970512c6ce9d81fa7274305bf1eb",
+  "releases_root": "/home/ywjo/AI-Workspace/runtime/releases",
+  "schema_version": "orchestration.operational-runtime-compatibility.v1"
+}
