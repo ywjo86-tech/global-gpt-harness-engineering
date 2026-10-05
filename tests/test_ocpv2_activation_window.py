@@ -20,6 +20,7 @@ from runtime.orchestrator.ocpv2_activation_window import (
     open_activation_window,
     poll_activation_window_once,
     recover_activation_window,
+    run_controlled_activation_once,
 )
 
 
@@ -108,6 +109,77 @@ class OCPActivationWindowTests(unittest.TestCase):
             max_seconds=60,
             window_id="TEST-WINDOW",
             **kwargs,
+        )
+
+
+
+    def test_run_once_is_bounded_transaction_and_restores_timers(self):
+        controller = self._controller()
+        scheduler = FakeScheduler()
+
+        def runner(temp_env: Path):
+            values = dict(
+                line.split("=", 1)
+                for line in temp_env.read_text(encoding="utf-8").splitlines()
+                if "=" in line
+            )
+            self.assertEqual(values["OCP_FULL_PLAN_ACTIVATION_ENABLED"], "1")
+            self.assertEqual(activation_flag_value(self.env), "0")
+            self.assertFalse(controller.states[DEFAULT_RECONCILE_TIMER])
+            self.assertFalse(controller.states[DEFAULT_OCP_TIMER])
+            return 0, json.dumps({
+                "status": "OK",
+                "full_plan_activated": 1,
+                "blocked": 0,
+            })
+
+        result = run_controlled_activation_once(
+            state_root=self.state,
+            env_file=self.env,
+            controller=controller,
+            scheduler=scheduler,
+            max_seconds=60,
+            window_id="RUN-ONCE-SUCCESS",
+            runner=runner,
+        )
+
+        self.assertEqual(result["status"], "CLOSED")
+        self.assertEqual(result["last_poll_full_plan_activated"], 1)
+        self.assertEqual(activation_flag_value(self.env), "0")
+        self.assertTrue(controller.states[DEFAULT_RECONCILE_TIMER])
+        self.assertTrue(controller.states[DEFAULT_OCP_TIMER])
+        self.assertFalse(
+            list((self.state / "operations-v2").glob(".ocpv2-activation-*.env"))
+        )
+
+    def test_run_once_poll_failure_closes_failed_and_restores_timers(self):
+        controller = self._controller()
+        scheduler = FakeScheduler()
+
+        with self.assertRaisesRegex(
+            OCPActivationWindowError, "OCP activation poll failed"
+        ):
+            run_controlled_activation_once(
+                state_root=self.state,
+                env_file=self.env,
+                controller=controller,
+                scheduler=scheduler,
+                max_seconds=60,
+                window_id="RUN-ONCE-FAIL",
+                runner=lambda _env: (2, json.dumps({
+                    "status": "BLOCKED",
+                    "full_plan_activated": 0,
+                    "blocked": 1,
+                })),
+            )
+
+        record = load_activation_window(self.state)
+        self.assertEqual(record["status"], "CLOSED_AFTER_FAILURE")
+        self.assertEqual(activation_flag_value(self.env), "0")
+        self.assertTrue(controller.states[DEFAULT_RECONCILE_TIMER])
+        self.assertTrue(controller.states[DEFAULT_OCP_TIMER])
+        self.assertFalse(
+            list((self.state / "operations-v2").glob(".ocpv2-activation-*.env"))
         )
 
     def test_explicit_open_poll_close_keeps_persistent_flag_off(self):
