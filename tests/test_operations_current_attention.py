@@ -107,3 +107,22 @@ def test_projection_rejects_unsafe_output_symlink(tmp_path):
     link.symlink_to(real)
     with pytest.raises(CurrentAttentionProjectionError, match="unsafe"):
         record_current_attention_projection(link, value)
+
+
+def test_current_attention_public_reason_redacts_secret_and_home_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("SAMPLE_API_TOKEN", "supersecret123")
+    projection = build_current_attention_projection(
+        runtime_source_identity="runtime:new",
+        blockers=[{
+            "project_id": "P",
+            "run_id": "R",
+            "state": "BLOCKED",
+            "kind": "FAIL",
+            "reason": "token=supersecret123 failed at /home/ywjo/private/file.txt",
+        }],
+    )
+    reason = projection["items"][0]["reason"]
+    assert "supersecret123" not in reason
+    assert "/home/ywjo" not in reason
+    assert "<redacted>" in reason
+    assert "<path>" in reason

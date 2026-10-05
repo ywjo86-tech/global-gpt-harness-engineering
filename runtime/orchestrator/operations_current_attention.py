@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -48,6 +50,26 @@ def _safe(value: object, limit: int) -> str:
     return str(value or "").strip()[:limit]
 
 
+def _safe_public_reason(value: object) -> str:
+    text = str(value or "").strip()
+    for key, secret in os.environ.items():
+        if (
+            secret
+            and len(secret) >= 8
+            and re.search(r"(?i)(key|token|secret|password|authorization)", key)
+        ):
+            text = text.replace(secret, "<redacted>")
+    text = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer <redacted>", text)
+    text = re.sub(
+        r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[:=]\s*[^\s,;]+",
+        r"\1=<redacted>",
+        text,
+    )
+    text = re.sub(r"/home/\S+", "<path>", text)
+    text = re.sub(r"[A-Za-z]:\\\S+", "<path>", text)
+    return text[:256]
+
+
 def build_current_attention_projection(
     *,
     runtime_source_identity: str,
@@ -70,7 +92,7 @@ def build_current_attention_projection(
             "run_id": run_id,
             "state": state,
             "kind": _safe(blocker.get("kind") or state, 96),
-            "reason": _safe(blocker.get("reason") or state, 512),
+            "reason": _safe_public_reason(blocker.get("reason") or state),
             "current_gate": _safe(
                 blocker.get("current_gate") or blocker.get("gate_id"), 160
             ),
