@@ -188,10 +188,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     store = OperationalAcceptanceStore(a.state_root)
     rec = store.save_observation(rec)
-    (out / "operational-acceptance.json").write_text(
-        json.dumps(rec.to_dict(), sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
-    )
+
+    # V1 is a run-bound historical acceptance contract consumed by the
+    # legacy Jarvis projection. Preserve an existing terminal-run acceptance;
+    # current system-wide truth is published through acceptance.v2 below.
+    legacy_acceptance_path = out / "operational-acceptance.json"
+    legacy_acceptance_action = "PRESERVED"
+    if not legacy_acceptance_path.exists():
+        if rec.status == "ACCEPTED":
+            legacy_acceptance_path.write_text(
+                json.dumps(rec.to_dict(), sort_keys=True, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+            legacy_acceptance_action = "INITIALIZED"
+        else:
+            legacy_acceptance_action = "UNAVAILABLE_BLOCKED"
     delivery_path = out / "attention-delivery-health.json"
     delivery_health = None
     if delivery_path.is_file() and not delivery_path.is_symlink():
@@ -235,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
                 "runtime_compatibility_path": str(runtime_compatibility_path),
                 "record_sha256": rec.record_sha256,
                 "system_record_sha256": system_rec.record_sha256,
+                "legacy_acceptance_action": legacy_acceptance_action,
             },
             sort_keys=True,
         )
