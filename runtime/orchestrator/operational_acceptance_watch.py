@@ -17,6 +17,11 @@ from .operational_system_acceptance import (
     build_operational_system_acceptance,
     record_operational_system_acceptance,
 )
+from .operational_runtime_compatibility import (
+    evaluate_runtime_compatibility,
+    load_runtime_compatibility_manifest,
+    record_runtime_compatibility_result,
+)
 from .operational_blockers import (
     blocking_attention_events,
     current_registered_job_keys,
@@ -44,6 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--project-id", required=True)
     p.add_argument("--run-id", required=True)
     p.add_argument("--output-root", required=True)
+    p.add_argument(
+        "--runtime-compatibility-manifest",
+        required=True,
+    )
     p.add_argument("--stale-after-seconds", type=int, default=180)
     a = p.parse_args(argv)
 
@@ -129,6 +138,19 @@ def main(argv: list[str] | None = None) -> int:
         / "process-lifecycle-latest.json"
     )
 
+    runtime_compatibility_manifest = load_runtime_compatibility_manifest(
+        a.runtime_compatibility_manifest
+    )
+    runtime_compatibility = evaluate_runtime_compatibility(
+        runtime_compatibility_manifest,
+        expected_current_runtime_source=expected_runtime,
+    )
+    runtime_compatibility_path = out / "runtime-compatibility-health.json"
+    record_runtime_compatibility_result(
+        runtime_compatibility_path,
+        runtime_compatibility,
+    )
+
     gate = evaluate_post_change_gate(
         diagnostic_config=a.diagnostic_config,
         attention_watch_enabled=True,
@@ -136,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         attention_health_receipt=ap,
         timer_health_receipt=tp,
         process_lifecycle_snapshot=process_snapshot_path,
+        runtime_compatibility_result=runtime_compatibility,
         expected_runtime_source_identity=expected_runtime,
         stale_after_seconds=a.stale_after_seconds,
         now=now,
@@ -208,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
                 "expected_runtime_source": expected_runtime,
                 "attention_projection": str(current_attention_path),
                 "system_acceptance_path": str(system_path),
+                "runtime_compatibility": runtime_compatibility["status"],
+                "runtime_compatibility_path": str(runtime_compatibility_path),
                 "record_sha256": rec.record_sha256,
                 "system_record_sha256": system_rec.record_sha256,
             },

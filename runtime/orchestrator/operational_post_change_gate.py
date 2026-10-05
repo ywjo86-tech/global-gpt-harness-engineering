@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from .monitor_health import evaluate_monitor_health_receipt
+from .operational_runtime_compatibility import (
+    OperationalRuntimeCompatibilityError,
+    validate_runtime_compatibility_result,
+)
 from .read_only_host_diagnostic_contract import DiagnosticContractError, DiagnosticPolicy
 from .user_service_observer import UserServiceObserver, UserServiceObserverError
 from runtime.diagnostics.process_lifecycle import (
@@ -84,6 +88,7 @@ def evaluate_post_change_gate(
     attention_health_receipt: dict[str, Any] | str | Path | None = None,
     timer_health_receipt: dict[str, Any] | str | Path | None = None,
     process_lifecycle_snapshot: dict[str, Any] | str | Path | None = None,
+    runtime_compatibility_result: dict[str, Any] | None = None,
     expected_runtime_source_identity: str | None = None,
     stale_after_seconds: int = 180,
     observer: UserServiceObserver | None = None,
@@ -155,6 +160,25 @@ def evaluate_post_change_gate(
             if receipt is not None and str(receipt.get("runtime_source_identity") or "") != expected_runtime:
                 failures.append(f"{monitor_label}:RUNTIME_SOURCE_MISMATCH")
 
+    runtime_compatibility: dict[str, Any] | None = None
+    if runtime_compatibility_result is not None:
+        try:
+            runtime_compatibility = validate_runtime_compatibility_result(
+                runtime_compatibility_result
+            )
+            if expected_runtime and (
+                runtime_compatibility["current_runtime_source_identity"]
+                != expected_runtime
+            ):
+                failures.append("RUNTIME_COMPATIBILITY:CURRENT_RUNTIME_MISMATCH")
+            if runtime_compatibility["status"] != "PASS":
+                failures.extend(
+                    "RUNTIME_COMPATIBILITY:" + str(item)
+                    for item in runtime_compatibility["failures"]
+                )
+        except OperationalRuntimeCompatibilityError as exc:
+            failures.append(f"RUNTIME_COMPATIBILITY:INVALID:{exc}")
+
     process_lifecycle: dict[str, Any] | None = None
     if process_lifecycle_snapshot is None:
         failures.append("PROCESS_LIFECYCLE_SNAPSHOT_MISSING")
@@ -197,6 +221,7 @@ def evaluate_post_change_gate(
         "diagnostic_missing_units": missing,
         "monitor_health_receipts": monitor_receipts,
         "process_lifecycle_snapshot": process_lifecycle,
+        "runtime_compatibility": runtime_compatibility,
         "legacy_monitor_compatibility": legacy_compatibility,
         "external_monitors": {
             "attention_watch_enabled": bool(attention_watch_enabled),

@@ -11,6 +11,10 @@ from runtime.orchestrator.operational_post_change_gate import (
     HOST_RUNNER_SERVICE, OCP_SERVICE, OCP_TIMER, RECONCILE_SERVICE, RECONCILE_TIMER,
     evaluate_post_change_gate,
 )
+from runtime.orchestrator.operational_runtime_compatibility import (
+    build_runtime_compatibility_manifest,
+    evaluate_runtime_compatibility,
+)
 
 
 class FakeObserver:
@@ -235,6 +239,51 @@ class OperationalPostChangeGateTests(unittest.TestCase):
         self.assertEqual(result["status"],"BLOCKED")
         self.assertIn("ATTENTION_HEALTH:RUNTIME_SOURCE_MISMATCH",result["failures"])
         self.assertIn("RECONCILE_TIMER_HEALTH:RUNTIME_SOURCE_MISMATCH",result["failures"])
+
+    def test_runtime_compatibility_failure_blocks_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            policy=write_policy(root,[OCP_SERVICE,OCP_TIMER,RECONCILE_SERVICE,RECONCILE_TIMER])
+            releases=root/"releases"
+            current="a"*40
+            pinned="b"*40
+            (releases/current).mkdir(parents=True)
+            (releases/pinned).mkdir()
+            manifest=build_runtime_compatibility_manifest(
+                current_runtime_source_identity=current,
+                releases_root=releases,
+                components=[{
+                    "component_id":"reconcile",
+                    "unit":"global-gpt-harness-full-plan-reconcile.service",
+                    "binding_mode":"CURRENT_RUNTIME",
+                    "expected_source_head":current,
+                    "compatibility_evidence_refs":[],
+                }],
+            )
+            compatibility=evaluate_runtime_compatibility(
+                manifest,
+                observed_working_directories={
+                    "global-gpt-harness-full-plan-reconcile.service":releases/pinned,
+                },
+                expected_current_runtime_source=current,
+            )
+            result=evaluate_post_change_gate(
+                diagnostic_config=policy,
+                attention_watch_enabled=True,
+                timer_watch_enabled=True,
+                attention_health_receipt=healthy_receipt("ATTENTION_HEALTH"),
+                timer_health_receipt=healthy_receipt("RECONCILE_TIMER_HEALTH"),
+                process_lifecycle_snapshot={"blocking_count":0},
+                runtime_compatibility_result=compatibility,
+                observer=FakeObserver(healthy_values()),
+                now=datetime(2026,10,4,12,0,0),
+            )
+        self.assertEqual(result["status"],"BLOCKED")
+        self.assertIn(
+            "RUNTIME_COMPATIBILITY:reconcile:SOURCE_HEAD_MISMATCH",
+            result["failures"],
+        )
+        self.assertEqual(result["runtime_compatibility"]["status"],"BLOCKED")
 
 if __name__=="__main__":
     unittest.main()
