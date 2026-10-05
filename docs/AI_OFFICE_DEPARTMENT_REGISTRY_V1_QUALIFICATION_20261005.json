@@ -1,0 +1,39 @@
+{
+  "schema_version": "ai-office.department-registry-v1-qualification.v1",
+  "status": "PASS_PENDING_PRODUCTION_PROMOTION",
+  "implementation_head": "e6902c0a0a4abead4fa07369e25a376dc1191d2a",
+  "baseline_head": "9227fe7b83fa8fed00601a60901cee0b81aa66d2",
+  "focused_tests": "30/30 PASS",
+  "expanded_regression": "146 PASS + 21 subtests PASS",
+  "qualification_feed": {
+    "source_contract": "orchestration.operations-dashboard-aggregate.v2",
+    "department_count": 7,
+    "development": {
+      "binding_state": "BOUND",
+      "status": "RUNNING",
+      "progress": null,
+      "source_state": "CANONICAL_OFFICE_RUN_V1"
+    },
+    "inactive_registered_department": {
+      "binding_state": "BOUND",
+      "status": "IDLE",
+      "progress": null,
+      "source_state": "CANONICAL_REGISTRY_NO_RUN"
+    },
+    "digest_receipt_binding": "PASS"
+  },
+  "jarvis_canary": {
+    "port": 8026,
+    "api": "PASS",
+    "page": "PASS",
+    "canary_stopped_after_verification": true
+  },
+  "production_state": {
+    "department_registry_present": false,
+    "explicit_department_run_bindings_present": false,
+    "dashboard_behavior": "UNCHANGED_UNBOUND",
+    "production_mutated": false
+  },
+  "spatial_office": "HOLD_BY_USER",
+  "next_gate": "PRODUCTION_REGISTRY_AND_PUBLISHER_PROMOTION_REQUIRES_EXPLICIT_RISK_APPROVAL"
+}
