@@ -1,0 +1,48 @@
+{
+  "schema_version": "ai-office.model-usage-cost-v1-qualification.v1",
+  "status": "PASS_PENDING_RUNTIME_INSTRUMENTATION_PROMOTION",
+  "baseline_head": "5908e35c088823b3d321572772d028d02e20926f",
+  "implementation_head": "ea493887fed99b5a5550a1f2b6f53c0d93d5e17e",
+  "architecture": {
+    "usage_evidence_source": "validated Codex turn.completed.usage only",
+    "durable_evidence_location": "orchestration-runs/**/executor.process.json structured_events.turn_usage",
+    "privacy": "numeric usage only; no prompt, response, provider, model_ref, credential, command, or raw content",
+    "registry_required": true,
+    "period": "TODAY_ASIA_SEOUL",
+    "historical_backfill": false,
+    "legacy_executor_process_files_with_usage": 0,
+    "verification_only_without_usage": "EXCLUDED_NOT_ZERO_INFERRED",
+    "nvidia_without_usage": "EXCLUDED_NOT_ZERO_INFERRED",
+    "cost_policy": "UNAVAILABLE until verified rate card exists",
+    "cost_reason": "NO_VERIFIED_RATE_CARD"
+  },
+  "tests": {
+    "focused_harness": "21/21 PASS",
+    "expanded_harness": "323 PASS + 66 subtests PASS + 1 skipped",
+    "qualification_feed": "PASS",
+    "synthetic_usage": {
+      "execution_count": 1,
+      "input_tokens": 1000,
+      "output_tokens": 234,
+      "input_output_tokens": 1234
+    },
+    "cost_false_value_block": "PASS"
+  },
+  "compatibility": {
+    "department_projection": "PASS",
+    "business_schedule_projection": "PASS",
+    "report_index_projection": "PASS",
+    "jarvis_compact_status": "PASS",
+    "dashboard_schema_top_level_changed": false,
+    "extension_path": "system_resources.model_usage_cost",
+    "runtime_current_changed": false
+  },
+  "production_state": {
+    "mutated": false,
+    "model_usage_registry_present": false,
+    "canonical_historical_usage_available": false,
+    "dashboard_usage_currently": "UNAVAILABLE/NOT_PUBLISHED",
+    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4"
+  },
+  "next_gate": "PRODUCTION_WORKER_INSTRUMENTATION_REQUIRES_EXPLICIT_RISK_APPROVAL_AND_RUNTIME_COMPATIBILITY_CHECK"
+}
