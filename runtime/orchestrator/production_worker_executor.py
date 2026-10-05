@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .lv_execution_package import canonical_json_bytes
 from .model_usage_evidence import normalize_turn_usage
@@ -2483,6 +2483,27 @@ def _bounded_validation_failure_evidence(
     }
 
 
+def _candidate_validation_commands(
+    root: Path,
+    focused: Sequence[Sequence[str]],
+) -> list[list[str]]:
+    commands = [list(item) for item in focused if isinstance(item, (list, tuple)) and item]
+    for command in commands:
+        if command[0] != ".venv/bin/python":
+            continue
+        interpreter = root / ".venv" / "bin" / "python"
+        if not interpreter.is_file() or not os.access(interpreter, os.X_OK):
+            raise ProductionWorkerError("candidate validation project interpreter is unavailable")
+        try:
+            resolved = interpreter.resolve(strict=True)
+        except OSError as exc:
+            raise ProductionWorkerError("candidate validation project interpreter is unavailable") from exc
+        if not resolved.is_file() or resolved.stat().st_mode & 0o022:
+            raise ProductionWorkerError("candidate validation project interpreter is unsafe")
+        command[0] = str(interpreter.absolute())
+    return commands
+
+
 def _provider_action_candidate_focused_validator(
     *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
 ) -> Callable[[Mapping[str, Any]], str]:
@@ -2490,6 +2511,7 @@ def _provider_action_candidate_focused_validator(
     focused = toolchain.get("focused") if isinstance(toolchain, Mapping) else None
     if not isinstance(focused, list) or not focused:
         raise ProductionWorkerError("candidate validation focused toolchain is missing")
+    commands_template = _candidate_validation_commands(root, focused)
 
     def validate(proposal: Mapping[str, Any]) -> str:
         if not _provider_action_security_scan(canonical_json_bytes(proposal)):
@@ -2532,7 +2554,7 @@ def _provider_action_candidate_focused_validator(
                 target.write_text(str(write.get("content", "")), encoding="utf-8")
                 if target_path.startswith("tests/") and target_path.endswith(".py") and not base_path.endswith("/"):
                     candidate_test_modules.append(target_path[:-3].replace("/", "."))
-            commands = [list(item) for item in focused if isinstance(item, list) and item]
+            commands = [list(item) for item in commands_template]
             if candidate_test_modules and commands:
                 python_executable = commands[0][0]
                 commands = [[python_executable, "-m", "unittest", "-v", *candidate_test_modules]]
