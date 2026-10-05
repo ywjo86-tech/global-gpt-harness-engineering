@@ -1,0 +1,48 @@
+{
+  "schema_version": "runtime.model-usage-instrumentation-v1-qualification.v1",
+  "status": "PASS_PENDING_PRODUCTION_RUNTIME_PROMOTION",
+  "baseline_runtime_head": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+  "instrumentation_head": "978ca4d23753b6a129c399f6031c1a8176463bf4",
+  "runtime_diff": {
+    "runtime_files_changed": 2,
+    "production_worker_executor": "11 additions / 1 deletion",
+    "new_numeric_validator": "runtime/orchestrator/model_usage_evidence.py",
+    "unrelated_runtime_changes": 0
+  },
+  "evidence_contract": {
+    "source": "validated Codex turn.completed.usage",
+    "retained_fields": [
+      "input_tokens",
+      "cached_input_tokens",
+      "cache_write_input_tokens",
+      "output_tokens",
+      "reasoning_output_tokens"
+    ],
+    "observed_at": "UTC timezone-aware parse time",
+    "source_marker": "CODEX_TURN_COMPLETED",
+    "raw_prompt_retained": false,
+    "raw_response_retained": false,
+    "provider_retained": false,
+    "model_ref_retained": false,
+    "credential_retained": false
+  },
+  "tests": {
+    "worktree_runtime_regression": "293 PASS + 84 subtests PASS + 2 skipped",
+    "immutable_release_regression": "293 PASS + 84 subtests PASS + 2 skipped",
+    "worker_executor": "PASS",
+    "execution_gateway": "PASS",
+    "gate_orchestrator": "PASS",
+    "ocpv2_runtime_service": "PASS",
+    "production_full_plan_boot": "PASS",
+    "production_full_plan_runner": "PASS"
+  },
+  "immutable_release": {
+    "path": "/home/ywjo/AI-Workspace/runtime/releases/978ca4d23753b6a129c399f6031c1a8176463bf4",
+    "manifest_verified": true
+  },
+  "production_state": {
+    "runtime_current": "435e705c9023e2fdc2887ea03cbec91d62e093f4",
+    "mutated": false
+  },
+  "next_gate": "EXPLICIT_RISK_APPROVAL_REQUIRED_FOR_RUNTIME_CURRENT_SWITCH"
+}
