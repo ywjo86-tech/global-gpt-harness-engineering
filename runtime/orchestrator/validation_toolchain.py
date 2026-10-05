@@ -228,8 +228,35 @@ def _read_only_python_test_targets(root: Path, owned_files: Sequence[str]) -> tu
             tree = ast.parse(candidate.read_text(encoding="utf-8"), filename=str(candidate))
         except (OSError, UnicodeError, SyntaxError):
             continue
+        collectable = any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+            or isinstance(node, ast.ClassDef)
+            and (
+                node.name.startswith("Test")
+                or any(
+                    isinstance(base, (ast.Name, ast.Attribute))
+                    and (
+                        (isinstance(base, ast.Name) and base.id == "TestCase")
+                        or (isinstance(base, ast.Attribute) and base.attr == "TestCase")
+                    )
+                    for base in node.bases
+                )
+            )
+            and any(
+                isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and member.name.startswith("test_")
+                for member in node.body
+            )
+            for node in tree.body
+        )
+        if not collectable:
+            continue
         referenced = False
-        for node in ast.walk(tree):
+        # Only direct module-body imports are guaranteed to execute while pytest
+        # imports the test module. Imports hidden behind TYPE_CHECKING/if/function
+        # bodies are deliberately not accepted as deterministic source coverage.
+        for node in tree.body:
             names: list[str] = []
             if isinstance(node, ast.Import):
                 names.extend(alias.name for alias in node.names)
