@@ -178,7 +178,7 @@ class RecoveryContractTests(unittest.TestCase):
                 effects.append({"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":effect_id,"scope_ref":scope,"mutation_performed":mutated,"security_passed":security})
                 (journal/f"{effect_id}.intent.json").write_text(json.dumps({"effect_id":effect_id,"scope_ref":scope}))
                 (journal/f"{effect_id}.receipt.json").write_text(json.dumps({"effect_id":effect_id,"status":"ok" if mutated else "failed"}))
-            process = {"termination":"EXITED","exit_code":1,"broker_block":{"error_class":"ToolAuthorizationError","operation_class_id":"PROJECT_OWNED_FILE_WRITE","stage":"HANDLE"},"governed_effect_evidence":effects}
+            process = {"termination":"EXITED","exit_code":0,"independent_verification_status":"BLOCK","independent_verification_exit_category":"NONZERO","independent_failure_category":"COMMAND_EXECUTION_NONZERO","validation_failure_evidence":{"schema_version":"orchestration.validation-failure-evidence.v1","failure_step":"FOCUSED_TEST_EXECUTION"},"governed_effect_evidence":effects}
             process_path = package_root / "executor.process.json"; process_path.write_text(json.dumps(process,sort_keys=True,separators=(",",":")))
             kwargs = dict(project_root=project, package_manifest_path=manifest_path, preflight_path=preflight_path, worker_request_path=request_path, process_path=process_path, approval_event_id="APR-1", branch="main", baseline_head="b"*40)
             first = prepare_pre_result_partial_recovery(root, **kwargs); second = prepare_pre_result_partial_recovery(root, **kwargs)

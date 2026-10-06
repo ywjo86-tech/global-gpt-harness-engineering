@@ -3205,6 +3205,63 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 "approval_freshness_stage": "POST_HANDOFF" if transition_record is not None else "PRE_RUN",
                 "completion_conditions": list(selected_lv.completion_criteria),
             })
+        incident_recovery = None
+        if lv_resume:
+            incident_root = canonical_lv_path(
+                harness_root, project_id=plan.project_id, run_id=lv_run_id,
+                gate_id=plan.gate_id, lv_id=lv_id,
+            )
+            incident_manifest = incident_root / "package.manifest.json"
+            incident_preflight = incident_root / "preflight" / "preflight.evidence.json"
+            incident_worker = incident_root / "worker.result.json"
+            incident_request = incident_root / "worker.request.json"
+            incident_process = incident_root / "executor.process.json"
+            incident_manual_request = incident_root / "manual-action.request.json"
+            review_requests = sorted(incident_root.glob("production.review-request-*.json")) if incident_root.is_dir() else []
+            if (
+                incident_manifest.is_file()
+                and incident_preflight.is_file()
+                and incident_request.is_file()
+                and incident_process.is_file()
+                and not incident_worker.exists()
+                and not incident_worker.is_symlink()
+            ):
+                from .recovery_contract import prepare_pre_result_partial_recovery
+                incident_manifest_payload = json.loads(incident_manifest.read_text(encoding="utf-8"))
+                incident_recovery = prepare_pre_result_partial_recovery(
+                    harness_root,
+                    project_root=root,
+                    package_manifest_path=incident_manifest,
+                    preflight_path=incident_preflight,
+                    worker_request_path=incident_request,
+                    process_path=incident_process,
+                    approval_event_id=str(incident_manifest_payload.get("approval_id", "")),
+                    branch=branch,
+                    baseline_head=head,
+                )
+            elif (
+                incident_manifest.is_file()
+                and incident_preflight.is_file()
+                and incident_worker.is_file()
+                and not incident_request.exists()
+                and not incident_request.is_symlink()
+                and not incident_manual_request.exists()
+                and not incident_manual_request.is_symlink()
+                and len(review_requests) == 1
+            ):
+                from .recovery_contract import prepare_post_result_missing_request_recovery
+                incident_manifest_payload = json.loads(incident_manifest.read_text(encoding="utf-8"))
+                incident_recovery = prepare_post_result_missing_request_recovery(
+                    harness_root,
+                    project_root=root,
+                    package_manifest_path=incident_manifest,
+                    preflight_path=incident_preflight,
+                    worker_result_path=incident_worker,
+                    review_request_path=review_requests[0],
+                    approval_event_id=str(incident_manifest_payload.get("approval_id", "")),
+                    branch=branch,
+                )
+
         task_mapping = load_project_mapping(root)
         if task_mapping is not None and getattr(task_mapping, "task_lv_projection_path", None) is not None:
             if sealed_project_authority:
@@ -3233,7 +3290,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
 
             satisfied_recertification = None
             if (
-                sealed_project_authority
+                incident_recovery is None
+                and sealed_project_authority
                 and selected_lv.execution != "READ_ONLY"
                 and "filesystem_write" in selected_lv.required_capabilities
             ):
@@ -3241,7 +3299,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     ["git", "-C", str(root), "rev-parse", "HEAD"],
                     capture_output=True, text=True, check=True,
                 ).stdout.strip()
-                if not _pre_result_partial_recovery_pending(recovery):
+                if not _pre_result_partial_recovery_pending(incident_recovery):
                     satisfied_recertification = _verified_historical_satisfied_recertification(
                         root, harness_root, plan, auth,
                         lv_id=lv_id, current_run_id=lv_run_id, current_head=current_head,
@@ -3357,27 +3415,6 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     readiness_recheck_probes=resolved_codex_probes,
                     router_decision=route_decision_value,
                 )
-            incident_recovery = None
-            if lv_resume:
-                incident_root = canonical_lv_path(
-                    harness_root, project_id=plan.project_id, run_id=lv_run_id,
-                    gate_id=plan.gate_id, lv_id=lv_id)
-                incident_manifest = incident_root / "package.manifest.json"
-                incident_preflight = incident_root / "preflight" / "preflight.evidence.json"
-                incident_worker = incident_root / "worker.result.json"
-                incident_request = incident_root / "worker.request.json"
-                incident_manual_request = incident_root / "manual-action.request.json"
-                review_requests = sorted(incident_root.glob("production.review-request-*.json")) if incident_root.is_dir() else []
-                if (incident_manifest.is_file() and incident_preflight.is_file() and incident_worker.is_file()
-                        and not incident_request.exists() and not incident_request.is_symlink()
-                        and not incident_manual_request.exists() and not incident_manual_request.is_symlink()
-                        and len(review_requests) == 1):
-                    from .recovery_contract import prepare_post_result_missing_request_recovery
-                    incident_recovery = prepare_post_result_missing_request_recovery(
-                        harness_root, project_root=root, package_manifest_path=incident_manifest,
-                        preflight_path=incident_preflight, worker_result_path=incident_worker,
-                        review_request_path=review_requests[0], approval_event_id=str(incident_manifest and json.loads(incident_manifest.read_text(encoding="utf-8")).get("approval_id", "")),
-                        branch=branch)
             selected_adapters = _production_adapters(
                 root, plan, auth, lv_id, lv_run_id, harness_root,
                 recovery=incident_recovery, diagnostic_run_id=run_id,

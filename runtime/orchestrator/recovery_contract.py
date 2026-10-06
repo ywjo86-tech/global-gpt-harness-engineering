@@ -410,9 +410,23 @@ def prepare_pre_result_partial_recovery(
     ).stdout.strip()
     if current_head != source_head:
         raise RecoveryError("pre-result partial HEAD drifted from sealed source")
-    if process.get("termination") not in {"EXITED", "TIMED_OUT", "CANCELLED"} or process.get("exit_code") in {None, 0}:
+    terminal_executor_failure = (
+        process.get("termination") in {"EXITED", "TIMED_OUT", "CANCELLED"}
+        and process.get("exit_code") not in {None, 0}
+        and isinstance(process.get("broker_block"), dict)
+    )
+    terminal_independent_verification_failure = (
+        process.get("termination") == "EXITED"
+        and process.get("exit_code") == 0
+        and process.get("independent_verification_status") == "BLOCK"
+        and process.get("independent_verification_exit_category") == "NONZERO"
+        and process.get("independent_failure_category") == "COMMAND_EXECUTION_NONZERO"
+        and isinstance(process.get("validation_failure_evidence"), dict)
+        and process["validation_failure_evidence"].get("schema_version") == "orchestration.validation-failure-evidence.v1"
+    )
+    if not (terminal_executor_failure or terminal_independent_verification_failure):
         raise RecoveryError("pre-result partial executor failure is not terminal")
-    if not isinstance(process.get("broker_block"), dict):
+    if terminal_executor_failure and not isinstance(process.get("broker_block"), dict):
         raise RecoveryError("pre-result partial broker failure evidence is missing")
     package_root = paths[0].parent
     if (package_root / "worker.result.json").exists() or (package_root / "worker.result.json").is_symlink():
@@ -489,8 +503,19 @@ def prepare_pre_result_partial_recovery(
         "governed_write_effects": sorted(effect_projection, key=lambda item: item["effect_id"]),
         "tool_effect_artifacts": dict(sorted(effect_artifacts.items())),
         "failure": {
-            "termination": process.get("termination"), "exit_code": process.get("exit_code"),
-            "broker_block": dict(process["broker_block"]),
+            "termination": process.get("termination"),
+            "exit_code": process.get("exit_code"),
+            "failure_kind": "INDEPENDENT_VERIFICATION" if terminal_independent_verification_failure else "EXECUTOR",
+            "broker_block": dict(process["broker_block"]) if isinstance(process.get("broker_block"), dict) else None,
+            "independent_verification": (
+                {
+                    "status": process.get("independent_verification_status"),
+                    "exit_category": process.get("independent_verification_exit_category"),
+                    "failure_category": process.get("independent_failure_category"),
+                    "validation_failure_evidence": dict(process["validation_failure_evidence"]),
+                }
+                if terminal_independent_verification_failure else None
+            ),
         },
         "hard_stop": True,
     }
