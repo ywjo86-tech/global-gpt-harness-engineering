@@ -359,10 +359,30 @@ def resolve_validation_commands(
 
         if py_tests:
             py_owned = [path for path in owned_files if path.endswith(".py")]
+            evidence_marker: str | None = None
+            if defer_evidence_manifest_integrity:
+                evidence_test = root / "tests" / "evidence" / "test_manifest.py"
+                evidence_manifest = root / "evidence" / "implementation" / "MANIFEST_SHA256.json"
+                if (
+                    not evidence_test.is_file() or evidence_test.is_symlink()
+                    or not evidence_manifest.is_file() or evidence_manifest.is_symlink()
+                ):
+                    raise ValidationToolchainError("deferred evidence-integrity boundary is unavailable")
+                evidence_marker = "--ignore=tests/evidence/test_manifest.py"
+
+            def pytest_commands(runner: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+                focused_command = [runner, "-m", "pytest", "-q", *py_tests]
+                full_command = [runner, "-m", "pytest", "-q"]
+                if evidence_marker is not None:
+                    focused_command.append(evidence_marker)
+                    full_command.append(evidence_marker)
+                return tuple(focused_command), tuple(full_command)
+
             if python_intent.branch == "pytest":
                 profiles.append("PYTEST_PROFILE")
-                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
-                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                focused_command, full_command = pytest_commands(".venv/bin/python")
+                focused.append(focused_command)
+                full.append(full_command)
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
                 deferred = bool(allow_deferred)
             elif external_interpreter is not None:
@@ -374,13 +394,15 @@ def resolve_validation_commands(
                 compile_commands.append((runner, "-m", "compileall", "-q", *py_owned))
             elif project_interpreter.is_file():
                 profiles.append("PYTHON_PYTEST")
-                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
-                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                focused_command, full_command = pytest_commands(".venv/bin/python")
+                focused.append(focused_command)
+                full.append(full_command)
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
             elif allow_deferred:
                 profiles.append("PYTHON_PYTEST")
-                focused.append((".venv/bin/python", "-m", "pytest", "-q", *py_tests))
-                full.append((".venv/bin/python", "-m", "pytest", "-q"))
+                focused_command, full_command = pytest_commands(".venv/bin/python")
+                focused.append(focused_command)
+                full.append(full_command)
                 compile_commands.append((".venv/bin/python", "-m", "compileall", "-q", *py_owned))
                 deferred = True
             else:

@@ -115,6 +115,31 @@ class ValidationToolchainTests(unittest.TestCase):
             self.assertFalse(plan.deferred)
             self.assertEqual(plan.profile_ids,('PYTEST_PROFILE',))
 
+    def test_owned_python_test_scope_defers_final_manifest_integrity(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'.venv/bin').mkdir(parents=True)
+            (root/'.venv/bin/python').write_text('')
+            (root/'tests/evidence').mkdir(parents=True)
+            (root/'tests/evidence/test_manifest.py').write_text('def test_manifest(): pass\\n')
+            (root/'tests/evidence/test_m7_guard.py').write_text('def test_guard(): pass\\n')
+            (root/'evidence/implementation').mkdir(parents=True)
+            (root/'evidence/implementation/MANIFEST_SHA256.json').write_text('{}')
+            plan=resolve_validation_commands(
+                root, ['tests/evidence/test_m7_guard.py'], allow_deferred=True,
+                defer_evidence_manifest_integrity=True,
+            )
+            self.assertEqual(plan.profile_ids, ('PYTHON_PYTEST',))
+            self.assertFalse(plan.deferred)
+            self.assertEqual(
+                plan.focused[0],
+                ('.venv/bin/python','-m','pytest','-q','tests/evidence/test_m7_guard.py','--ignore=tests/evidence/test_manifest.py'),
+            )
+            self.assertEqual(
+                plan.full[0],
+                ('.venv/bin/python','-m','pytest','-q','--ignore=tests/evidence/test_manifest.py'),
+            )
+
     def test_android_node_manifest_resolves_without_guessing_package_manager(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'gradlew').write_text('#!/bin/sh\n'); (root/'backend').mkdir()
