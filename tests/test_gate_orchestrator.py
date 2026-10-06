@@ -703,6 +703,22 @@ class GateOrchestratorTests(unittest.TestCase):
             }
         }))
 
+    def test_pre_result_partial_recovery_requires_actual_dirty_workspace(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import _workspace_has_uncommitted_changes
+
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "project"; project.mkdir()
+            subprocess.run(["git", "-C", str(project), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.com"], check=True)
+            target = project / "owned.txt"; target.write_text("baseline\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "add", "owned.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-m", "baseline"], check=True, capture_output=True)
+            self.assertFalse(_workspace_has_uncommitted_changes(project))
+            target.write_text("partial\n", encoding="utf-8")
+            self.assertTrue(_workspace_has_uncommitted_changes(project))
+
     def test_approved_baseline_satisfied_recertification_is_fail_closed(self) -> None:
         import subprocess
         from runtime.orchestrator.gate_orchestrator import (

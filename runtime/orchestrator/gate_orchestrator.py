@@ -2457,6 +2457,14 @@ def _pre_result_partial_recovery_pending(recovery: Mapping[str, Any] | None) -> 
     )
 
 
+def _workspace_has_uncommitted_changes(project_root: str | Path) -> bool:
+    root = Path(project_root).resolve()
+    return bool(subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip())
+
+
 def _verified_historical_satisfied_recertification(
     project_root: str | Path,
     harness_root: str | Path,
@@ -3225,6 +3233,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 and incident_process.is_file()
                 and not incident_worker.exists()
                 and not incident_worker.is_symlink()
+                and _workspace_has_uncommitted_changes(root)
             ):
                 from .recovery_contract import prepare_pre_result_partial_recovery
                 incident_manifest_payload = json.loads(incident_manifest.read_text(encoding="utf-8"))
