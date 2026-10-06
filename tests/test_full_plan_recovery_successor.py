@@ -7,9 +7,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from runtime.orchestrator.full_plan_recovery_successor import _build_successor_job
+from runtime.orchestrator.full_plan_recovery_successor import (
+    FullPlanRecoverySuccessorError,
+    _approval_proof_reference,
+    _build_successor_job,
+)
 from runtime.orchestrator.production_full_plan_entry import (
-    FullPlanJobError, load_job, preflight_job, register_job,
+    FullPlanJobError, _source_lineage_for_context, load_job, preflight_job, register_job,
 )
 from runtime.orchestrator.production_full_plan_runner import (
     DurableFullPlanSupervisor,
@@ -164,6 +168,25 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
             ):
                 load_job(path)
 
+    def test_approval_proof_reference_rejects_expired_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proof = root / "proof.json"
+            proof.write_text(json.dumps({
+                "approval_ref": "OCP-FULL-PLAN-TEST",
+                "status": "APPROVED",
+                "issued_at": "2020-01-01T00:00:00Z",
+                "expires_at": "2020-01-01T00:01:00Z",
+                "revoked_at": None,
+                "proof": {"protected": "x", "payload": "y", "signature": "z"},
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(
+                FullPlanRecoverySuccessorError, "approval proof binding mismatch"
+            ):
+                _approval_proof_reference(
+                    root, proof, approval_ref="OCP-FULL-PLAN-TEST"
+                )
+
     def test_successor_job_preserves_gate_authority_and_rebinds_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -299,6 +322,9 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
             proof_value = {
                 "approval_ref": "OCP-FULL-PLAN-TEST",
                 "status": "APPROVED",
+                "issued_at": "2020-01-01T00:00:00Z",
+                "expires_at": "2099-01-01T00:00:00Z",
+                "revoked_at": None,
                 "proof": {"protected": "x", "payload": "y", "signature": "z"},
             }
             proof_path.write_text(
@@ -384,6 +410,7 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                 "recovery_id": recovery_id,
                 "project_id": "proj",
                 "gate_id": "G1",
+                "lv_id": "TASK-006",
                 "run_id": lv_run,
                 "current_head": current,
                 "baseline_head": baseline,
@@ -398,6 +425,7 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                 "recovery_id": recovery_id,
                 "project_id": "proj",
                 "gate_id": "G1",
+                "lv_id": "TASK-006",
                 "run_id": lv_run,
                 "recovery_record_hash": record["record_hash"],
                 "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE",
@@ -492,6 +520,58 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
             ):
                 self.assertEqual(
                     preflight_job(successor, resume_context=context)["status"], "PASS"
+                )
+                lineage = _source_lineage_for_context(successor, context, current)
+                self.assertEqual(lineage, {
+                    "lineage_kind": "SEALED_PRE_RESULT_PARTIAL_RECOVERY",
+                    "current_head": current,
+                    "predecessor_digest": record["record_hash"],
+                    "predecessor_lv": "TASK-006",
+                    "predecessor_run_id": lv_run,
+                })
+
+                expired_proof = dict(proof_value)
+                expired_proof["issued_at"] = "2020-01-01T00:00:00Z"
+                expired_proof["expires_at"] = "2020-01-01T00:01:00Z"
+                proof_path.write_text(
+                    json.dumps(expired_proof, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+                expired_binding = dict(recovery_binding)
+                expired_binding["approval_proof_sha256"] = hashlib.sha256(
+                    proof_path.read_bytes()
+                ).hexdigest()
+                expired_binding.pop("binding_sha256")
+                expired_binding["binding_sha256"] = digest(expired_binding)
+                expired_successor = dict(successor)
+                expired_successor.pop("authority_schema_version", None)
+                expired_successor.pop("authority_core_sha256", None)
+                expired_successor["recovery_successor"] = expired_binding
+                expired_successor["activation_binding_digest"] = expired_binding["binding_sha256"]
+                expired_successor = seal_authority_core(expired_successor)
+                expired_sup = DurableFullPlanSupervisor(
+                    state_root,
+                    project_id="proj",
+                    run_id="run-successor",
+                    gates=["G1"],
+                    authority_core_sha256=expired_successor["authority_core_sha256"],
+                )
+                expired_preview = expired_sup.build_recovery_successor_state(
+                    predecessor_state=pred_state,
+                    recovery_binding=expired_binding,
+                )
+                expired_context = {
+                    "state": expired_preview,
+                    "queue_item": expired_preview["queue"][0],
+                }
+                self.assertEqual(
+                    preflight_job(expired_successor, resume_context=expired_context)["reason"],
+                    "RECOVERY_SUCCESSOR_BINDING_MISMATCH",
+                )
+
+                proof_path.write_text(
+                    json.dumps(proof_value, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
                 )
                 source["lv_id"] = "TAMPERED"
                 source_path.write_text(

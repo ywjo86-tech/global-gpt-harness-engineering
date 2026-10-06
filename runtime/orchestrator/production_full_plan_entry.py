@@ -49,6 +49,28 @@ def _load_json(path: str | Path) -> dict[str, Any]:
     return value
 
 
+def _approval_proof_is_fresh(
+    value: Mapping[str, Any], *, now: datetime | None = None,
+) -> bool:
+    if value.get("status") != "APPROVED" or value.get("revoked_at") is not None:
+        return False
+    issued_raw = value.get("issued_at")
+    expires_raw = value.get("expires_at")
+    if not isinstance(issued_raw, str) or not isinstance(expires_raw, str):
+        return False
+    try:
+        issued = datetime.fromisoformat(issued_raw.replace("Z", "+00:00"))
+        expires = datetime.fromisoformat(expires_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if issued.tzinfo is None or expires.tzinfo is None or expires <= issued:
+        return False
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        return False
+    return issued <= current.astimezone(timezone.utc) < expires
+
+
 def load_job(path: str | Path) -> dict[str, Any]:
     job = _load_json(path)
     if job.get("schema_version") != JOB_SCHEMA:
@@ -786,6 +808,8 @@ def _source_lineage_for_context(
     current_head: str,
 ) -> dict[str, str] | None:
     """Return one verified source-lineage token for the active Gate."""
+    if job.get("recovery_successor") is not None:
+        return _recovery_successor_source_lineage(job, resume_context, current_head)
     if _verified_resume_checkpoint_head(job, resume_context, current_head):
         queue_item = dict((resume_context or {}).get("queue_item") or {})
         gate_id = str(queue_item.get("gate_id") or "")
@@ -885,7 +909,7 @@ def _verified_recovery_successor_binding(
     if (
         sha256_file(proof_path) != binding["approval_proof_sha256"]
         or proof_value.get("approval_ref") != binding["approval_ref"]
-        or proof_value.get("status") != "APPROVED"
+        or not _approval_proof_is_fresh(proof_value)
         or not isinstance(proof_value.get("proof"), Mapping)
     ):
         return False
@@ -1007,6 +1031,10 @@ def _verified_recovery_successor_binding(
         or record.get("project_id") != project_id
         or checkpoint.get("project_id") != project_id
         or source.get("project_id") != project_id
+        or not isinstance(source.get("lv_id"), str)
+        or not source.get("lv_id")
+        or record.get("lv_id") != source.get("lv_id")
+        or checkpoint.get("lv_id") != source.get("lv_id")
         or record.get("run_id") != checkpoint.get("run_id")
         or record.get("run_id") != source.get("run_id")
         or source.get("current_head") != binding["current_head"]
@@ -1016,6 +1044,51 @@ def _verified_recovery_successor_binding(
     ):
         return False
     return True
+
+
+def _recovery_successor_source_lineage(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> dict[str, str] | None:
+    if not _verified_recovery_successor_binding(job, resume_context, current_head):
+        return None
+    try:
+        binding = validate_recovery_successor_binding(
+            job["recovery_successor"],
+            project_id=str(job["project_id"]),
+            successor_run_id=str(job["run_id"]),
+        )
+    except (KeyError, ProductionFullPlanError):
+        return None
+    state_root = job_state_root(job)
+    record_path = (
+        state_root / "_workspace" / "global-gate" / str(job["project_id"])
+        / "recovery" / f"{binding['recovery_id']}.json"
+    )
+    if record_path.is_symlink() or not record_path.is_file():
+        return None
+    try:
+        record = _load_json(record_path)
+    except FullPlanJobError:
+        return None
+    lv_id = str(record.get("lv_id") or "")
+    predecessor_run_id = str(record.get("run_id") or "")
+    if (
+        not lv_id
+        or not predecessor_run_id
+        or record.get("record_hash") != binding["recovery_record_hash"]
+        or record.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+        or record.get("current_head") != current_head
+    ):
+        return None
+    return {
+        "lineage_kind": "SEALED_PRE_RESULT_PARTIAL_RECOVERY",
+        "current_head": current_head,
+        "predecessor_digest": binding["recovery_record_hash"],
+        "predecessor_lv": lv_id,
+        "predecessor_run_id": predecessor_run_id,
+    }
 
 
 def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] | None = None) -> dict[str, Any]:

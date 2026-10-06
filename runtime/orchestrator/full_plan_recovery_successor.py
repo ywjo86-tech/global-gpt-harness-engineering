@@ -21,6 +21,7 @@ from .execution_lifecycle_v2 import (
 )
 from .production_full_plan_entry import (
     FullPlanJobError,
+    _approval_proof_is_fresh,
     canonical_job_path,
     load_registered_job,
     preflight_job,
@@ -130,8 +131,8 @@ def _approval_proof_reference(
         raise FullPlanRecoverySuccessorError("approval proof is malformed") from exc
     if (
         not isinstance(value, dict)
-        or value.get("status") != "APPROVED"
         or value.get("approval_ref") != approval_ref
+        or not _approval_proof_is_fresh(value)
         or not isinstance(value.get("proof"), dict)
     ):
         raise FullPlanRecoverySuccessorError("approval proof binding mismatch")
