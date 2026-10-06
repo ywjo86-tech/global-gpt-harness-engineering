@@ -419,6 +419,116 @@ def _verified_resume_checkpoint_head(
     return matches == 1
 
 
+
+def _verified_pre_result_partial_resume_head(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> bool:
+    """Accept dirty resume only when the exact sealed pre-result partial source validates."""
+    if not isinstance(resume_context, Mapping):
+        return False
+    queue_item = resume_context.get("queue_item")
+    state = resume_context.get("state")
+    if not isinstance(queue_item, Mapping) or not isinstance(state, Mapping):
+        return False
+    if queue_item.get("resume") is not True:
+        return False
+
+    gate_id = str(queue_item.get("gate_id") or "")
+    gate_run_id = str(queue_item.get("gate_run_id") or "")
+    project_id = str(job.get("project_id") or "")
+    expected_head = str(job.get("expected_head") or "")
+    expected_branch = str(job.get("expected_branch") or "")
+    safe_id = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z")
+    if (
+        not safe_id.fullmatch(project_id)
+        or not safe_id.fullmatch(gate_id)
+        or not safe_id.fullmatch(gate_run_id)
+        or gate_id != str(state.get("current_gate") or "")
+        or not _HEAD.fullmatch(current_head)
+        or not _HEAD.fullmatch(expected_head)
+        or not expected_branch
+    ):
+        return False
+
+    project = Path(str(job["project_root"])).resolve()
+    ancestry = subprocess.run(
+        ["git", "-C", str(project), "merge-base", "--is-ancestor", expected_head, current_head],
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+    if ancestry.returncode != 0:
+        return False
+
+    state_root = job_state_root(job)
+    run_root = state_root / "_workspace" / "orchestration-runs"
+    if run_root.is_symlink() or not run_root.is_dir():
+        return False
+
+    candidates = [run_root / gate_run_id]
+    candidates.extend(sorted(
+        path for path in run_root.glob(f"{gate_run_id}-*")
+        if path.is_dir() and not path.is_symlink()
+    ))
+    matches = 0
+    for candidate in candidates:
+        if candidate.is_symlink() or not candidate.is_dir():
+            continue
+        for manifest_path in sorted(candidate.glob("*/package.manifest.json")):
+            package_root = manifest_path.parent
+            preflight_path = package_root / "preflight" / "preflight.evidence.json"
+            request_path = package_root / "worker.request.json"
+            process_path = package_root / "executor.process.json"
+            worker_result = package_root / "worker.result.json"
+            if (
+                manifest_path.is_symlink()
+                or not preflight_path.is_file() or preflight_path.is_symlink()
+                or not request_path.is_file() or request_path.is_symlink()
+                or not process_path.is_file() or process_path.is_symlink()
+                or worker_result.exists() or worker_result.is_symlink()
+            ):
+                continue
+            try:
+                manifest = _load_json(manifest_path)
+            except FullPlanJobError:
+                continue
+            if (
+                str(manifest.get("project_id") or "") != project_id
+                or str(manifest.get("gate_id") or "") != gate_id
+                or str(manifest.get("source_head") or "") != current_head
+                or not str(manifest.get("run_id") or "").startswith(gate_run_id)
+            ):
+                continue
+            approval_event_id = str(manifest.get("approval_id") or "")
+            if not approval_event_id:
+                continue
+            try:
+                from .recovery_contract import RecoveryError, prepare_pre_result_partial_recovery
+                verified = prepare_pre_result_partial_recovery(
+                    state_root,
+                    project_root=project,
+                    package_manifest_path=manifest_path,
+                    preflight_path=preflight_path,
+                    worker_request_path=request_path,
+                    process_path=process_path,
+                    approval_event_id=approval_event_id,
+                    branch=expected_branch,
+                    baseline_head=expected_head,
+                    seal=False,
+                )
+            except (RecoveryError, OSError, ValueError, subprocess.SubprocessError):
+                continue
+            source = verified.get("source") if isinstance(verified, Mapping) else None
+            if (
+                verified.get("verified_only") is True
+                and isinstance(source, Mapping)
+                and str(source.get("current_head") or "") == current_head
+                and str(source.get("source_head") or "") == current_head
+            ):
+                matches += 1
+    return matches == 1
+
+
 def _verified_completed_gate_lineage_head(
     job: Mapping[str, Any],
     resume_context: Mapping[str, Any] | None,
@@ -758,6 +868,7 @@ def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] |
         if (
             current_head != expected_head
             and not _verified_resume_checkpoint_head(job, resume_context, current_head)
+            and not _verified_pre_result_partial_resume_head(job, resume_context, current_head)
             and not _verified_completed_gate_lineage_head(job, resume_context, current_head)
         ):
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "SOURCE_HEAD_MISMATCH"}

@@ -337,6 +337,7 @@ def prepare_pre_result_partial_recovery(
     package_manifest_path: str | Path, preflight_path: str | Path,
     worker_request_path: str | Path, process_path: str | Path,
     approval_event_id: str, branch: str, baseline_head: str,
+    seal: bool = True,
 ) -> dict[str, Any]:
     """Seal a broker-failed pre-result partial workspace into attempt-N+1 recovery.
 
@@ -454,7 +455,17 @@ def prepare_pre_result_partial_recovery(
         raise RecoveryError("pre-result partial governed effect evidence is missing")
     effect_projection = []
     effect_artifacts: dict[str, str] = {}
-    journal_root = root / "_workspace" / "host-gateway-ledger" / expected["project_id"] / expected["run_id"] / "tool-effects"
+    package_journal_root = package_root / "host-gateway-ledger" / "tool-effects"
+    legacy_journal_root = (
+        root / "_workspace" / "host-gateway-ledger"
+        / expected["project_id"] / expected["run_id"] / "tool-effects"
+    )
+    if package_journal_root.is_dir() and not package_journal_root.is_symlink():
+        journal_root = package_journal_root
+    elif legacy_journal_root.is_dir() and not legacy_journal_root.is_symlink():
+        journal_root = legacy_journal_root
+    else:
+        raise RecoveryError("pre-result partial tool-effect journal root is missing or unsafe")
     for effect in effects:
         if not isinstance(effect, dict) or effect.get("operation") != "PROJECT_OWNED_FILE_WRITE":
             raise RecoveryError("pre-result partial governed effect evidence is malformed")
@@ -475,8 +486,8 @@ def prepare_pre_result_partial_recovery(
         })
     if not any(item["mutation_performed"] and item["security_passed"] for item in effect_projection):
         raise RecoveryError("pre-result partial workspace lacks a completed governed mutation")
-    if not any(not item["mutation_performed"] for item in effect_projection):
-        raise RecoveryError("pre-result partial failure lacks a non-mutating failed effect")
+    if terminal_executor_failure and not any(not item["mutation_performed"] for item in effect_projection):
+        raise RecoveryError("pre-result partial executor failure lacks a non-mutating failed effect")
 
     relative_sources = [path.resolve().relative_to(root).as_posix() for path in paths]
     source_shas = {
@@ -520,13 +531,21 @@ def prepare_pre_result_partial_recovery(
         "hard_stop": True,
     }
     source["source_payload_sha256"] = hashlib.sha256(_bytes(source)).hexdigest()
+    next_attempt = rejected_attempt + 1
+    if not seal:
+        return {
+            "classification": {"status": "REJECTED_PRE_RESULT_PARTIAL", "completion_eligible": False,
+                               "missing_bindings": ["worker.result"]},
+            "next_attempt": next_attempt, "source": source,
+            "completion_evidence": [], "hard_stop": True, "verified_only": True,
+        }
+
     source_path = package_root / "pre-result-partial-source.json"
     _write_once(source_path, source)
     source_rel = source_path.resolve().relative_to(root).as_posix()
     source_file_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
     source_shas[source_rel] = source_file_sha
 
-    next_attempt = rejected_attempt + 1
     recovery_id = f"{expected['run_id']}-recovery-{next_attempt:02d}"
     record = write_recovery_record(
         root, project_id=expected["project_id"], gate_id=expected["gate_id"],

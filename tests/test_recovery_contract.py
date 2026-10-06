@@ -189,6 +189,129 @@ class RecoveryContractTests(unittest.TestCase):
             self.assertEqual(first["checkpoint"]["next_attempt"], 2)
             self.assertFalse((package_root / "worker.result.json").exists())
 
+
+    def test_pre_result_partial_independent_validation_needs_no_failed_tool_effect(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); project = root / "project"; project.mkdir()
+            import subprocess, hashlib
+            subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.name", "Fixture"], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.email", "fixture@example.invalid"], check=True)
+            (project / "README.md").write_text("base\n")
+            subprocess.run(["git", "-C", project, "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", project, "commit", "-qm", "base"], check=True)
+            head = subprocess.check_output(["git", "-C", project, "rev-parse", "HEAD"], text=True).strip()
+            (project / "owned.txt").write_text("partial\n")
+
+            run_id = "run-independent"; package_root = root / "_workspace" / "orchestration-runs" / run_id / "TASK-001"
+            package_root.mkdir(parents=True)
+            manifest = {
+                "schema_version":"orchestration.lv_execution_package.v1",
+                "project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,
+                "canonical_plan_sha256":"a"*64,"source_head":head,"owned_files":["owned.txt"],
+            }
+            manifest_path = package_root / "package.manifest.json"
+            manifest_path.write_text(json.dumps(manifest, sort_keys=True, separators=(",",":")))
+            package_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            (package_root / "package.manifest.sha256").write_text(package_sha)
+            preflight = {
+                "schema_version":"orchestration.lv_preflight.evidence.v1",
+                "project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,
+                "package_manifest_sha256":package_sha,
+            }
+            preflight_path = package_root / "preflight" / "preflight.evidence.json"
+            preflight_path.parent.mkdir()
+            preflight_path.write_text(json.dumps(preflight, sort_keys=True, separators=(",",":")))
+            preflight_sha = hashlib.sha256(preflight_path.read_bytes()).hexdigest()
+            (preflight_path.parent / "preflight.evidence.sha256").write_text(preflight_sha)
+            request = {
+                "contract_summary":{"project_id":"p","gate_id":"g","lv_id":"TASK-001","canonical_plan_sha256":"a"*64},
+                "extra_context":{"run_id":run_id,"gate_id":"g","lv_id":"TASK-001","attempt":1,
+                                 "approval_event_id":"APR-1","package_manifest_sha256":package_sha,
+                                 "preflight_evidence_sha256":preflight_sha},
+            }
+            request_path = package_root / "worker.request.json"
+            request_path.write_text(json.dumps(request, sort_keys=True, separators=(",",":")))
+
+            journal = package_root / "host-gateway-ledger" / "tool-effects"
+            journal.mkdir(parents=True)
+            effect_id = "TE-success"
+            (journal / f"{effect_id}.intent.json").write_text(json.dumps({"effect_id":effect_id,"scope_ref":"owned.txt"}))
+            (journal / f"{effect_id}.receipt.json").write_text(json.dumps({"effect_id":effect_id,"status":"ok"}))
+            process = {
+                "termination":"EXITED","exit_code":0,
+                "independent_verification_status":"BLOCK",
+                "independent_verification_exit_category":"NONZERO",
+                "independent_failure_category":"COMMAND_EXECUTION_NONZERO",
+                "validation_failure_evidence":{
+                    "schema_version":"orchestration.validation-failure-evidence.v1",
+                    "failure_step":"FOCUSED_TEST_EXECUTION",
+                },
+                "governed_effect_evidence":[{
+                    "operation":"PROJECT_OWNED_FILE_WRITE","effect_id":effect_id,"scope_ref":"owned.txt",
+                    "mutation_performed":True,"security_passed":True,
+                }],
+            }
+            process_path = package_root / "executor.process.json"
+            process_path.write_text(json.dumps(process, sort_keys=True, separators=(",",":")))
+
+            verified = prepare_pre_result_partial_recovery(
+                root, project_root=project, package_manifest_path=manifest_path,
+                preflight_path=preflight_path, worker_request_path=request_path, process_path=process_path,
+                approval_event_id="APR-1", branch="main", baseline_head="b"*40, seal=False,
+            )
+            self.assertTrue(verified["verified_only"])
+            self.assertEqual(verified["source"]["failure"]["failure_kind"], "INDEPENDENT_VERIFICATION")
+            self.assertFalse((package_root / "pre-result-partial-source.json").exists())
+
+    def test_pre_result_partial_executor_failure_still_requires_failed_tool_effect(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); project = root / "project"; project.mkdir()
+            import subprocess, hashlib
+            subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.name", "Fixture"], check=True)
+            subprocess.run(["git", "-C", project, "config", "user.email", "fixture@example.invalid"], check=True)
+            (project / "README.md").write_text("base\n")
+            subprocess.run(["git", "-C", project, "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", project, "commit", "-qm", "base"], check=True)
+            head = subprocess.check_output(["git", "-C", project, "rev-parse", "HEAD"], text=True).strip()
+            (project / "owned.txt").write_text("partial\n")
+
+            run_id = "run-executor"; package_root = root / "_workspace" / "orchestration-runs" / run_id / "TASK-001"
+            package_root.mkdir(parents=True)
+            manifest = {"project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,
+                        "canonical_plan_sha256":"a"*64,"source_head":head,"owned_files":["owned.txt"]}
+            manifest_path = package_root / "package.manifest.json"; manifest_path.write_text(json.dumps(manifest))
+            package_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            (package_root / "package.manifest.sha256").write_text(package_sha)
+            preflight = {"project_id":"p","gate_id":"g","lv_id":"TASK-001","run_id":run_id,
+                         "package_manifest_sha256":package_sha}
+            preflight_path = package_root / "preflight" / "preflight.evidence.json"
+            preflight_path.parent.mkdir(); preflight_path.write_text(json.dumps(preflight))
+            preflight_sha = hashlib.sha256(preflight_path.read_bytes()).hexdigest()
+            (preflight_path.parent / "preflight.evidence.sha256").write_text(preflight_sha)
+            request = {"contract_summary":{"project_id":"p","gate_id":"g","lv_id":"TASK-001","canonical_plan_sha256":"a"*64},
+                       "extra_context":{"run_id":run_id,"gate_id":"g","lv_id":"TASK-001","attempt":1,
+                                        "approval_event_id":"APR-1","package_manifest_sha256":package_sha,
+                                        "preflight_evidence_sha256":preflight_sha}}
+            request_path = package_root / "worker.request.json"; request_path.write_text(json.dumps(request))
+            journal = root / "_workspace" / "host-gateway-ledger" / "p" / run_id / "tool-effects"
+            journal.mkdir(parents=True)
+            effect_id = "TE-success"
+            (journal / f"{effect_id}.intent.json").write_text("{}")
+            (journal / f"{effect_id}.receipt.json").write_text("{}")
+            process = {"termination":"EXITED","exit_code":1,"broker_block":{},
+                       "governed_effect_evidence":[{"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":effect_id,
+                                                    "scope_ref":"owned.txt","mutation_performed":True,
+                                                    "security_passed":True}]}
+            process_path = package_root / "executor.process.json"; process_path.write_text(json.dumps(process))
+            with self.assertRaisesRegex(RecoveryError, "executor failure lacks a non-mutating failed effect"):
+                prepare_pre_result_partial_recovery(
+                    root, project_root=project, package_manifest_path=manifest_path,
+                    preflight_path=preflight_path, worker_request_path=request_path, process_path=process_path,
+                    approval_event_id="APR-1", branch="main", baseline_head="b"*40, seal=False,
+                )
+
     def test_pre_result_partial_recovery_rejects_outside_owned_diff(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); project = root / "project"; project.mkdir()

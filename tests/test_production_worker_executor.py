@@ -24,6 +24,7 @@ from runtime.orchestrator.production_worker_executor import (
     _bounded_validation_failure_evidence,
     _focused_execution_metadata, _sealed_external_validation_python,
     _validation_command_env, _should_defer_evidence_manifest_integrity_for_request,
+    _materialize_deterministic_evidence_manifest,
     _test_runner_metadata, _bounded_validation_feedback, _candidate_validation_command, _candidate_validation_env, _source_validation_env,
 )
 from runtime.orchestrator.schemas import TaskSlice, WorkerRequest
@@ -1780,6 +1781,71 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             request.extra_context.update({"attempt":1,"pre_result_partial_recovery":True,"recovery_id":"r-recovery-02","recovery_source_kind":"PRE_RESULT_PARTIAL_SOURCE"})
             with self.assertRaisesRegex(ProductionWorkerError,"binding is invalid"):
                 execute_production_worker(request,executor=lambda *a,**k:self.fail("worker must not run"))
+
+    def test_deterministic_evidence_manifest_reseal_uses_git_inventory_and_owned_untracked_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            subprocess.run(["git", "-C", root, "config", "user.name", "T"], check=True)
+            subprocess.run(["git", "-C", root, "config", "user.email", "t@x"], check=True)
+            for relative, content in {
+                "src/pkg/a.py": b"VALUE = 1\n",
+                "tests/test_a.py": b"def test_a(): assert True\n",
+                "docs/baseline/v0.4-R1/AI_COMMERCE_INTELLIGENCE_NEXT_STAGE_DESIGN_v0.4_R1_EDP_CORRECTED.zip": b"zip-baseline",
+                "evidence/pre-live-binding/pre-live-verification.json": b"{}\n",
+                "evidence/pilot/pilot-evidence.json": b"{}\n",
+                "evidence/skill-qualification/skill.json": b"{}\n",
+            }.items():
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            manifest = root / "evidence/implementation/MANIFEST_SHA256.json"
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text(json.dumps({
+                "schema_version": "commerce.m7-legacy-freeze-closure-manifest.v1",
+                "validation_owner": "deterministic_harness_validator",
+                "manifest_self_excluded": True,
+                "manifest_rehash_pass": True,
+                "entries": [],
+            }) + "\n")
+            subprocess.run(["git", "-C", root, "add", "."], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-qm", "baseline"], check=True)
+            builder = root / "tools/build_m7_closure_manifest.py"
+            builder.parent.mkdir(parents=True)
+            builder.write_text("# owned untracked builder\n")
+            request = SimpleNamespace(task=SimpleNamespace(
+                validation_criteria=["Complete pytest regression and manifest rehash pass"],
+            ))
+            evidence = _materialize_deterministic_evidence_manifest(
+                request, root,
+                ["tools/build_m7_closure_manifest.py", "evidence/implementation/MANIFEST_SHA256.json"],
+            )
+            payload = json.loads(manifest.read_text())
+            paths = {entry["path"] for entry in payload["entries"]}
+            self.assertEqual(evidence["status"], "RESEALED")
+            self.assertIn("src/pkg/a.py", paths)
+            self.assertIn("tests/test_a.py", paths)
+            self.assertIn("docs/baseline/v0.4-R1/AI_COMMERCE_INTELLIGENCE_NEXT_STAGE_DESIGN_v0.4_R1_EDP_CORRECTED.zip", paths)
+            self.assertIn("tools/build_m7_closure_manifest.py", paths)
+            self.assertNotIn("evidence/implementation/MANIFEST_SHA256.json", paths)
+            for entry in payload["entries"]:
+                target = root / entry["path"]
+                self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), entry["sha256"])
+
+    def test_deterministic_evidence_manifest_reseal_requires_explicit_owned_contract(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            manifest = root / "evidence/implementation/MANIFEST_SHA256.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({
+                "validation_owner": "worker",
+                "manifest_self_excluded": True,
+                "manifest_rehash_pass": True,
+                "entries": [],
+            }) + "\n")
+            request = SimpleNamespace(task=SimpleNamespace(validation_criteria=["manifest rehash pass"]))
+            self.assertIsNone(_materialize_deterministic_evidence_manifest(request, root, [str(manifest.relative_to(root))]))
 
     def test_manifest_is_actual_not_test_double(self):
         value=production_executor_manifest()

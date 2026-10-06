@@ -173,6 +173,78 @@ class ProductionFullPlanEntryTests(unittest.TestCase):
                 "SOURCE_HEAD_MISMATCH",
             )
 
+
+    def test_preflight_allows_verified_pre_result_partial_resume(self):
+        with tempfile.TemporaryDirectory() as d:
+            temp = Path(d)
+            project = temp / "project"; project.mkdir()
+            state_root = temp / "state"; state_root.mkdir()
+            path = self.make_job(project, ("G1",))
+            (project / ".git" / "info" / "exclude").write_text("job.json\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(project), "config", "user.name", "Test"], check=True)
+            subprocess.run(["git", "-C", str(project), "config", "user.email", "test@example.invalid"], check=True)
+            (project / "base.txt").write_text("base\n")
+            subprocess.run(["git", "-C", str(project), "add", "base.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "baseline"], check=True)
+            subprocess.run(["git", "-C", str(project), "branch", "-M", "main"], check=True)
+            baseline = subprocess.check_output(["git", "-C", str(project), "rev-parse", "HEAD"], text=True).strip()
+            (project / "checkpoint.txt").write_text("checkpoint\n")
+            subprocess.run(["git", "-C", str(project), "add", "checkpoint.txt"], check=True)
+            subprocess.run(["git", "-C", str(project), "commit", "-qm", "worker checkpoint"], check=True)
+            checkpoint = subprocess.check_output(["git", "-C", str(project), "rev-parse", "HEAD"], text=True).strip()
+            (project / "owned.txt").write_text("partial\n")
+
+            payload = json.loads(path.read_text())
+            payload["harness_root"] = str(state_root)
+            payload["expected_branch"] = "main"
+            payload["expected_head"] = baseline
+            path.write_text(json.dumps(payload))
+            job = load_job(path)
+            path.unlink()
+
+            gate_run_id = "run--g1"
+            package_root = state_root / "_workspace" / "orchestration-runs" / f"{gate_run_id}-task-001" / "TASK-001"
+            (package_root / "preflight").mkdir(parents=True)
+            (package_root / "package.manifest.json").write_text(json.dumps({
+                "project_id":"proj","gate_id":"G1","lv_id":"TASK-001",
+                "run_id":f"{gate_run_id}-task-001","source_head":checkpoint,"approval_id":"APR-1",
+            }))
+            (package_root / "preflight" / "preflight.evidence.json").write_text("{}")
+            (package_root / "worker.request.json").write_text("{}")
+            (package_root / "executor.process.json").write_text("{}")
+            context = {
+                "state":{"current_gate":"G1"},
+                "queue_item":{"gate_id":"G1","gate_run_id":gate_run_id,"resume":True},
+            }
+            verified = {
+                "verified_only":True,
+                "source":{"current_head":checkpoint,"source_head":checkpoint},
+            }
+            with patch(
+                "runtime.orchestrator.recovery_contract.prepare_pre_result_partial_recovery",
+                return_value=verified,
+            ) as recovery:
+                self.assertEqual(preflight_job(job, resume_context=context)["status"], "PASS")
+                self.assertFalse(recovery.call_args.kwargs["seal"])
+
+            (state_root / "_workspace" / "orchestration-runs" / f"{gate_run_id}-task-002" / "TASK-002" / "preflight").mkdir(parents=True)
+            duplicate = state_root / "_workspace" / "orchestration-runs" / f"{gate_run_id}-task-002" / "TASK-002"
+            (duplicate / "package.manifest.json").write_text(json.dumps({
+                "project_id":"proj","gate_id":"G1","lv_id":"TASK-002",
+                "run_id":f"{gate_run_id}-task-002","source_head":checkpoint,"approval_id":"APR-1",
+            }))
+            (duplicate / "preflight" / "preflight.evidence.json").write_text("{}")
+            (duplicate / "worker.request.json").write_text("{}")
+            (duplicate / "executor.process.json").write_text("{}")
+            with patch(
+                "runtime.orchestrator.recovery_contract.prepare_pre_result_partial_recovery",
+                return_value=verified,
+            ):
+                self.assertEqual(
+                    preflight_job(job, resume_context=context)["reason"],
+                    "SOURCE_HEAD_MISMATCH",
+                )
+
     def test_preflight_allows_exact_terminal_checkpoint_for_successor_gate(self):
         with tempfile.TemporaryDirectory() as d:
             temp = Path(d)

@@ -2845,6 +2845,97 @@ def _should_defer_evidence_manifest_integrity_for_request(
     return should_defer_evidence_manifest_integrity(root, owned, criteria)
 
 
+_DETERMINISTIC_EVIDENCE_MANIFEST = "evidence/implementation/MANIFEST_SHA256.json"
+_DETERMINISTIC_MANIFEST_MAX_FILES = 20_000
+_DETERMINISTIC_MANIFEST_MAX_TOTAL_BYTES = 512 * 1024 * 1024
+
+
+def _materialize_deterministic_evidence_manifest(
+    request: WorkerRequest, root: Path, owned: list[str],
+) -> dict[str, Any] | None:
+    """Re-seal an explicitly task-owned manifest without executing model-authored code.
+
+    The worker may declare closure facts, but only the deterministic Harness validator
+    may populate file hashes.  Inventory is limited to Git-tracked files plus present
+    task-owned files, and the manifest always excludes itself.
+    """
+    if _DETERMINISTIC_EVIDENCE_MANIFEST not in owned:
+        return None
+    criteria_text = " ".join(str(item) for item in request.task.validation_criteria).lower()
+    if "manifest" not in criteria_text or "rehash" not in criteria_text:
+        return None
+
+    manifest_path = root / _DETERMINISTIC_EVIDENCE_MANIFEST
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("validation_owner") != "deterministic_harness_validator"
+        or payload.get("manifest_self_excluded") is not True
+        or payload.get("manifest_rehash_pass") is not True
+    ):
+        return None
+
+    tracked = _git(root, "ls-files")
+    if tracked.returncode != 0:
+        raise ProductionWorkerError("deterministic manifest inventory is unavailable")
+    candidates = {line.strip() for line in tracked.stdout.splitlines() if line.strip()}
+    for scope in owned:
+        target = root / scope
+        if target.is_file() and not target.is_symlink():
+            candidates.add(scope)
+    candidates.discard(_DETERMINISTIC_EVIDENCE_MANIFEST)
+    if len(candidates) > _DETERMINISTIC_MANIFEST_MAX_FILES:
+        raise ProductionWorkerError("deterministic manifest inventory exceeds file limit")
+
+    entries: list[dict[str, Any]] = []
+    total_bytes = 0
+    for relative in sorted(candidates):
+        if "\\" in relative:
+            raise ProductionWorkerError("deterministic manifest inventory contains unsafe path")
+        pure = PurePosixPath(relative)
+        if pure.is_absolute() or ".." in pure.parts or "." in pure.parts:
+            raise ProductionWorkerError("deterministic manifest inventory contains unsafe path")
+        target = root / relative
+        if not target.exists():
+            continue
+        if target.is_symlink() or not target.is_file():
+            raise ProductionWorkerError("deterministic manifest inventory contains unsafe file")
+        try:
+            target.resolve(strict=True).relative_to(root)
+        except (OSError, ValueError) as exc:
+            raise ProductionWorkerError("deterministic manifest inventory escapes project root") from exc
+        size = target.stat().st_size
+        total_bytes += size
+        if total_bytes > _DETERMINISTIC_MANIFEST_MAX_TOTAL_BYTES:
+            raise ProductionWorkerError("deterministic manifest inventory exceeds byte limit")
+        digest = hashlib.sha256()
+        with target.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        entries.append({"path": relative, "sha256": digest.hexdigest(), "size": size})
+
+    before_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    payload["entries"] = entries
+    rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    manifest_path.write_text(rendered, encoding="utf-8")
+    after_sha = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+    return {
+        "status": "RESEALED",
+        "manifest_path": _DETERMINISTIC_EVIDENCE_MANIFEST,
+        "inventory_policy": "GIT_TRACKED_PLUS_PRESENT_OWNED_FILES",
+        "entry_count": len(entries),
+        "total_bytes": total_bytes,
+        "before_sha256": before_sha,
+        "after_sha256": after_sha,
+        "self_excluded": True,
+    }
+
+
 def _read_only_execution_authorized(request: WorkerRequest) -> bool:
     """Permit NVIDIA execution only for a sealed, non-mutating Router decision."""
     binding = request.extra_context.get("canonical_authority_binding")
@@ -3498,6 +3589,16 @@ def execute_production_worker(request: WorkerRequest, *,
     outside = [path for path in changed if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned)]
     if outside:
         raise ProductionWorkerError(f"production executor changed files outside owned scope: {outside}")
+
+    manifest_reseal = _materialize_deterministic_evidence_manifest(request, root, owned)
+    if manifest_reseal is not None:
+        process_evidence["deterministic_evidence_manifest"] = manifest_reseal
+        lines = _git(root, "status", "--porcelain=v1", "-uall").stdout.splitlines()
+        changed = [line[3:] for line in lines if len(line) > 3]
+        outside = [path for path in changed if not any(path == scope or (scope.endswith("/") and path.startswith(scope)) for scope in owned)]
+        if outside:
+            raise ProductionWorkerError(f"deterministic manifest reseal changed files outside owned scope: {outside}")
+
     hardcoded_findings = _hardcoded_credential_findings(root, changed)
     secret_handling_allowed = _task_allows_secret_handling(request)
     process_evidence["owned_diff_security_validation"] = {
