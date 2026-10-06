@@ -46,6 +46,17 @@ TERMINAL_STATES = frozenset({"BLOCKED", "FAILED", "COMPLETED", "CANCELLED"})
 ALL_STATES = ACTIVE_STATES | WAIT_STATES | TERMINAL_STATES
 QUEUE_STATES = frozenset({"READY", "DISPATCHED", "RUNNING", "COMPLETED", "BLOCKED", "CANCELLED"})
 
+RECOVERY_SUCCESSOR_BINDING_SCHEMA = "orchestration.full-plan-recovery-successor-binding.v1"
+_RECOVERY_SUCCESSOR_FIELDS = {
+    "schema_version", "project_id", "successor_run_id", "predecessor_run_id",
+    "predecessor_authority_sha256", "predecessor_state_sha256", "gate_id",
+    "predecessor_gate_run_id", "current_head", "recovery_id",
+    "recovery_record_hash", "recovery_checkpoint_sha256",
+    "recovery_source_payload_sha256", "target_runtime_release_digest",
+    "target_runtime_source_head", "approval_ref", "approval_proof_path",
+    "approval_proof_sha256", "binding_sha256",
+}
+
 
 class ProductionFullPlanError(ValueError):
     pass
@@ -63,6 +74,51 @@ def _safe_id(value: object, label: str) -> str:
 
 def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def validate_recovery_successor_binding(
+    value: Mapping[str, Any], *, project_id: str, successor_run_id: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _RECOVERY_SUCCESSOR_FIELDS:
+        raise ProductionFullPlanError("recovery successor binding fields mismatch")
+    binding = dict(value)
+    if binding.get("schema_version") != RECOVERY_SUCCESSOR_BINDING_SCHEMA:
+        raise ProductionFullPlanError("recovery successor binding schema mismatch")
+    if binding.get("project_id") != project_id or binding.get("successor_run_id") != successor_run_id:
+        raise ProductionFullPlanError("recovery successor identity mismatch")
+    for field in ("project_id", "successor_run_id", "predecessor_run_id", "gate_id",
+                  "predecessor_gate_run_id", "recovery_id"):
+        _safe_id(binding.get(field), field)
+    if binding["predecessor_run_id"] == successor_run_id:
+        raise ProductionFullPlanError("recovery successor must use a fresh run ID")
+    for field in (
+        "predecessor_authority_sha256", "predecessor_state_sha256",
+        "recovery_record_hash", "recovery_checkpoint_sha256",
+        "recovery_source_payload_sha256", "target_runtime_release_digest",
+        "approval_proof_sha256",
+    ):
+        raw = str(binding.get(field) or "")
+        if len(raw) != 64 or any(ch not in "0123456789abcdef" for ch in raw):
+            raise ProductionFullPlanError(f"recovery successor {field} is invalid")
+    for field in ("current_head", "target_runtime_source_head"):
+        raw = str(binding.get(field) or "")
+        if len(raw) not in {40, 64} or any(ch not in "0123456789abcdef" for ch in raw):
+            raise ProductionFullPlanError(f"recovery successor {field} is invalid")
+    approval_ref = str(binding.get("approval_ref") or "")
+    if not approval_ref or len(approval_ref) > 200 or any(ord(ch) < 32 or ord(ch) == 127 for ch in approval_ref):
+        raise ProductionFullPlanError("recovery successor approval ref is invalid")
+    proof_path = str(binding.get("approval_proof_path") or "")
+    proof_relative = Path(proof_path)
+    if (
+        not proof_path or proof_relative.is_absolute() or ".." in proof_relative.parts
+        or "\\" in proof_path
+    ):
+        raise ProductionFullPlanError("recovery successor approval proof path is invalid")
+    expected = str(binding.get("binding_sha256") or "")
+    unsigned = {key: binding[key] for key in binding if key != "binding_sha256"}
+    if expected != _digest(unsigned):
+        raise ProductionFullPlanError("recovery successor binding digest mismatch")
+    return binding
 
 
 def _failure_class(reason: object) -> str:
@@ -140,6 +196,18 @@ def _validate_state(state: Mapping[str, Any], *, project_id: str, run_id: str, g
         if not isinstance(key, str) or not key or key in ids:
             raise ProductionFullPlanError("queue idempotency binding is invalid")
         ids.add(key)
+    recovery = value.get("recovery_successor")
+    if recovery is not None:
+        binding = validate_recovery_successor_binding(
+            recovery, project_id=project_id, successor_run_id=run_id,
+        )
+        matches = [
+            item for item in queue
+            if item.get("gate_id") == binding["gate_id"]
+            and item.get("gate_run_id") == binding["predecessor_gate_run_id"]
+        ]
+        if len(matches) != 1:
+            raise ProductionFullPlanError("recovery successor queue lineage mismatch")
     return value
 
 
@@ -561,6 +629,91 @@ class DurableFullPlanSupervisor:
         if self.continuation_mode == TDD_V1:
             state["tdd_continuation"] = {"mode": TDD_V1}
         return _seal(state)
+
+    def build_recovery_successor_state(
+        self, *, predecessor_state: Mapping[str, Any],
+        recovery_binding: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        binding = validate_recovery_successor_binding(
+            recovery_binding, project_id=self.project_id, successor_run_id=self.run_id,
+        )
+        predecessor = _validate_state(
+            predecessor_state, project_id=self.project_id,
+            run_id=str(binding["predecessor_run_id"]), gates=self.gates,
+            authority_core_sha256=str(binding["predecessor_authority_sha256"]),
+            continuation_mode=self.continuation_mode,
+        )
+        if predecessor.get("state_sha256") != binding["predecessor_state_sha256"]:
+            raise ProductionFullPlanError("recovery predecessor state digest mismatch")
+        if (
+            predecessor.get("state") != "BLOCKED"
+            or predecessor.get("terminal_reason") != "PREFLIGHT_BLOCKED"
+            or predecessor.get("last_error") != "SOURCE_HEAD_MISMATCH"
+            or predecessor.get("lease") is not None
+            or predecessor.get("current_gate") != binding["gate_id"]
+        ):
+            raise ProductionFullPlanError("predecessor is not an eligible pre-result partial block")
+        candidates = [
+            item for item in predecessor.get("queue", [])
+            if item.get("status") == "BLOCKED" and item.get("gate_id") == binding["gate_id"]
+        ]
+        if len(candidates) != 1:
+            raise ProductionFullPlanError("recovery predecessor queue is ambiguous")
+        prior = candidates[0]
+        if (
+            prior.get("gate_run_id") != binding["predecessor_gate_run_id"]
+            or prior.get("resume") is not True
+        ):
+            raise ProductionFullPlanError("recovery predecessor gate lineage mismatch")
+        completed = list(predecessor.get("completed_gates") or [])
+        if completed != list(self.gates[: len(completed)]) or len(completed) >= len(self.gates):
+            raise ProductionFullPlanError("recovery predecessor Gate position is invalid")
+        if self.gates[len(completed)] != binding["gate_id"]:
+            raise ProductionFullPlanError("recovery predecessor current Gate is inconsistent")
+        state = self._initial()
+        item = self._queue_item(
+            binding["gate_id"], len(completed),
+            attempt=int(prior.get("attempt", 1)) + 1, resume=True,
+        )
+        item["gate_run_id"] = binding["predecessor_gate_run_id"]
+        item["last_error"] = None
+        state["completed_gates"] = completed
+        state["current_gate"] = binding["gate_id"]
+        state["queue"] = [item]
+        state["state"] = "RECOVERING"
+        state["lease"] = None
+        state["last_error"] = None
+        state["terminal_reason"] = None
+        state["recovery_count"] = int(predecessor.get("recovery_count", 0)) + 1
+        state["recovery_successor"] = dict(binding)
+        return _seal(state)
+
+    def seed_recovery_successor(
+        self, *, predecessor_state: Mapping[str, Any],
+        recovery_binding: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        handle = self._acquire_run_lock()
+        try:
+            if self.state_path.exists() or self.state_path.with_suffix(".json.prev").exists():
+                existing, _ = self.load()
+                if existing.get("recovery_successor") != dict(recovery_binding):
+                    raise ProductionFullPlanError("recovery successor state already exists with different authority")
+                return existing
+            state = self.build_recovery_successor_state(
+                predecessor_state=predecessor_state, recovery_binding=recovery_binding,
+            )
+            return self._persist(
+                state,
+                {
+                    "event": "RECOVERY_SUCCESSOR_SEEDED",
+                    "predecessor_run_id": recovery_binding["predecessor_run_id"],
+                    "predecessor_gate_run_id": recovery_binding["predecessor_gate_run_id"],
+                    "recovery_id": recovery_binding["recovery_id"],
+                    "binding_sha256": recovery_binding["binding_sha256"],
+                },
+            )
+        finally:
+            self._release_run_lock(handle)
 
     def _load_candidate(self, path: Path) -> dict[str, Any]:
         if path.is_symlink() or not path.is_file():

@@ -13,7 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from .production_full_plan_runner import DurableFullPlanSupervisor, ProductionFullPlanError
+from .production_full_plan_runner import (
+    DurableFullPlanSupervisor, ProductionFullPlanError, validate_recovery_successor_binding,
+)
 from .operator_exit_guard import assess_operator_turn_exit
 from .durable_io import atomic_write_json
 from .contract_adapter import MAPPING_ROOT_ENV, sha256_file
@@ -121,6 +123,16 @@ def load_job(path: str | Path) -> dict[str, Any]:
         value = job.get(field)
         if value is not None and (not isinstance(value, str) or not _SHA256.fullmatch(value)):
             raise FullPlanJobError(f"Full Plan job {field} is invalid")
+    recovery_successor = job.get("recovery_successor")
+    if recovery_successor is not None:
+        try:
+            validate_recovery_successor_binding(
+                recovery_successor,
+                project_id=str(job["project_id"]),
+                successor_run_id=str(job["run_id"]),
+            )
+        except ProductionFullPlanError as exc:
+            raise FullPlanJobError(str(exc)) from exc
     if job.get("executor_kind") == "GPT_OPERATOR_PLAN":
         from .operator_plan_execution import validate_operator_plan_job
         validate_operator_plan_job(job)
@@ -816,6 +828,196 @@ def _source_lineage_for_context(
     return None
 
 
+
+def _verified_recovery_successor_binding(
+    job: Mapping[str, Any],
+    resume_context: Mapping[str, Any] | None,
+    current_head: str,
+) -> bool:
+    raw = job.get("recovery_successor")
+    if raw is None:
+        return True
+    try:
+        binding = validate_recovery_successor_binding(
+            raw,
+            project_id=str(job.get("project_id") or ""),
+            successor_run_id=str(job.get("run_id") or ""),
+        )
+    except ProductionFullPlanError:
+        return False
+    if (
+        str(job.get("approval_ref") or "") != binding["approval_ref"]
+        or str(job.get("activation_binding_digest") or "") != binding["binding_sha256"]
+        or str(job.get("runtime_release_digest") or "") != binding["target_runtime_release_digest"]
+        or str(job.get("runtime_release_source_head") or "") != binding["target_runtime_source_head"]
+        or current_head != binding["current_head"]
+        or not isinstance(resume_context, Mapping)
+    ):
+        return False
+    state = resume_context.get("state")
+    queue_item = resume_context.get("queue_item")
+    if not isinstance(state, Mapping) or not isinstance(queue_item, Mapping):
+        return False
+    if dict(state.get("recovery_successor") or {}) != binding:
+        return False
+    if (
+        str(state.get("current_gate") or "") != binding["gate_id"]
+        or queue_item.get("resume") is not True
+        or str(queue_item.get("gate_id") or "") != binding["gate_id"]
+        or str(queue_item.get("gate_run_id") or "") != binding["predecessor_gate_run_id"]
+    ):
+        return False
+
+    state_root = job_state_root(job)
+    proof_relative = Path(binding["approval_proof_path"])
+    proof_path = state_root.joinpath(*proof_relative.parts)
+    try:
+        resolved_proof = proof_path.resolve(strict=True)
+        resolved_proof.relative_to(state_root)
+    except (OSError, ValueError):
+        return False
+    if proof_path.is_symlink() or not proof_path.is_file():
+        return False
+    try:
+        proof_value = _load_json(proof_path)
+    except FullPlanJobError:
+        return False
+    if (
+        sha256_file(proof_path) != binding["approval_proof_sha256"]
+        or proof_value.get("approval_ref") != binding["approval_ref"]
+        or proof_value.get("status") != "APPROVED"
+        or not isinstance(proof_value.get("proof"), Mapping)
+    ):
+        return False
+    project_id = str(job["project_id"])
+    predecessor_run_id = binding["predecessor_run_id"]
+    predecessor_job_path = (
+        state_root / "_workspace" / "production-full-plan-jobs" / project_id
+        / f"{predecessor_run_id}.job.json"
+    )
+    if predecessor_job_path.is_symlink() or not predecessor_job_path.is_file():
+        return False
+    try:
+        predecessor_job = _load_json(predecessor_job_path)
+        predecessor_authority = validate_authority_core(predecessor_job)
+        predecessor_gates = [str(item["gate_id"]) for item in predecessor_job["gates"]]
+        predecessor_supervisor = DurableFullPlanSupervisor(
+            job_state_root(predecessor_job),
+            project_id=project_id,
+            run_id=predecessor_run_id,
+            gates=predecessor_gates,
+            authority_core_sha256=predecessor_authority,
+            **dict(predecessor_job.get("policy") or {}),
+        )
+        predecessor_state, _ = predecessor_supervisor.load()
+    except (FullPlanJobError, RunAuthorityError, ProductionFullPlanError, KeyError, TypeError, ValueError, OSError):
+        return False
+    if (
+        predecessor_job.get("project_id") != project_id
+        or predecessor_authority != binding["predecessor_authority_sha256"]
+        or predecessor_state.get("state_sha256") != binding["predecessor_state_sha256"]
+        or predecessor_state.get("state") != "BLOCKED"
+        or predecessor_state.get("terminal_reason") != "PREFLIGHT_BLOCKED"
+        or predecessor_state.get("last_error") != "SOURCE_HEAD_MISMATCH"
+        or predecessor_state.get("current_gate") != binding["gate_id"]
+        or predecessor_state.get("lease") is not None
+    ):
+        return False
+    blocked = [
+        item for item in predecessor_state.get("queue", [])
+        if isinstance(item, Mapping)
+        and item.get("status") == "BLOCKED"
+        and item.get("gate_id") == binding["gate_id"]
+    ]
+    if (
+        len(blocked) != 1
+        or blocked[0].get("resume") is not True
+        or blocked[0].get("gate_run_id") != binding["predecessor_gate_run_id"]
+    ):
+        return False
+
+    recovery_root = (
+        state_root / "_workspace" / "global-gate" / project_id / "recovery"
+    )
+    record_path = recovery_root / f"{binding['recovery_id']}.json"
+    checkpoint_path = recovery_root / f"{binding['recovery_id']}.checkpoint.json"
+    if (
+        record_path.is_symlink() or checkpoint_path.is_symlink()
+        or not record_path.is_file() or not checkpoint_path.is_file()
+    ):
+        return False
+    try:
+        record = _load_json(record_path)
+        checkpoint = _load_json(checkpoint_path)
+    except FullPlanJobError:
+        return False
+
+    def digest_without(value: Mapping[str, Any], field: str) -> str:
+        unsigned = {key: item for key, item in value.items() if key != field}
+        return hashlib.sha256(
+            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
+    if (
+        record.get("record_hash") != binding["recovery_record_hash"]
+        or record.get("record_hash") != digest_without(record, "record_hash")
+        or checkpoint.get("checkpoint_sha256") != binding["recovery_checkpoint_sha256"]
+        or checkpoint.get("checkpoint_sha256") != digest_without(checkpoint, "checkpoint_sha256")
+        or record.get("recovery_id") != binding["recovery_id"]
+        or checkpoint.get("recovery_id") != binding["recovery_id"]
+        or checkpoint.get("recovery_record_hash") != binding["recovery_record_hash"]
+        or record.get("gate_id") != binding["gate_id"]
+        or checkpoint.get("gate_id") != binding["gate_id"]
+        or record.get("current_head") != binding["current_head"]
+        or record.get("baseline_head") != str(job.get("expected_head") or "")
+        or record.get("branch") != str(job.get("expected_branch") or "")
+        or record.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+        or checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+    ):
+        return False
+    rejected = record.get("rejected_artifacts")
+    if not isinstance(rejected, Mapping) or len(rejected) != 1:
+        return False
+    relative, expected_file_sha = next(iter(rejected.items()))
+    relative_path = Path(str(relative))
+    if relative_path.is_absolute() or ".." in relative_path.parts or "\\" in str(relative):
+        return False
+    source_path = state_root.joinpath(*relative_path.parts)
+    try:
+        resolved_source = source_path.resolve(strict=True)
+        resolved_source.relative_to(state_root)
+    except (OSError, ValueError):
+        return False
+    if source_path.is_symlink() or not source_path.is_file():
+        return False
+    try:
+        source = _load_json(source_path)
+    except FullPlanJobError:
+        return False
+    actual_file_sha = sha256_file(source_path)
+    source_unsigned = {key: item for key, item in source.items() if key != "source_payload_sha256"}
+    source_payload_sha = hashlib.sha256(
+        json.dumps(source_unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    if (
+        actual_file_sha != expected_file_sha
+        or record.get("active_transition_sha256") != actual_file_sha
+        or source.get("source_payload_sha256") != binding["recovery_source_payload_sha256"]
+        or source.get("source_payload_sha256") != source_payload_sha
+        or record.get("project_id") != project_id
+        or checkpoint.get("project_id") != project_id
+        or source.get("project_id") != project_id
+        or record.get("run_id") != checkpoint.get("run_id")
+        or record.get("run_id") != source.get("run_id")
+        or source.get("current_head") != binding["current_head"]
+        or source.get("source_head") != binding["current_head"]
+        or source.get("gate_id") != binding["gate_id"]
+        or not str(source.get("run_id") or "").startswith(binding["predecessor_gate_run_id"])
+    ):
+        return False
+    return True
+
+
 def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
     project = Path(str(job["project_root"])).resolve()
     harness = Path(str(job["harness_root"])).resolve()
@@ -861,10 +1063,16 @@ def preflight_job(job: Mapping[str, Any], *, resume_context: Mapping[str, Any] |
         if probe.returncode != 0 or probe.stdout.strip() != expected_branch:
             return {"status": "BLOCK", "state": "BLOCKED", "reason": "GIT_BRANCH_MISMATCH"}
     expected_head = job.get("expected_head")
-    if expected_head:
+    current_head = ""
+    if expected_head or job.get("recovery_successor") is not None:
         probe = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"],
                                capture_output=True, text=True, check=False, timeout=10)
         current_head = probe.stdout.strip() if probe.returncode == 0 else ""
+    if job.get("recovery_successor") is not None and not _verified_recovery_successor_binding(
+        job, resume_context, current_head
+    ):
+        return {"status": "BLOCK", "state": "BLOCKED", "reason": "RECOVERY_SUCCESSOR_BINDING_MISMATCH"}
+    if expected_head:
         if (
             current_head != expected_head
             and not _verified_resume_checkpoint_head(job, resume_context, current_head)
