@@ -81,6 +81,24 @@ class FixedRunnerTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(FixedRunnerError):
                 self.manifest(owned_files=[value])
 
+    def test_slash_git_branch_is_allowed_without_broadening_generic_ids(self):
+        branch = "feature/m7-legacy-freeze-recovery-20261004"
+        manifest = self.manifest(branch=branch)
+        self.assertEqual(manifest["payload"]["branch"], branch)
+        validate_action_manifest(manifest, expected_project_id="wallet-affiliate-collector",
+                                 expected_requirements_sha256=SHA)
+        with self.assertRaisesRegex(FixedRunnerError, "unsafe run ID"):
+            self.manifest(run_id="feature/run")
+
+    def test_malformed_git_branches_are_blocked(self):
+        for value in (
+            "", "/feature/x", "feature/x/", "feature//x", "feature/../x",
+            "feature/.hidden", "feature/x.", "feature/x.lock", "feature\\x", "feature/x;rm",
+            "feature/x|curl", "feature/x@{1}", "-feature/x",
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(FixedRunnerError, "unsafe branch"):
+                self.manifest(branch=value)
+
     def test_manifest_and_requirements_drift_are_blocked(self):
         manifest = self.manifest(); manifest["payload"]["head"] = "d" * 40
         with self.assertRaisesRegex(FixedRunnerError, "manifest drift"):

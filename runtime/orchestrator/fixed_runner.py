@@ -17,6 +17,7 @@ class FixedRunnerError(ValueError):
 
 
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_SAFE_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,255}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _HEAD = re.compile(r"[0-9a-f]{40,64}\Z")
 _FORBIDDEN_META = re.compile(r"[;&|`$<>\n\r\x00]")
@@ -70,6 +71,29 @@ def registry_sha256(registry: Mapping[str, RegisteredCommand] = COMMAND_REGISTRY
 def _safe_id(value: str, label: str) -> str:
     if not isinstance(value, str) or not _SAFE_ID.fullmatch(value):
         raise FixedRunnerError(f"unsafe {label}")
+    return value
+
+
+def _safe_branch(value: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or not _SAFE_BRANCH.fullmatch(value)
+        or _FORBIDDEN_META.search(value)
+        or "\\\\" in value
+        or ".." in value
+        or "//" in value
+        or value.endswith("/")
+        or value.endswith(".")
+        or "@{" in value
+    ):
+        raise FixedRunnerError("unsafe branch")
+    parts = value.split("/")
+    if any(
+        not part or part.startswith(".") or part.endswith(".") or part.endswith(".lock")
+        for part in parts
+    ):
+        raise FixedRunnerError("unsafe branch")
     return value
 
 
@@ -127,7 +151,7 @@ def seal_action_manifest(*, requirements_sha256: str, project_id: str, gate_id: 
         "gate_id": _safe_id(gate_id, "Gate ID"),
         "lv_id": _safe_id(lv_id, "LV ID"),
         "run_id": _safe_id(run_id, "run ID"),
-        "branch": _safe_id(branch, "branch"),
+        "branch": _safe_branch(branch),
         "head": head,
         "owned_files": [_safe_relative(item) for item in owned_files],
         "command_id": command_id,
@@ -187,8 +211,9 @@ def validate_action_manifest(manifest: Mapping[str, object], *, expected_project
         if name.endswith("_file") and (not Path(value).is_absolute() or ".." in Path(value).parts):
             raise FixedRunnerError("unsafe command parameter path")
     # Re-validate every untrusted field even though the envelope hash matches.
-    for field in ("project_id", "gate_id", "lv_id", "run_id", "branch"):
+    for field in ("project_id", "gate_id", "lv_id", "run_id"):
         _safe_id(payload.get(field), field)  # type: ignore[arg-type]
+    _safe_branch(payload.get("branch"))  # type: ignore[arg-type]
     if not _HEAD.fullmatch(str(payload.get("head", ""))) or not _SHA256.fullmatch(str(payload.get("input_sha256", ""))):
         raise FixedRunnerError("invalid action binding")
     owned = payload.get("owned_files")
