@@ -121,6 +121,32 @@ class ProductionControlActionTests(unittest.TestCase):
                 executor.execute(request, now=NOW)
             self.assertEqual(backend.calls, 0)
 
+    def test_runtime_binding_drift_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            state, _, request = self._fixture(root)
+            releases = root / "releases"
+            releases.mkdir()
+            wrong = releases / ("0" * 40)
+            wrong.mkdir()
+            link = root / "runtime-current"
+            link.symlink_to(wrong)
+            backend = CanonicalProductionControlBackend(
+                ProductionControlServerConfig(
+                    harness_state_root=state,
+                    releases_root=releases,
+                    runtime_link=link,
+                    runtime_compatibility_manifest=root / "compat.json",
+                )
+            )
+            backend._release = lambda head: SimpleNamespace(
+                manifest_sha256=request.target_runtime_manifest_sha256
+            )
+            with self.assertRaisesRegex(
+                ProductionControlActionError, "runtime-current source mismatch"
+            ):
+                backend.current_state_digest(request)
+
     def test_approval_proof_digest_and_binding_drift_fail_closed(self):
         with tempfile.TemporaryDirectory() as td:
             state, proof, request = self._fixture(Path(td))

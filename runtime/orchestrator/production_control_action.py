@@ -314,6 +314,19 @@ class CanonicalProductionControlBackend:
         path = self.config.releases_root / head
         return verify_runtime_release(path, head)
 
+    def _validate_runtime_binding(self, request: ProductionControlActionRequestV1) -> None:
+        current = _runtime_link_head(self.config.runtime_link, self.config.releases_root)
+        expected_current = (
+            request.target_runtime_source_head
+            if request.action in {OCP_RESUME, POST_CHANGE_VALIDATE}
+            else request.expected_runtime_source_head
+        )
+        if current != expected_current:
+            raise ProductionControlActionError("runtime-current source mismatch")
+        target = self._release(request.target_runtime_source_head)
+        if target.manifest_sha256 != request.target_runtime_manifest_sha256:
+            raise ProductionControlActionError("target runtime manifest mismatch")
+
     def _runtime_state(self) -> dict[str, Any]:
         manifest = load_runtime_compatibility_manifest(
             self.config.runtime_compatibility_manifest
@@ -332,6 +345,7 @@ class CanonicalProductionControlBackend:
         }
 
     def current_state_digest(self, request: ProductionControlActionRequestV1) -> str:
+        self._validate_runtime_binding(request)
         if request.action == RETIRE_FULL_PLAN_RUN:
             run_id = str(request.parameters["run_id"])
             path = (
