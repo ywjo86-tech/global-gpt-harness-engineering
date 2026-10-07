@@ -161,16 +161,20 @@ def _validated_gate_evidence_override(
         raise FullPlanRecoverySuccessorError("fresh Gate approval evidence is missing or unsafe")
 
     gate_id = str(blocked_item.get("gate_id") or "")
-    matches = [
-        dict(item)
-        for item in predecessor_job.get("gates", [])
-        if isinstance(item, Mapping) and str(item.get("gate_id") or "") == gate_id
-    ]
-    if len(matches) != 1:
+    raw_gates = predecessor_job.get("gates")
+    if (
+        not isinstance(raw_gates, list)
+        or len(raw_gates) != 1
+        or not isinstance(raw_gates[0], Mapping)
+    ):
         raise FullPlanRecoverySuccessorError(
-            "fresh Gate approval evidence target is missing or ambiguous"
+            "fresh Gate approval evidence requires exactly one predecessor Gate"
         )
-    gate = matches[0]
+    gate = dict(raw_gates[0])
+    if str(gate.get("gate_id") or "") != gate_id:
+        raise FullPlanRecoverySuccessorError(
+            "fresh Gate approval evidence Gate does not match recovery binding"
+        )
     try:
         verdict = validate_global_gate_bindings(
             predecessor_job["project_root"],

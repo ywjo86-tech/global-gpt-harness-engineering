@@ -338,17 +338,78 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                     "head": "b" * 40,
                 }],
             }
-            with patch(
-                "runtime.orchestrator.full_plan_recovery_successor.validate_global_gate_bindings",
-                side_effect=ValueError("Gate approval branch mismatch"),
+
+            with self.assertRaisesRegex(
+                FullPlanRecoverySuccessorError,
+                "Gate does not match recovery binding",
             ):
-                with self.assertRaisesRegex(
-                    FullPlanRecoverySuccessorError,
-                    "fresh Gate approval evidence validation failed",
-                ):
-                    _validated_gate_evidence_override(
-                        predecessor, {"gate_id": "G1"}, approval
-                    )
+                _validated_gate_evidence_override(
+                    predecessor, {"gate_id": "G2"}, approval
+                )
+
+            multiple_gates = dict(predecessor)
+            multiple_gates["gates"] = predecessor["gates"] + [{
+                "gate_id": "G2",
+                "requirements_sha256": "5" * 64,
+                "branch": "main",
+                "head": "c" * 40,
+            }]
+            with self.assertRaisesRegex(
+                FullPlanRecoverySuccessorError,
+                "requires exactly one predecessor Gate",
+            ):
+                _validated_gate_evidence_override(
+                    multiple_gates, {"gate_id": "G1"}, approval
+                )
+
+            for mismatch in (
+                "approval branch binding mismatch",
+                "approval head binding mismatch",
+                "approval requirements_sha256 binding mismatch",
+                "approval plan_sha256 binding mismatch",
+                "approval scope binding mismatch",
+            ):
+                with self.subTest(mismatch=mismatch):
+                    with patch(
+                        "runtime.orchestrator.full_plan_recovery_successor.validate_global_gate_bindings",
+                        side_effect=ValueError(mismatch),
+                    ):
+                        with self.assertRaisesRegex(
+                            FullPlanRecoverySuccessorError,
+                            "fresh Gate approval evidence validation failed",
+                        ):
+                            _validated_gate_evidence_override(
+                                predecessor, {"gate_id": "G1"}, approval
+                            )
+
+            valid = {
+                "status": "VALIDATED",
+                "project_id": "proj",
+                "gate_id": "G1",
+                "requirements_sha256": "4" * 64,
+                "plan_sha256": "4" * 64,
+            }
+            for field, value in (
+                ("status", "REJECTED"),
+                ("project_id", "other"),
+                ("gate_id", "G2"),
+                ("requirements_sha256", "5" * 64),
+                ("plan_sha256", "5" * 64),
+            ):
+                with self.subTest(verdict_field=field):
+                    verdict = dict(valid)
+                    verdict[field] = value
+                    with patch(
+                        "runtime.orchestrator.full_plan_recovery_successor.validate_global_gate_bindings",
+                        return_value=verdict,
+                    ):
+                        with self.assertRaisesRegex(
+                            FullPlanRecoverySuccessorError,
+                            "fresh Gate approval evidence binding mismatch",
+                        ):
+                            _validated_gate_evidence_override(
+                                predecessor, {"gate_id": "G1"}, approval
+                            )
 
 
     def test_preflight_rechecks_sealed_predecessor_and_recovery_source(self):
