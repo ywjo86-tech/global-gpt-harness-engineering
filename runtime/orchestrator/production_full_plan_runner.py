@@ -630,6 +630,61 @@ class DurableFullPlanSupervisor:
             state["tdd_continuation"] = {"mode": TDD_V1}
         return _seal(state)
 
+    def _bound_recovery_next_attempt(
+        self, binding: Mapping[str, Any], *, prior_attempt: int,
+    ) -> int:
+        recovery_id = str(binding["recovery_id"])
+        checkpoint_path = (
+            self.root / "_workspace" / "global-gate" / self.project_id
+            / "recovery" / f"{recovery_id}.checkpoint.json"
+        )
+        if checkpoint_path.is_symlink() or not checkpoint_path.is_file():
+            raise ProductionFullPlanError("recovery successor checkpoint is missing or unsafe")
+        try:
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ProductionFullPlanError("recovery successor checkpoint is unreadable") from exc
+        if not isinstance(checkpoint, dict):
+            raise ProductionFullPlanError("recovery successor checkpoint is invalid")
+        checkpoint_sha = checkpoint.get("checkpoint_sha256")
+        if (
+            checkpoint_sha != binding["recovery_checkpoint_sha256"]
+            or checkpoint_sha != _digest({
+                key: value for key, value in checkpoint.items()
+                if key != "checkpoint_sha256"
+            })
+        ):
+            raise ProductionFullPlanError("recovery successor checkpoint digest mismatch")
+        if (
+            checkpoint.get("schema_version") != "orchestration.production-recovery-checkpoint.v1"
+            or checkpoint.get("recovery_id") != recovery_id
+            or checkpoint.get("project_id") != self.project_id
+            or checkpoint.get("gate_id") != binding["gate_id"]
+            or checkpoint.get("recovery_record_hash") != binding["recovery_record_hash"]
+            or checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+            or checkpoint.get("hard_stop") is not True
+            or checkpoint.get("completion_evidence", []) != []
+            or checkpoint.get("status") not in {
+                "REJECTED_PRE_RESULT_PARTIAL",
+                "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+            }
+        ):
+            raise ProductionFullPlanError("recovery successor checkpoint binding mismatch")
+        rejected_attempt = checkpoint.get("rejected_attempt")
+        next_attempt = checkpoint.get("next_attempt")
+        if (
+            type(rejected_attempt) is not int
+            or type(next_attempt) is not int
+            or rejected_attempt < 1
+            or next_attempt != rejected_attempt + 1
+        ):
+            raise ProductionFullPlanError("recovery successor checkpoint attempt lineage mismatch")
+        if checkpoint["status"] == "REJECTED_PRE_RESULT_PARTIAL":
+            return prior_attempt + 1
+        if rejected_attempt < prior_attempt or next_attempt <= prior_attempt:
+            raise ProductionFullPlanError("recovery successor checkpoint attempt lineage mismatch")
+        return next_attempt
+
     def build_recovery_successor_state(
         self, *, predecessor_state: Mapping[str, Any],
         recovery_binding: Mapping[str, Any],
@@ -670,10 +725,14 @@ class DurableFullPlanSupervisor:
             raise ProductionFullPlanError("recovery predecessor Gate position is invalid")
         if self.gates[len(completed)] != binding["gate_id"]:
             raise ProductionFullPlanError("recovery predecessor current Gate is inconsistent")
+        prior_attempt = int(prior.get("attempt", 1))
+        next_attempt = self._bound_recovery_next_attempt(
+            binding, prior_attempt=prior_attempt,
+        )
         state = self._initial()
         item = self._queue_item(
             binding["gate_id"], len(completed),
-            attempt=int(prior.get("attempt", 1)) + 1, resume=True,
+            attempt=next_attempt, resume=True,
         )
         item["gate_run_id"] = binding["predecessor_gate_run_id"]
         item["last_error"] = None

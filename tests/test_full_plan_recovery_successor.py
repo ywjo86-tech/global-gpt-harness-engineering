@@ -174,6 +174,31 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
             recovery_binding = binding(
                 predecessor_state_sha=state["state_sha256"]
             )
+            checkpoint = {
+                "schema_version": "orchestration.production-recovery-checkpoint.v1",
+                "recovery_id": recovery_binding["recovery_id"],
+                "project_id": "proj",
+                "gate_id": "G1",
+                "lv_id": "TASK-006",
+                "run_id": "run-predecessor--g1-task-006",
+                "recovery_record_hash": recovery_binding["recovery_record_hash"],
+                "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE",
+                "rejected_attempt": 2,
+                "next_attempt": 3,
+                "status": "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+                "hard_stop": True,
+                "completion_evidence": [],
+            }
+            checkpoint["checkpoint_sha256"] = digest(checkpoint)
+            recovery_root = root / "_workspace" / "global-gate" / "proj" / "recovery"
+            recovery_root.mkdir(parents=True)
+            (recovery_root / f'{recovery_binding["recovery_id"]}.checkpoint.json').write_text(
+                json.dumps(checkpoint, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            recovery_binding["recovery_checkpoint_sha256"] = checkpoint["checkpoint_sha256"]
+            recovery_binding.pop("binding_sha256")
+            recovery_binding["binding_sha256"] = digest(recovery_binding)
             preview = successor.build_recovery_successor_state(
                 predecessor_state=state,
                 recovery_binding=recovery_binding,
@@ -202,6 +227,77 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                 loaded["recovery_successor"]["binding_sha256"],
                 recovery_binding["binding_sha256"],
             )
+
+    def test_chained_recovery_uses_bound_checkpoint_attempt_and_rejects_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            predecessor = DurableFullPlanSupervisor(
+                root, project_id="proj", run_id="run-predecessor", gates=["G1"],
+                authority_core_sha256="a" * 64, min_disk_free_bytes=0, min_inode_free=0,
+            )
+            state, _ = predecessor.load()
+            state["queue"][0].update({"status": "BLOCKED", "resume": True, "attempt": 2})
+            state.update({
+                "state": "BLOCKED", "last_error": "SOURCE_HEAD_MISMATCH",
+                "terminal_reason": "PREFLIGHT_BLOCKED",
+            })
+            state = predecessor._persist(state, {"event": "TEST_BLOCK"})
+            successor = DurableFullPlanSupervisor(
+                root, project_id="proj", run_id="run-successor", gates=["G1"],
+                authority_core_sha256="9" * 64, min_disk_free_bytes=0, min_inode_free=0,
+            )
+            recovery_binding = binding(predecessor_state_sha=state["state_sha256"])
+            recovery_binding["recovery_id"] = "run-predecessor--g1-task-006-recovery-04"
+            checkpoint = {
+                "schema_version": "orchestration.production-recovery-checkpoint.v1",
+                "recovery_id": recovery_binding["recovery_id"], "project_id": "proj",
+                "gate_id": "G1", "lv_id": "TASK-006",
+                "run_id": "run-predecessor--g1-task-006",
+                "recovery_record_hash": recovery_binding["recovery_record_hash"],
+                "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE",
+                "rejected_attempt": 3, "next_attempt": 4,
+                "status": "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+                "hard_stop": True, "completion_evidence": [],
+            }
+            checkpoint["checkpoint_sha256"] = digest(checkpoint)
+            recovery_root = root / "_workspace" / "global-gate" / "proj" / "recovery"
+            recovery_root.mkdir(parents=True)
+            checkpoint_path = recovery_root / f'{recovery_binding["recovery_id"]}.checkpoint.json'
+            checkpoint_path.write_text(
+                json.dumps(checkpoint, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+            )
+            recovery_binding["recovery_checkpoint_sha256"] = checkpoint["checkpoint_sha256"]
+            recovery_binding.pop("binding_sha256")
+            recovery_binding["binding_sha256"] = digest(recovery_binding)
+            preview = successor.build_recovery_successor_state(
+                predecessor_state=state, recovery_binding=recovery_binding,
+            )
+            self.assertEqual(preview["queue"][0]["attempt"], 4)
+
+            tampered = dict(checkpoint)
+            tampered["next_attempt"] = 5
+            checkpoint_path.write_text(
+                json.dumps(tampered, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ProductionFullPlanError, "checkpoint digest mismatch"):
+                successor.build_recovery_successor_state(
+                    predecessor_state=state, recovery_binding=recovery_binding,
+                )
+
+            malformed = dict(tampered)
+            malformed.pop("checkpoint_sha256")
+            malformed["checkpoint_sha256"] = digest(malformed)
+            checkpoint_path.write_text(
+                json.dumps(malformed, sort_keys=True, separators=(",", ":")), encoding="utf-8"
+            )
+            malformed_binding = dict(recovery_binding)
+            malformed_binding["recovery_checkpoint_sha256"] = malformed["checkpoint_sha256"]
+            malformed_binding.pop("binding_sha256")
+            malformed_binding["binding_sha256"] = digest(malformed_binding)
+            with self.assertRaisesRegex(ProductionFullPlanError, "attempt lineage mismatch"):
+                successor.build_recovery_successor_state(
+                    predecessor_state=state, recovery_binding=malformed_binding,
+                )
 
     def test_load_job_rejects_tampered_recovery_binding(self):
         with tempfile.TemporaryDirectory() as directory:
