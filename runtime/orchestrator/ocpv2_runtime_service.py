@@ -301,6 +301,7 @@ def finalize_remote_control_projection(
         "orchestration.remote-p3-canary-activation-status-projection.v1",
         "orchestration.remote-p3-canary-validate-registration-status-projection.v1",
         "orchestration.remote-p3-canary-validate-evidence-issue-status-projection.v1",
+        "orchestration.remote-production-control-status-projection.v1",
     }:
         return
     parsed = parse_remote_projection(projection)

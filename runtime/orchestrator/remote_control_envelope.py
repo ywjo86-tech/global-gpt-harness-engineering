@@ -36,6 +36,10 @@ from .project_onboarding_remote import (
     ProjectOnboardingRemoteError,
     ProjectOnboardingRequest,
 )
+from .production_control_contract import (
+    ProductionControlActionRequestV1,
+    ProductionControlContractError,
+)
 from .successor_release_staging import (
     SuccessorReleaseStageError,
     SuccessorReleaseStageRequest,
@@ -58,6 +62,7 @@ LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND = "LIFECYCLE_V2_P3_PROMOTION_ADMISSION"
 LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND = "LIFECYCLE_V2_P3_CANARY_ACTIVATION"
 LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND = "LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION"
 LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND = "LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE"
+PRODUCTION_CONTROL_ACTION_KIND = "PRODUCTION_CONTROL_ACTION"
 _SAFE_ID = re.compile(r"[A-Za-z0-9._:-]{1,200}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TOP_FIELDS = {
@@ -77,6 +82,7 @@ _LIFECYCLE_V2_P3_CANARY_ACTIVATION_AUTH_FIELDS = {
 }
 _LIFECYCLE_V2_P3_CANARY_VALIDATE_AUTH_FIELDS = {"lifecycle_v2_p3_canary_validate_policy_ref"}
 _LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_AUTH_FIELDS = {"lifecycle_v2_p3_canary_validate_evidence_policy_ref"}
+_PRODUCTION_CONTROL_AUTH_FIELDS = {"production_control_policy_ref"}
 
 
 class RemoteControlEnvelopeError(ValueError):
@@ -217,6 +223,14 @@ class RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization:
         _safe_id(self.lifecycle_v2_p3_canary_validate_evidence_policy_ref, "Lifecycle V2 P3 validation evidence policy ref")
 
 
+@dataclass(frozen=True, slots=True)
+class RemoteProductionControlAuthorization:
+    production_control_policy_ref: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.production_control_policy_ref, "production control policy ref")
+
+
 RemotePayload = (
     HostInspectionRequestV1
     | ApprovedWorkActivationRequestV1
@@ -228,6 +242,7 @@ RemotePayload = (
     | LifecycleV2P3CanaryActivationRequest
     | P3CanaryValidateRegistrationRequest
     | P3CanaryValidateEvidenceIssueRequest
+    | ProductionControlActionRequestV1
 )
 RemoteAuthorization = (
     RemoteControlAuthorization
@@ -240,6 +255,7 @@ RemoteAuthorization = (
     | RemoteLifecycleV2P3CanaryActivationAuthorization
     | RemoteLifecycleV2P3CanaryValidateAuthorization
     | RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization
+    | RemoteProductionControlAuthorization
 )
 
 
@@ -371,6 +387,15 @@ def _validated_lifecycle_v2_p3_canary_validate_evidence_payload(raw: object) -> 
         raise RemoteControlEnvelopeError(f"invalid P3 validation evidence issue payload: {exc}") from exc
 
 
+def _validated_production_control_payload(raw: object) -> ProductionControlActionRequestV1:
+    if not isinstance(raw, Mapping):
+        raise RemoteControlEnvelopeError("production control payload must be an object")
+    try:
+        return ProductionControlActionRequestV1.from_mapping(raw)
+    except ProductionControlContractError as exc:
+        raise RemoteControlEnvelopeError(f"invalid production control payload: {exc}") from exc
+
+
 def _validated_payload(kind: object, raw: object) -> RemotePayload:
     if kind == HOST_INSPECTION_KIND:
         return _validated_inspection_payload(raw)
@@ -392,6 +417,8 @@ def _validated_payload(kind: object, raw: object) -> RemotePayload:
         return _validated_lifecycle_v2_p3_canary_validate_payload(raw)
     if kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
         return _validated_lifecycle_v2_p3_canary_validate_evidence_payload(raw)
+    if kind == PRODUCTION_CONTROL_ACTION_KIND:
+        return _validated_production_control_payload(raw)
     raise RemoteControlEnvelopeError("unsupported request kind")
 
 
@@ -441,6 +468,7 @@ def validate_remote_control_envelope(
         LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
         LIFECYCLE_V2_P3_CANARY_VALIDATE_REGISTRATION_KIND,
         LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
+        PRODUCTION_CONTROL_ACTION_KIND,
     }:
         raise RemoteControlEnvelopeError("unsupported request kind")
     message_id = _safe_id(payload["message_id"], "message ID")
@@ -533,13 +561,20 @@ def validate_remote_control_envelope(
         )
         if authorization.lifecycle_v2_p3_canary_validate_policy_ref != request.evidence.approval_ref:
             raise RemoteControlEnvelopeError("Lifecycle V2 P3 validation authorization mismatch")
-    else:
+    elif request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
         _exact_fields(auth_raw, _LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_AUTH_FIELDS, "authorization")
         authorization = RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization(
             lifecycle_v2_p3_canary_validate_evidence_policy_ref=str(auth_raw["lifecycle_v2_p3_canary_validate_evidence_policy_ref"]),
         )
         if authorization.lifecycle_v2_p3_canary_validate_evidence_policy_ref != request.approval_ref:
             raise RemoteControlEnvelopeError("Lifecycle V2 P3 validation evidence authorization mismatch")
+    else:
+        _exact_fields(auth_raw, _PRODUCTION_CONTROL_AUTH_FIELDS, "authorization")
+        authorization = RemoteProductionControlAuthorization(
+            production_control_policy_ref=str(auth_raw["production_control_policy_ref"]),
+        )
+        if authorization.production_control_policy_ref != request.approval_ref:
+            raise RemoteControlEnvelopeError("production control authorization mismatch")
     envelope_digest = _digest(payload["envelope_sha256"], "envelope digest")
     if envelope_digest != _sha(_unsigned(payload)):
         raise RemoteControlEnvelopeError("envelope digest mismatch")

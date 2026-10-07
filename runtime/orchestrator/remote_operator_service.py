@@ -25,6 +25,7 @@ from .remote_control_envelope import (
     LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND,
     LIFECYCLE_V2_P3_PROMOTION_ADMISSION_KIND,
     PROJECT_ONBOARDING_KIND,
+    PRODUCTION_CONTROL_ACTION_KIND,
     SUCCESSOR_RELEASE_STAGE_KIND,
     RemoteControlEnvelopeV1,
     RemoteFullPlanActivationAuthorization,
@@ -34,6 +35,7 @@ from .remote_control_envelope import (
     RemoteLifecycleV2P3CanaryValidateEvidenceAuthorization,
     RemoteLifecycleV2P3PromotionAuthorization,
     RemoteProjectOnboardingAuthorization,
+    RemoteProductionControlAuthorization,
     RemoteSuccessorReleaseStageAuthorization,
     RemoteWorkActivationAuthorization,
     validate_remote_control_envelope,
@@ -93,6 +95,7 @@ class ServicePollResult:
     p3_canary_activated: int = 0
     p3_canary_validate_registered: int = 0
     p3_canary_validate_evidence_issued: int = 0
+    production_control_actions: int = 0
 
 
 class RemoteOperatorService:
@@ -139,6 +142,9 @@ class RemoteOperatorService:
         issue_p3_canary_validate_evidence_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         lifecycle_v2_p3_canary_validate_evidence_enabled: bool = False,
         lifecycle_v2_p3_canary_validate_evidence_policy_ref: str = "",
+        execute_production_control_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        production_control_enabled: bool = False,
+        production_control_policy_ref: str = "",
     ) -> None:
         self.transport = transport
         self.decode_envelope = decode_envelope
@@ -178,6 +184,9 @@ class RemoteOperatorService:
         self.issue_p3_canary_validate_evidence_authorized = issue_p3_canary_validate_evidence_authorized
         self.lifecycle_v2_p3_canary_validate_evidence_enabled = bool(lifecycle_v2_p3_canary_validate_evidence_enabled)
         self.lifecycle_v2_p3_canary_validate_evidence_policy_ref = str(lifecycle_v2_p3_canary_validate_evidence_policy_ref or "")
+        self.execute_production_control_authorized = execute_production_control_authorized
+        self.production_control_enabled = bool(production_control_enabled)
+        self.production_control_policy_ref = str(production_control_policy_ref or "")
 
     @staticmethod
     def _projection(
@@ -332,6 +341,28 @@ class RemoteOperatorService:
         return {"schema_version": "orchestration.remote-p3-canary-validate-evidence-issue-status-projection.v1", "message_id": envelope.message_id, "request_id": payload.request_id, "project_alias": payload.admission_request.project_alias, "request_digest": payload.request_digest, "candidate_run_id": payload.admission_request.candidate_run_id, "result_class": str(result_class)}
 
     @staticmethod
+    def _production_control_status_projection(
+        envelope: RemoteControlEnvelopeV1, result_class: str,
+        *, detail: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload = envelope.payload
+        projection = {
+            "schema_version": "orchestration.remote-production-control-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_id": payload.project_id,
+            "action": payload.action,
+            "request_digest": payload.request_digest,
+            "idempotency_key": payload.idempotency_key,
+            "result_class": str(result_class),
+        }
+        if detail:
+            for key in ("status", "effect_digest", "evidence_refs", "evidence_digests"):
+                if key in detail:
+                    projection[key] = detail[key]
+        return projection
+
+    @staticmethod
     def _recover_expired_remote_control(
         raw: RawControlEnvelope,
         exc: Exception,
@@ -385,6 +416,7 @@ class RemoteOperatorService:
         received = validated = executed = diagnosed = projected = acknowledged = blocked = 0
         inspected = activated = full_plan_activated = onboarded = successor_release_staged = 0
         p3_promotion_admitted = p3_canary_activated = p3_canary_validate_registered = p3_canary_validate_evidence_issued = 0
+        production_control_actions = 0
         for raw in self.transport.receive(limit=int(batch_limit)):
             received += 1
             expired_remote_control = False
@@ -433,6 +465,8 @@ class RemoteOperatorService:
                     projection = self._p3_canary_validate_status_projection(envelope, "P3_CANARY_VALIDATE_REGISTRATION_EXPIRED")
                 elif envelope.request_kind == LIFECYCLE_V2_P3_CANARY_VALIDATE_EVIDENCE_ISSUE_KIND:
                     projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_EXPIRED")
+                elif envelope.request_kind == PRODUCTION_CONTROL_ACTION_KIND:
+                    projection = self._production_control_status_projection(envelope, "PRODUCTION_CONTROL_ACTION_EXPIRED")
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
@@ -704,6 +738,34 @@ class RemoteOperatorService:
                             p3_canary_validate_evidence_issued += 1
                         except Exception:
                             projection = self._p3_canary_validate_evidence_status_projection(envelope, "P3_CANARY_VALIDATE_EVIDENCE_ISSUE_ERROR"); blocked += 1
+                elif envelope.request_kind == PRODUCTION_CONTROL_ACTION_KIND:
+                    if resolved_mode != ControlMode.ACTIVE:
+                        projection = self._production_control_status_projection(envelope, "MODE_BLOCKED")
+                        blocked += 1
+                    elif not self.production_control_enabled or self.execute_production_control_authorized is None:
+                        projection = self._production_control_status_projection(envelope, "PRODUCTION_CONTROL_ACTION_DISABLED")
+                        blocked += 1
+                    elif (
+                        not isinstance(envelope.authorization, RemoteProductionControlAuthorization)
+                        or not self.production_control_policy_ref
+                        or envelope.authorization.production_control_policy_ref != self.production_control_policy_ref
+                    ):
+                        projection = self._production_control_status_projection(envelope, "PRODUCTION_CONTROL_AUTHORIZATION_MISMATCH")
+                        blocked += 1
+                    else:
+                        try:
+                            raw_result = self.execute_production_control_authorized(envelope)
+                            if not isinstance(raw_result, Mapping):
+                                raise RemoteOperatorServiceError("production control result projection is malformed")
+                            projection = self._production_control_status_projection(
+                                envelope,
+                                str(raw_result.get("result_class") or "PRODUCTION_CONTROL_ACTION_ERROR"),
+                                detail=raw_result,
+                            )
+                            production_control_actions += 1
+                        except Exception:
+                            projection = self._production_control_status_projection(envelope, "PRODUCTION_CONTROL_ACTION_ERROR")
+                            blocked += 1
                 else:
                     raise RemoteOperatorServiceError("UNKNOWN_REMOTE_CONTROL_KIND")
                 self._publish_and_ack(envelope, projection)
@@ -819,4 +881,5 @@ class RemoteOperatorService:
             p3_canary_activated=p3_canary_activated,
             p3_canary_validate_registered=p3_canary_validate_registered,
             p3_canary_validate_evidence_issued=p3_canary_validate_evidence_issued,
+            production_control_actions=production_control_actions,
         )
