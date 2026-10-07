@@ -2910,7 +2910,7 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
             "predecessor_lv": str(candidate.get("predecessor_lv") or ""),
             "predecessor_run_id": str(candidate.get("predecessor_run_id") or ""),
         }
-    if sealed_project_authority and completed and resume:
+    if sealed_project_authority and completed and resume and lineage is None:
         predecessor_lv = completed[-1]
         predecessor_index = [item.lv_id for item in plan.lvs].index(predecessor_lv)
         predecessor_run = run_id if predecessor_index == 0 else f"{run_id}-{predecessor_lv.lower()}"

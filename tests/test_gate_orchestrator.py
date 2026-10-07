@@ -992,6 +992,85 @@ class GateOrchestratorTests(unittest.TestCase):
         self.assertNotIn(("PACKAGE","G1-LV3-1"),calls)
         self.assertEqual({lv for _,lv in calls},{"G1-LV3-2","G1-LV3-3"})
 
+    def test_sealed_resume_preserves_explicit_recovery_source_lineage(self) -> None:
+        import subprocess
+        from runtime.orchestrator.gate_orchestrator import execute_gate
+
+        subprocess.run(["git", "-C", str(self.root), "init", "-q", "-b", "main"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "PLAN.md"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "baseline"], check=True)
+        baseline = subprocess.check_output(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True
+        ).strip()
+        (self.root / "checkpoint.txt").write_text("checkpoint\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "checkpoint.txt"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "checkpoint"], check=True)
+        current = subprocess.check_output(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True
+        ).strip()
+
+        run_id = "run-explicit-recovery-lineage"
+        artifact_root = namespace_root(self.root.parent, self.plan.project_id, "artifact")
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        (artifact_root / f"{run_id}.handoff.json").write_text(
+            json.dumps({
+                "lv": "G1-LV3-1",
+                "run_id": run_id,
+                "handoff_sha256": "d" * 64,
+            }),
+            encoding="utf-8",
+        )
+        full_auth = create_gate_authorization(
+            self.plan, "APR-NEW", mode=FULL_PLAN,
+            full_plan_opt_in=True, project_final_validation=True,
+        )
+        explicit = {
+            "lineage_kind": "SEALED_PRE_RESULT_PARTIAL_RECOVERY",
+            "current_head": current,
+            "predecessor_digest": "e" * 64,
+            "predecessor_lv": "G1-LV3-1",
+            "predecessor_run_id": "historical-run",
+        }
+        approval = self.approval_evidence("explicit-lineage-approval.json")
+        kwargs = {
+            "harness_root": self.root.parent,
+            "approval_evidence": approval,
+            "requirements_sha256": "b" * 64,
+            "branch": "main",
+            "head": baseline,
+            "mode": FULL_PLAN,
+            "resume": True,
+            "full_plan_opt_in": True,
+            "project_final_validation": True,
+            "project_requirement_evidence_by_lv": {
+                "G1-LV3-1": {"REQ-001": {"status": "PENDING"}}
+            },
+        }
+
+        with patch("runtime.orchestrator.gate_orchestrator.load_gate_plan", return_value=self.plan), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_global_gate_bindings"), \
+             patch("runtime.orchestrator.gate_orchestrator._sealed_project_gate_authority",
+                   return_value=(full_auth, {})), \
+             patch("runtime.orchestrator.gate_orchestrator.validate_handoff"), \
+             patch("runtime.orchestrator.gate_orchestrator._validate_resume_capability_filesystem"), \
+             patch("runtime.orchestrator.gate_orchestrator._sealed_completed_lv_lineage",
+                   return_value=explicit) as historical, \
+             patch("runtime.orchestrator.gate_orchestrator.derive_transition",
+                   side_effect=RuntimeError("STOP_AFTER_LINEAGE")):
+            with self.assertRaisesRegex(RuntimeError, "STOP_AFTER_LINEAGE"):
+                execute_gate(
+                    self.root, "GATE-1", run_id,
+                    source_lineage=explicit, **kwargs,
+                )
+            historical.assert_not_called()
+
+            historical.reset_mock()
+            with self.assertRaisesRegex(RuntimeError, "STOP_AFTER_LINEAGE"):
+                execute_gate(self.root, "GATE-1", run_id, **kwargs)
+            historical.assert_called_once()
+
     def test_full_plan_capability_dry_run_is_a_pre_worker_prerequisite(self) -> None:
         from runtime.orchestrator.gate_orchestrator import execute_gate
         from runtime.orchestrator.operational_capability import DryRunExecutionContext, run_operational_capability_dry_run
