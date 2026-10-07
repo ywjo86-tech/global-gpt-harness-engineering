@@ -446,23 +446,26 @@ class CanonicalProductionControlBackend:
         )
 
         originals: dict[Path, bytes] = {}
+        rendered_identity_files: dict[Path, bytes] = {}
+        for path in (
+            self.config.runtime_compatibility_manifest,
+            *self.config.operational_identity_files,
+        ):
+            if path.is_symlink() or not path.is_file():
+                raise ProductionControlActionError("operational identity file unsafe")
+            originals[path] = path.read_bytes()
+        for path in self.config.operational_identity_files:
+            text = originals[path].decode("utf-8")
+            old = request.expected_runtime_source_head
+            new = request.target_runtime_source_head
+            if text.count(old) != 1:
+                raise ProductionControlActionError(
+                    "operational runtime identity occurrence mismatch"
+                )
+            rendered_identity_files[path] = text.replace(old, new, 1).encode("utf-8")
+
         try:
-            for path in (
-                self.config.runtime_compatibility_manifest,
-                *self.config.operational_identity_files,
-            ):
-                if path.is_symlink() or not path.is_file():
-                    raise ProductionControlActionError("operational identity file unsafe")
-                originals[path] = path.read_bytes()
-            for path in self.config.operational_identity_files:
-                text = originals[path].decode("utf-8")
-                old = request.expected_runtime_source_head
-                new = request.target_runtime_source_head
-                if text.count(old) != 1:
-                    raise ProductionControlActionError(
-                        "operational runtime identity occurrence mismatch"
-                    )
-                rendered = text.replace(old, new, 1).encode("utf-8")
+            for path, rendered in rendered_identity_files.items():
                 temp = path.with_name(path.name + f".tmp-{os.getpid()}")
                 flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
                 fd = os.open(temp, flags, 0o600)
@@ -475,21 +478,48 @@ class CanonicalProductionControlBackend:
                 self.config.runtime_compatibility_manifest, updated
             )
             self.daemon_reload()
-        except Exception:
+        except Exception as primary_exc:
+            rollback_errors: list[str] = []
             for path, raw in originals.items():
-                temp = path.with_name(path.name + f".rollback-{os.getpid()}")
-                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-                fd = os.open(temp, flags, 0o600)
-                with os.fdopen(fd, "wb") as handle:
-                    handle.write(raw)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(temp, path)
+                try:
+                    temp = path.with_name(path.name + f".rollback-{os.getpid()}")
+                    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+                    fd = os.open(temp, flags, 0o600)
+                    with os.fdopen(fd, "wb") as handle:
+                        handle.write(raw)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temp, path)
+                except Exception as exc:
+                    rollback_errors.append(f"{path.name}:{type(exc).__name__}")
             try:
                 self.daemon_reload()
-            except Exception:
-                pass
-            raise
+            except Exception as exc:
+                rollback_errors.append(f"daemon-reload:{type(exc).__name__}")
+            for path, raw in originals.items():
+                try:
+                    if path.is_symlink() or not path.is_file() or path.read_bytes() != raw:
+                        rollback_errors.append(f"{path.name}:VERIFY_FAILED")
+                except Exception as exc:
+                    rollback_errors.append(f"{path.name}:VERIFY_{type(exc).__name__}")
+            if rollback_errors:
+                raise ProductionControlActionError(
+                    "operational runtime identity rollback incomplete"
+                ) from primary_exc
+            rollback_effect = {
+                "rollback_verified": True,
+                "restored_file_sha256": {
+                    path.name: _sha_bytes(raw) for path, raw in originals.items()
+                },
+                "primary_error_class": type(primary_exc).__name__,
+            }
+            return ProductionControlBackendOutcome(
+                "ROLLED_BACK",
+                "OPERATIONAL_RUNTIME_IDENTITY_ROLLED_BACK",
+                rollback_effect,
+                evidence_refs=("operational-runtime-identity-rollback",),
+                evidence_digests=(_digest(rollback_effect),),
+            )
 
         evidence = {
             "manifest_sha256": updated["manifest_sha256"],
@@ -512,17 +542,55 @@ class CanonicalProductionControlBackend:
     ) -> ProductionControlBackendOutcome:
         units = tuple(request.parameters["units"])
         before = {unit: bool(self.service_controller.is_active(unit)) for unit in units}
-        for unit in units:
-            if start:
-                if not self.service_controller.is_active(unit):
-                    self.service_controller.start(unit)
-            elif self.service_controller.is_active(unit):
-                self.service_controller.stop(unit)
-        after = {unit: bool(self.service_controller.is_active(unit)) for unit in units}
-        if start and not all(after.values()):
-            raise ProductionControlActionError("OCP resume verification failed")
-        if not start and any(after.values()):
-            raise ProductionControlActionError("OCP quiesce verification failed")
+        try:
+            for unit in units:
+                if start:
+                    if not self.service_controller.is_active(unit):
+                        self.service_controller.start(unit)
+                elif self.service_controller.is_active(unit):
+                    self.service_controller.stop(unit)
+            after = {unit: bool(self.service_controller.is_active(unit)) for unit in units}
+            if start and not all(after.values()):
+                raise ProductionControlActionError("OCP resume verification failed")
+            if not start and any(after.values()):
+                raise ProductionControlActionError("OCP quiesce verification failed")
+        except Exception as primary_exc:
+            rollback_errors: list[str] = []
+            for unit, was_active in before.items():
+                try:
+                    is_active = bool(self.service_controller.is_active(unit))
+                    if was_active and not is_active:
+                        self.service_controller.start(unit)
+                    elif not was_active and is_active:
+                        self.service_controller.stop(unit)
+                except Exception as exc:
+                    rollback_errors.append(f"{unit}:{type(exc).__name__}")
+            restored: dict[str, bool] = {}
+            for unit, was_active in before.items():
+                try:
+                    restored[unit] = bool(self.service_controller.is_active(unit))
+                    if restored[unit] != was_active:
+                        rollback_errors.append(f"{unit}:VERIFY_FAILED")
+                except Exception as exc:
+                    rollback_errors.append(f"{unit}:VERIFY_{type(exc).__name__}")
+            if rollback_errors:
+                raise ProductionControlActionError(
+                    "OCP unit rollback incomplete"
+                ) from primary_exc
+            rollback_effect = {
+                "rollback_verified": True,
+                "before": before,
+                "restored": restored,
+                "units": list(units),
+                "primary_error_class": type(primary_exc).__name__,
+            }
+            return ProductionControlBackendOutcome(
+                "ROLLED_BACK",
+                "OCP_UNIT_STATE_ROLLED_BACK",
+                rollback_effect,
+                evidence_refs=("ocp-unit-state-rollback",),
+                evidence_digests=(_digest(rollback_effect),),
+            )
         effect = {"before": before, "after": after, "units": list(units)}
         return ProductionControlBackendOutcome(
             "VERIFIED",

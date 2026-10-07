@@ -7,6 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from runtime.orchestrator.operational_runtime_compatibility import (
+    build_runtime_compatibility_manifest,
+    record_runtime_compatibility_manifest,
+)
 from runtime.orchestrator.production_control_action import (
     CanonicalProductionControlBackend,
     ProductionControlActionError,
@@ -15,9 +19,11 @@ from runtime.orchestrator.production_control_action import (
     ProductionControlServerConfig,
 )
 from runtime.orchestrator.production_control_contract import (
+    OCP_QUIESCE,
     P4_CUTOVER,
     PRODUCTION_CONTROL_ACTION_SCHEMA_V1,
     RETIRE_FULL_PLAN_RUN,
+    SYNC_OPERATIONAL_RUNTIME_IDENTITY,
     ProductionControlActionRequestV1,
 )
 
@@ -238,6 +244,188 @@ class ProductionControlActionTests(unittest.TestCase):
             ):
                 executor.execute(request, now=late)
             self.assertEqual(backend.calls, 0)
+
+
+class ProductionControlBackendSafetyTests(unittest.TestCase):
+    @staticmethod
+    def _request(*, action, parameters, expected_state="c" * 64,
+                 source="a" * 40, target="b" * 40, target_manifest="d" * 64):
+        return ProductionControlActionRequestV1.from_mapping({
+            "schema_version": PRODUCTION_CONTROL_ACTION_SCHEMA_V1,
+            "request_id": f"REQ-{action}",
+            "project_id": "global-gpt-harness",
+            "action": action,
+            "approval_ref": "OCP-FULL-PLAN-TEST-1",
+            "activation_id": "ACT-1",
+            "plan_digest": "e" * 64,
+            "approval_proof_path": "_workspace/full-plan-human-approvals/ACT-1.json",
+            "approval_proof_sha256": "f" * 64,
+            "expected_state_sha256": expected_state,
+            "expected_runtime_source_head": source,
+            "target_runtime_source_head": target,
+            "target_runtime_manifest_sha256": target_manifest,
+            "idempotency_key": f"IDEMP-{action}",
+            "parameters": parameters,
+        })
+
+    @staticmethod
+    def _config(root: Path, *, identity_files=()):
+        state = root / "state"
+        releases = root / "releases"
+        state.mkdir(parents=True, exist_ok=True)
+        releases.mkdir(parents=True, exist_ok=True)
+        compatibility = root / "operational-runtime-compatibility.json"
+        if not compatibility.exists():
+            compatibility.write_text("{}\n", encoding="utf-8")
+        return ProductionControlServerConfig(
+            harness_state_root=state,
+            releases_root=releases,
+            runtime_link=root / "runtime-current",
+            runtime_compatibility_manifest=compatibility,
+            operational_identity_files=tuple(identity_files),
+            job_search_root=state,
+        )
+
+    def test_runtime_current_drift_fails_before_target_release_or_effect(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = self._config(root)
+            request = self._request(
+                action=RETIRE_FULL_PLAN_RUN,
+                parameters={
+                    "run_id": "RUN-1",
+                    "expected_terminal_reason": "RETRY_BUDGET_EXHAUSTED",
+                },
+            )
+            backend = CanonicalProductionControlBackend(config)
+            with patch(
+                "runtime.orchestrator.production_control_action._runtime_link_head",
+                return_value="0" * 40,
+            ), patch.object(backend, "_release") as release:
+                with self.assertRaisesRegex(
+                    ProductionControlActionError, "runtime-current source mismatch"
+                ):
+                    backend._validate_runtime_binding(request)
+                release.assert_not_called()
+
+    def test_ocp_partial_quiesce_failure_restores_exact_prior_unit_state(self):
+        class Controller:
+            def __init__(self):
+                self.states = {
+                    "ocpv2.service": True,
+                    "ocpv2.timer": True,
+                }
+                self.fail_timer_once = True
+
+            def is_active(self, unit):
+                return self.states[unit]
+
+            def stop(self, unit):
+                if unit == "ocpv2.timer" and self.fail_timer_once:
+                    self.fail_timer_once = False
+                    raise RuntimeError("simulated stop failure")
+                self.states[unit] = False
+
+            def start(self, unit):
+                self.states[unit] = True
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            controller = Controller()
+            backend = CanonicalProductionControlBackend(
+                self._config(root), service_controller=controller
+            )
+            request = self._request(
+                action=OCP_QUIESCE,
+                parameters={"units": ["ocpv2.service", "ocpv2.timer"]},
+            )
+            outcome = backend._ocp_units(request, start=False)
+            self.assertEqual(outcome.status, "ROLLED_BACK")
+            self.assertEqual(outcome.result_class, "OCP_UNIT_STATE_ROLLED_BACK")
+            self.assertTrue(outcome.effect["rollback_verified"])
+            self.assertEqual(
+                controller.states,
+                {"ocpv2.service": True, "ocpv2.timer": True},
+            )
+
+    def test_runtime_identity_failure_restores_all_original_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = "a" * 40
+            target = "b" * 40
+            target_manifest = "d" * 64
+            releases = root / "releases"
+            releases.mkdir()
+            (releases / source).mkdir()
+            (releases / target).mkdir()
+            link = root / "runtime-current"
+            link.symlink_to(releases / source)
+
+            compatibility = root / "operational-runtime-compatibility.json"
+            manifest = build_runtime_compatibility_manifest(
+                current_runtime_source_identity=source,
+                releases_root=releases,
+                components=[{
+                    "component_id": "full-plan-reconcile",
+                    "unit": "global-gpt-harness-full-plan-reconcile.service",
+                    "binding_mode": "CURRENT_RUNTIME",
+                    "expected_source_head": source,
+                    "compatibility_evidence_refs": [],
+                }],
+            )
+            record_runtime_compatibility_manifest(compatibility, manifest)
+
+            identity_files = []
+            for name in ("acceptance.service", "dashboard.service", "attention.service"):
+                path = root / name
+                path.write_text(f"RUNTIME={source}\n", encoding="utf-8")
+                identity_files.append(path)
+            originals = {
+                compatibility: compatibility.read_bytes(),
+                **{path: path.read_bytes() for path in identity_files},
+            }
+
+            reload_calls = {"count": 0}
+            def daemon_reload():
+                reload_calls["count"] += 1
+                if reload_calls["count"] == 1:
+                    raise RuntimeError("simulated daemon-reload failure")
+
+            config = ProductionControlServerConfig(
+                harness_state_root=root / "state",
+                releases_root=releases,
+                runtime_link=link,
+                runtime_compatibility_manifest=compatibility,
+                operational_identity_files=tuple(identity_files),
+                job_search_root=root / "state",
+            )
+            config.harness_state_root.mkdir()
+            backend = CanonicalProductionControlBackend(
+                config, daemon_reload=daemon_reload
+            )
+            backend._release = lambda head: SimpleNamespace(
+                manifest_sha256=target_manifest
+            )
+            request = self._request(
+                action=SYNC_OPERATIONAL_RUNTIME_IDENTITY,
+                source=source,
+                target=target,
+                target_manifest=target_manifest,
+                parameters={
+                    "predecessor_runtime_source_head": source,
+                    "target_runtime_source_head": target,
+                },
+            )
+            outcome = backend._sync_runtime_identity(request)
+            self.assertEqual(outcome.status, "ROLLED_BACK")
+            self.assertEqual(
+                outcome.result_class,
+                "OPERATIONAL_RUNTIME_IDENTITY_ROLLED_BACK",
+            )
+            self.assertTrue(outcome.effect["rollback_verified"])
+            self.assertEqual(reload_calls["count"], 2)
+            for path, raw in originals.items():
+                self.assertEqual(path.read_bytes(), raw)
 
 
 class ProductionControlP4LineageTests(unittest.TestCase):
