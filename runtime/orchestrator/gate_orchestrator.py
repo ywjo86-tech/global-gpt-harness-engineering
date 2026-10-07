@@ -90,6 +90,54 @@ def _canonical_hash(value: object) -> str:
     return _sha(canonical_json_bytes(value))
 
 
+def _replay_sealed_pre_result_transition(
+    harness_root: str | Path, *, package_root: Path, project_id: str, gate_id: str,
+    lv_id: str, run_id: str, plan_sha256: str, branch: str, baseline_head: str,
+    current_head: str, owned_files: list[str], completion_conditions: list[str],
+) -> dict[str, Any]:
+    manifest_path = package_root / "package.manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise GateOrchestrationError("sealed recovery package manifest is missing or unsafe")
+    try:
+        persisted_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GateOrchestrationError("sealed recovery package manifest is malformed") from exc
+    candidate = persisted_manifest.get("production_transition")
+    if (not isinstance(candidate, dict)
+            or candidate.get("project_id") != project_id
+            or candidate.get("gate_id") != gate_id
+            or candidate.get("lv_id") != lv_id
+            or candidate.get("run_id") != run_id
+            or candidate.get("current_head") != current_head
+            or candidate.get("plan_sha256") != plan_sha256
+            or candidate.get("branch") != branch
+            or candidate.get("baseline_head") != baseline_head
+            or not isinstance(candidate.get("approval_event_id"), str)
+            or not candidate.get("approval_event_id")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(candidate.get("predecessor_completion_digest") or ""))):
+        raise GateOrchestrationError("sealed recovery package transition binding drift")
+    from .active_transition import activate_canonical_lv_transition
+    replay = activate_canonical_lv_transition(
+        harness_root,
+        project_id=project_id,
+        gate_id=gate_id,
+        lv_id=lv_id,
+        run_id=run_id,
+        approval_event_id=str(candidate["approval_event_id"]),
+        plan_sha256=plan_sha256,
+        branch=branch,
+        baseline_head=baseline_head,
+        current_head=current_head,
+        predecessor_digest=str(candidate["predecessor_completion_digest"]),
+        owned_files=owned_files,
+        completion_conditions=completion_conditions,
+        replay_existing_only=True,
+    )
+    if replay != candidate:
+        raise GateOrchestrationError("sealed recovery transition/package binding drift")
+    return replay
+
+
 def _review_canonical_state_for_package(
     manifest: Mapping[str, Any],
     worker_payload: Mapping[str, Any],
@@ -3189,22 +3237,41 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                     or not re.fullmatch(r"[0-9a-f]{64}", str(lineage.get("predecessor_digest") or ""))
                 ):
                     raise GateOrchestrationError("sealed project source lineage is required")
-                from .active_transition import activate_canonical_lv_transition
-                transition_record = activate_canonical_lv_transition(
-                    harness_root,
-                    project_id=plan.project_id,
-                    gate_id=gate_id,
-                    lv_id=lv_id,
-                    run_id=lv_run_id,
-                    approval_event_id=str(getattr(auth, "authorization_id", "")),
-                    plan_sha256=plan.canonical_plan_sha256,
-                    branch=branch,
-                    baseline_head=head,
-                    current_head=observed_head,
-                    predecessor_digest=str(lineage["predecessor_digest"]),
-                    owned_files=list(auth.owned_files_by_lv.get(lv_id, [])),
-                    completion_conditions=list(selected_lv.completion_criteria),
-                )
+                if lv_resume and lineage.get("lineage_kind") == "SEALED_PRE_RESULT_PARTIAL_RECOVERY":
+                    if (lineage.get("predecessor_lv") != lv_id
+                            or lineage.get("predecessor_run_id") != lv_run_id):
+                        raise GateOrchestrationError("sealed recovery transition lineage identity mismatch")
+                    transition_record = _replay_sealed_pre_result_transition(
+                        harness_root,
+                        package_root=lv_package_root,
+                        project_id=plan.project_id,
+                        gate_id=gate_id,
+                        lv_id=lv_id,
+                        run_id=lv_run_id,
+                        plan_sha256=plan.canonical_plan_sha256,
+                        branch=branch,
+                        baseline_head=head,
+                        current_head=observed_head,
+                        owned_files=list(auth.owned_files_by_lv.get(lv_id, [])),
+                        completion_conditions=list(selected_lv.completion_criteria),
+                    )
+                else:
+                    from .active_transition import activate_canonical_lv_transition
+                    transition_record = activate_canonical_lv_transition(
+                        harness_root,
+                        project_id=plan.project_id,
+                        gate_id=gate_id,
+                        lv_id=lv_id,
+                        run_id=lv_run_id,
+                        approval_event_id=str(getattr(auth, "authorization_id", "")),
+                        plan_sha256=plan.canonical_plan_sha256,
+                        branch=branch,
+                        baseline_head=head,
+                        current_head=observed_head,
+                        predecessor_digest=str(lineage["predecessor_digest"]),
+                        owned_files=list(auth.owned_files_by_lv.get(lv_id, [])),
+                        completion_conditions=list(selected_lv.completion_criteria),
+                    )
         context = {"project_id": plan.project_id, "gate_id": gate_id, "lv_id": lv_id, "run_id": lv_run_id,
                    "plan_sha256": plan.canonical_plan_sha256, "requirements_sha256": requirements_sha256,
                    "branch": branch, "head": observed_head, "resume": lv_resume,

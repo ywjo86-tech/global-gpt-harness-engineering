@@ -22,7 +22,8 @@ def activate_canonical_lv_transition(harness_root: str | Path, *, project_id: st
                                     lv_id: str, run_id: str, approval_event_id: str,
                                     plan_sha256: str, branch: str, baseline_head: str,
                                     current_head: str, predecessor_digest: str,
-                                    owned_files: list[str], completion_conditions: list[str]) -> dict[str, Any]:
+                                    owned_files: list[str], completion_conditions: list[str],
+                                    replay_existing_only: bool = False) -> dict[str, Any]:
     if not all(isinstance(x, str) and x for x in (project_id, gate_id, lv_id, run_id, approval_event_id, plan_sha256, branch, baseline_head, current_head, predecessor_digest)):
         raise ActiveTransitionError("transition binding is incomplete")
     payload: dict[str, Any] = {
@@ -48,6 +49,8 @@ def activate_canonical_lv_transition(harness_root: str | Path, *, project_id: st
             # Preserve the historical active transition and seal a distinct
             # canonical record for the next LV in the same run.
             target = root / f"{gate_id}-{run_id}-{lv_id}-active-transition.json"
+    if replay_existing_only and not target.exists():
+        raise ActiveTransitionError("existing transition artifact is required for replay")
     if target.exists():
         if target.is_symlink() or not target.is_file():
             raise ActiveTransitionError("existing transition artifact is unsafe")

@@ -77,6 +77,60 @@ class GateOrchestratorTests(unittest.TestCase):
         unchanged = _review_canonical_state_for_package(manifest, mismatched, override)
         self.assertEqual(unchanged["checkpoint_commit"], checkpoint)
 
+    def test_sealed_pre_result_replay_preserves_historical_transition_identity(self) -> None:
+        from runtime.orchestrator.active_transition import activate_canonical_lv_transition
+        from runtime.orchestrator.gate_orchestrator import _replay_sealed_pre_result_transition
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory)
+            package_root = harness / "package"
+            package_root.mkdir()
+            historical = activate_canonical_lv_transition(
+                harness,
+                project_id="project-one", gate_id="GATE-1", lv_id="TASK-006", run_id="run-task-006",
+                approval_event_id="APR-HISTORICAL", plan_sha256="a" * 64, branch="main",
+                baseline_head="b" * 40, current_head="c" * 40, predecessor_digest="d" * 64,
+                owned_files=["owned.py"], completion_conditions=["PASS"],
+            )
+            (package_root / "package.manifest.json").write_text(
+                json.dumps({"production_transition": historical}, sort_keys=True), encoding="utf-8"
+            )
+            replay = _replay_sealed_pre_result_transition(
+                harness,
+                package_root=package_root, project_id="project-one", gate_id="GATE-1",
+                lv_id="TASK-006", run_id="run-task-006", plan_sha256="a" * 64,
+                branch="main", baseline_head="b" * 40, current_head="c" * 40,
+                owned_files=["owned.py"], completion_conditions=["PASS"],
+            )
+            self.assertEqual(replay, historical)
+            self.assertEqual(replay["approval_event_id"], "APR-HISTORICAL")
+            self.assertEqual(replay["predecessor_completion_digest"], "d" * 64)
+
+            tampered = dict(historical)
+            tampered["approval_event_id"] = "APR-NEW"
+            (package_root / "package.manifest.json").write_text(
+                json.dumps({"production_transition": tampered}, sort_keys=True), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(Exception, "conflict|binding drift"):
+                _replay_sealed_pre_result_transition(
+                    harness,
+                    package_root=package_root, project_id="project-one", gate_id="GATE-1",
+                    lv_id="TASK-006", run_id="run-task-006", plan_sha256="a" * 64,
+                    branch="main", baseline_head="b" * 40, current_head="c" * 40,
+                    owned_files=["owned.py"], completion_conditions=["PASS"],
+                )
+
+    def test_active_transition_replay_requires_existing_artifact(self) -> None:
+        from runtime.orchestrator.active_transition import ActiveTransitionError, activate_canonical_lv_transition
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ActiveTransitionError, "required for replay"):
+                activate_canonical_lv_transition(
+                    directory,
+                    project_id="project-one", gate_id="GATE-1", lv_id="TASK-006", run_id="missing-run",
+                    approval_event_id="APR-HISTORICAL", plan_sha256="a" * 64, branch="main",
+                    baseline_head="b" * 40, current_head="c" * 40, predecessor_digest="d" * 64,
+                    owned_files=["owned.py"], completion_conditions=["PASS"], replay_existing_only=True,
+                )
+
     def test_recovery_gateway_retry_id_reissues_only_failed_subexecution(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _recovery_gateway_retry_id
         with tempfile.TemporaryDirectory() as directory:
