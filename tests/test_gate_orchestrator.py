@@ -131,6 +131,19 @@ class GateOrchestratorTests(unittest.TestCase):
                     owned_files=["owned.py"], completion_conditions=["PASS"], replay_existing_only=True,
                 )
 
+    def test_production_adapters_do_not_capture_undefined_branch_name(self) -> None:
+        import ast
+        import inspect
+        import textwrap
+        from runtime.orchestrator.gate_orchestrator import _production_adapters
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(_production_adapters)))
+        bare_branch_loads = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id == "branch"
+        ]
+        self.assertEqual(bare_branch_loads, [])
+
     def test_recovery_gateway_retry_id_reissues_only_failed_subexecution(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _recovery_gateway_retry_id
         with tempfile.TemporaryDirectory() as directory:

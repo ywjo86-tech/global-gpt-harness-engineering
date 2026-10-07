@@ -1640,7 +1640,7 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                     contract_summary={"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,
                                       "canonical_plan_sha256":plan.canonical_plan_sha256},
                     state_snapshot=_recovery_worker_state_snapshot(
-                        context, expected_branch=branch, actual_head=actual_head,
+                        context, expected_branch=str(context["branch"]), actual_head=actual_head,
                     ),
                     extra_context={"execution_mode":"production",
                                    "execution_backend":(
