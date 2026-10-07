@@ -137,6 +137,10 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
         reason = "registered worker failed (production): canonical Worker authority blocked: pre-collected Codex readiness evidence is required"
         self.assertEqual(_failure_class(reason), "PROVIDER_FAILURE")
 
+    def test_07c_completed_lv_handoff_validation_is_artifact_failure(self):
+        reason = "completed LV HANDOFF evidence is missing or unsafe"
+        self.assertEqual(_failure_class(reason), "ARTIFACT_CONTRACT_FAILURE")
+
     def test_08_user_approval_wait_is_not_bypassed(self):
         with tempfile.TemporaryDirectory() as d:
             sup = self.supervisor(d, gates=["G1"])

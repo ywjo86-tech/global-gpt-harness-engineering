@@ -132,6 +132,7 @@ def _failure_class(reason: object) -> str:
         "post-result recovery checkpoint", "verified prior review lineage",
         "owned Python test target is missing or unsafe",
         "capability evidence is missing from sealed HANDOFF",
+        "completed LV HANDOFF evidence is missing or unsafe",
         "read-only static validation failed",
         "LV preview requires an active canonical Gate state",
         "canonical binding mismatch",
