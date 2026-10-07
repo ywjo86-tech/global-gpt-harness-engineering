@@ -43,7 +43,9 @@ from .production_run_authority import (
 )
 from .recovery_contract import (
     RecoveryError,
+    attempt_directory,
     canonical_recovery_binding,
+    prepare_incomplete_recovery_retry,
     prepare_pre_result_partial_recovery,
 )
 from .runtime_release import RuntimeReleaseError, verify_runtime_release
@@ -325,6 +327,91 @@ def _seal_exact_pre_result_recovery(
     return prepared
 
 
+def _advance_terminal_incomplete_recovery(
+    state_root: Path, prepared: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Advance only a materialized recovery attempt proven terminal by durable successor state."""
+    current = dict(prepared)
+    source = current.get("source")
+    if not isinstance(source, Mapping):
+        raise FullPlanRecoverySuccessorError("sealed recovery source evidence is incomplete")
+    while True:
+        recovery = current.get("recovery")
+        checkpoint = current.get("checkpoint")
+        if not isinstance(recovery, Mapping) or not isinstance(checkpoint, Mapping):
+            raise FullPlanRecoverySuccessorError("sealed recovery control evidence is incomplete")
+        attempt = recovery.get("recovery_attempt")
+        if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt <= 0:
+            raise FullPlanRecoverySuccessorError("sealed recovery attempt is invalid")
+        run_root = state_root / "_workspace" / "orchestration-runs" / str(recovery.get("run_id") or "")
+        attempt_root = run_root / attempt_directory(attempt)
+        package_path = attempt_root / "package.json"
+        if package_path.is_file() and not package_path.is_symlink():
+            try:
+                package_probe = json.loads(package_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise FullPlanRecoverySuccessorError("occupied recovery attempt package is malformed") from exc
+            if package_probe.get("lv_id") != recovery.get("lv_id"):
+                attempt_root = run_root / f"{attempt_directory(attempt)}-{recovery.get('lv_id')}"
+                package_path = attempt_root / "package.json"
+        preflight_path = attempt_root / "preflight.json"
+        request_path = attempt_root / "worker.request.json"
+        worker_result = attempt_root / "worker.result.json"
+        registered_result = attempt_root / "registered.worker.result.json"
+        if not all(path.is_file() and not path.is_symlink() for path in (package_path, preflight_path, request_path)):
+            return current
+        if any(path.exists() or path.is_symlink() for path in (worker_result, registered_result)):
+            return current
+
+        state_dir = state_root / "_workspace" / "production-full-plan" / str(recovery.get("project_id") or "")
+        matching: list[dict[str, Any]] = []
+        if state_dir.is_dir() and not state_dir.is_symlink():
+            for state_path in sorted(state_dir.glob("*/state.json")):
+                if state_path.is_symlink() or not state_path.is_file():
+                    continue
+                try:
+                    state = json.loads(state_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, json.JSONDecodeError):
+                    continue
+                binding = state.get("recovery_successor") if isinstance(state, dict) else None
+                if (
+                    isinstance(binding, Mapping)
+                    and binding.get("recovery_id") == recovery.get("recovery_id")
+                    and binding.get("recovery_record_hash") == recovery.get("record_hash")
+                ):
+                    matching.append(state)
+        if not matching:
+            return current
+        terminal = [
+            state for state in matching
+            if state.get("state") == "BLOCKED"
+            and state.get("terminal_reason") == "RETRY_BUDGET_EXHAUSTED"
+            and state.get("last_semantic_event") == "DEAD_LETTER"
+            and state.get("lease") is None
+        ]
+        if len(terminal) != len(matching):
+            raise FullPlanRecoverySuccessorError(
+                "occupied recovery attempt still has non-terminal successor authority"
+            )
+        recovery_root = state_root / "_workspace" / "global-gate" / str(recovery["project_id"]) / "recovery"
+        record_path = recovery_root / f"{recovery['recovery_id']}.json"
+        checkpoint_path = recovery_root / f"{recovery['recovery_id']}.checkpoint.json"
+        try:
+            advanced = prepare_incomplete_recovery_retry(
+                state_root,
+                recovery_record_path=record_path,
+                recovery_checkpoint_path=checkpoint_path,
+            )
+        except (RecoveryError, KeyError, OSError, ValueError) as exc:
+            raise FullPlanRecoverySuccessorError(
+                f"terminal incomplete recovery advance failed: {exc}"
+            ) from exc
+        current = dict(advanced)
+        current["source"] = dict(source)
+        if "source_path" in prepared:
+            current["source_path"] = prepared["source_path"]
+
+
 def _build_binding(
     *,
     predecessor_job: Mapping[str, Any],
@@ -514,6 +601,7 @@ def prepare_recovery_successor(
     prepared = _seal_exact_pre_result_recovery(
         predecessor_job, predecessor_state, current_head
     )
+    prepared = _advance_terminal_incomplete_recovery(state_root, prepared)
 
     runtime_root = Path(target_runtime_release).expanduser().absolute()
     try:

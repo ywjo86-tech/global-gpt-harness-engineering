@@ -822,6 +822,189 @@ def prepare_completion_recovery(harness_root: str | Path, *, prior_record_path: 
     return {"classification":{"status":"REJECTED_COMPLETION_UNPROVEN","completion_eligible":False,"missing_bindings":list(rejected.get("reasons",[]))},
             "recovery":record,"checkpoint":checkpoint,"next_attempt":next_attempt,"completion_evidence":[],"hard_stop":True}
 
+def prepare_incomplete_recovery_retry(
+    harness_root: str | Path, *, recovery_record_path: str | Path,
+    recovery_checkpoint_path: str | Path,
+) -> dict[str, Any]:
+    """Advance an append-only recovery whose selected attempt ended before worker.result.
+
+    The occupied attempt is retained byte-for-byte as rejected evidence.  This
+    helper never decides whether an attempt is terminal; callers must establish
+    that authority before invoking it.
+    """
+    root = Path(harness_root).resolve()
+    record_path = Path(recovery_record_path)
+    checkpoint_path = Path(recovery_checkpoint_path)
+    for path in (record_path, checkpoint_path):
+        if not path.is_file() or path.is_symlink() or root not in path.resolve().parents:
+            raise RecoveryError("unsafe incomplete recovery control artifact")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    if record.get("record_hash") != hashlib.sha256(
+        _bytes({k: v for k, v in record.items() if k != "record_hash"})
+    ).hexdigest():
+        raise RecoveryError("incomplete recovery record hash mismatch")
+    if checkpoint.get("checkpoint_sha256") != hashlib.sha256(
+        _bytes({k: v for k, v in checkpoint.items() if k != "checkpoint_sha256"})
+    ).hexdigest():
+        raise RecoveryError("incomplete recovery checkpoint hash mismatch")
+    binding = canonical_recovery_binding(record, checkpoint)
+    attempt = record.get("recovery_attempt")
+    if (
+        not isinstance(attempt, int) or isinstance(attempt, bool)
+        or checkpoint.get("next_attempt") != attempt
+        or attempt <= record.get("rejected_attempt", 0)
+    ):
+        raise RecoveryError("incomplete recovery attempt sequence is invalid")
+
+    run_root = root / "_workspace" / "orchestration-runs" / str(record["run_id"])
+    attempt_root = run_root / attempt_directory(attempt)
+    package_path = attempt_root / "package.json"
+    if package_path.is_file() and not package_path.is_symlink():
+        try:
+            package_probe = json.loads(package_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise RecoveryError("incomplete recovery package is malformed") from exc
+        if package_probe.get("lv_id") != record.get("lv_id"):
+            attempt_root = run_root / f"{attempt_directory(attempt)}-{record['lv_id']}"
+            package_path = attempt_root / "package.json"
+
+    preflight_path = attempt_root / "preflight.json"
+    request_path = attempt_root / "worker.request.json"
+    worker_result = attempt_root / "worker.result.json"
+    registered_result = attempt_root / "registered.worker.result.json"
+    for path in (package_path, preflight_path, request_path):
+        if not path.is_file() or path.is_symlink() or root not in path.resolve().parents:
+            raise RecoveryError("incomplete recovery attempt evidence is missing or unsafe")
+    if (
+        worker_result.exists() or worker_result.is_symlink()
+        or registered_result.exists() or registered_result.is_symlink()
+    ):
+        raise RecoveryError("incomplete recovery retry requires absent worker result")
+
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RecoveryError("incomplete recovery attempt evidence is malformed") from exc
+    if not all(isinstance(value, dict) for value in (package, preflight, request)):
+        raise RecoveryError("incomplete recovery attempt evidence must be an object")
+    package_digest = package.get("package_sha256")
+    if package_digest != hashlib.sha256(
+        _bytes({k: v for k, v in package.items() if k != "package_sha256"})
+    ).hexdigest():
+        raise RecoveryError("incomplete recovery package hash mismatch")
+    if any(package.get(key) != value for key, value in binding.items()):
+        raise RecoveryError("incomplete recovery package binding mismatch")
+    preflight_digest = preflight.get("preflight_sha256")
+    if preflight_digest != hashlib.sha256(
+        _bytes({k: v for k, v in preflight.items() if k != "preflight_sha256"})
+    ).hexdigest():
+        raise RecoveryError("incomplete recovery preflight hash mismatch")
+    if (
+        preflight.get("package_sha256") != package_digest
+        or any(preflight.get(key) != value for key, value in binding.items())
+    ):
+        raise RecoveryError("incomplete recovery preflight binding mismatch")
+
+    contract = request.get("contract_summary")
+    extra = request.get("extra_context")
+    if not isinstance(contract, dict) or not isinstance(extra, dict):
+        raise RecoveryError("incomplete recovery worker request binding is missing")
+    if any(
+        contract.get(key) != record.get(key)
+        for key in ("project_id", "gate_id", "lv_id")
+    ):
+        raise RecoveryError("incomplete recovery worker contract binding mismatch")
+    if (
+        extra.get("run_id") != record.get("run_id")
+        or extra.get("gate_id") != record.get("gate_id")
+        or extra.get("lv_id") != record.get("lv_id")
+        or extra.get("attempt") != attempt
+        or extra.get("recovery_id") != record.get("recovery_id")
+        or extra.get("recovery_source_kind") != record.get("source_binding_kind")
+        or extra.get("approval_event_id") != record.get("approval_event_id")
+    ):
+        raise RecoveryError("incomplete recovery worker request identity mismatch")
+    source_snapshot = extra.get("source_snapshot")
+    if (
+        not isinstance(source_snapshot, dict)
+        or source_snapshot.get("source_head") != record.get("current_head")
+    ):
+        raise RecoveryError("incomplete recovery source snapshot mismatch")
+
+    rejected_artifacts: dict[str, str] = {}
+    for path in (package_path, preflight_path, request_path):
+        relative = path.resolve().relative_to(root).as_posix()
+        rejected_artifacts[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    request_sha = rejected_artifacts[request_path.resolve().relative_to(root).as_posix()]
+    source_shas = record.get("source_shas")
+    if not isinstance(source_shas, dict) or not source_shas:
+        raise RecoveryError("incomplete recovery source lineage is missing")
+
+    next_attempt = attempt + 1
+    next_record = write_recovery_record(
+        root,
+        project_id=str(record["project_id"]),
+        gate_id=str(record["gate_id"]),
+        lv_id=str(record["lv_id"]),
+        run_id=str(record["run_id"]),
+        rejected_attempt=attempt,
+        rejected_artifacts=rejected_artifacts,
+        reason_code="REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+        missing_bindings=["worker.result"],
+        recovery_attempt=next_attempt,
+        approval_event_id=str(record["approval_event_id"]),
+        plan_sha256=str(record["plan_sha256"]),
+        branch=str(record["branch"]),
+        baseline_head=str(record["baseline_head"]),
+        current_head=str(record["current_head"]),
+        active_transition_sha256=str(record["active_transition_sha256"]),
+        source_shas=dict(source_shas),
+        predecessor=str(record["record_hash"]),
+        supersedes=request_sha,
+        hard_stop=True,
+        source_binding_kind=str(record.get("source_binding_kind") or "ACTIVE_TRANSITION"),
+    )
+    next_checkpoint = {
+        "schema_version": "orchestration.production-recovery-checkpoint.v1",
+        "project_id": next_record["project_id"],
+        "gate_id": next_record["gate_id"],
+        "lv_id": next_record["lv_id"],
+        "run_id": next_record["run_id"],
+        "recovery_id": next_record["recovery_id"],
+        "rejected_attempt": attempt,
+        "next_attempt": next_attempt,
+        "recovery_record_hash": next_record["record_hash"],
+        "completion_evidence": [],
+        "status": "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+        "source_binding_kind": next_record["source_binding_kind"],
+        "hard_stop": True,
+    }
+    next_checkpoint["checkpoint_sha256"] = hashlib.sha256(_bytes(next_checkpoint)).hexdigest()
+    recovery_root = (
+        root / "_workspace" / "global-gate" / str(next_record["project_id"]) / "recovery"
+    )
+    _write_once(
+        recovery_root / f"{next_record['recovery_id']}.checkpoint.json",
+        next_checkpoint,
+    )
+    return {
+        "classification": {
+            "status": "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+            "completion_eligible": False,
+            "missing_bindings": ["worker.result"],
+        },
+        "recovery": next_record,
+        "checkpoint": next_checkpoint,
+        "next_attempt": next_attempt,
+        "completion_evidence": [],
+        "hard_stop": True,
+        "rejected_attempt_root": str(attempt_root),
+    }
+
+
 def execute_recovery_attempt(harness_root: str | Path, *, recovery_record_path: str | Path,
                              recovery_checkpoint_path: str | Path,
                              worker: Any) -> dict[str, Any]:

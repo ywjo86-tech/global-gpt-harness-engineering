@@ -1,6 +1,6 @@
-import json, tempfile, unittest
+import hashlib, json, tempfile, unittest
 from pathlib import Path
-from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, write_provenance_rejection, classify_partial_attempt, prepare_partial_recovery, prepare_pre_result_partial_recovery, prepare_completion_recovery, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
+from runtime.orchestrator.recovery_contract import RecoveryError, write_recovery_record, write_provenance_rejection, classify_partial_attempt, prepare_partial_recovery, prepare_pre_result_partial_recovery, prepare_completion_recovery, prepare_incomplete_recovery_retry, execute_recovery_attempt, is_completion_eligible, canonical_recovery_binding, review_recovery_attempt, finalize_recovery_lifecycle
 from runtime.orchestrator.production_completion import write_completion_rejection
 
 class RecoveryContractTests(unittest.TestCase):
@@ -330,6 +330,64 @@ class RecoveryContractTests(unittest.TestCase):
             proc={"termination":"EXITED","exit_code":1,"broker_block":{},"governed_effect_evidence":[{"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":"TE-x","scope_ref":"settings.gradle.kts","mutation_performed":True,"security_passed":True},{"operation":"PROJECT_OWNED_FILE_WRITE","effect_id":"TE-y","scope_ref":"settings.gradle.kts","mutation_performed":False,"security_passed":False}]}; (journal/"TE-y.intent.json").write_text("{}"); (journal/"TE-y.receipt.json").write_text("{}"); xp=package_root/"executor.process.json"; xp.write_text(json.dumps(proc))
             with self.assertRaisesRegex(RecoveryError,"owned subset"):
                 prepare_pre_result_partial_recovery(root,project_root=project,package_manifest_path=mp,preflight_path=pp,worker_request_path=rp,process_path=xp,approval_event_id="APR-1",branch="main",baseline_head="b"*40)
+
+    def test_incomplete_recovery_retry_advances_append_only_and_replays(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            prior = write_recovery_record(
+                root, project_id='p', gate_id='g', lv_id='l', run_id='r', rejected_attempt=1,
+                rejected_artifacts={'source.json':'a'*64}, reason_code='REJECTED_PRE_RESULT_PARTIAL',
+                missing_bindings=['worker.result'], recovery_attempt=2, approval_event_id='e',
+                plan_sha256='b'*64, branch='main', baseline_head='c'*40, current_head='d'*40,
+                active_transition_sha256='f'*64, source_shas={'source.json':'a'*64},
+                predecessor=None, supersedes='old', source_binding_kind='PRE_RESULT_PARTIAL_SOURCE')
+            recovery = root/'_workspace'/'global-gate'/'p'/'recovery'
+            checkpoint = {
+                'schema_version':'orchestration.production-recovery-checkpoint.v1',
+                'project_id':'p','gate_id':'g','lv_id':'l','run_id':'r',
+                'recovery_id':prior['recovery_id'],'rejected_attempt':1,'next_attempt':2,
+                'recovery_record_hash':prior['record_hash'],'completion_evidence':[],
+                'status':'REJECTED_PRE_RESULT_PARTIAL','source_binding_kind':'PRE_RESULT_PARTIAL_SOURCE',
+                'hard_stop':True,
+            }
+            checkpoint['checkpoint_sha256'] = hashlib.sha256(json.dumps(
+                checkpoint, sort_keys=True, separators=(',', ':'), ensure_ascii=False
+            ).encode()).hexdigest()
+            checkpoint_path = recovery/'r-recovery-02.checkpoint.json'
+            checkpoint_path.write_text(json.dumps(checkpoint, sort_keys=True, separators=(',', ':')), encoding='utf-8')
+            binding = canonical_recovery_binding(prior, checkpoint)
+            attempt = root/'_workspace'/'orchestration-runs'/'r'/'attempt-02'; attempt.mkdir(parents=True)
+            package = {'schema_version':'orchestration.recovery-package.v1', **binding,
+                       'branch':'main','baseline_head':'c'*40,'current_head':'d'*40,
+                       'recovery_reason_code':'REJECTED_PRE_RESULT_PARTIAL',
+                       'recovery_source_kind':'PRE_RESULT_PARTIAL_SOURCE'}
+            package['package_sha256'] = hashlib.sha256(json.dumps(
+                package, sort_keys=True, separators=(',', ':'), ensure_ascii=False
+            ).encode()).hexdigest()
+            (attempt/'package.json').write_text(json.dumps(package, sort_keys=True, separators=(',', ':')), encoding='utf-8')
+            preflight = {'schema_version':'orchestration.recovery-preflight.v1', **binding,
+                         'package_sha256':package['package_sha256'],'status':'READY'}
+            preflight['preflight_sha256'] = hashlib.sha256(json.dumps(
+                preflight, sort_keys=True, separators=(',', ':'), ensure_ascii=False
+            ).encode()).hexdigest()
+            (attempt/'preflight.json').write_text(json.dumps(preflight, sort_keys=True, separators=(',', ':')), encoding='utf-8')
+            request = {'contract_summary':{'project_id':'p','gate_id':'g','lv_id':'l'},
+                       'extra_context':{'run_id':'r','gate_id':'g','lv_id':'l','attempt':2,
+                                        'recovery_id':prior['recovery_id'],
+                                        'recovery_source_kind':'PRE_RESULT_PARTIAL_SOURCE',
+                                        'approval_event_id':'e','source_snapshot':{'source_head':'d'*40}}}
+            (attempt/'worker.request.json').write_text(json.dumps(request, sort_keys=True, separators=(',', ':')), encoding='utf-8')
+            before = {p.name:p.read_bytes() for p in (attempt/'package.json', attempt/'preflight.json', attempt/'worker.request.json')}
+            args = dict(recovery_record_path=recovery/'r-recovery-02.json', recovery_checkpoint_path=checkpoint_path)
+            first = prepare_incomplete_recovery_retry(root, **args)
+            second = prepare_incomplete_recovery_retry(root, **args)
+            self.assertEqual(first, second)
+            self.assertEqual(first['next_attempt'], 3)
+            self.assertEqual(first['recovery']['predecessor'], prior['record_hash'])
+            self.assertEqual(first['recovery']['supersedes'], hashlib.sha256((attempt/'worker.request.json').read_bytes()).hexdigest())
+            self.assertEqual(before, {p.name:p.read_bytes() for p in (attempt/'package.json', attempt/'preflight.json', attempt/'worker.request.json')})
+            self.assertTrue((recovery/'r-recovery-03.json').is_file())
+            self.assertTrue((recovery/'r-recovery-03.checkpoint.json').is_file())
 
     def test_completion_rejection_advances_to_attempt_three_and_replays(self):
         with tempfile.TemporaryDirectory() as d:

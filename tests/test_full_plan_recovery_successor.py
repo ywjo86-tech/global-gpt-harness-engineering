@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from runtime.orchestrator.full_plan_recovery_successor import (
     FullPlanRecoverySuccessorError,
+    _advance_terminal_incomplete_recovery,
     _approval_proof_reference,
     _build_successor_job,
     _validated_gate_evidence_override,
@@ -77,6 +78,67 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
             validate_recovery_successor_binding(
                 tampered, project_id="proj", successor_run_id="run-successor"
             )
+
+    def test_terminal_materialized_incomplete_recovery_advances_append_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            attempt = root / "_workspace" / "orchestration-runs" / "run-lv" / "attempt-02"
+            attempt.mkdir(parents=True)
+            (attempt / "package.json").write_text(json.dumps({"lv_id": "TASK-006"}), encoding="utf-8")
+            (attempt / "preflight.json").write_text("{}", encoding="utf-8")
+            (attempt / "worker.request.json").write_text("{}", encoding="utf-8")
+            state_dir = root / "_workspace" / "production-full-plan" / "proj" / "old-successor"
+            state_dir.mkdir(parents=True)
+            state_dir.joinpath("state.json").write_text(json.dumps({
+                "state": "BLOCKED", "terminal_reason": "RETRY_BUDGET_EXHAUSTED",
+                "last_semantic_event": "DEAD_LETTER", "lease": None,
+                "recovery_successor": {"recovery_id": "rec-02", "recovery_record_hash": "a" * 64},
+            }), encoding="utf-8")
+            prepared = {
+                "recovery": {"project_id": "proj", "run_id": "run-lv", "lv_id": "TASK-006",
+                             "recovery_id": "rec-02", "record_hash": "a" * 64, "recovery_attempt": 2},
+                "checkpoint": {"checkpoint_sha256": "c" * 64},
+                "source": {"current_head": "d" * 40, "source_payload_sha256": "e" * 64},
+            }
+            advanced = {
+                "recovery": {"project_id": "proj", "run_id": "run-lv", "lv_id": "TASK-006",
+                             "recovery_id": "rec-03", "record_hash": "b" * 64, "recovery_attempt": 3},
+                "checkpoint": {"checkpoint_sha256": "f" * 64},
+                "next_attempt": 3,
+            }
+            with patch(
+                "runtime.orchestrator.full_plan_recovery_successor.prepare_incomplete_recovery_retry",
+                return_value=advanced,
+            ) as advance:
+                result = _advance_terminal_incomplete_recovery(root, prepared)
+            self.assertEqual(result["recovery"]["recovery_id"], "rec-03")
+            self.assertEqual(result["source"], prepared["source"])
+            advance.assert_called_once()
+            self.assertTrue((attempt / "worker.request.json").is_file())
+
+    def test_materialized_incomplete_recovery_refuses_nonterminal_successor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            attempt = root / "_workspace" / "orchestration-runs" / "run-lv" / "attempt-02"
+            attempt.mkdir(parents=True)
+            (attempt / "package.json").write_text(json.dumps({"lv_id": "TASK-006"}), encoding="utf-8")
+            (attempt / "preflight.json").write_text("{}", encoding="utf-8")
+            (attempt / "worker.request.json").write_text("{}", encoding="utf-8")
+            state_dir = root / "_workspace" / "production-full-plan" / "proj" / "active-successor"
+            state_dir.mkdir(parents=True)
+            state_dir.joinpath("state.json").write_text(json.dumps({
+                "state": "RUNNING", "terminal_reason": None,
+                "last_semantic_event": "WORKER_STARTED", "lease": {"owner": "worker"},
+                "recovery_successor": {"recovery_id": "rec-02", "recovery_record_hash": "a" * 64},
+            }), encoding="utf-8")
+            prepared = {
+                "recovery": {"project_id": "proj", "run_id": "run-lv", "lv_id": "TASK-006",
+                             "recovery_id": "rec-02", "record_hash": "a" * 64, "recovery_attempt": 2},
+                "checkpoint": {"checkpoint_sha256": "c" * 64},
+                "source": {"current_head": "d" * 40, "source_payload_sha256": "e" * 64},
+            }
+            with self.assertRaisesRegex(FullPlanRecoverySuccessorError, "non-terminal successor authority"):
+                _advance_terminal_incomplete_recovery(root, prepared)
 
     def test_successor_state_reuses_only_predecessor_gate_lineage(self):
         with tempfile.TemporaryDirectory() as directory:
