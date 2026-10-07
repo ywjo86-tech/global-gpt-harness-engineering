@@ -362,6 +362,103 @@ class ProductionFullPlanRunnerTests(unittest.TestCase):
             with self.assertRaises(ProductionFullPlanError): sup.close_migrated_predecessor('MIG-X','a'*64)
             with self.assertRaises(ProductionFullPlanError): sup.close_migrated_predecessor('MIG-1','b'*64)
 
+    def _seed_atomic_completion_block(self, root):
+        sup = self.supervisor(root, gates=["G1"])
+        state, _ = sup.load()
+        state["state"] = "BLOCKED"
+        state["last_error"] = "RECOVERY_SUCCESSOR_BINDING_MISMATCH"
+        state["terminal_reason"] = "PREFLIGHT_BLOCKED"
+        state["lease"] = None
+        state["queue"][0]["status"] = "BLOCKED"
+        state["queue"][0]["resume"] = True
+        return sup, sup._persist(state, {"event": "TEST_PREFLIGHT_BLOCKED"})
+
+    def _atomic_completion_result(self, gate_id, gate_run_id, resume, *, status="GATE_EXIT", lifecycles=None, result_gate=None):
+        return {
+            "status": status,
+            "transition": {"gate_exit_ready": True},
+            "lifecycles": [] if lifecycles is None else lifecycles,
+            "state": {
+                "project_id": "proj", "gate_id": result_gate or gate_id, "run_id": gate_run_id,
+                "completed_lvs": ["TASK-001", "TASK-002"],
+            },
+        }
+
+    def test_32_atomic_completion_reconcile_succeeds_without_worker_lifecycle(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup, blocked = self._seed_atomic_completion_block(d)
+            out = sup.reconcile_blocked_final_gate_completion(
+                self._atomic_completion_result,
+                expected_state_sha256=blocked["state_sha256"],
+                expected_completed_lvs=["TASK-001", "TASK-002"],
+            )
+            self.assertEqual(out["state"], "COMPLETED")
+            self.assertEqual(out["terminal_reason"], "ALL_GATES_COMPLETED")
+            self.assertEqual(out["completed_gates"], ["G1"])
+            self.assertEqual(out["queue"][0]["status"], "COMPLETED")
+            events = (Path(d)/"_workspace/production-full-plan/proj/run/events.jsonl").read_text()
+            self.assertIn('"event":"CANONICAL_COMPLETION_RECONCILED"', events)
+
+    def test_33_atomic_completion_reconcile_rejects_stale_state_sha_without_persisting(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup, blocked = self._seed_atomic_completion_block(d)
+            with self.assertRaisesRegex(ProductionFullPlanError, "CANONICAL_COMPLETION_STATE_MISMATCH"):
+                sup.reconcile_blocked_final_gate_completion(
+                    self._atomic_completion_result, expected_state_sha256="0" * 64,
+                    expected_completed_lvs=["TASK-001", "TASK-002"],
+                )
+            self.assertEqual(sup.load()[0]["state_sha256"], blocked["state_sha256"])
+
+    def test_34_atomic_completion_reconcile_rejects_wrong_reason(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup, blocked = self._seed_atomic_completion_block(d)
+            state = dict(blocked); state["last_error"] = "OTHER_FAILURE"
+            blocked = sup._persist(state, {"event": "TEST_WRONG_REASON"})
+            with self.assertRaisesRegex(ProductionFullPlanError, "blocked-state binding mismatch"):
+                sup.reconcile_blocked_final_gate_completion(
+                    self._atomic_completion_result, expected_state_sha256=blocked["state_sha256"],
+                    expected_completed_lvs=["TASK-001", "TASK-002"],
+                )
+
+    def test_35_atomic_completion_reconcile_rejects_nonempty_lifecycles(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup, blocked = self._seed_atomic_completion_block(d)
+            executor = lambda gate_id, gate_run_id, resume: self._atomic_completion_result(
+                gate_id, gate_run_id, resume, lifecycles=[{"lv_id": "TASK-002"}],
+            )
+            with self.assertRaisesRegex(ProductionFullPlanError, "Gate evidence mismatch"):
+                sup.reconcile_blocked_final_gate_completion(
+                    executor, expected_state_sha256=blocked["state_sha256"],
+                    expected_completed_lvs=["TASK-001", "TASK-002"],
+                )
+            self.assertEqual(sup.load()[0]["state_sha256"], blocked["state_sha256"])
+
+    def test_36_atomic_completion_reconcile_rejects_wrong_gate_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup, blocked = self._seed_atomic_completion_block(d)
+            executor = lambda gate_id, gate_run_id, resume: self._atomic_completion_result(
+                gate_id, gate_run_id, resume, result_gate="G2",
+            )
+            with self.assertRaisesRegex(ProductionFullPlanError, "Gate evidence mismatch"):
+                sup.reconcile_blocked_final_gate_completion(
+                    executor, expected_state_sha256=blocked["state_sha256"],
+                    expected_completed_lvs=["TASK-001", "TASK-002"],
+                )
+            self.assertEqual(sup.load()[0]["state_sha256"], blocked["state_sha256"])
+
+    def test_37_atomic_completion_reconcile_rejects_non_gate_exit(self):
+        with tempfile.TemporaryDirectory() as d:
+            sup, blocked = self._seed_atomic_completion_block(d)
+            executor = lambda gate_id, gate_run_id, resume: self._atomic_completion_result(
+                gate_id, gate_run_id, resume, status="BLOCKED",
+            )
+            with self.assertRaisesRegex(ProductionFullPlanError, "Gate evidence mismatch"):
+                sup.reconcile_blocked_final_gate_completion(
+                    executor, expected_state_sha256=blocked["state_sha256"],
+                    expected_completed_lvs=["TASK-001", "TASK-002"],
+                )
+            self.assertEqual(sup.load()[0]["state_sha256"], blocked["state_sha256"])
+
 
 if __name__ == "__main__":
     unittest.main()

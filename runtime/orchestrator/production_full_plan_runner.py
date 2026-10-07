@@ -1382,6 +1382,89 @@ class DurableFullPlanSupervisor:
         finally:
             self._release_run_lock(handle)
 
+    def reconcile_blocked_final_gate_completion(
+        self,
+        gate_executor: Callable[[str, str, bool], Mapping[str, Any]],
+        *,
+        expected_state_sha256: str,
+        expected_completed_lvs: Sequence[str],
+    ) -> dict[str, Any]:
+        """Atomically adopt a proven canonical final-Gate completion without rerunning work."""
+        if (
+            not isinstance(expected_state_sha256, str)
+            or len(expected_state_sha256) != 64
+            or any(ch not in "0123456789abcdef" for ch in expected_state_sha256)
+        ):
+            raise ProductionFullPlanError("canonical completion expected state SHA is invalid")
+        completed_lvs = list(expected_completed_lvs)
+        if not completed_lvs or any(not isinstance(lv, str) or not lv for lv in completed_lvs):
+            raise ProductionFullPlanError("canonical completion LV sequence is invalid")
+        handle = self._acquire_run_lock()
+        try:
+            state, _ = self.load()
+            if str(state.get("state_sha256") or "") != expected_state_sha256:
+                raise ProductionFullPlanError("CANONICAL_COMPLETION_STATE_MISMATCH")
+            if (
+                state.get("state") != "BLOCKED"
+                or state.get("last_error") != "RECOVERY_SUCCESSOR_BINDING_MISMATCH"
+                or state.get("terminal_reason") != "PREFLIGHT_BLOCKED"
+                or state.get("lease") is not None
+            ):
+                raise ProductionFullPlanError("canonical completion blocked-state binding mismatch")
+            candidates = [item for item in state.get("queue", []) if item.get("status") == "BLOCKED"]
+            if len(candidates) != 1:
+                raise ProductionFullPlanError("canonical completion requires exactly one blocked queue item")
+            item = candidates[0]
+            if (
+                item.get("resume") is not True
+                or item.get("gate_id") != self.gates[-1]
+                or list(state.get("completed_gates") or []) != list(self.gates[:-1])
+            ):
+                raise ProductionFullPlanError("canonical completion final-Gate binding mismatch")
+            gate_id = str(item.get("gate_id") or "")
+            gate_run_id = str(item.get("gate_run_id") or "")
+            if not gate_run_id:
+                raise ProductionFullPlanError("canonical completion Gate run identity is missing")
+            result = gate_executor(gate_id, gate_run_id, True)
+            if not isinstance(result, Mapping):
+                raise ProductionFullPlanError("canonical completion Gate result is invalid")
+            result_state = result.get("state")
+            transition = result.get("transition")
+            lifecycles = result.get("lifecycles")
+            if (
+                result.get("status") != "GATE_EXIT"
+                or lifecycles != []
+                or not isinstance(transition, Mapping)
+                or transition.get("gate_exit_ready") is not True
+                or not isinstance(result_state, Mapping)
+                or result_state.get("project_id") != self.project_id
+                or result_state.get("gate_id") != gate_id
+                or result_state.get("run_id") != gate_run_id
+                or list(result_state.get("completed_lvs") or []) != completed_lvs
+            ):
+                raise ProductionFullPlanError("canonical completion Gate evidence mismatch")
+            item["status"] = "COMPLETED"
+            item["last_error"] = None
+            if gate_id not in state["completed_gates"]:
+                state["completed_gates"].append(gate_id)
+            if state["completed_gates"] != list(self.gates):
+                raise ProductionFullPlanError("canonical completion Gate order mismatch")
+            state["state"] = "COMPLETED"
+            state["current_gate"] = None
+            state["terminal_reason"] = "ALL_GATES_COMPLETED"
+            state["last_error"] = None
+            state["lease"] = None
+            return self._persist(state, {
+                "event": "CANONICAL_COMPLETION_RECONCILED",
+                "gate_id": gate_id,
+                "gate_run_id": gate_run_id,
+                "prior_state_sha256": expected_state_sha256,
+                "completed_lvs": completed_lvs,
+                "result_digest": _digest(result),
+            })
+        finally:
+            self._release_run_lock(handle)
+
     def resume_wait(self, expected_state: str) -> dict[str, Any]:
         handle = self._acquire_run_lock()
         try:
