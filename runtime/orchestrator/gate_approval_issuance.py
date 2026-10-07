@@ -22,6 +22,9 @@ from .approved_full_plan_binding import _validate_gate_requirement_artifacts
 from .gate_approval import seal_approval_evidence, validate_approval_evidence
 from .gate_orchestrator import load_gate_plan, namespace_root
 from .project_onboarding import OnboardingRegistry, ProjectOnboardingError, validate_alias_entry
+from .recovery_contract import (
+    RecoveryError, canonical_recovery_binding, prepare_pre_result_partial_recovery,
+)
 
 SCHEMA = "orchestration.gate-approval-issuance-request.v1"
 _FIELDS = {
@@ -167,14 +170,239 @@ class GateApprovalIssuer:
                                 capture_output=True, text=True, check=False, timeout=20)
         if result.returncode:
             raise GateApprovalIssuanceError("SOURCE_BINDING_MISMATCH")
-        return result.stdout.strip()
+        return result.stdout.rstrip()
+
+    def _safe_state_file(self, relative: str) -> Path:
+        candidate = Path(relative)
+        if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        target = (self.state_root / candidate).resolve()
+        if self.state_root not in target.parents or target.is_symlink() or not target.is_file():
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        return target
+
+    @staticmethod
+    def _status_paths(status_text: str) -> list[str]:
+        paths: list[str] = []
+        for line in status_text.splitlines():
+            if len(line) < 4 or line[2] != " ":
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_STATUS_INVALID")
+            relative = line[3:]
+            if (
+                not relative
+                or " -> " in relative
+                or relative.startswith('"')
+                or Path(relative).is_absolute()
+                or ".." in Path(relative).parts
+            ):
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_STATUS_INVALID")
+            paths.append(relative)
+        if len(paths) != len(set(paths)):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_STATUS_INVALID")
+        return sorted(paths)
+
+    def _verified_recovery_renewal(
+        self, request: GateApprovalIssuanceRequest, *,
+        project_root: Path, project_id: str, plan_sha256: str,
+        actual_branch: str, actual_head: str, status_text: str,
+    ) -> dict[str, Any]:
+        if actual_branch != request.expected_branch:
+            raise GateApprovalIssuanceError("SOURCE_BINDING_MISMATCH")
+        changed = self._status_paths(status_text)
+        if not changed:
+            raise GateApprovalIssuanceError("SOURCE_BINDING_MISMATCH")
+
+        recovery_root = (
+            self.state_root / "_workspace" / "global-gate" / project_id / "recovery"
+        )
+        if recovery_root.is_symlink() or not recovery_root.is_dir():
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+
+        candidates: list[tuple[Path, dict[str, Any]]] = []
+        for path in sorted(recovery_root.glob("*.json")):
+            if path.name.endswith(".checkpoint.json"):
+                continue
+            if path.is_symlink() or not path.is_file():
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID") from exc
+            if not isinstance(raw, dict):
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+            if raw.get("schema_version") != "orchestration.production-recovery.v1":
+                continue
+            if (
+                raw.get("source_binding_kind") == "PRE_RESULT_PARTIAL_SOURCE"
+                and raw.get("project_id") == project_id
+                and raw.get("gate_id") == request.gate_id
+                and raw.get("plan_sha256") == plan_sha256
+                and raw.get("branch") == request.expected_branch
+                and raw.get("baseline_head") == request.expected_head
+                and raw.get("current_head") == actual_head
+                and raw.get("rejection_reason_code") == "REJECTED_PRE_RESULT_PARTIAL"
+                and raw.get("missing_bindings") == ["worker.result"]
+                and raw.get("hard_stop") is True
+            ):
+                candidates.append((path, raw))
+        if len(candidates) != 1:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_AMBIGUOUS")
+
+        record_path, record = candidates[0]
+        record_hash = record.get("record_hash")
+        if (
+            not isinstance(record_hash, str)
+            or not _SHA.fullmatch(record_hash)
+            or record_hash != _sha({k: v for k, v in record.items() if k != "record_hash"})
+        ):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+
+        recovery_id = record.get("recovery_id")
+        if not isinstance(recovery_id, str) or not recovery_id:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        checkpoint_path = recovery_root / f"{recovery_id}.checkpoint.json"
+        if checkpoint_path.is_symlink() or not checkpoint_path.is_file():
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        try:
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID") from exc
+        if not isinstance(checkpoint, dict):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        checkpoint_sha = checkpoint.get("checkpoint_sha256")
+        if (
+            not isinstance(checkpoint_sha, str)
+            or not _SHA.fullmatch(checkpoint_sha)
+            or checkpoint_sha != _sha({
+                k: v for k, v in checkpoint.items() if k != "checkpoint_sha256"
+            })
+            or checkpoint.get("status") != "REJECTED_PRE_RESULT_PARTIAL"
+            or checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+            or checkpoint.get("hard_stop") is not True
+        ):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        try:
+            canonical_recovery_binding(record, checkpoint)
+        except RecoveryError as exc:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID") from exc
+
+        rejected = record.get("rejected_artifacts")
+        if not isinstance(rejected, dict) or len(rejected) != 1:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        source_relative, source_file_sha = next(iter(rejected.items()))
+        if (
+            not isinstance(source_relative, str)
+            or not isinstance(source_file_sha, str)
+            or not _SHA.fullmatch(source_file_sha)
+        ):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        source_path = self._safe_state_file(source_relative)
+        if hashlib.sha256(source_path.read_bytes()).hexdigest() != source_file_sha:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        try:
+            source = json.loads(source_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID") from exc
+        if not isinstance(source, dict):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+        source_payload_sha = source.get("source_payload_sha256")
+        if (
+            source.get("schema_version") != "orchestration.pre-result-partial-source.v1"
+            or not isinstance(source_payload_sha, str)
+            or not _SHA.fullmatch(source_payload_sha)
+            or source_payload_sha != _sha({
+                k: v for k, v in source.items() if k != "source_payload_sha256"
+            })
+            or source.get("project_id") != project_id
+            or source.get("gate_id") != request.gate_id
+            or source.get("branch") != request.expected_branch
+            or source.get("baseline_head") != request.expected_head
+            or source.get("current_head") != actual_head
+            or source.get("source_head") != actual_head
+            or source.get("canonical_plan_sha256") != plan_sha256
+            or source.get("approval_event_id") != record.get("approval_event_id")
+            or source.get("hard_stop") is not True
+        ):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+
+        owned_diff = source.get("owned_diff")
+        if (
+            not isinstance(owned_diff, dict)
+            or not owned_diff
+            or sorted(owned_diff) != changed
+            or any(
+                not isinstance(digest, str) or not _SHA.fullmatch(digest)
+                for digest in owned_diff.values()
+            )
+        ):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_DIRTY_SCOPE_MISMATCH")
+        for relative, digest in owned_diff.items():
+            target = project_root / relative
+            if target.is_symlink() or not target.is_file():
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_DIRTY_SCOPE_MISMATCH")
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_DIRTY_SCOPE_MISMATCH")
+
+        source_shas = record.get("source_shas")
+        if not isinstance(source_shas, dict):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+
+        def artifact(suffix: str) -> Path:
+            matches = [
+                (relative, digest)
+                for relative, digest in source_shas.items()
+                if isinstance(relative, str) and relative.endswith(suffix)
+            ]
+            if len(matches) != 1:
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+            relative, digest = matches[0]
+            if not isinstance(digest, str) or not _SHA.fullmatch(digest):
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+            target = self._safe_state_file(relative)
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+            return target
+
+        try:
+            verified = prepare_pre_result_partial_recovery(
+                self.state_root,
+                project_root=project_root,
+                package_manifest_path=artifact("/package.manifest.json"),
+                preflight_path=artifact("/preflight/preflight.evidence.json"),
+                worker_request_path=artifact("/worker.request.json"),
+                process_path=artifact("/executor.process.json"),
+                approval_event_id=str(record.get("approval_event_id") or ""),
+                branch=request.expected_branch,
+                baseline_head=request.expected_head,
+                seal=False,
+            )
+        except (RecoveryError, OSError, subprocess.SubprocessError) as exc:
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID") from exc
+        if (
+            verified.get("verified_only") is not True
+            or verified.get("source") != source
+            or verified.get("next_attempt") != record.get("recovery_attempt")
+        ):
+            raise GateApprovalIssuanceError("RECOVERY_RENEWAL_EVIDENCE_INVALID")
+
+        return {
+            "schema_version": "orchestration.gate-approval-recovery-renewal.v1",
+            "recovery_id": recovery_id,
+            "recovery_record_hash": record_hash,
+            "recovery_checkpoint_sha256": checkpoint_sha,
+            "source_payload_sha256": source_payload_sha,
+            "source_file_sha256": source_file_sha,
+            "current_head": actual_head,
+            "dirty_files": changed,
+        }
 
     def _preflight(self, request: GateApprovalIssuanceRequest) -> tuple[dict[str, Any], str]:
         entry = self._registered_alias(request.project_alias)
         root = Path(str(entry["project_root"])).resolve(strict=True)
-        if (self._git(root, "branch", "--show-current") != request.expected_branch
-                or self._git(root, "rev-parse", "HEAD") != request.expected_head
-                or self._git(root, "status", "--porcelain")):
+        actual_branch = self._git(root, "branch", "--show-current")
+        actual_head = self._git(root, "rev-parse", "HEAD")
+        status_text = self._git(root, "status", "--porcelain=v1", "-uall")
+        if actual_branch != request.expected_branch:
             raise GateApprovalIssuanceError("SOURCE_BINDING_MISMATCH")
         mapping = load_project_mapping(root, mapping_root=self.mapping_root)
         if mapping is None or validate_mapping_sources(mapping):
@@ -184,6 +412,17 @@ class GateApprovalIssuer:
                 or plan.canonical_plan_sha256 != mapping.canonical_sha256
                 or sha256_file(mapping.canonical_source) != mapping.canonical_sha256):
             raise GateApprovalIssuanceError("PLAN_BINDING_MISMATCH")
+        recovery_renewal = None
+        if actual_head != request.expected_head or status_text:
+            recovery_renewal = self._verified_recovery_renewal(
+                request,
+                project_root=root,
+                project_id=plan.project_id,
+                plan_sha256=plan.canonical_plan_sha256,
+                actual_branch=actual_branch,
+                actual_head=actual_head,
+                status_text=status_text,
+            )
         now = datetime.now(timezone.utc)
         if not (_utc(request.issued_at) <= now < _utc(request.expires_at)):
             raise GateApprovalIssuanceError("APPROVAL_WINDOW_EXPIRED")
@@ -225,6 +464,8 @@ class GateApprovalIssuer:
             "mapping_root": str(self.mapping_root), "source_head": request.expected_head,
             "approval_ref": request.approval_ref, "evidence": sealed,
         }
+        if recovery_renewal is not None:
+            binding["recovery_renewal"] = recovery_renewal
         return binding, _sha(binding)
 
     @staticmethod
