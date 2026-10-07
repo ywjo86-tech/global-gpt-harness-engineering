@@ -1556,6 +1556,15 @@ def _publish_recovery_canonical_completion(
     if (
         record.get("record_hash") != sealed_digest(record, "record_hash")
         or control_checkpoint.get("checkpoint_sha256") != sealed_digest(control_checkpoint, "checkpoint_sha256")
+        or record.get("project_id") != plan.project_id
+        or record.get("gate_id") != plan.gate_id
+        or record.get("lv_id") != lv_id
+        or record.get("run_id") != run_id
+        or record.get("plan_sha256") != plan.canonical_plan_sha256
+        or control_checkpoint.get("project_id") != plan.project_id
+        or control_checkpoint.get("gate_id") != plan.gate_id
+        or control_checkpoint.get("lv_id") != lv_id
+        or control_checkpoint.get("run_id") != run_id
         or not isinstance(attempt, int) or isinstance(attempt, bool)
         or control_checkpoint.get("next_attempt") != attempt
         or control_checkpoint.get("recovery_id") != record.get("recovery_id")
@@ -1565,7 +1574,11 @@ def _publish_recovery_canonical_completion(
         or record.get("hard_stop") is not True or control_checkpoint.get("hard_stop") is not True
     ):
         raise GateControllerError("recovery canonical control binding mismatch")
-    for artifact, label in ((package, "package"), (preflight, "preflight"), (worker, "worker")):
+    for artifact, label in (
+        (package, "package"), (preflight, "preflight"), (worker, "worker"),
+        (review, "review"), (lifecycle_checkpoint, "lifecycle checkpoint"),
+        (lv_exit, "LV exit"), (recovery_handoff, "handoff"),
+    ):
         if any(artifact.get(key) != value for key, value in binding_fields.items()):
             raise GateControllerError(f"recovery canonical {label} binding mismatch")
     if (
@@ -1597,6 +1610,7 @@ def _publish_recovery_canonical_completion(
     if recovery_handoff.get("gate_complete"):
         if (
             not isinstance(gate_exit, Mapping)
+            or any(gate_exit.get(key) != value for key, value in binding_fields.items())
             or gate_exit.get("status") != "EXITED"
             or gate_exit.get("gate_exit_sha256") != sealed_digest(gate_exit, "gate_exit_sha256")
             or recovery_handoff.get("gate_exit_sha256") != gate_exit.get("gate_exit_sha256")
@@ -1639,7 +1653,10 @@ def _publish_recovery_canonical_completion(
         or source.get("lv_id") != lv_id
         or source.get("run_id") != run_id
         or source.get("canonical_plan_sha256") != plan.canonical_plan_sha256
+        or source.get("approval_event_id") != record.get("approval_event_id")
         or source.get("branch") != record.get("branch")
+        or source.get("baseline_head") != record.get("baseline_head")
+        or source.get("hard_stop") is not True
         or source.get("source_head") != record.get("current_head")
         or source.get("current_head") != record.get("current_head")
         or source.get("owned_files") != approved_owned
@@ -1667,8 +1684,13 @@ def _publish_recovery_canonical_completion(
         ["git", "-C", str(root), "rev-list", "--count", f"{source_head}..{current_head}"],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
+    dirty = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
     if (
-        branch != source.get("branch")
+        dirty
+        or branch != source.get("branch")
         or subprocess.run(
             ["git", "-C", str(root), "merge-base", "--is-ancestor", source_head, current_head],
             capture_output=True, text=True, check=False,
