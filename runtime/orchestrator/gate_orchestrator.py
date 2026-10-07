@@ -1481,6 +1481,301 @@ def _persist_manual_action_request(package_root: Path, payload: Mapping[str, Any
     return path
 
 
+
+def _write_exact_json_once(path: Path, payload: Mapping[str, Any], *, label: str) -> str:
+    """Create one canonical JSON artifact, or verify an exact immutable replay."""
+    data = canonical_json_bytes(payload)
+    digest = hashlib.sha256(data).hexdigest()
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != data:
+            raise GateControllerError(f"{label} replay conflict")
+        return digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError as exc:
+        raise GateControllerError(f"{label} replay conflict") from exc
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data); handle.flush(); os.fsync(handle.fileno())
+    return digest
+
+
+def _publish_recovery_canonical_completion(
+    root: Path,
+    harness_root: str | Path,
+    plan: GatePlan,
+    auth: GateAuthorization,
+    *,
+    lv_id: str,
+    run_id: str,
+    context: Mapping[str, Any],
+    recovery: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+    review: Mapping[str, Any],
+    final: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project one completed recovery attempt into canonical lifecycle lineage.
+
+    Recovery attempt evidence remains the authority.  This bridge only creates
+    the canonical ResumeStore/worker/HANDOFF projection after all recovery
+    review and lifecycle artifacts are already sealed.  Every write is
+    create-once and exact-replay only.
+    """
+    harness = Path(harness_root).resolve()
+    record = recovery.get("recovery")
+    control_checkpoint = recovery.get("checkpoint")
+    package = outcome.get("package")
+    preflight = outcome.get("preflight")
+    worker = outcome.get("worker_result")
+    lifecycle_checkpoint = final.get("checkpoint")
+    lv_exit = final.get("lv_exit")
+    recovery_handoff = final.get("handoff")
+    if not all(isinstance(item, Mapping) for item in (
+        record, control_checkpoint, package, preflight, worker,
+        review, lifecycle_checkpoint, lv_exit, recovery_handoff,
+    )):
+        raise GateControllerError("recovery canonical completion evidence is incomplete")
+
+    def sealed_digest(payload: Mapping[str, Any], field: str) -> str:
+        return hashlib.sha256(canonical_json_bytes(
+            {key: value for key, value in payload.items() if key != field}
+        )).hexdigest()
+
+    gate_exit = final.get("gate_exit")
+    attempt = record.get("recovery_attempt")
+    binding_fields = {
+        "project_id": plan.project_id, "gate_id": plan.gate_id, "lv_id": lv_id,
+        "run_id": run_id, "recovery_id": record.get("recovery_id"),
+        "attempt": attempt, "canonical_plan_sha256": plan.canonical_plan_sha256,
+        "approval_event_id": record.get("approval_event_id"),
+        "active_transition_sha256": record.get("active_transition_sha256"),
+        "recovery_record_hash": record.get("record_hash"),
+        "recovery_checkpoint_sha256": control_checkpoint.get("checkpoint_sha256"),
+        "hard_stop": True,
+    }
+    if (
+        record.get("record_hash") != sealed_digest(record, "record_hash")
+        or control_checkpoint.get("checkpoint_sha256") != sealed_digest(control_checkpoint, "checkpoint_sha256")
+        or not isinstance(attempt, int) or isinstance(attempt, bool)
+        or control_checkpoint.get("next_attempt") != attempt
+        or control_checkpoint.get("recovery_id") != record.get("recovery_id")
+        or control_checkpoint.get("recovery_record_hash") != record.get("record_hash")
+        or record.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+        or control_checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+        or record.get("hard_stop") is not True or control_checkpoint.get("hard_stop") is not True
+    ):
+        raise GateControllerError("recovery canonical control binding mismatch")
+    for artifact, label in ((package, "package"), (preflight, "preflight"), (worker, "worker")):
+        if any(artifact.get(key) != value for key, value in binding_fields.items()):
+            raise GateControllerError(f"recovery canonical {label} binding mismatch")
+    if (
+        package.get("package_sha256") != sealed_digest(package, "package_sha256")
+        or preflight.get("preflight_sha256") != sealed_digest(preflight, "preflight_sha256")
+        or preflight.get("package_sha256") != package.get("package_sha256")
+        or worker.get("worker_result_sha256") != sealed_digest(worker, "worker_result_sha256")
+        or worker.get("package_sha256") != package.get("package_sha256")
+        or worker.get("preflight_sha256") != preflight.get("preflight_sha256")
+        or worker.get("preflight_evidence_sha256") != preflight.get("preflight_sha256")
+        or review.get("review_sha256") != sealed_digest(review, "review_sha256")
+        or review.get("worker_result_sha256") != worker.get("worker_result_sha256")
+        or lifecycle_checkpoint.get("lifecycle_checkpoint_sha256") != sealed_digest(lifecycle_checkpoint, "lifecycle_checkpoint_sha256")
+        or lv_exit.get("lv_exit_sha256") != sealed_digest(lv_exit, "lv_exit_sha256")
+        or recovery_handoff.get("handoff_sha256") != sealed_digest(recovery_handoff, "handoff_sha256")
+    ):
+        raise GateControllerError("recovery canonical evidence hash lineage mismatch")
+    if review.get("verdict") != "PASS" or worker.get("status") not in {"completed", "COMPLETED"}:
+        raise GateControllerError("recovery canonical completion is not review-approved")
+    if (
+        lifecycle_checkpoint.get("status") != "CHECKPOINTED"
+        or lv_exit.get("status") != "EXITED"
+        or recovery_handoff.get("status") != "SEALED"
+        or recovery_handoff.get("lv_exit_sha256") != lv_exit.get("lv_exit_sha256")
+        or recovery_handoff.get("lifecycle_checkpoint_sha256") != lifecycle_checkpoint.get("lifecycle_checkpoint_sha256")
+        or bool(recovery_handoff.get("gate_complete")) != (not recovery_handoff.get("remaining_lvs"))
+    ):
+        raise GateControllerError("recovery canonical lifecycle binding mismatch")
+    if recovery_handoff.get("gate_complete"):
+        if (
+            not isinstance(gate_exit, Mapping)
+            or gate_exit.get("status") != "EXITED"
+            or gate_exit.get("gate_exit_sha256") != sealed_digest(gate_exit, "gate_exit_sha256")
+            or recovery_handoff.get("gate_exit_sha256") != gate_exit.get("gate_exit_sha256")
+        ):
+            raise GateControllerError("recovery canonical Gate exit binding mismatch")
+
+    source_shas = record.get("source_shas")
+    if not isinstance(source_shas, Mapping):
+        raise GateControllerError("recovery canonical source lineage is missing")
+    candidates = [
+        (str(relative), str(digest)) for relative, digest in source_shas.items()
+        if str(relative).endswith("/pre-result-partial-source.json")
+    ]
+    if len(candidates) != 1:
+        raise GateControllerError("recovery canonical source lineage is ambiguous")
+    source_relative, expected_source_file_sha = candidates[0]
+    source_path = harness / source_relative
+    if (
+        source_path.is_symlink() or not source_path.is_file()
+        or harness not in source_path.resolve().parents
+        or _file_sha(source_path) != expected_source_file_sha
+        or record.get("active_transition_sha256") != expected_source_file_sha
+    ):
+        raise GateControllerError("recovery canonical source evidence is unsafe")
+    try:
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GateControllerError("recovery canonical source evidence is malformed") from exc
+    if not isinstance(source, dict):
+        raise GateControllerError("recovery canonical source evidence is malformed")
+    source_unsigned = {key: value for key, value in source.items() if key != "source_payload_sha256"}
+    source_payload_sha = hashlib.sha256(canonical_json_bytes(source_unsigned)).hexdigest()
+    approved_owned = list(auth.owned_files_by_lv.get(lv_id, []))
+    owned_diff = source.get("owned_diff")
+    if (
+        source.get("schema_version") != "orchestration.pre-result-partial-source.v1"
+        or source.get("source_payload_sha256") != source_payload_sha
+        or source.get("project_id") != plan.project_id
+        or source.get("gate_id") != plan.gate_id
+        or source.get("lv_id") != lv_id
+        or source.get("run_id") != run_id
+        or source.get("canonical_plan_sha256") != plan.canonical_plan_sha256
+        or source.get("branch") != record.get("branch")
+        or source.get("source_head") != record.get("current_head")
+        or source.get("current_head") != record.get("current_head")
+        or source.get("owned_files") != approved_owned
+        or not isinstance(owned_diff, Mapping)
+        or set(owned_diff) != set(approved_owned)
+        or any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in owned_diff.values())
+    ):
+        raise GateControllerError("recovery canonical source binding mismatch")
+
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    current_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    source_head = str(source["source_head"])
+    changed = worker.get("changed_files")
+    committed = subprocess.run(
+        ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", current_head],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    commit_count = subprocess.run(
+        ["git", "-C", str(root), "rev-list", "--count", f"{source_head}..{current_head}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if (
+        branch != source.get("branch")
+        or subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", source_head, current_head],
+            capture_output=True, text=True, check=False,
+        ).returncode != 0
+        or commit_count != "1"
+        or worker.get("baseline_head") != source_head
+        or worker.get("current_head") != current_head
+        or worker.get("checkpoint_commit") != current_head
+        or not isinstance(changed, list) or not changed
+        or sorted(changed) != sorted(committed)
+    ):
+        raise GateControllerError("recovery canonical Git lineage mismatch")
+    validate_owned_access(auth, lv_id, changed)
+
+    canonical_root = canonical_run_root(harness, run_id=run_id, lv_id=lv_id)
+    canonical_worker = canonical_root / "worker.result.json"
+    worker_file_sha = _write_exact_json_once(canonical_worker, worker, label="recovery canonical worker result")
+
+    binding = RunBinding(
+        plan.project_id, plan.gate_id, lv_id, run_id,
+        str(context["requirements_sha256"]), plan.canonical_plan_sha256,
+        branch, source_head, str(package.get("package_sha256") or ""),
+        {str(key): str(value) for key, value in owned_diff.items()},
+    )
+    binding.validate()
+    store_key = f"{lv_id}-recovery-{hashlib.sha256(str(record.get('recovery_id') or '').encode()).hexdigest()[:12]}"
+    store = ResumeStore(harness / "_workspace" / "global-gate-resume" / store_key, binding)
+
+    routed = route_assets(
+        [AssetManifest("harness-runtime", "global", frozenset({"gate-lifecycle"}),
+                       frozenset({"execute-approved-lv"}), tuple(approved_owned))],
+        capabilities={"gate-lifecycle"}, permissions={"execute-approved-lv"}, owned_files=changed,
+    )
+    if routed["selected"] != ["harness-runtime"] or routed["substring_matching_used"] is not False:
+        raise GateControllerError("recovery canonical asset routing mismatch")
+    review_payload = dict(review)
+    review_payload["status"] = "PASS"
+    tests = worker.get("tests")
+    if not isinstance(tests, list) or not tests:
+        raise GateControllerError("recovery canonical test evidence is incomplete")
+    recovery_projection = {
+        "payload": dict(lifecycle_checkpoint),
+        "sha256": hashlib.sha256(canonical_json_bytes(lifecycle_checkpoint)).hexdigest(),
+    }
+    handoff = structured_handoff(
+        plan, auth, lv_id=lv_id, run_id=run_id, branch=branch, head=source_head,
+        completed_plan_items=list(context.get("completed_plan_items", [])) + [lv_id],
+        remaining_plan_items=list(context.get("remaining_plan_items", [])),
+        changed_files=list(changed), tests=list(tests), review=review_payload,
+        artifact_sha256=worker_file_sha, used_assets=routed["selected"], recovery=recovery_projection,
+    )
+    validate_handoff(handoff, plan, auth)
+    handoff_path = namespace_root(harness, plan.project_id, "artifact") / f"{run_id}.handoff.json"
+    _write_exact_json_once(handoff_path, handoff, label="recovery canonical HANDOFF")
+
+    package_stage = dict(package); package_stage.update(status="SEALED", exit_code=0,
+        evidence_sha256=str(package["package_sha256"]), hard_stop=True)
+    preflight_stage = dict(preflight); preflight_stage.update(status="READY", exit_code=0,
+        evidence_sha256=str(preflight["preflight_sha256"]), hard_stop=True)
+    worker_stage = dict(worker)
+    if worker_stage.get("status") != "COMPLETED":
+        worker_stage["worker_status"] = worker_stage.get("status")
+    worker_stage.update(status="COMPLETED", exit_code=0, evidence_sha256=worker_file_sha, hard_stop=True)
+    review_stage = dict(review_payload); review_stage.update(exit_code=0,
+        evidence_sha256=str(review["review_sha256"]), hard_stop=True)
+    checkpoint_stage = {"status":"CHECKPOINTED","exit_code":0,
+        "evidence_sha256":str(lifecycle_checkpoint["lifecycle_checkpoint_sha256"]),"hard_stop":True}
+    exit_stage = {"status":"EXITED","exit_code":0,
+        "evidence_sha256":str(lv_exit["lv_exit_sha256"]),"hard_stop":True}
+    handoff_stage = {"status":"SEALED","exit_code":0,
+        "evidence_sha256":str(handoff["handoff_sha256"]),"hard_stop":True}
+    expected_events = [
+        ("PACKAGE", str(package["package_sha256"]), False, package_stage, None),
+        ("PREFLIGHT", str(preflight["preflight_sha256"]), False, preflight_stage, None),
+        ("WORKER", worker_file_sha, False, worker_stage, None),
+        ("REVIEW", str(review["review_sha256"]), False, review_stage, None),
+        ("CHECKPOINT", str(lifecycle_checkpoint["lifecycle_checkpoint_sha256"]), True,
+         checkpoint_stage, dict(lifecycle_checkpoint)),
+        ("EXIT", str(lv_exit["lv_exit_sha256"]), False, exit_stage, None),
+        ("HANDOFF", str(handoff["handoff_sha256"]), False, handoff_stage, None),
+    ]
+    with store.run_lease():
+        for index, (stage, evidence, is_checkpoint, stage_payload, checkpoint_payload) in enumerate(expected_events):
+            records = store.verify()
+            if len(records) > index:
+                existing = records[index]
+                if (
+                    existing.get("lifecycle") != stage
+                    or existing.get("evidence_sha256") != evidence
+                    or existing.get("checkpoint") is not is_checkpoint
+                    or existing.get("stage_payload") != stage_payload
+                    or existing.get("checkpoint_payload") != (checkpoint_payload if is_checkpoint else None)
+                ):
+                    raise GateControllerError("recovery canonical ResumeStore replay conflict")
+                continue
+            if len(records) != index:
+                raise GateControllerError("recovery canonical ResumeStore sequence is ambiguous")
+            store.append(
+                stage, evidence, checkpoint=is_checkpoint, stage_payload=stage_payload,
+                checkpoint_payload=checkpoint_payload,
+            )
+        records = store.verify()
+        if len(records) != len(expected_events):
+            raise GateControllerError("recovery canonical ResumeStore contains unexpected events")
+    return handoff
+
+
 def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
@@ -2266,7 +2561,12 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
     def handoff(context: Mapping[str, Any]) -> dict[str, Any]:
         if state.get("recovery_mode"):
             value = state["recovery_final"]["handoff"]
-            return {"status":"SEALED","exit_code":0,"evidence_sha256":value["handoff_sha256"],"hard_stop":True}
+            canonical = _publish_recovery_canonical_completion(
+                root, harness_root, plan, auth, lv_id=lv_id, run_id=run_id, context=context,
+                recovery=recovery or {}, outcome=state["recovery_outcome"],
+                review=state["review_payload"], final=state["recovery_final"],
+            )
+            return {"status":"SEALED","exit_code":0,"evidence_sha256":canonical["handoff_sha256"],"hard_stop":True}
         prior_handoff = resumed("HANDOFF", "SEALED")
         if prior_handoff:
             target = namespace_root(harness_root, plan.project_id, "artifact") / f"{run_id}.handoff.json"
