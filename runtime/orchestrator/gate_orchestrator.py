@@ -2842,6 +2842,93 @@ def _verified_approved_baseline_satisfied_recertification(
     return record
 
 
+def _bound_recovery_successor_control(
+    harness_root: str | Path,
+    *,
+    project_id: str,
+    gate_id: str,
+    lv_id: str,
+    lv_run_id: str,
+    source_lineage: Mapping[str, Any] | None,
+    binding: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if binding is None:
+        return None
+    if (
+        not isinstance(source_lineage, Mapping)
+        or source_lineage.get("lineage_kind") != "SEALED_PRE_RESULT_PARTIAL_RECOVERY"
+        or binding.get("project_id") != project_id
+        or binding.get("gate_id") != gate_id
+        or binding.get("current_head") != source_lineage.get("current_head")
+        or binding.get("recovery_record_hash") != source_lineage.get("predecessor_digest")
+        or source_lineage.get("predecessor_lv") != lv_id
+        or source_lineage.get("predecessor_run_id") != lv_run_id
+    ):
+        raise GateOrchestrationError("bound recovery successor lineage mismatch")
+    recovery_id = str(binding.get("recovery_id") or "")
+    if not recovery_id:
+        raise GateOrchestrationError("bound recovery successor identity is missing")
+    recovery_root = Path(harness_root).resolve() / "_workspace" / "global-gate" / project_id / "recovery"
+    record_path = recovery_root / f"{recovery_id}.json"
+    checkpoint_path = recovery_root / f"{recovery_id}.checkpoint.json"
+    if (
+        record_path.is_symlink() or checkpoint_path.is_symlink()
+        or not record_path.is_file() or not checkpoint_path.is_file()
+    ):
+        raise GateOrchestrationError("bound recovery successor control evidence is missing")
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GateOrchestrationError("bound recovery successor control evidence is malformed") from exc
+    if not isinstance(record, dict) or not isinstance(checkpoint, dict):
+        raise GateOrchestrationError("bound recovery successor control evidence is malformed")
+    record_hash = hashlib.sha256(canonical_json_bytes(
+        {key: value for key, value in record.items() if key != "record_hash"}
+    )).hexdigest()
+    checkpoint_hash = hashlib.sha256(canonical_json_bytes(
+        {key: value for key, value in checkpoint.items() if key != "checkpoint_sha256"}
+    )).hexdigest()
+    attempt = record.get("recovery_attempt")
+    if (
+        record.get("record_hash") != record_hash
+        or record_hash != binding.get("recovery_record_hash")
+        or checkpoint.get("checkpoint_sha256") != checkpoint_hash
+        or checkpoint_hash != binding.get("recovery_checkpoint_sha256")
+        or record.get("recovery_id") != recovery_id
+        or checkpoint.get("recovery_id") != recovery_id
+        or checkpoint.get("recovery_record_hash") != record_hash
+        or record.get("project_id") != project_id
+        or checkpoint.get("project_id") != project_id
+        or record.get("gate_id") != gate_id
+        or checkpoint.get("gate_id") != gate_id
+        or record.get("lv_id") != lv_id
+        or checkpoint.get("lv_id") != lv_id
+        or record.get("run_id") != lv_run_id
+        or checkpoint.get("run_id") != lv_run_id
+        or record.get("current_head") != binding.get("current_head")
+        or record.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+        or checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+        or record.get("hard_stop") is not True
+        or checkpoint.get("hard_stop") is not True
+        or not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 2
+        or checkpoint.get("next_attempt") != attempt
+        or checkpoint.get("rejected_attempt") != attempt - 1
+    ):
+        raise GateOrchestrationError("bound recovery successor control binding mismatch")
+    return {
+        "classification": {
+            "status": str(checkpoint.get("status") or "RECOVERY"),
+            "completion_eligible": False,
+            "missing_bindings": list(record.get("missing_bindings") or []),
+        },
+        "recovery": record,
+        "checkpoint": checkpoint,
+        "next_attempt": attempt,
+        "hard_stop": True,
+    }
+
+
 def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness_root: str | Path,
                  approval_evidence: str | Path, requirements_sha256: str,
                  branch: str, head: str, mode: str = GATE_BY_GATE, resume: bool = False,
@@ -2861,7 +2948,8 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                  manual_action_authorizations_by_lv: Mapping[str, Mapping[str, Any]] | None = None,
                  codex_auth_readiness: Any | None = None,
                  codex_readiness_recheck_probes: Any | None = None,
-                 source_lineage: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                 source_lineage: Mapping[str, Any] | None = None,
+                 recovery_successor_binding: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Execute a complete LV lifecycle; incomplete worker handoffs are never success."""
     root, _ = _safe_project(project_root)
     plan = load_gate_plan(root, gate_id)
@@ -3294,7 +3382,17 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                 "completion_conditions": list(selected_lv.completion_criteria),
             })
         incident_recovery = None
-        if lv_resume:
+        if recovery_successor_binding is not None and lv_resume:
+            incident_recovery = _bound_recovery_successor_control(
+                harness_root,
+                project_id=plan.project_id,
+                gate_id=gate_id,
+                lv_id=lv_id,
+                lv_run_id=lv_run_id,
+                source_lineage=lineage,
+                binding=recovery_successor_binding,
+            )
+        if lv_resume and incident_recovery is None:
             incident_root = canonical_lv_path(
                 harness_root, project_id=plan.project_id, run_id=lv_run_id,
                 gate_id=plan.gate_id, lv_id=lv_id,

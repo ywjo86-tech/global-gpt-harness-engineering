@@ -17,7 +17,7 @@ from runtime.orchestrator.gate_orchestrator import (
     advance_lifecycle, compatibility_dry_run, create_gate_authorization, derive_transition,
     gate_exit_action, initial_ledger, load_gate_plan, namespace_root, onboarding_dry_run, recovery_checkpoint,
     resume_from_checkpoint, select_assets, structured_handoff, validate_authorization,
-    validate_capability_handoff_projection, validate_concurrent_ownership, validate_handoff, validate_ledger, validate_owned_access, _canonical_hash, _find_exact_resume_namespace,
+    validate_capability_handoff_projection, validate_concurrent_ownership, validate_handoff, validate_ledger, validate_owned_access, _bound_recovery_successor_control, _canonical_hash, _find_exact_resume_namespace,
 )
 from runtime.orchestrator.resume_store import ResumeStore, RunBinding
 from runtime.orchestrator.cli import main as cli_main
@@ -1417,6 +1417,48 @@ class GateOrchestratorTests(unittest.TestCase):
         result=run_gate_lifecycle({"project_id":"project","gate_id":"GATE-1","lv_id":"LV1","run_id":"run","plan_sha256":"a"*64},adapters)
         self.assertEqual(result["status"],"SYSTEM_TRANSITION")
         self.assertTrue(captured and captured[-1].get("worker_result",{}).get("capability_projection"))
+
+    def test_bound_recovery_successor_control_selects_attempt_three_and_rejects_tamper(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); project_id="proj"; gate_id="G1"; lv_id="TASK-006"; lv_run_id="run-gate-task-006"
+            recovery_id=f"{lv_run_id}-recovery-03"
+            recovery_root=root/"_workspace"/"global-gate"/project_id/"recovery"; recovery_root.mkdir(parents=True)
+            record={"schema_version":"orchestration.production-recovery.v1","recovery_id":recovery_id,
+                    "project_id":project_id,"gate_id":gate_id,"lv_id":lv_id,"run_id":lv_run_id,
+                    "rejected_attempt":2,"rejected_artifacts":{"attempt-02/worker.request.json":"a"*64},
+                    "rejection_reason_code":"REJECTED_RECOVERY_ATTEMPT_INCOMPLETE","missing_bindings":["worker.result"],
+                    "recovery_attempt":3,"approval_event_id":"APR-1","plan_sha256":"b"*64,"branch":"main",
+                    "baseline_head":"c"*40,"current_head":"d"*40,"active_transition_sha256":"e"*64,
+                    "source_binding_kind":"PRE_RESULT_PARTIAL_SOURCE","source_shas":{"source.json":"f"*64},
+                    "predecessor":"1"*64,"supersedes":"2"*64,"created_at":"2026-10-07T00:00:00Z","hard_stop":True}
+            record["record_hash"]=_canonical_hash(record)
+            checkpoint={"schema_version":"orchestration.production-recovery-checkpoint.v1","project_id":project_id,
+                        "gate_id":gate_id,"lv_id":lv_id,"run_id":lv_run_id,"recovery_id":recovery_id,
+                        "rejected_attempt":2,"next_attempt":3,"recovery_record_hash":record["record_hash"],
+                        "completion_evidence":[],"status":"REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+                        "source_binding_kind":"PRE_RESULT_PARTIAL_SOURCE","hard_stop":True}
+            checkpoint["checkpoint_sha256"]=_canonical_hash(checkpoint)
+            (recovery_root/f"{recovery_id}.json").write_text(json.dumps(record,sort_keys=True,separators=(",",":")),encoding="utf-8")
+            checkpoint_path=recovery_root/f"{recovery_id}.checkpoint.json"
+            checkpoint_path.write_text(json.dumps(checkpoint,sort_keys=True,separators=(",",":")),encoding="utf-8")
+            lineage={"lineage_kind":"SEALED_PRE_RESULT_PARTIAL_RECOVERY","current_head":"d"*40,
+                     "predecessor_digest":record["record_hash"],"predecessor_lv":lv_id,"predecessor_run_id":lv_run_id}
+            binding={"project_id":project_id,"gate_id":gate_id,"current_head":"d"*40,"recovery_id":recovery_id,
+                     "recovery_record_hash":record["record_hash"],"recovery_checkpoint_sha256":checkpoint["checkpoint_sha256"]}
+            control=_bound_recovery_successor_control(root,project_id=project_id,gate_id=gate_id,lv_id=lv_id,
+                lv_run_id=lv_run_id,source_lineage=lineage,binding=binding)
+            self.assertEqual(control["next_attempt"],3); self.assertEqual(control["recovery"]["recovery_id"],recovery_id)
+            tampered=dict(checkpoint); tampered["next_attempt"]=4
+            checkpoint_path.write_text(json.dumps(tampered,sort_keys=True,separators=(",",":")),encoding="utf-8")
+            with self.assertRaisesRegex(GateOrchestrationError,"control binding mismatch"):
+                _bound_recovery_successor_control(root,project_id=project_id,gate_id=gate_id,lv_id=lv_id,
+                    lv_run_id=lv_run_id,source_lineage=lineage,binding=binding)
+
+    def test_bound_recovery_successor_control_none_preserves_initial_recovery_path(self) -> None:
+        self.assertIsNone(_bound_recovery_successor_control(
+            self.root.parent, project_id="project-one", gate_id="G1", lv_id="LV1", lv_run_id="run",
+            source_lineage=None, binding=None,
+        ))
 
 
 if __name__ == "__main__": unittest.main()

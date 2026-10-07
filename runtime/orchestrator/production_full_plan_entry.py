@@ -1452,6 +1452,9 @@ def build_gate_executor(job: Mapping[str, Any]):
             manual_action_packages_by_lv=manual_action_packages_by_lv,
             manual_action_authorizations_by_lv=manual_action_authorizations_by_lv,
             source_lineage=source_lineage,
+            recovery_successor_binding=(
+                dict(job["recovery_successor"]) if isinstance(job.get("recovery_successor"), Mapping) else None
+            ),
         )
     return execute
 
