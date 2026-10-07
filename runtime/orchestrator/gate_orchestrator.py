@@ -1591,7 +1591,9 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                 request = WorkerRequest(project_root=str(root), task=task,
                     contract_summary={"project_id":plan.project_id,"gate_id":plan.gate_id,"lv_id":lv_id,
                                       "canonical_plan_sha256":plan.canonical_plan_sha256},
-                    state_snapshot={"branch":"sealed","head":actual_head},
+                    state_snapshot=_recovery_worker_state_snapshot(
+                        context, expected_branch=branch, actual_head=actual_head,
+                    ),
                     extra_context={"execution_mode":"production",
                                    "execution_backend":(
                                        "GPT_OPERATOR_RECOVERY_VERIFICATION" if post_result_request_gap
@@ -2455,6 +2457,17 @@ def _pre_result_partial_recovery_pending(recovery: Mapping[str, Any] | None) -> 
         and classification.get("completion_eligible") is False
         and classification.get("status") == "REJECTED_PRE_RESULT_PARTIAL"
     )
+
+
+def _recovery_worker_state_snapshot(
+    context: Mapping[str, Any], *, expected_branch: str, actual_head: str,
+) -> dict[str, str]:
+    branch = context.get("branch")
+    if not isinstance(branch, str) or branch != expected_branch:
+        raise GateControllerError("recovery worker branch binding mismatch")
+    if not isinstance(actual_head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", actual_head):
+        raise GateControllerError("recovery worker HEAD binding mismatch")
+    return {"branch": branch, "head": actual_head}
 
 
 def _workspace_has_uncommitted_changes(project_root: str | Path) -> bool:

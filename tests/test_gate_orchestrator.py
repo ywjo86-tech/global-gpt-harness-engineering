@@ -679,6 +679,23 @@ class GateOrchestratorTests(unittest.TestCase):
             result = compatibility_dry_run(self.root, "GATE-1")
         self.assertEqual(result["status"], "BLOCKED"); self.assertFalse(result["mutation_performed"])
 
+    def test_recovery_worker_state_snapshot_binds_governed_branch_and_rejects_drift(self) -> None:
+        from runtime.orchestrator.gate_controller import GateControllerError
+        from runtime.orchestrator.gate_orchestrator import _recovery_worker_state_snapshot
+
+        branch = "feature/m7-legacy-freeze-recovery-20261004"
+        head = "a" * 40
+        self.assertEqual(
+            _recovery_worker_state_snapshot(
+                {"branch": branch}, expected_branch=branch, actual_head=head,
+            ),
+            {"branch": branch, "head": head},
+        )
+        with self.assertRaisesRegex(GateControllerError, "recovery worker branch binding mismatch"):
+            _recovery_worker_state_snapshot(
+                {"branch": "sealed"}, expected_branch=branch, actual_head=head,
+            )
+
     def test_pre_result_partial_recovery_bypasses_recertification_preflight_only_for_sealed_partial(self) -> None:
         from runtime.orchestrator.gate_orchestrator import _pre_result_partial_recovery_pending
 
