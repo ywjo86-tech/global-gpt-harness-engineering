@@ -600,6 +600,16 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                 "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE",
                 "rejected_artifacts": {source_relative: source_file_sha},
                 "active_transition_sha256": source_file_sha,
+                "approval_event_id": "APR-HISTORICAL",
+                "plan_sha256": "a" * 64,
+                "rejected_attempt": 1,
+                "recovery_attempt": 2,
+                "rejection_reason_code": "REJECTED_PRE_RESULT_PARTIAL",
+                "missing_bindings": ["worker.result"],
+                "source_shas": {source_relative: source_file_sha},
+                "predecessor": None,
+                "supersedes": source_file_sha,
+                "hard_stop": True,
             }
             record["record_hash"] = digest(record)
             checkpoint = {
@@ -611,6 +621,10 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                 "run_id": lv_run,
                 "recovery_record_hash": record["record_hash"],
                 "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE",
+                "rejected_attempt": 1,
+                "next_attempt": 2,
+                "status": "REJECTED_PRE_RESULT_PARTIAL",
+                "hard_stop": True,
             }
             checkpoint["checkpoint_sha256"] = digest(checkpoint)
             recovery_root = (
@@ -711,6 +725,116 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
                     "predecessor_lv": "TASK-006",
                     "predecessor_run_id": lv_run,
                 })
+
+                attempt_root = (
+                    state_root / "_workspace" / "orchestration-runs" / lv_run / "attempt-02"
+                )
+                attempt_root.mkdir(parents=True)
+                attempt_artifacts = {
+                    "package.json": {"lv_id": "TASK-006", "attempt": 2},
+                    "preflight.json": {"lv_id": "TASK-006", "attempt": 2, "status": "READY"},
+                    "worker.request.json": {"lv_id": "TASK-006", "attempt": 2, "status": "DISPATCHED"},
+                }
+                rejected_attempt_artifacts = {}
+                for name, payload in attempt_artifacts.items():
+                    path = attempt_root / name
+                    path.write_text(
+                        json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                        encoding="utf-8",
+                    )
+                    rejected_attempt_artifacts[path.relative_to(state_root).as_posix()] = hashlib.sha256(
+                        path.read_bytes()
+                    ).hexdigest()
+                request_sha = rejected_attempt_artifacts[
+                    (attempt_root / "worker.request.json").relative_to(state_root).as_posix()
+                ]
+                chained_id = "recovery-test-2"
+                chained_record = dict(record)
+                chained_record.pop("record_hash")
+                chained_record.update({
+                    "recovery_id": chained_id,
+                    "rejected_attempt": 2,
+                    "recovery_attempt": 3,
+                    "rejection_reason_code": "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+                    "rejected_artifacts": rejected_attempt_artifacts,
+                    "predecessor": record["record_hash"],
+                    "supersedes": request_sha,
+                })
+                chained_record["record_hash"] = digest(chained_record)
+                chained_checkpoint = {
+                    "schema_version": "orchestration.production-recovery-checkpoint.v1",
+                    "recovery_id": chained_id,
+                    "project_id": "proj",
+                    "gate_id": "G1",
+                    "lv_id": "TASK-006",
+                    "run_id": lv_run,
+                    "recovery_record_hash": chained_record["record_hash"],
+                    "source_binding_kind": "PRE_RESULT_PARTIAL_SOURCE",
+                    "rejected_attempt": 2,
+                    "next_attempt": 3,
+                    "status": "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE",
+                    "hard_stop": True,
+                }
+                chained_checkpoint["checkpoint_sha256"] = digest(chained_checkpoint)
+                (recovery_root / f"{chained_id}.json").write_text(
+                    json.dumps(chained_record, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+                (recovery_root / f"{chained_id}.checkpoint.json").write_text(
+                    json.dumps(chained_checkpoint, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+                chained_binding = dict(recovery_binding)
+                chained_binding.update({
+                    "recovery_id": chained_id,
+                    "recovery_record_hash": chained_record["record_hash"],
+                    "recovery_checkpoint_sha256": chained_checkpoint["checkpoint_sha256"],
+                })
+                chained_binding.pop("binding_sha256")
+                chained_binding["binding_sha256"] = digest(chained_binding)
+                chained_successor = dict(successor)
+                chained_successor.pop("authority_schema_version", None)
+                chained_successor.pop("authority_core_sha256", None)
+                chained_successor["recovery_successor"] = chained_binding
+                chained_successor["activation_binding_digest"] = chained_binding["binding_sha256"]
+                chained_successor = seal_authority_core(chained_successor)
+                chained_sup = DurableFullPlanSupervisor(
+                    state_root,
+                    project_id="proj",
+                    run_id="run-successor",
+                    gates=["G1"],
+                    authority_core_sha256=chained_successor["authority_core_sha256"],
+                )
+                chained_preview = chained_sup.build_recovery_successor_state(
+                    predecessor_state=pred_state,
+                    recovery_binding=chained_binding,
+                )
+                chained_context = {
+                    "state": chained_preview,
+                    "queue_item": chained_preview["queue"][0],
+                }
+                self.assertEqual(
+                    preflight_job(chained_successor, resume_context=chained_context)["status"],
+                    "PASS",
+                )
+                chained_lineage = _source_lineage_for_context(
+                    chained_successor, chained_context, current
+                )
+                self.assertEqual(chained_lineage, {
+                    "lineage_kind": "SEALED_PRE_RESULT_PARTIAL_RECOVERY",
+                    "current_head": current,
+                    "predecessor_digest": chained_record["record_hash"],
+                    "predecessor_lv": "TASK-006",
+                    "predecessor_run_id": lv_run,
+                })
+                request_path = attempt_root / "worker.request.json"
+                request_before = request_path.read_bytes()
+                request_path.write_text("{\"tampered\":true}", encoding="utf-8")
+                self.assertEqual(
+                    preflight_job(chained_successor, resume_context=chained_context)["reason"],
+                    "RECOVERY_SUCCESSOR_BINDING_MISMATCH",
+                )
+                request_path.write_bytes(request_before)
 
                 expired_proof = dict(proof_value)
                 expired_proof["issued_at"] = "2020-01-01T00:00:00Z"

@@ -853,6 +853,176 @@ def _source_lineage_for_context(
 
 
 
+def _digest_without_field(value: Mapping[str, Any], field: str) -> str:
+    unsigned = {key: item for key, item in value.items() if key != field}
+    return hashlib.sha256(
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _verified_recovery_artifact_path(
+    state_root: Path, relative: object, expected_sha: object,
+) -> Path | None:
+    if (
+        not isinstance(relative, str)
+        or not isinstance(expected_sha, str)
+        or not _SHA256.fullmatch(expected_sha)
+        or "\\" in relative
+    ):
+        return None
+    relative_path = Path(relative)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        return None
+    path = state_root.joinpath(*relative_path.parts)
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(state_root)
+    except (OSError, ValueError):
+        return None
+    if path.is_symlink() or not path.is_file() or sha256_file(path) != expected_sha:
+        return None
+    return path
+
+
+def _chained_pre_result_source_path(
+    state_root: Path,
+    recovery_root: Path,
+    record: Mapping[str, Any],
+    checkpoint: Mapping[str, Any],
+) -> Path | None:
+    """Verify an append-only recovery chain and return its original pre-result source."""
+    attempt = record.get("recovery_attempt")
+    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 3:
+        return None
+    identity_fields = (
+        "project_id", "gate_id", "lv_id", "run_id", "approval_event_id",
+        "plan_sha256", "branch", "baseline_head", "current_head",
+        "active_transition_sha256", "source_binding_kind",
+    )
+    chain_identity = {field: record.get(field) for field in identity_fields}
+    chain_sources = record.get("source_shas")
+    if not isinstance(chain_sources, Mapping) or not chain_sources:
+        return None
+    for relative, expected_sha in chain_sources.items():
+        if _verified_recovery_artifact_path(state_root, relative, expected_sha) is None:
+            return None
+
+    current = dict(record)
+    current_checkpoint = dict(checkpoint)
+    seen_hashes: set[str] = set()
+    while True:
+        current_hash = current.get("record_hash")
+        current_attempt = current.get("recovery_attempt")
+        if (
+            not isinstance(current_hash, str)
+            or not _SHA256.fullmatch(current_hash)
+            or current_hash in seen_hashes
+            or current_hash != _digest_without_field(current, "record_hash")
+            or not isinstance(current_attempt, int)
+            or isinstance(current_attempt, bool)
+            or current_attempt < 2
+            or current.get("rejected_attempt") != current_attempt - 1
+            or current.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+            or current.get("hard_stop") is not True
+            or any(current.get(field) != chain_identity[field] for field in identity_fields)
+            or current.get("source_shas") != chain_sources
+        ):
+            return None
+        seen_hashes.add(current_hash)
+        if (
+            current_checkpoint.get("checkpoint_sha256") != _digest_without_field(
+                current_checkpoint, "checkpoint_sha256"
+            )
+            or current_checkpoint.get("recovery_id") != current.get("recovery_id")
+            or current_checkpoint.get("recovery_record_hash") != current_hash
+            or current_checkpoint.get("rejected_attempt") != current_attempt - 1
+            or current_checkpoint.get("next_attempt") != current_attempt
+            or current_checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
+            or any(
+                current_checkpoint.get(field) != current.get(field)
+                for field in ("project_id", "gate_id", "lv_id", "run_id")
+            )
+        ):
+            return None
+
+        rejected = current.get("rejected_artifacts")
+        if current_attempt == 2:
+            if (
+                current.get("predecessor") is not None
+                or current.get("rejection_reason_code") != "REJECTED_PRE_RESULT_PARTIAL"
+                or not isinstance(rejected, Mapping)
+                or len(rejected) != 1
+            ):
+                return None
+            relative, expected_sha = next(iter(rejected.items()))
+            source_path = _verified_recovery_artifact_path(
+                state_root, relative, expected_sha
+            )
+            if (
+                source_path is None
+                or expected_sha != current.get("active_transition_sha256")
+                or chain_sources.get(relative) != expected_sha
+            ):
+                return None
+            return source_path
+
+        if (
+            current.get("rejection_reason_code") != "REJECTED_RECOVERY_ATTEMPT_INCOMPLETE"
+            or current.get("missing_bindings") != ["worker.result"]
+            or not isinstance(rejected, Mapping)
+            or len(rejected) != 3
+        ):
+            return None
+        rejected_paths = {Path(str(relative)).name: (relative, sha) for relative, sha in rejected.items()}
+        if set(rejected_paths) != {"package.json", "preflight.json", "worker.request.json"}:
+            return None
+        parents: set[Path] = set()
+        for relative, expected_sha in rejected.items():
+            verified = _verified_recovery_artifact_path(state_root, relative, expected_sha)
+            if verified is None:
+                return None
+            parents.add(Path(str(relative)).parent)
+        if len(parents) != 1:
+            return None
+        parent = next(iter(parents))
+        expected_parent = Path("_workspace") / "orchestration-runs" / str(current["run_id"])
+        expected_attempt = f"attempt-{current_attempt - 1:02d}"
+        if (
+            parent.parent != expected_parent
+            or parent.name not in {expected_attempt, f"{expected_attempt}-{current['lv_id']}"}
+            or current.get("supersedes") != rejected_paths["worker.request.json"][1]
+        ):
+            return None
+
+        predecessor_hash = current.get("predecessor")
+        if not isinstance(predecessor_hash, str) or not _SHA256.fullmatch(predecessor_hash):
+            return None
+        candidates: list[dict[str, Any]] = []
+        for candidate_path in sorted(recovery_root.glob("*.json")):
+            if candidate_path.name.endswith(".checkpoint.json") or candidate_path.is_symlink():
+                continue
+            try:
+                candidate = _load_json(candidate_path)
+            except FullPlanJobError:
+                continue
+            if candidate.get("record_hash") == predecessor_hash:
+                candidates.append(candidate)
+        if len(candidates) != 1:
+            return None
+        predecessor = candidates[0]
+        if predecessor.get("recovery_attempt") != current_attempt - 1:
+            return None
+        predecessor_checkpoint_path = recovery_root / f"{predecessor.get('recovery_id')}.checkpoint.json"
+        if predecessor_checkpoint_path.is_symlink() or not predecessor_checkpoint_path.is_file():
+            return None
+        try:
+            predecessor_checkpoint = _load_json(predecessor_checkpoint_path)
+        except FullPlanJobError:
+            return None
+        current = predecessor
+        current_checkpoint = predecessor_checkpoint
+
+
 def _verified_recovery_successor_binding(
     job: Mapping[str, Any],
     resume_context: Mapping[str, Any] | None,
@@ -976,17 +1146,11 @@ def _verified_recovery_successor_binding(
     except FullPlanJobError:
         return False
 
-    def digest_without(value: Mapping[str, Any], field: str) -> str:
-        unsigned = {key: item for key, item in value.items() if key != field}
-        return hashlib.sha256(
-            json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        ).hexdigest()
-
     if (
         record.get("record_hash") != binding["recovery_record_hash"]
-        or record.get("record_hash") != digest_without(record, "record_hash")
+        or record.get("record_hash") != _digest_without_field(record, "record_hash")
         or checkpoint.get("checkpoint_sha256") != binding["recovery_checkpoint_sha256"]
-        or checkpoint.get("checkpoint_sha256") != digest_without(checkpoint, "checkpoint_sha256")
+        or checkpoint.get("checkpoint_sha256") != _digest_without_field(checkpoint, "checkpoint_sha256")
         or record.get("recovery_id") != binding["recovery_id"]
         or checkpoint.get("recovery_id") != binding["recovery_id"]
         or checkpoint.get("recovery_record_hash") != binding["recovery_record_hash"]
@@ -999,21 +1163,24 @@ def _verified_recovery_successor_binding(
         or checkpoint.get("source_binding_kind") != "PRE_RESULT_PARTIAL_SOURCE"
     ):
         return False
-    rejected = record.get("rejected_artifacts")
-    if not isinstance(rejected, Mapping) or len(rejected) != 1:
-        return False
-    relative, expected_file_sha = next(iter(rejected.items()))
-    relative_path = Path(str(relative))
-    if relative_path.is_absolute() or ".." in relative_path.parts or "\\" in str(relative):
-        return False
-    source_path = state_root.joinpath(*relative_path.parts)
-    try:
-        resolved_source = source_path.resolve(strict=True)
-        resolved_source.relative_to(state_root)
-    except (OSError, ValueError):
-        return False
-    if source_path.is_symlink() or not source_path.is_file():
-        return False
+    recovery_attempt = record.get("recovery_attempt")
+    if isinstance(recovery_attempt, int) and not isinstance(recovery_attempt, bool) and recovery_attempt >= 3:
+        source_path = _chained_pre_result_source_path(
+            state_root, recovery_root, record, checkpoint
+        )
+        if source_path is None:
+            return False
+        expected_file_sha = str(record.get("active_transition_sha256") or "")
+    else:
+        rejected = record.get("rejected_artifacts")
+        if not isinstance(rejected, Mapping) or len(rejected) != 1:
+            return False
+        relative, expected_file_sha = next(iter(rejected.items()))
+        source_path = _verified_recovery_artifact_path(
+            state_root, relative, expected_file_sha
+        )
+        if source_path is None:
+            return False
     try:
         source = _load_json(source_path)
     except FullPlanJobError:
