@@ -11,6 +11,7 @@ from runtime.orchestrator.full_plan_recovery_successor import (
     FullPlanRecoverySuccessorError,
     _approval_proof_reference,
     _build_successor_job,
+    _validated_gate_evidence_override,
 )
 from runtime.orchestrator.production_full_plan_entry import (
     FullPlanJobError, _source_lineage_for_context, load_job, preflight_job, register_job,
@@ -290,6 +291,64 @@ class RecoverySuccessorBindingTests(unittest.TestCase):
             poisoned["recovery_successor"]["current_head"] = "f" * 40
             with self.assertRaises(Exception):
                 validate_authority_core(poisoned)
+
+            fresh_path = str(state / "fresh-approval.json")
+            with patch(
+                "runtime.orchestrator.full_plan_recovery_successor.executor_runtime_identity",
+                return_value=fake_identity,
+            ):
+                refreshed = _build_successor_job(
+                    predecessor,
+                    binding=recovery_binding,
+                    runtime_code_root=runtime,
+                    gate_evidence_override={
+                        "gate_id": "G1",
+                        "path": fresh_path,
+                        "sha256": "e" * 64,
+                    },
+                )
+            self.assertEqual(refreshed["gates"][0]["approval_evidence"], fresh_path)
+            self.assertEqual(refreshed["gates"][0]["approval_evidence_sha256"], "e" * 64)
+            self.assertEqual(
+                refreshed["execution_authority_bundle"]["gate_authorities"][0]["authority_ref"],
+                fresh_path,
+            )
+            self.assertEqual(
+                validate_authority_core(refreshed), refreshed["authority_core_sha256"]
+            )
+
+    def test_fresh_gate_evidence_validation_fails_closed_on_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            state.mkdir()
+            approval = state / "fresh-approval.json"
+            approval.write_text("{}", encoding="utf-8")
+            predecessor = {
+                "project_root": str(root / "project"),
+                "harness_root": str(state),
+                "harness_state_root": str(state),
+                "mapping_root": str(root / "mappings"),
+                "project_id": "proj",
+                "approved_plan_sha256": "4" * 64,
+                "gates": [{
+                    "gate_id": "G1",
+                    "requirements_sha256": "4" * 64,
+                    "branch": "main",
+                    "head": "b" * 40,
+                }],
+            }
+            with patch(
+                "runtime.orchestrator.full_plan_recovery_successor.validate_global_gate_bindings",
+                side_effect=ValueError("Gate approval branch mismatch"),
+            ):
+                with self.assertRaisesRegex(
+                    FullPlanRecoverySuccessorError,
+                    "fresh Gate approval evidence validation failed",
+                ):
+                    _validated_gate_evidence_override(
+                        predecessor, {"gate_id": "G1"}, approval
+                    )
 
 
     def test_preflight_rechecks_sealed_predecessor_and_recovery_source(self):

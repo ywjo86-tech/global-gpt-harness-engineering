@@ -19,6 +19,7 @@ from .execution_lifecycle_v2 import (
     _build_execution_authority_bundle,
     validate_execution_authority_bundle,
 )
+from .gate_orchestrator import validate_global_gate_bindings
 from .production_full_plan_entry import (
     FullPlanJobError,
     _approval_proof_is_fresh,
@@ -137,6 +138,67 @@ def _approval_proof_reference(
     ):
         raise FullPlanRecoverySuccessorError("approval proof binding mismatch")
     return relative.as_posix(), hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def _validated_gate_evidence_override(
+    predecessor_job: Mapping[str, Any],
+    blocked_item: Mapping[str, Any],
+    raw_path: str | Path,
+) -> dict[str, str]:
+    state_root = Path(
+        str(predecessor_job.get("harness_state_root") or predecessor_job["harness_root"])
+    ).resolve()
+    supplied = Path(raw_path).expanduser()
+    target = supplied.absolute() if supplied.is_absolute() else state_root.joinpath(*supplied.parts)
+    try:
+        resolved = target.resolve(strict=True)
+        resolved.relative_to(state_root)
+    except (OSError, ValueError) as exc:
+        raise FullPlanRecoverySuccessorError(
+            "fresh Gate approval evidence must be a regular file under Harness state root"
+        ) from exc
+    if target.is_symlink() or not target.is_file():
+        raise FullPlanRecoverySuccessorError("fresh Gate approval evidence is missing or unsafe")
+
+    gate_id = str(blocked_item.get("gate_id") or "")
+    matches = [
+        dict(item)
+        for item in predecessor_job.get("gates", [])
+        if isinstance(item, Mapping) and str(item.get("gate_id") or "") == gate_id
+    ]
+    if len(matches) != 1:
+        raise FullPlanRecoverySuccessorError(
+            "fresh Gate approval evidence target is missing or ambiguous"
+        )
+    gate = matches[0]
+    try:
+        verdict = validate_global_gate_bindings(
+            predecessor_job["project_root"],
+            gate_id,
+            requirements_sha256=str(gate["requirements_sha256"]),
+            approval_evidence=resolved,
+            branch=str(gate["branch"]),
+            head=str(gate["head"]),
+            harness_root=state_root,
+            mapping_root=predecessor_job.get("mapping_root"),
+        )
+    except (OSError, ValueError) as exc:
+        raise FullPlanRecoverySuccessorError(
+            f"fresh Gate approval evidence validation failed: {exc}"
+        ) from exc
+    if (
+        verdict.get("status") != "VALIDATED"
+        or verdict.get("project_id") != predecessor_job.get("project_id")
+        or verdict.get("gate_id") != gate_id
+        or verdict.get("requirements_sha256") != gate.get("requirements_sha256")
+        or verdict.get("plan_sha256") != predecessor_job.get("approved_plan_sha256")
+    ):
+        raise FullPlanRecoverySuccessorError("fresh Gate approval evidence binding mismatch")
+    return {
+        "gate_id": gate_id,
+        "path": str(resolved),
+        "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
+    }
 
 
 def _seal_exact_pre_result_recovery(
@@ -315,6 +377,7 @@ def _build_successor_job(
     *,
     binding: Mapping[str, Any],
     runtime_code_root: Path,
+    gate_evidence_override: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     job = copy.deepcopy(dict(predecessor_job))
     for field in ("authority_schema_version", "authority_core_sha256"):
@@ -327,6 +390,24 @@ def _build_successor_job(
     job["executor_runtime_identity"] = executor_runtime_identity(runtime_code_root)
     job["recovery_successor"] = dict(binding)
     job["activation_binding_digest"] = binding["binding_sha256"]
+
+    if gate_evidence_override is not None:
+        gate_id = str(gate_evidence_override.get("gate_id") or "")
+        matches = [
+            index
+            for index, item in enumerate(job.get("gates", []))
+            if isinstance(item, Mapping) and str(item.get("gate_id") or "") == gate_id
+        ]
+        if len(matches) != 1:
+            raise FullPlanRecoverySuccessorError(
+                "fresh Gate approval evidence target is missing or ambiguous"
+            )
+        gate = dict(job["gates"][matches[0]])
+        gate["approval_evidence"] = str(gate_evidence_override["path"])
+        gate["approval_evidence_sha256"] = str(gate_evidence_override["sha256"])
+        gates = list(job["gates"])
+        gates[matches[0]] = gate
+        job["gates"] = gates
 
     lifecycle = dict(job.get("lifecycle_binding") or {})
     if (
@@ -372,6 +453,7 @@ def prepare_recovery_successor(
     successor_run_id: str,
     approval_ref: str,
     approval_proof_path: str | Path,
+    fresh_gate_approval_evidence: str | Path | None = None,
 ) -> dict[str, Any]:
     predecessor_path = Path(predecessor_job_path).resolve()
     try:
@@ -418,6 +500,11 @@ def prepare_recovery_successor(
     proof_relative, proof_sha256 = _approval_proof_reference(
         state_root, approval_proof_path, approval_ref=approval_ref,
     )
+    gate_evidence_override = None
+    if fresh_gate_approval_evidence is not None:
+        gate_evidence_override = _validated_gate_evidence_override(
+            predecessor_job, blocked_item, fresh_gate_approval_evidence
+        )
     project = Path(str(predecessor_job["project_root"])).resolve()
     current_head = _git(project, "rev-parse", "HEAD")
     prepared = _seal_exact_pre_result_recovery(
@@ -445,7 +532,10 @@ def prepare_recovery_successor(
         target_release_source_head=release.source_head,
     )
     successor_job = _build_successor_job(
-        predecessor_job, binding=binding, runtime_code_root=runtime_root
+        predecessor_job,
+        binding=binding,
+        runtime_code_root=runtime_root,
+        gate_evidence_override=gate_evidence_override,
     )
     gates = [str(item["gate_id"]) for item in successor_job["gates"]]
     successor_supervisor = DurableFullPlanSupervisor(
@@ -497,6 +587,7 @@ def register_recovery_successor(
     successor_run_id: str,
     approval_ref: str,
     approval_proof_path: str | Path,
+    fresh_gate_approval_evidence: str | Path | None = None,
 ) -> dict[str, Any]:
     prepared = prepare_recovery_successor(
         predecessor_job_path,
@@ -505,6 +596,7 @@ def register_recovery_successor(
         successor_run_id=successor_run_id,
         approval_ref=approval_ref,
         approval_proof_path=approval_proof_path,
+        fresh_gate_approval_evidence=fresh_gate_approval_evidence,
     )
     job = prepared["successor_job"]
     predecessor_state = prepared["predecessor_state"]
