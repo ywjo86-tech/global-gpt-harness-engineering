@@ -148,6 +148,20 @@ class DiagnosticContractTests(unittest.TestCase):
                 status="OK", error_class="", payload=payload,
             )
 
+    def test_policy_fixture_remains_secure_under_umask_0002(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "root"
+            root.mkdir()
+            prior = os.umask(0o002)
+            try:
+                policy = self.write_policy(base, self.valid_policy(root))
+            finally:
+                os.umask(prior)
+            self.assertEqual(policy.stat().st_mode & 0o777, 0o600)
+            loaded = DiagnosticPolicy.load(policy)
+            self.assertEqual(loaded.roots["jarvis-assistant"], root.resolve())
+
     def test_policy_accepts_explicit_systemd_timer_unit(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -160,6 +174,7 @@ class DiagnosticContractTests(unittest.TestCase):
                 "user_services": ["ocpv2.service", "ocpv2.timer"],
                 "limits": {"max_bytes": 1024, "max_lines": 20, "timeout_seconds": 5},
             }))
+            policy.chmod(0o600)
             loaded = DiagnosticPolicy.load(policy)
             self.assertEqual(loaded.user_services, ("ocpv2.service", "ocpv2.timer"))
 

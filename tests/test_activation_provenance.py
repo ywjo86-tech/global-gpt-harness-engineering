@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-
-import pytest
+import tempfile
+import unittest
+from pathlib import Path
 
 from runtime.orchestrator.activation_provenance import (
     ActivationProvenanceError,
@@ -22,7 +23,7 @@ def _receipt():
     }
 
 
-def _record(tmp_path, message_id="msg-1", replay=False):
+def _record(tmp_path: Path, message_id="msg-1", replay=False):
     return record_ocpv2_full_plan_activation_provenance(
         tmp_path,
         receipt=_receipt(),
@@ -37,31 +38,40 @@ def _record(tmp_path, message_id="msg-1", replay=False):
     )
 
 
-def test_records_digest_bound_sidecar_without_mutating_receipt(tmp_path):
-    before = dict(_receipt())
-    path = _record(tmp_path)
-    value = json.loads(path.read_text())
-    validate_activation_provenance(value)
-    assert _receipt() == before
-    assert value["activation_digest"] == "a" * 64
-    assert value["runtime_source_head"] == "d" * 40
-    assert value["executor_component"] == "OCPV2_RUNTIME_SERVICE"
-    assert value["control_path"] == "REMOTE_FULL_PLAN_ACTIVATION"
-    assert value["replay_existing_receipt"] is False
+class ActivationProvenanceTests(unittest.TestCase):
+    def test_records_digest_bound_sidecar_without_mutating_receipt(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            before = dict(_receipt())
+            path = _record(tmp_path)
+            value = json.loads(path.read_text())
+            validate_activation_provenance(value)
+            self.assertEqual(_receipt(), before)
+            self.assertEqual(value["activation_digest"], "a" * 64)
+            self.assertEqual(value["runtime_source_head"], "d" * 40)
+            self.assertEqual(value["executor_component"], "OCPV2_RUNTIME_SERVICE")
+            self.assertEqual(value["control_path"], "REMOTE_FULL_PLAN_ACTIVATION")
+            self.assertFalse(value["replay_existing_receipt"])
+
+    def test_same_message_is_idempotent_and_different_message_gets_distinct_event(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            first = _record(tmp_path, "msg-1")
+            again = _record(tmp_path, "msg-1", replay=True)
+            second = _record(tmp_path, "msg-2", replay=True)
+            self.assertEqual(first, again)
+            self.assertNotEqual(second, first)
+            self.assertEqual(len(list(first.parent.glob("*.json"))), 2)
+
+    def test_tamper_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            path = _record(tmp_path)
+            value = json.loads(path.read_text())
+            value["runtime_source_head"] = "f" * 40
+            with self.assertRaises(ActivationProvenanceError):
+                validate_activation_provenance(value)
 
 
-def test_same_message_is_idempotent_and_different_message_gets_distinct_event(tmp_path):
-    first = _record(tmp_path, "msg-1")
-    again = _record(tmp_path, "msg-1", replay=True)
-    second = _record(tmp_path, "msg-2", replay=True)
-    assert first == again
-    assert second != first
-    assert len(list(first.parent.glob("*.json"))) == 2
-
-
-def test_tamper_fails_closed(tmp_path):
-    path = _record(tmp_path)
-    value = json.loads(path.read_text())
-    value["runtime_source_head"] = "f" * 40
-    with pytest.raises(ActivationProvenanceError):
-        validate_activation_provenance(value)
+if __name__ == "__main__":
+    unittest.main()

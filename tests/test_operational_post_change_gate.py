@@ -44,6 +44,7 @@ def write_policy(root: Path, services):
         "user_services":list(services),
         "limits":{"max_bytes":1024,"max_lines":20,"timeout_seconds":5},
     }))
+    path.chmod(0o600)
     return path
 
 

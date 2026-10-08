@@ -35,7 +35,7 @@ from .p3_canary_validate_evidence import (
     issue_p3_canary_validate_evidence,
 )
 from .p3_canary_validate_registration import P3CanaryValidateRegistrationError, register_p3_canary_validate
-from .project_onboarding import OnboardingRegistry
+from .project_onboarding import OnboardingRegistry, ProjectOnboardingError
 from .remote_control_envelope import (
     APPROVED_FULL_PLAN_ACTIVATION_KIND,
     LIFECYCLE_V2_P3_CANARY_ACTIVATION_KIND,
@@ -1003,7 +1003,16 @@ def _wire_p3_canary_validate_registration(config: base.RuntimeConfig, service):
         ):
             raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_ADMISSION_LINEAGE_MISMATCH")
         _load_p3_waiting_handoff(config, request)
-        project_root = Path.cwd().absolute()
+        try:
+            mapping_root = _mapping_root(config)
+            alias_entry = OnboardingRegistry(mapping_root / "aliases").resolve_alias(
+                request.admission_request.project_alias
+            )
+        except ProjectOnboardingError as exc:
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_PROJECT_UNAVAILABLE") from exc
+        if alias_entry is None:
+            raise SuccessorStageRuntimeError("P3_CANARY_VALIDATE_PROJECT_UNAVAILABLE")
+        project_root = Path(str(alias_entry["project_root"])).absolute()
         if (
             project_root.is_symlink()
             or not project_root.is_dir()

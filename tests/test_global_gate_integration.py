@@ -91,7 +91,13 @@ class GlobalGateIntegrationTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(project), "add", "--", ".gitignore"], check=True)
             subprocess.run(["git", "-C", str(project), "-c", "user.name=Fixture", "-c", "user.email=fixture@localhost", "commit", "-m", "ignore-venv"], check=True, capture_output=True)
             subprocess.run(["python3", "-m", "venv", "--system-site-packages", str(project / ".venv")], check=True, capture_output=True)
-            env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]))
+            # Keep this fail-closed integration fixture independent of the
+            # operator's user-local provider binaries. python3/git are system-bound.
+            env = dict(
+                os.environ,
+                PYTHONPATH=str(Path(__file__).resolve().parents[1]),
+                PATH="/usr/bin:/bin",
+            )
             argv = ["python3", "-m", "runtime.orchestrator.cli", "project-onboard", "--bootstrap", "--project-root", str(project), "--alias", "e2e-generic", "--mapping-root", str(mapping_root)]
             result = subprocess.run(argv, env=env, capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

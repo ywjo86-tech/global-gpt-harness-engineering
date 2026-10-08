@@ -216,26 +216,30 @@ class OperationsDashboardProjectionTests(unittest.TestCase):
         assert result["summary"]["waiting_approval"] == 1
 
 
-def test_current_attention_blocker_is_counted_as_dashboard_issue():
-    projection = build_operations_dashboard_projection(
-        (),
-        system_health={
-            "attention": "PASS",
-            "reconcile": "PASS",
-            "post_change": "PASS",
-            "acceptance": "ACCEPTED",
-        },
-        attention_alerts=[{
-            "kind": "USER_ATTENTION",
-            "severity": "ERROR",
-            "title": "ai-commerce / BLOCKED",
-            "detail": "GATE-001: retry budget exhausted",
-            "source_ref": "attention:" + "a" * 64,
-        }],
-        now=datetime(2026, 10, 5, 9, 0, tzinfo=timezone.utc),
-    )
+    def test_current_attention_blocker_is_counted_as_dashboard_issue(self):
+        projection = build_operations_dashboard_projection(
+            (),
+            system_health={
+                "attention": "PASS",
+                "reconcile": "PASS",
+                "post_change": "PASS",
+                "acceptance": "ACCEPTED",
+            },
+            attention_alerts=[{
+                "kind": "USER_ATTENTION",
+                "severity": "ERROR",
+                "title": "ai-commerce / BLOCKED",
+                "detail": "GATE-001: retry budget exhausted",
+                "source_ref": "attention:" + "a" * 64,
+            }],
+            now=datetime(2026, 10, 5, 9, 0, tzinfo=timezone.utc),
+        )
 
-    assert projection["summary"]["issues"] == 1
-    assert len(projection["alerts"]) == 1
-    assert projection["alerts"][0]["kind"] == "USER_ATTENTION"
-    assert projection["alerts"][0]["title"] == "ai-commerce / BLOCKED"
+        self.assertEqual(projection["summary"]["issues"], 1)
+        self.assertEqual(len(projection["alerts"]), 1)
+        self.assertEqual(projection["alerts"][0]["kind"], "USER_ATTENTION")
+        self.assertEqual(projection["alerts"][0]["title"], "ai-commerce / BLOCKED")
+
+
+if __name__ == "__main__":
+    unittest.main()

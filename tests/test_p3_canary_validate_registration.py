@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +24,7 @@ from runtime.orchestrator.p3_canary_validate_registration import (
 from runtime.orchestrator.p3_canary_validate_registration_request import (
     P3CanaryValidateRegistrationRequest,
 )
+from runtime.orchestrator.project_onboarding import build_alias_entry
 
 
 class P3CanaryValidateRegistrationTests(unittest.TestCase):
@@ -126,19 +128,28 @@ class P3CanaryValidateRegistrationTests(unittest.TestCase):
                     evidence=changed,
                 )
 
-    def test_runtime_registration_uses_committed_p3_source_without_generic_mapping(self):
+    def test_runtime_registration_resolves_project_from_alias_not_cwd(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            outer = Path(directory)
+            root = outer / "p3-project"
+            root.mkdir()
             plan = root / "docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md"
             spec = root / "docs/harness/P3_CANARY_VALIDATE_SPEC.md"
+            canonical_plan = root / "docs/DEVELOPMENT_PLAN.txt"
             plan.parent.mkdir(parents=True)
             plan.write_text("P3 validation plan\n", encoding="utf-8")
             spec.write_text("P3 validation spec\n", encoding="utf-8")
+            canonical_plan.write_text("canonical plan\n", encoding="utf-8")
             for args in (
                 ("init", "-b", "p3/test"),
                 ("config", "user.email", "test@example.invalid"),
                 ("config", "user.name", "Test"),
-                ("add", "docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md", "docs/harness/P3_CANARY_VALIDATE_SPEC.md"),
+                (
+                    "add",
+                    "docs/harness/P3_CANARY_VALIDATE_FULL_PLAN.md",
+                    "docs/harness/P3_CANARY_VALIDATE_SPEC.md",
+                    "docs/DEVELOPMENT_PLAN.txt",
+                ),
                 ("commit", "-m", "P3 authority"),
             ):
                 subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
@@ -180,7 +191,7 @@ class P3CanaryValidateRegistrationTests(unittest.TestCase):
                 "approved_policy_digest": "d" * 64,
             })
             admission = evaluate_p3_promotion_admission(admission_request, observed)
-            state = root / "state"
+            state = outer / "state"
             state.mkdir()
             evidence = issue_p3_canary_validate_evidence(
                 state_root=state,
@@ -220,11 +231,24 @@ class P3CanaryValidateRegistrationTests(unittest.TestCase):
                 "binding": binding.to_dict(),
                 "evidence": evidence.to_dict(),
             })
+            mapping_root = outer / "mapping"
+            aliases = mapping_root / "aliases"
+            aliases.mkdir(parents=True)
+            alias_entry = build_alias_entry(
+                root,
+                admission_request.project_alias,
+                canonical_plan="docs/DEVELOPMENT_PLAN.txt",
+            )
+            (aliases / f"{admission_request.project_alias}.json").write_text(
+                json.dumps(alias_entry, sort_keys=True),
+                encoding="utf-8",
+            )
             config = SimpleNamespace(
                 environment={
                     "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_ENABLED": "1",
                     "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_POLICY_REF": "P3_CANARY_VALIDATE",
                     "OCP_LIFECYCLE_V2_P3_CANARY_VALIDATE_POLICY_DIGEST": "e" * 64,
+                    "HARNESS_CONTRACT_MAPPING_ROOT": str(mapping_root),
                 },
                 state_root=state,
             )
@@ -233,7 +257,7 @@ class P3CanaryValidateRegistrationTests(unittest.TestCase):
 
             with patch.object(runtime, "_collect_p3_promotion_evidence", return_value=observed), patch.object(
                 runtime, "_load_p3_waiting_handoff", return_value={"state": "WAITING_FOR_AUTHORIZED_ACTIVATION"}
-            ), patch.object(Path, "cwd", return_value=root):
+            ):
                 composed = runtime._wire_p3_canary_validate_registration(config, service)
                 projection = composed.register_p3_canary_validate_authorized(envelope)
 
