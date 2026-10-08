@@ -89,9 +89,12 @@ def _server_config(config: base.RuntimeConfig) -> ProductionControlServerConfig:
         project_root=config.repo_root,
         environ=config.environment,
     )
+    if config.state_root is None:
+        raise ProductionControlRuntimeError("PRODUCTION_CONTROL_LIFECYCLE_STATE_ROOT_REQUIRED")
     home = Path.home()
     return ProductionControlServerConfig(
         harness_state_root=state_root,
+        lifecycle_state_root=config.state_root,
         releases_root=releases_root,
         runtime_link=home / ".local/share/global-gpt-harness/runtime-current",
         runtime_compatibility_manifest=home / ".config/gch/operational-runtime-compatibility.json",

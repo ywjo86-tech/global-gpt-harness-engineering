@@ -116,18 +116,22 @@ class ProductionControlServerConfig:
     runtime_link: Path
     runtime_compatibility_manifest: Path
     operational_identity_files: tuple[Path, ...] = ()
+    lifecycle_state_root: Path | None = None
     job_search_root: Path | None = None
     post_change_context_provider: Callable[[ProductionControlActionRequestV1], Mapping[str, Any]] | None = None
 
     def __post_init__(self) -> None:
+        lifecycle_state_root = self.lifecycle_state_root or self.harness_state_root
         for path in (
             self.harness_state_root,
+            lifecycle_state_root,
             self.releases_root,
             self.runtime_link.parent,
             self.runtime_compatibility_manifest.parent,
         ):
             if path.is_symlink():
                 raise ProductionControlActionError("production control server path unsafe")
+        object.__setattr__(self, "lifecycle_state_root", lifecycle_state_root)
         if self.job_search_root is None:
             object.__setattr__(self, "job_search_root", self.harness_state_root)
 
@@ -603,6 +607,9 @@ class CanonicalProductionControlBackend:
     def _p4_cutover(
         self, request: ProductionControlActionRequestV1
     ) -> ProductionControlBackendOutcome:
+        lifecycle_state_root = self.config.lifecycle_state_root
+        if lifecycle_state_root is None:
+            raise ProductionControlActionError("lifecycle state root unavailable")
         source = self._release(request.expected_runtime_source_head)
         target = self._release(request.target_runtime_source_head)
         if target.manifest_sha256 != request.target_runtime_manifest_sha256:
@@ -612,17 +619,17 @@ class CanonicalProductionControlBackend:
         p4_entry_digest = str(request.parameters["p4_entry_digest"])
         cutover_admission_digest = str(request.parameters["cutover_admission_digest"])
         qualification = _read_json(
-            self.config.harness_state_root
+            lifecycle_state_root
             / "p3-final-qualifications"
             / f"{admission_digest}.json"
         )
         entry = _read_json(
-            self.config.harness_state_root
+            lifecycle_state_root
             / "p4-read-only-entries"
             / f"{admission_digest}.json"
         )
         cutover_admission = _read_json(
-            self.config.harness_state_root
+            lifecycle_state_root
             / "p4-cutover-admissions"
             / f"{admission_digest}.json"
         )
@@ -644,7 +651,7 @@ class CanonicalProductionControlBackend:
         ):
             raise ProductionControlActionError("P4 lineage binding mismatch")
         refreshed_admission = prepare_p4_cutover(
-            state_root=self.config.harness_state_root,
+            state_root=lifecycle_state_root,
             runtime_link=self.config.runtime_link,
             source_release=source.release_path,
             target_release=target.release_path,
@@ -662,7 +669,7 @@ class CanonicalProductionControlBackend:
         ):
             raise ProductionControlActionError("P4 cutover admission became stale")
         result = execute_p4_cutover(
-            state_root=self.config.harness_state_root,
+            state_root=lifecycle_state_root,
             runtime_link=self.config.runtime_link,
             source_release=source.release_path,
             target_release=target.release_path,

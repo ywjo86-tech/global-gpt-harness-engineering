@@ -433,8 +433,10 @@ class ProductionControlP4LineageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             state = root / "state"
+            lifecycle_state = root / "lifecycle-state"
             releases = root / "releases"
             state.mkdir()
+            lifecycle_state.mkdir()
             releases.mkdir()
             link = root / "runtime-current"
             manifest = root / "compat.json"
@@ -467,7 +469,7 @@ class ProductionControlP4LineageTests(unittest.TestCase):
                     "target_manifest_sha256": target_manifest,
                 }),
             ):
-                path = state / directory / f"{admission}.json"
+                path = lifecycle_state / directory / f"{admission}.json"
                 path.parent.mkdir(parents=True)
                 path.write_bytes(_canonical(value))
             request = ProductionControlActionRequestV1.from_mapping({
@@ -495,6 +497,7 @@ class ProductionControlP4LineageTests(unittest.TestCase):
             backend = CanonicalProductionControlBackend(
                 ProductionControlServerConfig(
                     harness_state_root=state,
+                    lifecycle_state_root=lifecycle_state,
                     releases_root=releases,
                     runtime_link=link,
                     runtime_compatibility_manifest=manifest,
@@ -517,8 +520,10 @@ class ProductionControlP4LineageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             state = root / "state"
+            lifecycle_state = root / "lifecycle-state"
             releases = root / "releases"
             state.mkdir()
+            lifecycle_state.mkdir()
             releases.mkdir()
             link = root / "runtime-current"
             manifest = root / "compat.json"
@@ -549,7 +554,7 @@ class ProductionControlP4LineageTests(unittest.TestCase):
                     "target_manifest_sha256": target_manifest,
                 }),
             ):
-                path = state / directory / f"{admission}.json"
+                path = lifecycle_state / directory / f"{admission}.json"
                 path.parent.mkdir(parents=True)
                 path.write_bytes(_canonical(value))
             request = ProductionControlActionRequestV1.from_mapping({
@@ -577,6 +582,7 @@ class ProductionControlP4LineageTests(unittest.TestCase):
             backend = CanonicalProductionControlBackend(
                 ProductionControlServerConfig(
                     harness_state_root=state,
+                    lifecycle_state_root=lifecycle_state,
                     releases_root=releases,
                     runtime_link=link,
                     runtime_compatibility_manifest=manifest,
