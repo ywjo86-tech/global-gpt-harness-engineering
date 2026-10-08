@@ -107,7 +107,7 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
         self.assertEqual(payload["status"], "OK")
         self.assertEqual(payload["operational_health"]["status"], "HEALTHY")
 
-    def test_predecessor_probe_requires_preserved_primary_identity_and_disabled_timer(self):
+    def test_predecessor_probe_requires_preserved_primary_identity_and_active_timer(self):
         with tempfile.TemporaryDirectory() as tmp:
             predecessor = Path(tmp) / "predecessor"
             predecessor.mkdir()
@@ -120,12 +120,37 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
             }
             timer = SimpleNamespace(
                 returncode=0,
-                stdout="ActiveState=inactive\nUnitFileState=disabled\n",
+                stdout="ActiveState=active\nUnitFileState=enabled\n",
             )
             with patch.object(probe, "_show", return_value=service), patch.object(
                 runtime.subprocess, "run", return_value=timer
             ):
                 self.assertTrue(probe.serving())
+
+    def test_predecessor_probe_rejects_inactive_or_disabled_timer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            predecessor = Path(tmp) / "predecessor"
+            predecessor.mkdir()
+            probe = runtime._ReadOnlyPredecessorServiceStateProbe(predecessor)
+            service = {
+                "LoadState": "loaded",
+                "WorkingDirectory": str(predecessor),
+                "Environment": "OCP_FULL_PLAN_ACTIVATION_ENABLED=0",
+                "Result": "success",
+            }
+            for timer_state in (
+                "ActiveState=inactive\nUnitFileState=disabled\n",
+                "ActiveState=active\nUnitFileState=disabled\n",
+                "ActiveState=inactive\nUnitFileState=enabled\n",
+            ):
+                with self.subTest(timer_state=timer_state), patch.object(
+                    probe, "_show", return_value=service
+                ), patch.object(
+                    runtime.subprocess,
+                    "run",
+                    return_value=SimpleNamespace(returncode=0, stdout=timer_state),
+                ):
+                    self.assertFalse(probe.serving())
 
     def test_predecessor_probe_rejects_successor_identity_or_pythonpath_injection(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -137,7 +162,7 @@ class OCPv2SuccessorStageRuntimeP3WiringTests(unittest.TestCase):
             probe = runtime._ReadOnlyPredecessorServiceStateProbe(predecessor)
             timer = SimpleNamespace(
                 returncode=0,
-                stdout="ActiveState=inactive\nUnitFileState=disabled\n",
+                stdout="ActiveState=active\nUnitFileState=enabled\n",
             )
             for working_directory, environment in (
                 (str(successor), ""),

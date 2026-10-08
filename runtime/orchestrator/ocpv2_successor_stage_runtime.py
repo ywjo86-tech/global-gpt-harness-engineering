@@ -632,8 +632,8 @@ class _ReadOnlyPredecessorServiceStateProbe:
             if "=" in line
         )
         return (
-            timer_state.get("ActiveState") == "inactive"
-            and timer_state.get("UnitFileState") == "disabled"
+            timer_state.get("ActiveState") == "active"
+            and timer_state.get("UnitFileState") == "enabled"
         )
 
 
