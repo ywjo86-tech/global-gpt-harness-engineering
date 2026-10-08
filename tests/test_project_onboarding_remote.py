@@ -216,6 +216,80 @@ class ProjectOnboardingRemoteTests(unittest.TestCase):
                 admission.execute(_request(root,mapping_root,head,mode="DRY_RUN"))
             self.assertFalse(registry_root.exists()); self.assertFalse(mapping_root.exists())
 
+    def test_v2_explicit_canonical_plan_disambiguates_two_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, _ = _project(tmp_path)
+            (root / "docs").mkdir()
+            (root / "docs" / "DEVELOPMENT_PLAN.txt").write_text("# Full Plan Contract\n", encoding="utf-8")
+            _git(root, "add", "docs/DEVELOPMENT_PLAN.txt")
+            _git(root, "commit", "-m", "add full plan contract")
+            head = _git(root, "rev-parse", "HEAD")
+            mapping_root = tmp_path / "mappings"
+            registry_root = mapping_root / "aliases"
+            admission = _admission(registry_root, mapping_root)
+            request = ProjectOnboardingRequest.from_mapping({
+                "schema_version": "orchestration.project-onboarding-request.v2",
+                "alias": "ai-commerce-intelligence",
+                "project_root": str(root),
+                "mapping_root": str(mapping_root),
+                "expected_branch": "m6-successor",
+                "expected_head": head,
+                "mode": "DRY_RUN",
+                "preflight_digest": None,
+                "canonical_plan": "docs/DEVELOPMENT_PLAN.txt",
+            })
+
+            dry_run = admission.execute(request)
+
+            self.assertEqual(dry_run["status"], "REGISTRATION_READY")
+            self.assertEqual(dry_run["binding"]["canonical_plan"], "docs/DEVELOPMENT_PLAN.txt")
+            self.assertEqual(
+                dry_run["inspection"]["entry"]["canonical_plan"],
+                "docs/DEVELOPMENT_PLAN.txt",
+            )
+            bootstrap = ProjectOnboardingRequest.from_mapping({
+                **request.to_dict(),
+                "mode": "BOOTSTRAP",
+                "preflight_digest": dry_run["preflight_digest"],
+            })
+            result = admission.execute(bootstrap)
+            self.assertEqual(result["status"], "BOOTSTRAPPED")
+            entry = json.loads(
+                (registry_root / "ai-commerce-intelligence.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(entry["canonical_plan"], "docs/DEVELOPMENT_PLAN.txt")
+
+    def test_v1_still_fails_closed_when_two_plan_candidates_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            tmp_path = Path(temp)
+            root, _ = _project(tmp_path)
+            (root / "docs").mkdir()
+            (root / "docs" / "DEVELOPMENT_PLAN.txt").write_text("# Alternate\n", encoding="utf-8")
+            _git(root, "add", "docs/DEVELOPMENT_PLAN.txt")
+            _git(root, "commit", "-m", "add alternate plan")
+            head = _git(root, "rev-parse", "HEAD")
+            mapping_root = tmp_path / "mappings"
+            admission = _admission(mapping_root / "aliases", mapping_root)
+
+            with self.assertRaisesRegex(ProjectOnboardingRemoteError, "ambiguous"):
+                admission.execute(_request(root, mapping_root, head, mode="DRY_RUN"))
+
+    def test_v2_rejects_non_allowlisted_canonical_plan(self) -> None:
+        raw = {
+            "schema_version": "orchestration.project-onboarding-request.v2",
+            "alias": "ai-commerce-intelligence",
+            "project_root": "/srv/project",
+            "mapping_root": "/srv/mapping",
+            "expected_branch": "m6-successor",
+            "expected_head": "a" * 40,
+            "mode": "DRY_RUN",
+            "preflight_digest": None,
+            "canonical_plan": "../APPROVED_PLAN.md",
+        }
+        with self.assertRaisesRegex(ProjectOnboardingRemoteError, "not allowed"):
+            ProjectOnboardingRequest.from_mapping(raw)
+
     def test_target_inspect_isolated_from_other_project_plan_digest_damage(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             tmp_path = Path(temp)

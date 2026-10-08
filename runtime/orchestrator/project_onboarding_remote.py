@@ -18,9 +18,10 @@ class ProjectOnboardingRemoteError(ValueError):
 _GIT_OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SAFE_ALIAS = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-_REQUEST_SCHEMA = "orchestration.project-onboarding-request.v1"
+_REQUEST_SCHEMA_V1 = "orchestration.project-onboarding-request.v1"
+_REQUEST_SCHEMA_V2 = "orchestration.project-onboarding-request.v2"
 _RESULT_SCHEMA = "orchestration.project-onboarding-result.v1"
-_REQUEST_FIELDS = {
+_REQUEST_FIELDS_V1 = {
     "schema_version",
     "alias",
     "project_root",
@@ -30,6 +31,8 @@ _REQUEST_FIELDS = {
     "mode",
     "preflight_digest",
 }
+_REQUEST_FIELDS_V2 = _REQUEST_FIELDS_V1 | {"canonical_plan"}
+_CANONICAL_PLANS = {"IMPLEMENTATION_PLAN.md", "docs/DEVELOPMENT_PLAN.txt"}
 _MODES = {"DRY_RUN", "BOOTSTRAP"}
 
 
@@ -47,13 +50,23 @@ class ProjectOnboardingRequest:
     expected_head: str
     mode: str
     preflight_digest: str | None = None
+    canonical_plan: str | None = None
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "ProjectOnboardingRequest":
-        if set(raw) != _REQUEST_FIELDS:
-            raise ProjectOnboardingRemoteError("project onboarding request fields mismatch")
-        if str(raw.get("schema_version") or "") != _REQUEST_SCHEMA:
+        schema_version = str(raw.get("schema_version") or "")
+        if schema_version == _REQUEST_SCHEMA_V1:
+            expected_fields = _REQUEST_FIELDS_V1
+            canonical_plan = None
+        elif schema_version == _REQUEST_SCHEMA_V2:
+            expected_fields = _REQUEST_FIELDS_V2
+            canonical_plan = str(raw.get("canonical_plan") or "")
+            if canonical_plan not in _CANONICAL_PLANS:
+                raise ProjectOnboardingRemoteError("canonical plan binding is not allowed")
+        else:
             raise ProjectOnboardingRemoteError("project onboarding request schema mismatch")
+        if set(raw) != expected_fields:
+            raise ProjectOnboardingRemoteError("project onboarding request fields mismatch")
         alias = str(raw.get("alias") or "")
         if not _SAFE_ALIAS.fullmatch(alias):
             raise ProjectOnboardingRemoteError("project onboarding alias is unsafe")
@@ -78,7 +91,7 @@ class ProjectOnboardingRequest:
         elif preflight_digest is None or not _SHA256.fullmatch(preflight_digest):
             raise ProjectOnboardingRemoteError("BOOTSTRAP requires a valid preflight digest")
         return cls(
-            schema_version=_REQUEST_SCHEMA,
+            schema_version=schema_version,
             alias=alias,
             project_root=project_root,
             mapping_root=mapping_root,
@@ -86,10 +99,11 @@ class ProjectOnboardingRequest:
             expected_head=expected_head,
             mode=mode,
             preflight_digest=preflight_digest,
+            canonical_plan=canonical_plan,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema_version": self.schema_version,
             "alias": self.alias,
             "project_root": self.project_root,
@@ -99,6 +113,9 @@ class ProjectOnboardingRequest:
             "mode": self.mode,
             "preflight_digest": self.preflight_digest,
         }
+        if self.schema_version == _REQUEST_SCHEMA_V2:
+            value["canonical_plan"] = self.canonical_plan
+        return value
 
     @property
     def request_digest(self) -> str:
@@ -147,8 +164,12 @@ class ProjectOnboardingAdmission:
         )
 
     def _preflight(self, request: ProjectOnboardingRequest) -> tuple[dict[str, Any], str]:
-        if request.schema_version != _REQUEST_SCHEMA:
+        if request.schema_version not in {_REQUEST_SCHEMA_V1, _REQUEST_SCHEMA_V2}:
             raise ProjectOnboardingRemoteError("project onboarding request schema mismatch")
+        if request.schema_version == _REQUEST_SCHEMA_V2 and request.canonical_plan not in _CANONICAL_PLANS:
+            raise ProjectOnboardingRemoteError("canonical plan binding is not allowed")
+        if request.schema_version == _REQUEST_SCHEMA_V1 and request.canonical_plan is not None:
+            raise ProjectOnboardingRemoteError("v1 project onboarding cannot bind a canonical plan")
         if request.mode not in _MODES:
             raise ProjectOnboardingRemoteError("project onboarding mode is unsupported")
         if not request.expected_branch:
@@ -174,7 +195,11 @@ class ProjectOnboardingAdmission:
             raise ProjectOnboardingRemoteError("project repository must be clean")
 
         try:
-            inspection = self.registry.inspect(root, request.alias)
+            inspection = self.registry.inspect(
+                root,
+                request.alias,
+                canonical_plan=request.canonical_plan,
+            )
         except ProjectOnboardingError as exc:
             raise ProjectOnboardingRemoteError(str(exc)) from exc
 
@@ -187,6 +212,8 @@ class ProjectOnboardingAdmission:
             "clean": True,
             "inspection": inspection,
         }
+        if request.schema_version == _REQUEST_SCHEMA_V2:
+            binding["canonical_plan"] = request.canonical_plan
         digest = hashlib.sha256(_canonical(binding)).hexdigest()
         return binding, digest
 
@@ -216,6 +243,7 @@ class ProjectOnboardingAdmission:
                 request.project_root,
                 request.alias,
                 mapping_root=str(self.canonical_mapping_root),
+                canonical_plan=request.canonical_plan,
             )
         except ProjectOnboardingError as exc:
             raise ProjectOnboardingRemoteError(str(exc)) from exc

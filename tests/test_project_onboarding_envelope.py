@@ -56,6 +56,21 @@ class ProjectOnboardingEnvelopeTests(unittest.TestCase):
             "OCP-PROJECT-ONBOARDING-R1",
         )
 
+    def test_v2_envelope_binds_explicit_canonical_plan(self) -> None:
+        raw = self._raw()
+        raw["payload"] = {
+            **raw["payload"],
+            "schema_version": "orchestration.project-onboarding-request.v2",
+            "canonical_plan": "docs/DEVELOPMENT_PLAN.txt",
+        }
+        sealed = seal_remote_control_envelope(raw)
+        envelope = validate_remote_control_envelope(
+            sealed, now=datetime(2026, 9, 25, 0, 5, tzinfo=timezone.utc)
+        )
+        self.assertEqual(envelope.payload.schema_version, "orchestration.project-onboarding-request.v2")
+        self.assertEqual(envelope.payload.canonical_plan, "docs/DEVELOPMENT_PLAN.txt")
+        self.assertEqual(envelope.payload.request_digest, envelope.payload_digest)
+
     def test_onboarding_rejects_host_inspection_authorization(self) -> None:
         raw = self._raw()
         raw["authorization"] = {"inspection_policy_ref": "RDC-INDEPENDENT-LIVE-20260923"}

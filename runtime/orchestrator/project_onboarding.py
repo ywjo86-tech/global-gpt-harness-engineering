@@ -36,7 +36,9 @@ def _verified_project(path: str | Path) -> Path:
     return root
 
 
-def _plan(root: Path) -> Path | None:
+def _plan(root: Path, canonical_plan: str | None = None) -> Path | None:
+    if canonical_plan is not None:
+        return _registered_plan(root, canonical_plan)
     found = [root / relative for relative in _PLAN_CANDIDATES if (root / relative).is_file() and not (root / relative).is_symlink()]
     if len(found) > 1:
         raise ProjectOnboardingError("canonical plan is ambiguous")
@@ -52,11 +54,16 @@ def _registered_plan(root: Path, relative_plan: object) -> Path:
     return plan
 
 
-def build_alias_entry(project_root: str | Path, alias: str) -> dict[str, Any]:
+def build_alias_entry(
+    project_root: str | Path,
+    alias: str,
+    *,
+    canonical_plan: str | None = None,
+) -> dict[str, Any]:
     root = _verified_project(project_root)
     if not _ID.fullmatch(alias):
         raise ProjectOnboardingError("unsafe alias")
-    plan = _plan(root)
+    plan = _plan(root, canonical_plan)
     if plan is None:
         raise ProjectOnboardingError("canonical plan is absent; synthesis is forbidden")
     relative_plan = plan.relative_to(root).as_posix()
@@ -189,7 +196,13 @@ class OnboardingRegistry:
             projects[project_id] = alias
         return values
 
-    def inspect(self, project_root: str | Path, alias: str) -> dict[str, Any]:
+    def inspect(
+        self,
+        project_root: str | Path,
+        alias: str,
+        *,
+        canonical_plan: str | None = None,
+    ) -> dict[str, Any]:
         root = _verified_project(project_root)
         existing = self._structural_entries()
         collision = next((item for item in existing if item["alias"] == alias and item["project_id"] != root.name), None)
@@ -212,6 +225,12 @@ class OnboardingRegistry:
                     "mutation_performed": False,
                 }
             validate_alias_entry(match, root)
+            if canonical_plan is not None and match["canonical_plan"] != canonical_plan:
+                return {
+                    "status": "ONBOARDING_BLOCKED",
+                    "reason": "canonical plan binding mismatch",
+                    "mutation_performed": False,
+                }
             return {"status": "COMPATIBLE", "entry": match, "mutation_performed": False}
         project_binding = next((item for item in existing if item["project_id"] == root.name), None)
         if project_binding is not None:
@@ -221,17 +240,23 @@ class OnboardingRegistry:
                 "bound_alias": project_binding["alias"],
                 "mutation_performed": False,
             }
-        plan = _plan(root)
+        plan = _plan(root, canonical_plan)
         if plan is None:
             return {
                 "status": "ONBOARDING_REQUIRED", "reason": "canonical plan absent",
                 "canonical_plan_synthesized": False, "mutation_performed": False,
             }
-        candidate = build_alias_entry(root, alias)
+        candidate = build_alias_entry(root, alias, canonical_plan=canonical_plan)
         return {"status": "REGISTRATION_READY", "entry": candidate, "mutation_performed": False}
 
-    def register(self, project_root: str | Path, alias: str) -> dict[str, Any]:
-        report = self.inspect(project_root, alias)
+    def register(
+        self,
+        project_root: str | Path,
+        alias: str,
+        *,
+        canonical_plan: str | None = None,
+    ) -> dict[str, Any]:
+        report = self.inspect(project_root, alias, canonical_plan=canonical_plan)
         if report["status"] != "REGISTRATION_READY":
             return report
         entry = report["entry"]
@@ -251,6 +276,7 @@ class OnboardingRegistry:
         alias: str,
         *,
         mapping_root: str | Path | None = None,
+        canonical_plan: str | None = None,
     ) -> dict[str, Any]:
         """Create the minimum, production-shaped project contract and register it.
 
@@ -267,7 +293,7 @@ class OnboardingRegistry:
         if not mapping_dir.is_absolute() or (mapping_dir.exists() and (mapping_dir.is_symlink() or not mapping_dir.is_dir())):
             raise ProjectOnboardingError("mapping root is unsafe")
         mapping_dir = mapping_dir.resolve()
-        plan = _plan(root)
+        plan = _plan(root, canonical_plan)
         if plan is None:
             return {"status": "ONBOARDING_REQUIRED", "reason": "canonical plan absent", "mutation_performed": False}
         # Bootstrap is intentionally idempotent, but never takes ownership of a
@@ -344,7 +370,7 @@ class OnboardingRegistry:
             else:
                 mapping_path.write_bytes(_canonical(mapping)); created.append(mapping_path)
             alias_existed = alias_path.exists()
-            alias_report = self.register(root, alias)
+            alias_report = self.register(root, alias, canonical_plan=canonical_plan)
             if not alias_existed and alias_path.exists():
                 created.append(alias_path)
             if alias_report.get("status") not in {"REGISTERED", "COMPATIBLE"}:
