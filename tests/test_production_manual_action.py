@@ -277,3 +277,25 @@ class ProductionManualActionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestManualActionIsolatedPythonCache(unittest.TestCase):
+    def test_compileall_and_unittest_never_pollute_product_worktree(self):
+        import tempfile
+        import subprocess
+        from pathlib import Path
+        from runtime.orchestrator.production_manual_action import _command
+        with tempfile.TemporaryDirectory() as raw:
+            root=Path(raw)
+            (root/"tests").mkdir()
+            (root/"tests/__init__.py").write_text("")
+            (root/"tests/test_example.py").write_text(
+                "import unittest\nclass Demo(unittest.TestCase):\n"
+                "    def test_ok(self): self.assertTrue(True)\n")
+            for cmd in (["python3","-m","compileall","-q","."],
+                        ["python3","-m","unittest","discover","-s","tests"]):
+                evidence=_command(root,cmd,timeout=20)
+                self.assertEqual(evidence["exit_code"],0)
+                self.assertFalse(evidence["timeout"])
+            self.assertEqual(list(root.rglob("*.pyc")),[])
+            self.assertEqual(list(root.rglob("__pycache__")),[])

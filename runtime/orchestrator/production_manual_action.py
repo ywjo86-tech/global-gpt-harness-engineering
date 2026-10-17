@@ -123,16 +123,24 @@ def _command(root: Path, argv: Sequence[str], *, timeout: int = 180) -> dict[str
     # process, not product-validation input. Inheriting it makes unrelated
     # mapping/ledger unit tests resolve against the live production project.
     validation_env.pop(MAPPING_ROOT_ENV, None)
-    try:
-        cp = subprocess.run(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            check=False, timeout=timeout, env=validation_env)
-        timed_out = False
-    except subprocess.TimeoutExpired as exc:
-        cp = None
-        timed_out = True
-        stdout = exc.stdout or b""; stderr = exc.stderr or b""
-    else:
-        stdout = cp.stdout; stderr = cp.stderr
+    # Explicitly isolate Python bytecode outside the project.  compileall
+    # writes .pyc files even when the parent process was started with -B.
+    # Leaving those files untracked after a successful commit makes the
+    # checkpoint verifier reject a real, otherwise-clean execution.
+    # Do not loosen the strict Git cleanliness invariant.
+    with tempfile.TemporaryDirectory(prefix="g1-manual-validation-cache-") as cache_dir:
+        if executable in {"python", "python3"}:
+            validation_env["PYTHONPYCACHEPREFIX"] = cache_dir
+        try:
+            cp = subprocess.run(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                check=False, timeout=timeout, env=validation_env)
+            timed_out = False
+        except subprocess.TimeoutExpired as exc:
+            cp = None
+            timed_out = True
+            stdout = exc.stdout or b""; stderr = exc.stderr or b""
+        else:
+            stdout = cp.stdout; stderr = cp.stderr
     return {"command": command, "exit_code": None if timed_out else cp.returncode,
             "timeout": timed_out, "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
             "stderr_sha256": hashlib.sha256(stderr).hexdigest()}
