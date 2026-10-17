@@ -121,6 +121,8 @@ jobs:
           python-version: "3.12"
       - name: Install canonical Full MCP dependency lock
         run: python3 -m pip install -r requirements/full-mcp.txt
+      - name: Install isolated test runner
+        run: python3 -m pip install pytest==9.1.1
       - name: Full repository unittest discovery
         run: python3 scripts/ocpv2_full_regression.py
 
@@ -144,6 +146,8 @@ jobs:
           python-version: "3.12"
       - name: Install canonical Full MCP dependency lock
         run: python3 -m pip install -r control/requirements/full-mcp.txt
+      - name: Install isolated test runner
+        run: python3 -m pip install pytest==9.1.1
       - name: Run identical baseline and current regressions
         shell: bash
         run: |
