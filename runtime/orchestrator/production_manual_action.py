@@ -22,7 +22,7 @@ from .operator_control import ManualActionAuthorizationV1, OperatorDirectiveV1
 from .schemas import TaskSlice, WorkerRequest
 from .provider_router import (
     ProviderEligibilitySnapshotV1, RouterRequestV2, RouterDecisionV2,
-    ELIGIBILITY_SCHEMA_V1, route_request,
+    ELIGIBILITY_SCHEMA_V1, route_request, router_request_from_mapping,
 )
 
 ACTION_SCHEMA = "orchestration.production-manual-action.v1"
@@ -145,24 +145,13 @@ def _validate_router(action: Mapping[str, Any]) -> tuple[OperatorDirectiveV1, Ro
     raw_request = action.get("router_request")
     if not isinstance(raw_request, Mapping) or not isinstance(raw_request.get("eligibility_snapshot"), Mapping):
         raise ProductionManualActionError("manual action Router request is missing")
-    snap_raw = raw_request["eligibility_snapshot"]
-    snapshot = ProviderEligibilitySnapshotV1(
-        schema_version=str(snap_raw.get("schema_version", "")), snapshot_id=str(snap_raw.get("snapshot_id", "")),
-        provider_eligible=dict(snap_raw.get("provider_eligible", {})), model_refs=dict(snap_raw.get("model_refs", {})),
-        evidence_refs=tuple(snap_raw.get("evidence_refs", ())), failure_classes=dict(snap_raw.get("failure_classes", {})),
-    )
-    request = RouterRequestV2(
-        schema_version=str(raw_request.get("schema_version", "")), request_id=str(raw_request.get("request_id", "")),
-        project_id=str(raw_request.get("project_id", "")), run_id=str(raw_request.get("run_id", "")),
-        task_id=str(raw_request.get("task_id", "")), task_execution_id=str(raw_request.get("task_execution_id", "")),
-        directive_digest=str(raw_request.get("directive_digest", "")), stage=str(raw_request.get("stage", "")),
-        required_capabilities=tuple(raw_request.get("required_capabilities", ())),
-        state_change_required=bool(raw_request.get("state_change_required")), policy_profile=str(raw_request.get("policy_profile", "")),
-        eligibility_snapshot=snapshot, eligibility_snapshot_ref=str(raw_request.get("eligibility_snapshot_ref", "")),
-        eligibility_snapshot_digest=str(raw_request.get("eligibility_snapshot_digest", "")),
-        request_source=str(raw_request.get("request_source", "governed_v2")), failure_class=str(raw_request.get("failure_class", "")),
-        failover_request_ref=str(raw_request.get("failover_request_ref", "")),
-    )
+    # Decode the complete Router request. Dropping fallback/capability fields
+    # changes the snapshot digest and manufactures a false blocked decision.
+    # The old snapshot and any previous approval remain immutable.
+    try:
+        request = router_request_from_mapping(raw_request)
+    except Exception as exc:
+        raise ProductionManualActionError(f"manual action Router request invalid: {exc}") from exc
     if request.directive_digest != directive.directive_digest:
         raise ProductionManualActionError("manual action Router/directive binding mismatch")
     expected = route_request(request)

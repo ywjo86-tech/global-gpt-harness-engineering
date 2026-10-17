@@ -55,6 +55,111 @@ class ProductionManualActionTests(unittest.TestCase):
         auth = ManualActionAuthorizationV1(MANUAL_ACTION_AUTH_SCHEMA,"P","R","T12","E12","G","GPT_OPERATOR",action["action_package_digest"],editable_scope_digest(["a.py"]),command_plan_digest(commands),"AUTH12")
         return action, auth.to_dict()
 
+    def test_g1_blocked_manual_action_routes_without_provider_registry(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        action, authorization = self.make()
+        envelope = {"request": action["router_request"], "decision": action["router_decision"]}
+        self.assertFalse(action["router_decision"]["eligible"])
+        self.assertEqual(action["router_decision"]["action_state"], "ACTION_PROVIDER_BLOCKED")
+        # Manual executor remains responsible for checking the actual authorization.
+        self.assertEqual(_resolve_adapter_provider_route(
+            envelope, manual_action_package=action, manual_action_authorization=authorization,
+        ), (None, False))
+
+    def test_g1_blocked_normal_provider_remains_denied(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        action, _ = self.make()
+        envelope = {"request": action["router_request"], "decision": action["router_decision"]}
+        with self.assertRaisesRegex(Exception, "eligible bound Router decision is required"):
+            _resolve_adapter_provider_route(envelope)
+
+    def test_g1_incomplete_manual_pair_fails_closed(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        action, _ = self.make()
+        envelope = {"request": action["router_request"], "decision": action["router_decision"]}
+        with self.assertRaisesRegex(Exception, "must be supplied together"):
+            _resolve_adapter_provider_route(envelope, manual_action_package=action)
+
+    def test_g1_manual_without_router_evidence_fails_closed(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        action, authorization = self.make()
+        with self.assertRaisesRegex(Exception, "canonical blocked Router envelope"):
+            _resolve_adapter_provider_route(
+                None, manual_action_package=action, manual_action_authorization=authorization)
+
+    def test_g1_different_provider_request_id_preserves_manual_route_identity(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        from runtime.orchestrator.provider_router import router_request_from_mapping, route_request
+        action, authorization = self.make()
+        import copy
+        wrong_request = copy.deepcopy(action["router_request"])
+        wrong_request["request_id"] = "DIFFERENT-CANONICAL-REQUEST"
+        request = router_request_from_mapping(wrong_request)
+        envelope = {"request": request.to_dict(), "decision": route_request(request).to_dict()}
+        self.assertEqual(_resolve_adapter_provider_route(
+            envelope, manual_action_package=action,
+            manual_action_authorization=authorization), (None, False))
+
+    def test_g1_wrong_execution_identity_denied(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        from runtime.orchestrator.provider_router import router_request_from_mapping, route_request
+        action, authorization = self.make()
+        import copy
+        wrong_request = copy.deepcopy(action["router_request"])
+        wrong_request["task_execution_id"] = "OTHER-EXECUTION"
+        request = router_request_from_mapping(wrong_request)
+        envelope = {"request": request.to_dict(), "decision": route_request(request).to_dict()}
+        with self.assertRaisesRegex(Exception, "execution identity mismatch"):
+            _resolve_adapter_provider_route(
+                envelope, manual_action_package=action,
+                manual_action_authorization=authorization)
+
+    def test_g1_complete_router_capability_snapshot_is_authoritative(self):
+        from runtime.orchestrator.provider_router import router_request_from_mapping, route_request
+        from runtime.orchestrator.production_manual_action import _validate_router
+        import copy
+        action, _ = self.make()
+        action = copy.deepcopy(action)
+        snap = action["router_request"]["eligibility_snapshot"]
+        snap["provider_capabilities"] = {"nvidia": ["filesystem_write", "patch_generation"]}
+        # Rebind snapshot and decision using exactly the published parser.
+        from runtime.orchestrator.provider_router import eligibility_snapshot_from_mapping
+        raw_snap = eligibility_snapshot_from_mapping(snap)
+        action["router_request"]["eligibility_snapshot_digest"] = raw_snap.snapshot_digest
+        req = router_request_from_mapping(action["router_request"])
+        action["router_decision"] = route_request(req).to_dict()
+        _, parsed_req, parsed_decision = _validate_router(action)
+        self.assertTrue(parsed_req.eligibility_binding_valid)
+        self.assertEqual(parsed_decision.reason_code, "provider_capability_mismatch")
+
+    def test_g1_mismatch_in_released_manual_route_rejected(self):
+        from runtime.orchestrator.production_manual_action import _validate_router
+        import copy
+        action, _ = self.make()
+        action = copy.deepcopy(action)
+        # A signed-looking stale reason cannot override the canonical Router.
+        action["router_decision"]["reason_code"] = "eligibility_snapshot_binding_mismatch"
+        with self.assertRaisesRegex(Exception, "not canonical"):
+            _validate_router(action)
+
+    def test_g1_eligible_provider_cannot_enter_manual_bridge(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        action, authorization = self.make(True)
+        envelope = {"request": action["router_request"], "decision": action["router_decision"]}
+        self.assertTrue(action["router_decision"]["eligible"])
+        with self.assertRaisesRegex(Exception, "ACTION_PROVIDER_BLOCKED"):
+            _resolve_adapter_provider_route(
+                envelope, manual_action_package=action, manual_action_authorization=authorization)
+
+    def test_g1_tampered_router_envelope_fails_closed(self):
+        from runtime.orchestrator.gate_orchestrator import _resolve_adapter_provider_route
+        action, authorization = self.make()
+        envelope = {"request": dict(action["router_request"]), "decision": action["router_decision"]}
+        envelope["request"]["request_id"] = "TAMPERED"
+        with self.assertRaises(Exception):
+            _resolve_adapter_provider_route(
+                envelope, manual_action_package=action, manual_action_authorization=authorization)
+
     def test_validation_command_does_not_inherit_active_contract_mapping_root(self):
         probe = self.root / "test_env_probe.py"
         probe.write_text(

@@ -1433,6 +1433,52 @@ def _persist_manual_action_request(package_root: Path, payload: Mapping[str, Any
     return path
 
 
+def _resolve_adapter_provider_route(
+    provider_route_envelope: Mapping[str, Any] | None, *,
+    manual_action_package: Mapping[str, Any] | None = None,
+    manual_action_authorization: Mapping[str, Any] | None = None,
+) -> tuple[str | None, bool]:
+    """Keep a blocked ACTION eligible only for the separately authorized manual bridge.
+
+    Do not reclassify a blocked Router decision as eligible. Manual package,
+    plan, digest, scope and authorization are checked again by the existing
+    validate_action_package/execute_gpt_operator_manual_action path before any
+    patch is applied. Normal provider execution remains fail-closed.
+    """
+    if (manual_action_package is None) != (manual_action_authorization is None):
+        raise GateControllerError("manual action package and authorization must be supplied together")
+    manual_bound = manual_action_package is not None
+    if manual_bound and provider_route_envelope is None:
+        raise GateControllerError("manual action requires canonical blocked Router envelope")
+    if provider_route_envelope is None:
+        return None, False
+    from .provider_router import validate_router_envelope
+    from .provider_execution_registry import PROVIDER_READ_ONLY_BACKEND, execution_backend_for_route
+    request, decision = validate_router_envelope(provider_route_envelope)
+    if manual_bound:
+        # The manual-route and governed provider-route intentionally have
+        # different request IDs; bind their execution identity, not their bytes.
+        from .production_manual_action import _validate_router
+        try:
+            _, manual_request, _ = _validate_router(manual_action_package)
+        except Exception as exc:
+            raise GateControllerError(f"manual action Router evidence invalid: {exc}") from exc
+        identity = lambda item: (item.project_id, item.run_id, item.task_id, item.task_execution_id)
+        if identity(manual_request) != identity(request):
+            raise GateControllerError("manual action Router execution identity mismatch")
+        if (request.stage != "ACTION" or not request.state_change_required
+                or decision.stage != "ACTION" or decision.eligible
+                or decision.action_state != "ACTION_PROVIDER_BLOCKED"
+                or not request.eligibility_binding_valid
+                or decision.provider_ref or decision.model_ref):
+            raise GateControllerError("manual action requires canonical ACTION_PROVIDER_BLOCKED")
+        # Do not grant authority to a blocked Provider. The manual executor
+        # separately validates full package+owner authorization before writing.
+        return None, False
+    backend = execution_backend_for_route(request, decision)
+    return backend, backend == PROVIDER_READ_ONLY_BACKEND
+
+
 def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv_id: str, run_id: str, harness_root: str | Path,
                          recovery: Mapping[str, Any] | None = None,
                          diagnostic_run_id: str | None = None,
@@ -1443,15 +1489,11 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                          manual_action_authorization: Mapping[str, Any] | None = None) -> GateControllerAdapters:
     from .lv_remediation import review_remediation
     from .lv_review import preflight_run
-    route_request = route_decision = None
-    route_backend = None
-    route_read_only = False
-    if provider_route_envelope is not None:
-        from .provider_router import validate_router_envelope
-        from .provider_execution_registry import PROVIDER_READ_ONLY_BACKEND, execution_backend_for_route
-        route_request, route_decision = validate_router_envelope(provider_route_envelope)
-        route_backend = execution_backend_for_route(route_request, route_decision)
-        route_read_only = route_backend == PROVIDER_READ_ONLY_BACKEND
+    route_backend, route_read_only = _resolve_adapter_provider_route(
+        provider_route_envelope,
+        manual_action_package=manual_action_package,
+        manual_action_authorization=manual_action_authorization,
+    )
     state: dict[str, Any] = {}
 
     def resumed(stage: str, status: str) -> dict[str, Any] | None:
