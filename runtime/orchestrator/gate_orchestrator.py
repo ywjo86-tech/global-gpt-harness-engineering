@@ -1808,15 +1808,25 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
                          manual_action_authorization: Mapping[str, Any] | None = None) -> GateControllerAdapters:
     from .lv_remediation import review_remediation
     from .lv_review import preflight_run
+    if (manual_action_package is None) != (manual_action_authorization is None):
+        raise GateControllerError("manual action package and authorization must be supplied together")
+    manual_action_bound = manual_action_package is not None and manual_action_authorization is not None
     route_request = route_decision = None
     route_backend = None
     route_read_only = False
     if provider_route_envelope is not None:
         from .provider_router import validate_router_envelope
-        from .provider_execution_registry import PROVIDER_READ_ONLY_BACKEND, execution_backend_for_route
+        from .provider_execution_registry import (
+            PROVIDER_READ_ONLY_BACKEND,
+            execution_backend_for_manual_action_route,
+            execution_backend_for_route,
+        )
         route_request, route_decision = validate_router_envelope(provider_route_envelope)
-        route_backend = execution_backend_for_route(route_request, route_decision)
-        route_read_only = route_backend == PROVIDER_READ_ONLY_BACKEND
+        if manual_action_bound:
+            route_backend = execution_backend_for_manual_action_route(route_request, route_decision)
+        else:
+            route_backend = execution_backend_for_route(route_request, route_decision)
+            route_read_only = route_backend == PROVIDER_READ_ONLY_BACKEND
     state: dict[str, Any] = {}
 
     def resumed(stage: str, status: str) -> dict[str, Any] | None:
@@ -2293,9 +2303,6 @@ def _production_adapters(root: Path, plan: GatePlan, auth: GateAuthorization, lv
             state["worker_payload"] = existing_result
             state["worker_result_path"] = result
             return sealed("WORKER", "COMPLETED", _file_sha(result), payload=existing_result)
-        if (manual_action_package is None) != (manual_action_authorization is None):
-            raise GateControllerError("manual action package and authorization must be supplied together")
-        manual_action_bound = manual_action_package is not None and manual_action_authorization is not None
         runtime_request_path = package_root / ("manual-action.request.json" if manual_action_bound else "worker.request.json")
         task = TaskSlice(
             thread_id=lv_id, assigned_agent="implementation_agent",

@@ -20,6 +20,7 @@ from .provider_router import (
 )
 
 PROVIDER_READ_ONLY_BACKEND = "PROVIDER_READ_ONLY"
+MANUAL_ACTION_BACKEND = "GPT_OPERATOR_MANUAL_ACTION"
 ProviderRunner = Callable[..., Mapping[str, Any]]
 
 
@@ -59,6 +60,26 @@ def execution_backend_for_route(request: RouterRequestV2, decision: RouterDecisi
     if decision.execution_profile != EXECUTION_PROFILE_PROVIDER_GENERATION:
         raise ProviderExecutionRegistryError("Router execution profile is missing or invalid")
     return PROVIDER_ACTION_BACKEND if decision.stage == "ACTION" else PROVIDER_READ_ONLY_BACKEND
+
+
+def execution_backend_for_manual_action_route(
+    request: RouterRequestV2, decision: RouterDecisionV2,
+) -> str:
+    if decision.request_digest != request.request_digest:
+        raise ProviderExecutionRegistryError("bound Router decision is required")
+    if (
+        request.stage != "ACTION"
+        or not request.state_change_required
+        or decision.stage != "ACTION"
+        or decision.eligible
+        or decision.action_state != "ACTION_PROVIDER_BLOCKED"
+        or decision.provider_ref
+        or decision.model_ref
+    ):
+        raise ProviderExecutionRegistryError(
+            "manual action requires a bound ACTION_PROVIDER_BLOCKED decision"
+        )
+    return MANUAL_ACTION_BACKEND
 
 
 def build_active_provider_runner_registry(inventory: Any, runner_factory: Callable[[Any], ProviderRunner], *, base_read: Mapping[str, ProviderRunner] | None = None, base_action: Mapping[str, ProviderRunner] | None = None) -> ProviderRunnerRegistry:
