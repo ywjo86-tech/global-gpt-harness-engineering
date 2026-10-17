@@ -374,6 +374,38 @@ class GateOrchestratorTests(unittest.TestCase):
             with self.assertRaisesRegex(GateControllerError, "manual action request replay conflict"):
                 _persist_manual_action_request(package, {"kind":"manual", "sequence":2})
 
+    def test_production_adapters_accept_bound_manual_action_for_blocked_route(self) -> None:
+        from runtime.orchestrator.gate_orchestrator import _production_adapters
+        from runtime.orchestrator.provider_router import (
+            ELIGIBILITY_SCHEMA_V1, GOVERNED_POLICY_V1, ROUTER_REQUEST_SCHEMA_V2,
+            ProviderEligibilitySnapshotV1, RouterRequestV2, route_request,
+        )
+        snapshot = ProviderEligibilitySnapshotV1(
+            ELIGIBILITY_SCHEMA_V1, "snapshot-blocked", {"nvidia": False},
+            {"nvidia": "nvidia/model"}, ("owner-approved-manual-action",),
+            provider_capabilities={"nvidia": ("patch_generation",)},
+        )
+        request = RouterRequestV2(
+            ROUTER_REQUEST_SCHEMA_V2, "request-blocked", self.plan.project_id,
+            "run-blocked", self.plan.lvs[0].lv_id, "execution-blocked", "d" * 64,
+            "ACTION", ("filesystem_write", "patch_generation"), True,
+            GOVERNED_POLICY_V1, snapshot,
+        )
+        decision = route_request(request)
+        self.assertEqual(decision.action_state, "ACTION_PROVIDER_BLOCKED")
+
+        adapters = _production_adapters(
+            self.root, self.plan, self.auth, self.plan.lvs[0].lv_id,
+            "run-blocked", self.root.parent,
+            provider_route_envelope={
+                "request": request.to_dict(),
+                "decision": decision.to_dict(),
+            },
+            manual_action_package={"schema_version": "test"},
+            manual_action_authorization={"schema_version": "test"},
+        )
+        self.assertIsInstance(adapters, GateControllerAdapters)
+
     def test_review_selects_manual_request_for_manual_result_with_legacy_fallback(self) -> None:
         from runtime.orchestrator.lv_review import _worker_request_path_for_result
         with tempfile.TemporaryDirectory() as directory:
