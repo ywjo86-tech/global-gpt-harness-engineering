@@ -1922,8 +1922,11 @@ def _run_tests(root: Path, interpreter: Path, owned_files: list[str], *, runner:
         if not full_test_targets:
             return [], "owned Python test target is missing or unsafe"
         test_targets = list(full_test_targets)
-    if not test_targets or (not import_targets and not allow_test_only):
+    if not test_targets:
         return [], "owned Python test/module scope is missing"
+    # Product/data-only tasks can own executable tests without owning a Python
+    # module.  In that case the import check is not applicable; keep it required
+    # whenever an owned non-test Python module exists.
     for relative in test_targets:
         target = root / relative
         if not target.is_file() or target.is_symlink():

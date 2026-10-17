@@ -309,6 +309,21 @@ class LVReviewTest(unittest.TestCase):
             self.assertEqual([item["exit_code"] for item in results], [0, 0, 0])
             self.assertTrue(results[-1]["not_applicable"])
 
+    def test_data_only_owned_scope_with_owned_tests_runs_without_import_target(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tests").mkdir()
+            (root / "canary.txt").write_text("candidate\n")
+            (root / "tests/test_canary.py").write_text("def test_canary():\n    assert True\n")
+            with patch("runtime.orchestrator.lv_review._run_command", return_value={"exit_code": 0, "timeout": False}):
+                results, error = _run_tests(
+                    root, Path(sys.executable), ["canary.txt", "tests/test_canary.py"],
+                    runner="unittest", allow_test_only=False,
+                )
+            self.assertIsNone(error)
+            self.assertEqual([item["exit_code"] for item in results], [0, 0, 0])
+            self.assertTrue(results[-1]["not_applicable"])
+
     def test_production_root_is_explicit_repository_instance(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory) / "wallet-affiliate-collector"

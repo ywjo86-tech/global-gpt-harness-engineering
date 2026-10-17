@@ -113,7 +113,7 @@ def _command(root: Path, argv: Sequence[str], *, timeout: int = 180) -> dict[str
     if executable not in {"python", "python3", "git"}:
         raise ProductionManualActionError("manual action command executable is not approved")
     if executable in {"python", "python3"}:
-        allowed = command[1:3] in (["-m", "unittest"], ["-m", "compileall"])
+        allowed = command[1:3] in (["-m", "unittest"], ["-m", "compileall"], ["-m", "pytest"])
         if not allowed:
             raise ProductionManualActionError("manual action Python command is not approved")
     if executable == "git" and command[1:3] != ["diff", "--check"]:
