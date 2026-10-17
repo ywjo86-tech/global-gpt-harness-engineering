@@ -160,6 +160,15 @@ class ProductionManualActionTests(unittest.TestCase):
             _resolve_adapter_provider_route(
                 envelope, manual_action_package=action, manual_action_authorization=authorization)
 
+    def test_approved_isolated_pytest_command_is_executable(self):
+        from unittest.mock import patch
+        completed = subprocess.CompletedProcess(["python3", "-m", "pytest"], 0, stdout=b"", stderr=b"")
+        with patch("runtime.orchestrator.production_manual_action.subprocess.run", return_value=completed) as run:
+            result = _command(self.root, ["/isolated/venv/bin/python", "-m", "pytest", "-q", "tests/test_canary.py"])
+        self.assertEqual(result["exit_code"], 0)
+        self.assertFalse(result["timeout"])
+        self.assertEqual(run.call_args.args[0], ["/isolated/venv/bin/python", "-m", "pytest", "-q", "tests/test_canary.py"])
+
     def test_validation_command_does_not_inherit_active_contract_mapping_root(self):
         probe = self.root / "test_env_probe.py"
         probe.write_text(
