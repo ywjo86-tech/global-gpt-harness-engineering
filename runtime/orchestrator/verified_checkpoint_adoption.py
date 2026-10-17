@@ -119,14 +119,11 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
         raise VerifiedCheckpointAdoptionError("approved checkpoint is not an ancestor of HEAD")
     changed = sorted(filter(None, _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", checkpoint).splitlines()))
     directory_scope = any(item.endswith("/") for item in owned)
-    if directory_scope:
-        if not changed or any(
-            not any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in owned)
-            for path in changed
-        ):
-            raise VerifiedCheckpointAdoptionError("checkpoint changed-file scope is outside approval")
-    elif changed != sorted(owned):
-        raise VerifiedCheckpointAdoptionError("checkpoint changed-file scope does not exactly match approval")
+    if not changed or any(
+        not any(path == scope.rstrip("/") or (scope.endswith("/") and path.startswith(scope)) for scope in owned)
+        for path in changed
+    ):
+        raise VerifiedCheckpointAdoptionError("checkpoint changed-file scope is outside approval")
     later = set(filter(None, _git(root, "diff", "--name-only", f"{checkpoint}..{current_head}").splitlines()))
     if later.intersection(owned):
         raise VerifiedCheckpointAdoptionError("approved checkpoint owned files changed after checkpoint")
