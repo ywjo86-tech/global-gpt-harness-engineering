@@ -1433,6 +1433,61 @@ def _persist_manual_action_request(package_root: Path, payload: Mapping[str, Any
     return path
 
 
+def _pending_authorized_manual_patch_needs_execution(
+    project_root: str | Path, plan: GatePlan, selected_lv: GateLV,
+    *, lv_id: str, lv_run_id: str, approved_head: str,
+    manual_package: Mapping[str, Any], manual_authorization: Mapping[str, Any],
+) -> bool:
+    """Verify a manual patch needs execution before skipping witness recertification.
+
+    Historical owned-scope Git commits do not prove present completion (a
+    revert may restore an unsatisfied baseline). A package-specific owner
+    authorization and exact approved source binding are mandatory. Git apply
+    --check has no product effects. The standard Router and manual-action
+    validators still run later. This path NEVER marks a Gate completed.
+    """
+    from .production_manual_action import validate_action_package
+
+    root = Path(project_root).resolve()
+    branch_head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True, timeout=15,
+    ).stdout.strip()
+    if branch_head != approved_head or manual_package.get("source_head") != approved_head:
+        raise GateControllerError("manual recertification requires exact approved source HEAD")
+    if subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-uall"],
+        capture_output=True, text=True, check=True, timeout=15,
+    ).stdout.strip():
+        raise GateControllerError("manual recertification requires clean project worktree")
+    manifest = {
+        "project_id": plan.project_id, "gate_id": plan.gate_id,
+        "lv_id": lv_id, "run_id": lv_run_id,
+        "canonical_plan_sha256": plan.canonical_plan_sha256,
+        "source_head": approved_head, "owned_files": list(selected_lv.owned_files),
+    }
+    try:
+        validate_action_package(manual_package, manual_authorization, manifest)
+    except Exception as exc:
+        raise GateControllerError(f"baseline recertification manual authorization invalid: {exc}") from exc
+
+    patch = manual_package.get("patch")
+    if not isinstance(patch, str) or not patch:
+        raise GateControllerError("baseline recertification manual patch is missing")
+    with tempfile.TemporaryDirectory(prefix="g1-manual-route-precheck-") as td:
+        patch_path = Path(td) / "authorized.patch"
+        patch_path.write_text(patch, encoding="utf-8")
+        probe = subprocess.run(
+            ["git", "-C", str(root), "apply", "--check", str(patch_path)],
+            capture_output=True, check=False, timeout=30,
+        )
+    if probe.returncode != 0:
+        # If the patch is already applied, do not execute it again. Only the
+        # existing verification-only recertification path can then run.
+        return False
+    return True
+
+
 def _resolve_adapter_provider_route(
     provider_route_envelope: Mapping[str, Any] | None, *,
     manual_action_package: Mapping[str, Any] | None = None,
@@ -3282,6 +3337,26 @@ def execute_gate(project_root: str | Path, gate_id: str, run_id: str, *, harness
                         lv_id=lv_id, current_head=current_head, approval_head=head,
                     )
 
+            # Baseline-witness recertification is only a candidate to verify
+            # completion, not proof that the CURRENT user-approved baseline
+            # already meets the LV output contract. A reverted canary may have
+            # a historical owned-file witness while the approved patch is still
+            # needed. When a separately authorized manual action is bound,
+            # validate its complete immutable scope and demonstrate that the
+            # intended patch still applies before using the normal canonical
+            # Provider Router. Never create a synthetic Router envelope, nor
+            # reclassify a blocked Provider as eligible.
+            manual_package = (manual_action_packages_by_lv or {}).get(lv_id)
+            manual_authorization = (manual_action_authorizations_by_lv or {}).get(lv_id)
+            if satisfied_recertification is not None and (
+                    manual_package is not None or manual_authorization is not None):
+                if manual_package is None or manual_authorization is None:
+                    raise GateControllerError("manual action package/authorization pairing is incomplete")
+                if _pending_authorized_manual_patch_needs_execution(
+                        root, plan, selected_lv, lv_id=lv_id, lv_run_id=lv_run_id,
+                        approved_head=head, manual_package=manual_package,
+                        manual_authorization=manual_authorization):
+                    satisfied_recertification = None
             if satisfied_recertification is not None:
                 resolved_codex_readiness = resolved_codex_probes = None
                 provider_route_envelope = None
