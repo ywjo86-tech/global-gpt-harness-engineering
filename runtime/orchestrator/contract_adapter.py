@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any, Mapping
@@ -220,7 +220,30 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         for item in migrations
     ):
         raise ContractMappingError("plan_sha_migrations is invalid")
-    return ContractMapping(
+    # A preexisting legacy ACTIVE Gate may only switch to a sealed V2 state
+    # with an independently recorded, committed and digest-bound retirement.
+    # Without this, changing the mapping pointer could silently reuse old power.
+    old_active = root / "docs/GATE_STATE.md"
+    activation = root / "docs/harness/first-gate.activation.json"
+    next_gate_state = _resolve_project_path(root, static.get("gate_state"), "static_validation.gate_state")
+    retirement_verified = False
+    if old_active.is_file() and activation.is_file() and "FIRST_GATE_ACTIVE" in old_active.read_text(encoding="utf-8"):
+        if next_gate_state != old_active:
+            from .legacy_gate_retirement import verify_retirement
+            retired = payload.get("legacy_gate_retirement")
+            if not isinstance(retired, dict) or set(retired)!={"path","sha256"}:
+                raise ContractMappingError("legacy ACTIVE Gate requires explicit retirement proof before V2 handoff")
+            try:
+                verify_retirement(
+                    root,project_id=project_id,gate_state=next_gate_state,
+                    ledger_path=ledger_path,business_approval=_resolve_project_path(root,static.get("business_lv_approval"),"static_validation.business_lv_approval"),
+                    record_rel=retired["path"],record_digest=retired["sha256"])
+            except (ValueError,OSError,subprocess.SubprocessError) as e:
+                raise ContractMappingError(f"legacy ACTIVE Gate retirement invalid: {e}") from e
+            retirement_verified = True
+        elif "legacy_gate_retirement" in payload:
+            raise ContractMappingError("legacy retirement declared but active Gate is still selected")
+    mapping = ContractMapping(
         project_root=root,
         project_id=project_id,
         contract_paths=contract_paths,
@@ -239,6 +262,17 @@ def load_project_mapping(project_root: str | Path, *, mapping_root: str | Path |
         task_lv_projection_path=task_lv_projection_path,
         task_lv_projection_sha256=task_lv_projection_sha256,
     )
+    if retirement_verified:
+        # Verify that the historical Gate was genuinely authorized under its
+        # ORIGINAL state/approval contract, not merely matching file hashes.
+        legacy_mapping = replace(mapping, gate_state_path=old_active, gate_state_ledger_path=old_active)
+        try:
+            historical = _evaluate_first_gate_activation(legacy_mapping, old_active.read_text(encoding="utf-8"))
+        except (ContractMappingError, OSError, ValueError) as exc:
+            raise ContractMappingError(f"legacy Gate historical authority validation failed: {exc}") from exc
+        if historical is None or historical.get("state")!="GATE1_ACTIVE" or historical.get("transition_authorized") is not True:
+            raise ContractMappingError("legacy Gate retirement requires verified active historical authority")
+    return mapping
 
 
 def validate_mapping_sources(mapping: ContractMapping) -> list[str]:
