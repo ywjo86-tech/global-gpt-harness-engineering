@@ -164,6 +164,117 @@ class _FakeAdapter:
 
 
 class OCPv2RuntimeServiceTests(unittest.TestCase):
+    def test_g1_route_defaults_off_and_uses_a_distinct_issue_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, _, _ = _write_runtime_env(root)
+            config = load_runtime_config(env_path, process_environment={})
+            self.assertFalse(config.g1_gate_approval_issue_enabled)
+            self.assertEqual(config.g1_gate_approval_issue_policy_ref, "")
+
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED": "1",
+            })
+            with self.assertRaisesRegex(RuntimeServiceError, "G1 Gate approval issue policy ref"):
+                load_runtime_config(env_path, process_environment={})
+
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_GATE_APPROVAL_ISSUE_ENABLED": "1",
+                "OCP_GATE_APPROVAL_ISSUE_POLICY_REF": "SHARED-POLICY",
+                "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED": "1",
+                "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF": "SHARED-POLICY",
+            })
+            with self.assertRaisesRegex(RuntimeServiceError, "G1_GATE_APPROVAL_POLICY_REF_MUST_BE_DISTINCT"):
+                load_runtime_config(env_path, process_environment={})
+
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED": "1",
+                "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF": "G1-OWNER-POLICY",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            self.assertTrue(config.g1_gate_approval_issue_enabled)
+            self.assertEqual(config.g1_gate_approval_issue_policy_ref, "G1-OWNER-POLICY")
+            self.assertFalse(config.gate_approval_issue_enabled)
+
+    def test_live_successor_stage_environment_keys_remain_supported(self):
+        with tempfile.TemporaryDirectory() as td:
+            env_path, _, _ = _write_runtime_env(Path(td), extra={
+                "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED": "0",
+                "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF": "",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            self.assertEqual(config.environment["OCP_SUCCESSOR_RELEASE_STAGE_ENABLED"], "0")
+            self.assertEqual(config.environment["OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF"], "")
+
+    def test_g1_route_composes_from_its_own_alias_registry(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED": "1",
+                "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF": "G1-OWNER-POLICY",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            mapping_root = root / "onboarding"
+            (mapping_root / "mappings").mkdir(parents=True)
+            (mapping_root / "g1-approval-registry-main" / "aliases").mkdir(parents=True)
+            g1_issuer = Mock()
+            with patch.object(module, "GitHubRESTClient", return_value=Mock()), \
+                 patch.object(module, "GitHubControlAdapter", return_value=Mock()), \
+                 patch.object(module, "recover_pending_canonical_results", return_value=None), \
+                 patch.object(module, "resolve_harness_state_root", return_value=root / "harness"), \
+                 patch.object(module, "OwnerAuditAnchorClient", return_value=Mock()) as anchor_client, \
+                 patch.object(module, "G1GateApprovalIssuer", return_value=g1_issuer) as issuer_factory:
+                config.environment["HARNESS_CONTRACT_MAPPING_ROOT"] = str(mapping_root)
+                service = _compose_service(config)
+
+        self.assertFalse(service.gate_approval_issue_enabled)
+        self.assertTrue(service.g1_gate_approval_issue_enabled)
+        self.assertEqual(service.g1_gate_approval_issue_policy_ref, "G1-OWNER-POLICY")
+        self.assertIsNotNone(service.issue_g1_gate_approval_authorized)
+        issuer_factory.assert_called_once()
+        kwargs = issuer_factory.call_args.kwargs
+        self.assertEqual(kwargs["registry_root"], mapping_root / "g1-approval-registry-main")
+        self.assertEqual(kwargs["mapping_root"], mapping_root / "mappings")
+        anchor_client.assert_called_once()
+
+    def test_generic_issuer_cannot_issue_g1_gate_through_existing_alias(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_GATE_APPROVAL_ISSUE_ENABLED": "1",
+                "OCP_GATE_APPROVAL_ISSUE_POLICY_REF": "GENERIC-POLICY",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            mapping_root = root / "onboarding"
+            (mapping_root / "mappings").mkdir(parents=True)
+            generic_issuer = Mock()
+            generic_issuer._preflight.return_value = ({
+                "evidence": {"payload": {"project_id": "OCP-RDC-EXEC-CANARY-20260923-R2"}},
+            }, "d" * 64)
+            with patch.object(module, "GitHubRESTClient", return_value=Mock()), \
+                 patch.object(module, "GitHubControlAdapter", return_value=Mock()), \
+                 patch.object(module, "recover_pending_canonical_results", return_value=None), \
+                 patch.object(module, "resolve_harness_state_root", return_value=root / "harness"), \
+                 patch.object(module, "GateApprovalIssuer", return_value=generic_issuer):
+                config.environment["HARNESS_CONTRACT_MAPPING_ROOT"] = str(mapping_root)
+                service = _compose_service(config)
+                envelope = SimpleNamespace(
+                    message_id="MSG-G1-BYPASS-TEST",
+                    payload=SimpleNamespace(
+                        gate_id="GATE-001", project_alias="ocp-rdc-exec-canary-20260923-r2",
+                        mode="DRY_RUN", request_id="G1-REQ-1", request_digest="e" * 64,
+                    ),
+                    transport=SimpleNamespace(source_actor_id="235775273"),
+                )
+                with self.assertRaisesRegex(RuntimeServiceError, "G1_GATE_APPROVAL_REQUIRES_G1_ROUTE"):
+                    service.issue_gate_approval_authorized(envelope)
+
+        generic_issuer.execute.assert_not_called()
+
     def test_mutation_delegates_only_to_registered_full_plan_resume(self):
         executor = Mock(return_value={"status": "WAITING_APPROVAL", "result_class": "CANONICAL_FULL_PLAN_RESULT"})
         result = execute_authorized_canonical(
