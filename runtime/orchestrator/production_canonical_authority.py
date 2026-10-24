@@ -994,8 +994,20 @@ def build_production_canonical_worker_authority_provider(
                 ),
             }
             seed_digest = hashlib.sha256(canonical_json_bytes(binding_seed)).hexdigest()
+            codex_cli_version = (
+                getattr(codex_auth_readiness, "cli_version", "")
+                if not (provider_action or provider_read_only or recertification is not None)
+                else "NOT_APPLICABLE"
+            )
+            if codex_cli_version != "NOT_APPLICABLE" and not re.fullmatch(
+                r"[0-9]+\.[0-9]+\.[0-9]+", str(codex_cli_version)
+            ):
+                raise ProductionCanonicalAuthorityError(
+                    "Codex launch version is missing or invalid",
+                    reason_taxonomy="PRODUCTION_CANONICAL_CODEX_VERSION_BINDING_MISSING",
+                )
             binding = {
-                "schema_version": "orchestration.canonical-launch-authority.v1",
+                "schema_version": "orchestration.canonical-launch-authority.v2",
                 "package_ref": f"package://{worker_task_id}@1#{seed_digest}",
                 "package_digest": seed_digest,
                 "contract_ref": f"contract://{worker_task_id}@1#{seed_digest}",
@@ -1020,6 +1032,7 @@ def build_production_canonical_worker_authority_provider(
                     else f"not-applicable://provider-read-only-recheck#{seed_digest}" if provider_read_only
                     else f"codex-recheck://{worker_task_id}#{seed_digest}"
                 ),
+                "codex_cli_version": codex_cli_version,
                 "launch_authorization_digest": seed_digest,
                 "migration_authority_ref": f"migration-authority://dynamic-lv#{seed_digest}",
             }

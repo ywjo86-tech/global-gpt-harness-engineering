@@ -61,7 +61,7 @@ class RemoteOperatorGatewayBoundaryTests(unittest.TestCase):
             },
         }
         authority = {
-            "schema_version": "orchestration.canonical-launch-authority.v1",
+            "schema_version": "orchestration.canonical-launch-authority.v2",
             "package_ref": "package:1",
             "package_digest": "1" * 64,
             "contract_ref": "contract:1",
@@ -73,6 +73,7 @@ class RemoteOperatorGatewayBoundaryTests(unittest.TestCase):
             "preflight_evidence_digest": "5" * 64,
             "codex_auth_readiness_ref": "auth:ready",
             "codex_auth_recheck_evidence_ref": "auth:recheck",
+            "codex_cli_version": "0.163.0",
             "launch_authorization_digest": "6" * 64,
             "migration_authority_ref": "migration:none",
         }

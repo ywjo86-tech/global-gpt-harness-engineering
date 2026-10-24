@@ -45,8 +45,37 @@ class TransportError(RuntimeError):
     """Bounded compatibility or protocol failure."""
 
 
+class TransportExecutionError(TransportError):
+    """Content-free failure after the Codex App Server process was launched."""
+
+    def __init__(self) -> None:
+        super().__init__("TRANSPORT_POST_LAUNCH_FAILURE")
+        self.failure_phase = "POST_LAUNCH"
+        self.failure_category = "TRANSPORT_POST_LAUNCH_FAILURE"
+
+
 class CrashAfterDurableWrite(TransportError):
     """Explicit proof-only interruption after a governed durable WRITE."""
+
+
+def _stop_app_server_process(process: Any) -> None:
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    except Exception:
+        pass
+    for stream in (getattr(process, "stdin", None), getattr(process, "stdout", None),
+                   getattr(process, "stderr", None)):
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +133,8 @@ class TransportCompatibility:
 class WorkerAdapter(Protocol):
     def check_compatibility(self) -> TransportCompatibility: ...
     def run_turn(self, *, prompt: str, dynamic_tools: Sequence[Mapping[str, Any]],
-                 tool_handler: Callable[[ToolRequestEnvelope], ToolResultEnvelope]) -> Mapping[str, Any]: ...
+                 tool_handler: Callable[[ToolRequestEnvelope], ToolResultEnvelope],
+                 expected_codex_version: str | None = None) -> Mapping[str, Any]: ...
 
 
 def _safe_id(value: object, name: str) -> str:
@@ -226,17 +256,24 @@ class CodexAppServerAdapter:
     def run_turn(self, *, prompt: str, dynamic_tools: Sequence[Mapping[str, Any]],
                  tool_handler: Callable[[ToolRequestEnvelope], ToolResultEnvelope],
                  worker_task_id: str = "TASK-4A-08", worker_action_id: str = "WORKER_TURN",
-                 timeout: int = 180) -> Mapping[str, Any]:
+                 timeout: int = 180,
+                 expected_codex_version: str | None = None) -> Mapping[str, Any]:
         compatibility = self.check_compatibility()
+        if expected_codex_version is not None and (
+            not is_stable_codex_version(expected_codex_version)
+            or compatibility.codex_version != expected_codex_version
+        ):
+            raise TransportError("CODEX_LAUNCH_VERSION_BINDING_MISMATCH")
         registry = self.registry_evidence(dynamic_tools)
+        if not isinstance(timeout, int) or timeout < 1:
+            raise TransportError("transport timeout is invalid")
         process = self._process_factory(
             ["codex", "app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         if process.stdin is None or process.stdout is None:
-            raise TransportError("app-server stdio unavailable")
-        if not isinstance(timeout, int) or timeout < 1:
-            raise TransportError("transport timeout is invalid")
+            _stop_app_server_process(process)
+            raise TransportExecutionError()
         deadline = time.monotonic() + timeout
         next_id = 1
         pending: dict[int, Mapping[str, Any]] = {}
@@ -256,7 +293,11 @@ class CodexAppServerAdapter:
         stdout_reader = threading.Thread(
             target=read_stdout, name="codex-app-server-stdout", daemon=True,
         )
-        stdout_reader.start()
+        try:
+            stdout_reader.start()
+        except Exception as exc:
+            _stop_app_server_process(process)
+            raise TransportExecutionError() from exc
 
         def send(value: Mapping[str, Any]) -> None:
             process.stdin.write(json.dumps(dict(value), separators=(",", ":")) + "\n")
@@ -364,11 +405,11 @@ class CodexAppServerAdapter:
             if broker_block is not None:
                 outcome["broker_block"] = broker_block
             return outcome
+        except CrashAfterDurableWrite:
+            raise
+        except TransportExecutionError:
+            raise
+        except Exception as exc:
+            raise TransportExecutionError() from exc
         finally:
-            if process.poll() is None:
-                process.terminate()
-                try: process.wait(timeout=5)
-                except subprocess.TimeoutExpired: process.kill()
-            for stream in (process.stdin, process.stdout, process.stderr):
-                close = getattr(stream, "close", None)
-                if callable(close): close()
+            _stop_app_server_process(process)

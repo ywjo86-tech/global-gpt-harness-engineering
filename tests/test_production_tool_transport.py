@@ -7,9 +7,13 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from runtime.orchestrator.codex_dynamic_transport import CrashAfterDurableWrite, ToolRequestEnvelope
+from runtime.orchestrator.codex_dynamic_transport import (
+    ToolRequestEnvelope, TransportExecutionError,
+)
 from runtime.orchestrator.effect_evidence_bridge import verify_single_governed_write_effect
-from runtime.orchestrator.production_tool_transport import ProductionToolTransport, production_operations
+from runtime.orchestrator.production_tool_transport import (
+    ProductionToolTransport, ProductionTransportFailure, production_operations,
+)
 from runtime.orchestrator.production_worker_executor import _secret_findings
 from runtime.orchestrator.tool_authorization import activate_contract, build_dec007_approved_contracts
 
@@ -80,6 +84,38 @@ class ProductionToolTransportTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "changed")
             self.assertEqual(len(list((root / "journal").glob("*.intent.json"))), 2)
             self.assertEqual(len(list((root / "journal").glob("*.receipt.json"))), 2)
+
+    def test_post_launch_failure_preserves_durable_write_evidence(self):
+        class FailAfterWriteAdapter:
+            def run_turn(self, *, tool_handler, **kwargs):
+                tool_handler(ToolRequestEnvelope(
+                    "PROJECT_OWNED_FILE_WRITE", "TASK-4A-08", "PRODUCTION_WORKER_TURN",
+                    {"owned_file_id": "OWNED_0001", "content": "durable-before-timeout"},
+                    "CALL_WRITE",
+                ))
+                raise TransportExecutionError()
+
+        contracts = [active(item) for item in production_operations()]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transport = ProductionToolTransport(
+                request=self.request(root, contracts), workspace_root=root,
+                journal_root=root / "journal", security_scan=lambda _: True,
+            )
+
+            with self.assertRaises(ProductionTransportFailure) as caught:
+                transport.run(
+                    prompt="bounded", adapter=FailAfterWriteAdapter(),
+                    dynamic_operation_class_ids=("PROJECT_OWNED_FILE_WRITE",),
+                    expected_codex_version="0.150.1",
+                )
+
+            self.assertEqual((root / "owned.txt").read_text(encoding="utf-8"),
+                             "durable-before-timeout")
+            self.assertEqual(caught.exception.failure_phase, "POST_LAUNCH")
+            self.assertEqual(caught.exception.effect_evidence_status, "COLLECTED")
+            self.assertEqual(len(caught.exception.governed_effect_evidence), 1)
+            self.assertTrue(caught.exception.governed_effect_evidence[0]["mutation_performed"])
 
     def test_owned_file_list_exposes_id_to_path_mapping_inside_approved_scope(self):
         operations = production_operations()
@@ -365,13 +401,16 @@ class ProductionToolTransportTests(unittest.TestCase):
             contracts = [proof97_active(item) for item in production_operations()]
             first = ProductionToolTransport(request=self.proof97_request(root, contracts), workspace_root=root,
                                             journal_root=journal, security_scan=lambda _: True)
-            with self.assertRaisesRegex(CrashAfterDurableWrite, "injected crash after durable write"):
+            with self.assertRaises(ProductionTransportFailure) as caught:
                 first.run(
                     prompt=("Call PROJECT_OWNED_FILE_WRITE exactly once with owned_file_id OWNED_0001 "
                             "and content \"proof97 actual first write\". Then finish."),
                     timeout=90, dynamic_operation_class_ids=("PROJECT_OWNED_FILE_WRITE",),
                     crash_after_durable_write=True,
                 )
+            self.assertEqual(caught.exception.failure_phase, "POST_LAUNCH")
+            self.assertEqual(caught.exception.effect_evidence_status, "COLLECTED")
+            self.assertEqual(len(caught.exception.governed_effect_evidence), 1)
             self.assertEqual(target.read_text(encoding="utf-8"), "proof97 actual first write")
             restarted = ProductionToolTransport(request=self.proof97_request(root, contracts), workspace_root=root,
                                                 journal_root=journal, security_scan=lambda _: True)

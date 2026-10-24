@@ -9,6 +9,12 @@ from runtime.orchestrator.production_execution_gateway import (
     build_gateway_request,
     validate_gateway_request,
 )
+from runtime.orchestrator.tool_authorization import (
+    DEC007_DECISION_REF,
+    activate_contract,
+    build_dec007_approved_contracts,
+    owned_scope_digest,
+)
 
 
 def _digest(value):
@@ -17,7 +23,7 @@ def _digest(value):
 
 def canonical_binding():
     return {
-        "schema_version": "orchestration.canonical-launch-authority.v1",
+        "schema_version": "orchestration.canonical-launch-authority.v2",
         "package_ref": "package://PKG-1@1#" + "1" * 64,
         "package_digest": "1" * 64,
         "contract_ref": "contract://CEC-1@1#" + "2" * 64,
@@ -29,6 +35,7 @@ def canonical_binding():
         "preflight_evidence_digest": "5" * 64,
         "codex_auth_readiness_ref": "CAE-initial",
         "codex_auth_recheck_evidence_ref": "CAE-recheck",
+        "codex_cli_version": "0.163.0",
         "launch_authorization_digest": "6" * 64,
         "migration_authority_ref": "migration-authority://R4.1/manifest",
     }
@@ -37,6 +44,36 @@ def canonical_binding():
 def build_request(binding=None, binding_digest=None):
     binding = canonical_binding() if binding is None else binding
     digest = _digest(binding) if binding_digest is None else binding_digest
+    owned = ("owned.txt",)
+    approved = build_dec007_approved_contracts(
+        project_id="wallet-affiliate-collector",
+        gate_id="G1",
+        lv_id="LV3-5",
+        run_id="run-1",
+        canonical_plan_sha256="d" * 64,
+        owned_files=owned,
+    )
+    contracts = [
+        activate_contract(
+            item,
+            package_binding_sha256="7" * 64,
+            authorized_decisions={DEC007_DECISION_REF: "USER_DECISION"},
+        ).to_dict()
+        for item in approved
+    ]
+    projection = {
+        "decision_ref": DEC007_DECISION_REF,
+        "worker_task_id": "TASK-4A-08",
+        "active_contract_count": len(contracts),
+        "contract_ids": sorted(item["contract_id"] for item in contracts),
+        "operation_class_ids": sorted(item["operation_class_id"] for item in contracts),
+        "owned_scope_sha256": owned_scope_digest(owned),
+        "package_binding_sha256": "7" * 64,
+        "requirement_digests": {
+            item["operation_class_id"]: item["requirement_digest"]
+            for item in contracts
+        },
+    }
     return build_gateway_request(
         project_id="wallet-affiliate-collector",
         run_id="run-1",
@@ -58,6 +95,10 @@ def build_request(binding=None, binding_digest=None):
         structured_event_contract_version="events.v1",
         canonical_plan_sha256="d" * 64,
         requirement_digest="e" * 64,
+        active_tool_authorization_contracts=contracts,
+        owned_files=list(owned),
+        tool_authorization_projection=projection,
+        tool_authorization_projection_sha256=_digest(projection),
         canonical_authority_binding=binding,
         canonical_authority_binding_digest=digest,
     )
@@ -71,6 +112,29 @@ class GatewayCanonicalAuthorityBindingTests(unittest.TestCase):
             validated["canonical_authority_binding_digest"],
             _digest(validated["canonical_authority_binding"]),
         )
+
+    def test_codex_launch_version_must_match_the_launch_bound_version(self):
+        from runtime.orchestrator.production_execution_gateway import (
+            validate_codex_launch_version,
+        )
+
+        value = build_request()
+        self.assertEqual(validate_codex_launch_version(value, "0.163.0"), "0.163.0")
+        with self.assertRaisesRegex(GatewayError, "CODEX_LAUNCH_VERSION_BINDING_MISMATCH"):
+            validate_codex_launch_version(value, "0.164.0")
+
+    def test_codex_execution_rejects_not_applicable_or_unbound_launch_version(self):
+        from runtime.orchestrator.production_execution_gateway import (
+            validate_codex_launch_version,
+        )
+
+        binding = canonical_binding()
+        binding["codex_cli_version"] = "NOT_APPLICABLE"
+        with self.assertRaisesRegex(GatewayError, "CODEX_LAUNCH_VERSION_BINDING_MISMATCH"):
+            validate_codex_launch_version(
+                build_request(binding=binding, binding_digest=_digest(binding)),
+                "0.163.0",
+            )
 
     def test_nested_binding_tamper_is_rejected_even_with_resealed_outer_request(self):
         value = build_request()

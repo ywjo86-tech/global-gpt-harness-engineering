@@ -16,11 +16,55 @@ from runtime.orchestrator.production_execution_gateway import (
     _digest, _safe_broker_block,
 )
 from runtime.orchestrator.tool_authorization import (
+    DEC007_DECISION_REF,
     activate_contract, build_dec007_approved_contracts, owned_scope_digest,
 )
 
 
-def request():
+def request(*, codex_cli_version="0.150.1"):
+    owned = ("owned.txt",)
+    approved = build_dec007_approved_contracts(
+        project_id="p", gate_id="g", lv_id="L", run_id="r",
+        canonical_plan_sha256="d" * 64, owned_files=owned,
+    )
+    contracts = [
+        activate_contract(
+            item,
+            package_binding_sha256="7" * 64,
+            authorized_decisions={DEC007_DECISION_REF: "USER_DECISION"},
+        ).to_dict()
+        for item in approved
+    ]
+    projection = {
+        "decision_ref": DEC007_DECISION_REF,
+        "worker_task_id": "TASK-4A-08",
+        "active_contract_count": len(contracts),
+        "contract_ids": sorted(item["contract_id"] for item in contracts),
+        "operation_class_ids": sorted(item["operation_class_id"] for item in contracts),
+        "owned_scope_sha256": owned_scope_digest(owned),
+        "package_binding_sha256": "7" * 64,
+        "requirement_digests": {
+            item["operation_class_id"]: item["requirement_digest"]
+            for item in contracts
+        },
+    }
+    binding = {
+        "schema_version": "orchestration.canonical-launch-authority.v2",
+        "package_ref": "package://PKG-1@1#" + "1" * 64,
+        "package_digest": "1" * 64,
+        "contract_ref": "contract://CEC-1@1#" + "2" * 64,
+        "contract_digest": "2" * 64,
+        "contract_activation_digest": "3" * 64,
+        "worker_task_id": "TASK-4A-08",
+        "criterion_set_digest": "4" * 64,
+        "execution_obligation": "MUTATION_REQUIRED",
+        "preflight_evidence_digest": "5" * 64,
+        "codex_auth_readiness_ref": "CAE-initial",
+        "codex_auth_recheck_evidence_ref": "CAE-recheck",
+        "codex_cli_version": codex_cli_version,
+        "launch_authorization_digest": "6" * 64,
+        "migration_authority_ref": "migration-authority://test",
+    }
     return build_gateway_request(
         project_id="p", run_id="r", gate_id="g", lv_id="L", attempt=1,
         workspace_identity={"project_id": "p", "workspace_kind": "project_root"},
@@ -28,6 +72,13 @@ def request():
         runtime_prompt_artifact={"kind": "worker_runtime_prompt", "name": "executor.prompt.txt"},
         runtime_prompt_sha256="c" * 64, adapter_contract_version="SEM-025.v2",
         structured_event_contract_version="codex-exec-jsonl.0.150.1.v1",
+        canonical_plan_sha256="d" * 64, requirement_digest="e" * 64,
+        active_tool_authorization_contracts=contracts,
+        owned_files=list(owned),
+        tool_authorization_projection=projection,
+        tool_authorization_projection_sha256=_digest(projection),
+        canonical_authority_binding=binding,
+        canonical_authority_binding_digest=_digest(binding),
     )
 
 
@@ -285,6 +336,217 @@ class GatewayContractTests(unittest.TestCase):
             self.assertEqual(result["adapter_evidence"]["backend"], HOST_GATEWAY)
             records = list(ledger.glob("*.json")); self.assertEqual(len(records), 1)
             self.assertIn('"state":"COMPLETED"', records[0].read_text())
+
+    def test_host_runner_blocks_version_drift_before_codex_execution_and_closes_ledger(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "runtime" / "gateway.sock"
+            ledger = root / "ledger"
+            calls = []
+
+            def executor(argv, **kwargs):
+                calls.append(list(argv))
+                if argv == ["codex", "--version"]:
+                    return subprocess.CompletedProcess(argv, 0, b"codex-cli 0.151.0\n", b"")
+                raise AssertionError("Codex execution must not start after version drift")
+
+            runner = UnixSocketHostRunner(sock, ledger, executor=executor)
+            errors = []
+
+            def serve():
+                try:
+                    runner.serve_once(timeout=3)
+                except BaseException as exc:
+                    errors.append(exc)
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            for _ in range(100):
+                if sock.exists() or errors:
+                    break
+                time.sleep(0.01)
+            if errors or not sock.exists():
+                self.skipTest("local sandbox does not permit AF_UNIX bind")
+            time.sleep(0.02)
+
+            result = UnixSocketGatewayTransport(sock, workspace_root=root)(
+                request(codex_cli_version="0.150.1"),
+                prompt=b"safe",
+                last_message=root / "last",
+                timeout=2,
+                cancel_path=root / "cancel",
+            )
+            thread.join(timeout=2)
+            self.assertFalse(errors)
+            self.assertEqual(calls, [["codex", "--version"]])
+            self.assertEqual(result["process_evidence"]["termination"], "BLOCKED")
+            self.assertEqual(result["adapter_evidence"]["codex_version"], "0.151.0")
+            records = list(ledger.glob("*.json"))
+            self.assertEqual(len(records), 1)
+            self.assertIn('"state":"FAILED"', records[0].read_text())
+
+    def test_host_runner_version_probe_failure_closes_ledger_without_execution(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "runtime" / "gateway.sock"
+            ledger = root / "ledger"
+            calls = []
+
+            def executor(argv, **kwargs):
+                calls.append(list(argv))
+                return subprocess.CompletedProcess(argv, 1, b"unavailable", b"")
+
+            runner = UnixSocketHostRunner(sock, ledger, executor=executor)
+            errors = []
+
+            def serve():
+                try:
+                    runner.serve_once(timeout=3)
+                except BaseException as exc:
+                    errors.append(exc)
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            for _ in range(100):
+                if sock.exists() or errors:
+                    break
+                time.sleep(0.01)
+            if errors or not sock.exists():
+                self.skipTest("local sandbox does not permit AF_UNIX bind")
+            time.sleep(0.02)
+
+            result = UnixSocketGatewayTransport(sock, workspace_root=root)(
+                request(), prompt=b"safe", last_message=root / "last",
+                timeout=2, cancel_path=root / "cancel",
+            )
+            thread.join(timeout=2)
+            self.assertFalse(errors)
+            self.assertEqual(calls, [["codex", "--version"]])
+            self.assertEqual(
+                result["process_evidence"]["launch_authority_failure_category"],
+                "CODEX_LAUNCH_VERSION_PROBE",
+            )
+            records = list(ledger.glob("*.json"))
+            self.assertEqual(len(records), 1)
+            self.assertIn('"state":"FAILED"', records[0].read_text())
+
+    def test_broker_native_runner_blocks_bound_version_drift_before_tool_calls(self):
+        from unittest.mock import patch
+        from runtime.orchestrator.codex_dynamic_transport import CodexAppServerAdapter
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "runtime" / "gateway.sock"
+            ledger = root / "ledger"
+            process_calls = []
+            verified_schema = {
+                "experimental_api": True, "dynamic_tool_request": True,
+                "dynamic_tool_response": True, "empty_environment_supported": True,
+                "schema_verified": True,
+            }
+
+            def adapter_factory():
+                return CodexAppServerAdapter(
+                    process_factory=lambda *args, **kwargs: process_calls.append(args),
+                    version_probe=lambda: "0.151.0",
+                    schema_probe=lambda: dict(verified_schema),
+                )
+
+            runner = UnixSocketHostRunner(sock, ledger, broker_native=True)
+            errors = []
+
+            def serve():
+                try:
+                    runner.serve_once(timeout=3)
+                except BaseException as exc:
+                    errors.append(exc)
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            for _ in range(100):
+                if sock.exists() or errors:
+                    break
+                time.sleep(0.01)
+            if errors or not sock.exists():
+                self.skipTest("local sandbox does not permit AF_UNIX bind")
+            time.sleep(0.02)
+
+            with patch(
+                "runtime.orchestrator.production_tool_transport.CodexAppServerAdapter",
+                side_effect=adapter_factory,
+            ):
+                result = UnixSocketGatewayTransport(sock, workspace_root=root)(
+                    request(codex_cli_version="0.150.1"), prompt=b"safe",
+                    last_message=root / "last", timeout=2, cancel_path=root / "cancel",
+                )
+            thread.join(timeout=2)
+            self.assertFalse(errors)
+            self.assertEqual(process_calls, [])
+            self.assertEqual(
+                result["process_evidence"]["launch_authority_failure_category"],
+                "CODEX_LAUNCH_VERSION_BINDING",
+            )
+            records = list(ledger.glob("*.json"))
+            self.assertEqual(len(records), 1)
+            self.assertIn('"state":"FAILED"', records[0].read_text())
+
+    def test_broker_native_post_launch_failure_preserves_effects_and_is_not_authority_block(self):
+        from unittest.mock import patch
+        from runtime.orchestrator.production_tool_transport import ProductionTransportFailure
+
+        effect = {
+            "operation": "PROJECT_OWNED_FILE_WRITE", "effect_id": "TE-POST-LAUNCH",
+            "mutation_performed": True, "security_passed": True,
+        }
+        failure = ProductionTransportFailure(
+            failure_category="TRANSPORT_POST_LAUNCH_FAILURE",
+            effect_evidence_status="COLLECTED",
+            governed_effect_evidence=[effect],
+        )
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sock = root / "runtime" / "gateway.sock"
+            ledger = root / "ledger"
+            runner = UnixSocketHostRunner(sock, ledger, broker_native=True)
+            errors = []
+
+            def serve():
+                try:
+                    runner.serve_once(timeout=3)
+                except BaseException as exc:
+                    errors.append(exc)
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            for _ in range(100):
+                if sock.exists() or errors:
+                    break
+                time.sleep(0.01)
+            if errors or not sock.exists():
+                self.skipTest("local sandbox does not permit AF_UNIX bind")
+            time.sleep(0.02)
+
+            with patch(
+                "runtime.orchestrator.production_tool_transport.ProductionToolTransport.run",
+                side_effect=failure,
+            ):
+                result = UnixSocketGatewayTransport(sock, workspace_root=root)(
+                    request(codex_cli_version="0.150.1"), prompt=b"safe",
+                    last_message=root / "last", timeout=2, cancel_path=root / "cancel",
+                )
+            thread.join(timeout=2)
+
+            self.assertFalse(errors)
+            evidence = result["process_evidence"]
+            self.assertEqual(evidence["termination"], "FAILED")
+            self.assertEqual(evidence["launch_authority_check"], "PASS")
+            self.assertNotIn("launch_authority_failure_category", evidence)
+            self.assertEqual(evidence["governed_effect_evidence"], [effect])
+            self.assertEqual(evidence["effect_evidence_status"], "COLLECTED")
+            self.assertEqual(evidence["effect_reconciliation_status"], "REQUIRED")
+            records = list(ledger.glob("*.json"))
+            self.assertEqual(len(records), 1)
+            self.assertIn('"state":"FAILED"', records[0].read_text())
 
     def test_host_runner_accepts_stable_cli_version_outside_the_old_pin(self):
         def executor(argv, **kwargs):

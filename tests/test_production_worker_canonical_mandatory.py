@@ -50,7 +50,7 @@ def digest(value: object) -> str:
 
 def canonical_binding() -> dict[str, object]:
     value: dict[str, object] = {
-        "schema_version": "orchestration.canonical-launch-authority.v1",
+        "schema_version": "orchestration.canonical-launch-authority.v2",
         "package_ref": "execution-package://PKG-PHASE3B@1",
         "package_digest": "1" * 64,
         "contract_ref": "canonical-contract://CEC-TASK-4A-08@1",
@@ -62,6 +62,7 @@ def canonical_binding() -> dict[str, object]:
         "preflight_evidence_digest": "5" * 64,
         "codex_auth_readiness_ref": "CAE-ready",
         "codex_auth_recheck_evidence_ref": "CAE-recheck",
+        "codex_cli_version": "0.163.0",
         "launch_authorization_digest": "6" * 64,
         "migration_authority_ref": "migration-authority://R4.1/manifest",
     }

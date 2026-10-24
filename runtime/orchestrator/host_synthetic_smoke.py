@@ -10,7 +10,11 @@ from pathlib import Path
 
 from .production_execution_gateway import (
     HOST_GATEWAY, GatewayError, UnixSocketGatewayTransport, UnixSocketHostRunner,
-    build_gateway_request, validate_gateway_request, validate_gateway_result,
+    build_gateway_request, validate_gateway_request, validate_gateway_result, _digest,
+)
+from .tool_authorization import (
+    DEC007_DECISION_REF, activate_contract, build_dec007_approved_contracts,
+    owned_scope_digest,
 )
 
 FAIL_STAGES = frozenset({"SETUP", "UDS_BIND", "UDS_SOCKET_CREATE", "UDS_PATH_VALIDATE", "UDS_CHMOD", "UDS_LISTEN",
@@ -38,6 +42,52 @@ def _safe_substage(exc: BaseException) -> str:
 
 
 def _request() -> dict[str, object]:
+    owned = ("synthetic-owned.txt",)
+    plan_digest = "d" * 64
+    requirement_digest = "e" * 64
+    approved = build_dec007_approved_contracts(
+        project_id="synthetic-smoke", gate_id="SMOKE", lv_id="SMOKE-LV",
+        run_id="synthetic-run", canonical_plan_sha256=plan_digest,
+        owned_files=owned,
+    )
+    contracts = [
+        activate_contract(
+            item,
+            package_binding_sha256="7" * 64,
+            authorized_decisions={DEC007_DECISION_REF: "USER_DECISION"},
+        ).to_dict()
+        for item in approved
+    ]
+    projection = {
+        "decision_ref": DEC007_DECISION_REF,
+        "worker_task_id": "TASK-4A-08",
+        "active_contract_count": len(contracts),
+        "contract_ids": sorted(item["contract_id"] for item in contracts),
+        "operation_class_ids": sorted(item["operation_class_id"] for item in contracts),
+        "owned_scope_sha256": owned_scope_digest(owned),
+        "package_binding_sha256": "7" * 64,
+        "requirement_digests": {
+            item["operation_class_id"]: item["requirement_digest"]
+            for item in contracts
+        },
+    }
+    binding = {
+        "schema_version": "orchestration.canonical-launch-authority.v2",
+        "package_ref": "package://synthetic@1#" + "1" * 64,
+        "package_digest": "1" * 64,
+        "contract_ref": "contract://synthetic@1#" + "2" * 64,
+        "contract_digest": "2" * 64,
+        "contract_activation_digest": "3" * 64,
+        "worker_task_id": "TASK-4A-08",
+        "criterion_set_digest": "4" * 64,
+        "execution_obligation": "MUTATION_REQUIRED",
+        "preflight_evidence_digest": "5" * 64,
+        "codex_auth_readiness_ref": "CAE-synthetic-initial",
+        "codex_auth_recheck_evidence_ref": "CAE-synthetic-recheck",
+        "codex_cli_version": "0.150.1",
+        "launch_authorization_digest": "6" * 64,
+        "migration_authority_ref": "migration-authority://synthetic",
+    }
     return build_gateway_request(
         project_id="synthetic-smoke", run_id="synthetic-run", gate_id="SMOKE", lv_id="SMOKE-LV",
         attempt=1, workspace_identity={"project_id": "synthetic-smoke", "workspace_kind": "temporary"},
@@ -46,6 +96,14 @@ def _request() -> dict[str, object]:
         adapter_contract_version="SEM-025.v2",
         structured_event_contract_version="codex-exec-jsonl.0.150.1.v1",
         execution_backend=HOST_GATEWAY,
+        active_tool_authorization_contracts=contracts,
+        owned_files=list(owned),
+        canonical_plan_sha256=plan_digest,
+        requirement_digest=requirement_digest,
+        tool_authorization_projection=projection,
+        tool_authorization_projection_sha256=_digest(projection),
+        canonical_authority_binding=binding,
+        canonical_authority_binding_digest=_digest(binding),
     )
 
 

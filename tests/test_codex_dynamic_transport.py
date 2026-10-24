@@ -5,7 +5,8 @@ import unittest
 
 from runtime.orchestrator.codex_dynamic_transport import (
     CodexAppServerAdapter, ToolRequestEnvelope, ToolResultEnvelope,
-    TransportCompatibility, TransportError, validate_closed_registry,
+    TransportCompatibility, TransportError, TransportExecutionError,
+    validate_closed_registry,
 )
 
 
@@ -81,6 +82,66 @@ class CodexDynamicTransportTests(unittest.TestCase):
             "experimental_api": True, "dynamic_tool_request": False, "dynamic_tool_response": True,
             "empty_environment_supported": True, "schema_verified": True})
         with self.assertRaises(TransportError): missing.check_compatibility()
+
+    def test_run_turn_blocks_launch_version_drift_before_server_process_or_tool_calls(self):
+        verified_schema = {
+            "experimental_api": True, "dynamic_tool_request": True,
+            "dynamic_tool_response": True, "empty_environment_supported": True,
+            "schema_verified": True,
+        }
+        process_calls = []
+        tool_calls = []
+        adapter = CodexAppServerAdapter(
+            process_factory=lambda *args, **kwargs: process_calls.append(args),
+            version_probe=lambda: "0.163.0",
+            schema_probe=lambda: dict(verified_schema),
+        )
+
+        with self.assertRaisesRegex(TransportError, "CODEX_LAUNCH_VERSION_BINDING_MISMATCH"):
+            adapter.run_turn(
+                prompt="bounded",
+                dynamic_tools=TOOLS,
+                expected_codex_version="0.150.1",
+                tool_handler=lambda envelope: tool_calls.append(envelope),
+            )
+
+        self.assertEqual(process_calls, [])
+        self.assertEqual(tool_calls, [])
+
+    def test_run_turn_classifies_protocol_failure_after_launch_separately(self):
+        verified_schema = {
+            "experimental_api": True, "dynamic_tool_request": True,
+            "dynamic_tool_response": True, "empty_environment_supported": True,
+            "schema_verified": True,
+        }
+        lines = [
+            json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"thread": {"id": "thread-1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 3, "result": {"turn": {"id": "turn-1"}}}) + "\n",
+            json.dumps({"jsonrpc": "2.0", "id": 80, "method": "item/tool/call", "params": {
+                "tool": "PROJECT_FILE_READ", "callId": "call-1",
+                "arguments": {"owned_file_id": "FILE_1"}}}) + "\n",
+        ]
+        process = _Process(lines)
+        tool_calls = []
+        adapter = CodexAppServerAdapter(
+            process_factory=lambda *args, **kwargs: process,
+            version_probe=lambda: "0.150.1",
+            schema_probe=lambda: dict(verified_schema),
+        )
+
+        with self.assertRaises(TransportExecutionError) as caught:
+            adapter.run_turn(
+                prompt="bounded",
+                dynamic_tools=TOOLS,
+                expected_codex_version="0.150.1",
+                tool_handler=lambda envelope: tool_calls.append(envelope) or ToolResultEnvelope(
+                    "COMPLETED", "PRESENT", "PASS", {"status": "COMPLETED"}),
+            )
+
+        self.assertEqual(caught.exception.failure_phase, "POST_LAUNCH")
+        self.assertEqual(caught.exception.failure_category, "TRANSPORT_POST_LAUNCH_FAILURE")
+        self.assertEqual(len(tool_calls), 1)
 
     def test_closed_registry_rejects_unknown_shape_and_duplicates(self):
         self.assertEqual(validate_closed_registry(TOOLS), ("PROJECT_FILE_READ",))

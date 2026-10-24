@@ -12,6 +12,7 @@ from runtime.tool_implementation.manifest import ToolImplementationError, ToolIm
 
 from .codex_dynamic_transport import (
     CrashAfterDurableWrite, CodexAppServerAdapter, ToolRequestEnvelope, ToolResultEnvelope,
+    TransportExecutionError,
 )
 from .effect_evidence_bridge import collect_governed_write_effect_evidence
 from .tool_authorization import (
@@ -24,6 +25,24 @@ _READ = "PROJECT_OWNED_FILE_READ"
 _WRITE = "PROJECT_OWNED_FILE_WRITE"
 _LIST = "PROJECT_OWNED_FILE_LIST"
 _SENSITIVE_SCOPE_PARTS = frozenset({".git", ".env", "auth.json", "credentials", "credentials.json"})
+
+
+class ProductionTransportFailure(RuntimeError):
+    """A post-launch failure with bounded governed-effect evidence attached."""
+
+    def __init__(self, *, failure_category: str, effect_evidence_status: str,
+                 governed_effect_evidence: list[Mapping[str, Any]]) -> None:
+        if failure_category not in {
+            "TRANSPORT_POST_LAUNCH_FAILURE", "TRANSPORT_RESULT_EVIDENCE_FAILURE",
+        }:
+            raise ValueError("production transport failure category is invalid")
+        if effect_evidence_status not in {"COLLECTED", "UNAVAILABLE"}:
+            raise ValueError("production transport effect evidence status is invalid")
+        super().__init__(failure_category)
+        self.failure_phase = "POST_LAUNCH"
+        self.failure_category = failure_category
+        self.effect_evidence_status = effect_evidence_status
+        self.governed_effect_evidence = tuple(dict(item) for item in governed_effect_evidence)
 
 
 def _validate_owned_scope(value: object) -> bool:
@@ -278,7 +297,8 @@ class ProductionToolTransport:
 
     def run(self, *, prompt: str, adapter: CodexAppServerAdapter | None = None,
             timeout: int = 180, dynamic_operation_class_ids: tuple[str, ...] | None = None,
-            crash_after_durable_write: bool = False) -> Mapping[str, Any]:
+            crash_after_durable_write: bool = False,
+            expected_codex_version: str | None = None) -> Mapping[str, Any]:
         adapter = adapter or CodexAppServerAdapter()
         if (crash_after_durable_write
                 and os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") != "1"):
@@ -291,21 +311,49 @@ class ProductionToolTransport:
                 raise CrashAfterDurableWrite("injected crash after durable write")
             return result
 
-        outcome = dict(adapter.run_turn(
-            prompt=prompt,
-            dynamic_tools=self.registry.dynamic_specs(dynamic_operation_class_ids),
-            tool_handler=handle,
-            worker_task_id=str(
-                self.request.get("tool_authorization_projection", {}).get("worker_task_id", "")
-            ),
-            worker_action_id="PRODUCTION_WORKER_TURN",
-            timeout=timeout,
-        ))
-        outcome["governed_effect_evidence"] = [
-            item.canonical_projection()
-            for item in self.governed_effect_evidence()
-        ]
-        return outcome
+        try:
+            raw_outcome = adapter.run_turn(
+                prompt=prompt,
+                dynamic_tools=self.registry.dynamic_specs(dynamic_operation_class_ids),
+                tool_handler=handle,
+                worker_task_id=str(
+                    self.request.get("tool_authorization_projection", {}).get("worker_task_id", "")
+                ),
+                worker_action_id="PRODUCTION_WORKER_TURN",
+                timeout=timeout,
+                expected_codex_version=expected_codex_version,
+            )
+        except (TransportExecutionError, CrashAfterDurableWrite) as exc:
+            effect_evidence, evidence_status = self._project_governed_effect_evidence()
+            raise ProductionTransportFailure(
+                failure_category="TRANSPORT_POST_LAUNCH_FAILURE",
+                effect_evidence_status=evidence_status,
+                governed_effect_evidence=effect_evidence,
+            ) from exc
+
+        try:
+            outcome = dict(raw_outcome)
+            effect_evidence, evidence_status = self._project_governed_effect_evidence()
+            if evidence_status != "COLLECTED":
+                raise RuntimeError("governed effect evidence unavailable")
+            outcome["governed_effect_evidence"] = effect_evidence
+            return outcome
+        except ProductionTransportFailure:
+            raise
+        except Exception as exc:
+            effect_evidence, evidence_status = self._project_governed_effect_evidence()
+            raise ProductionTransportFailure(
+                failure_category="TRANSPORT_RESULT_EVIDENCE_FAILURE",
+                effect_evidence_status=evidence_status,
+                governed_effect_evidence=effect_evidence,
+            ) from exc
+
+    def _project_governed_effect_evidence(self) -> tuple[list[dict[str, Any]], str]:
+        try:
+            evidence = [item.canonical_projection() for item in self.governed_effect_evidence()]
+        except Exception:
+            return [], "UNAVAILABLE"
+        return evidence, "COLLECTED"
 
 
 def _qualified_cli_ids(manifest: ToolImplementationManifest) -> tuple[str, str]:
