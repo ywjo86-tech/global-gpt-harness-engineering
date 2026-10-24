@@ -25,6 +25,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     load_runtime_config,
     work_activation_enabled_from_environment,
 )
+from runtime.orchestrator.g1_gate_approval_route import G1_GATE_APPROVAL_PROFILE
 from runtime.orchestrator.operator_control import OPERATOR_DIRECTIVE_SCHEMA
 from runtime.orchestrator.read_only_host_diagnostic_contract import (
     DiagnosticPolicy,
@@ -238,6 +239,49 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
         self.assertEqual(kwargs["registry_root"], mapping_root / "g1-approval-registry-main")
         self.assertEqual(kwargs["mapping_root"], mapping_root / "mappings")
         anchor_client.assert_called_once()
+
+    def test_non_owner_g1_issue_is_rejected_before_fetching_owner_comments(self):
+        import runtime.orchestrator.ocpv2_runtime_service as module
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED": "1",
+                "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF": "G1-OWNER-POLICY",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            mapping_root = root / "onboarding"
+            (mapping_root / "mappings").mkdir(parents=True)
+            (mapping_root / "g1-approval-registry-main" / "aliases").mkdir(parents=True)
+            rest_client = Mock()
+            rest_client.list_comments.return_value = []
+            g1_issuer = Mock()
+            g1_issuer.execute.return_value = {"status": "ISSUED"}
+            with patch.object(module, "GitHubRESTClient", return_value=rest_client), \
+                 patch.object(module, "GitHubControlAdapter", return_value=Mock()), \
+                 patch.object(module, "recover_pending_canonical_results", return_value=None), \
+                 patch.object(module, "resolve_harness_state_root", return_value=root / "harness"), \
+                 patch.object(module, "OwnerAuditAnchorClient", return_value=Mock()), \
+                 patch.object(module, "G1GateApprovalIssuer", return_value=g1_issuer):
+                config.environment["HARNESS_CONTRACT_MAPPING_ROOT"] = str(mapping_root)
+                service = _compose_service(config)
+                envelope = SimpleNamespace(
+                    message_id="MSG-G1-NON-OWNER-ISSUE",
+                    payload=SimpleNamespace(
+                        mode="ISSUE",
+                        owner_approval_comment_id=41,
+                        request_id="G1-REQ-NON-OWNER",
+                        project_alias=G1_GATE_APPROVAL_PROFILE.project_alias,
+                        request_digest="a" * 64,
+                    ),
+                    transport=SimpleNamespace(source_actor_id="unapproved-actor"),
+                )
+
+                with self.assertRaisesRegex(RuntimeServiceError, "OWNER_AUTHORITY_MISMATCH"):
+                    service.issue_g1_gate_approval_authorized(envelope)
+
+        rest_client.list_comments.assert_not_called()
+        g1_issuer.execute.assert_not_called()
 
     def test_generic_issuer_cannot_issue_g1_gate_through_existing_alias(self):
         import runtime.orchestrator.ocpv2_runtime_service as module

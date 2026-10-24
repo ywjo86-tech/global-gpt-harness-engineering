@@ -1020,6 +1020,8 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         payload = envelope.payload
         owner_comment = None
         if payload.mode == "ISSUE":
+            if str(envelope.transport.source_actor_id) != G1_GATE_APPROVAL_PROFILE.owner_actor_id:
+                raise RuntimeServiceError("OWNER_AUTHORITY_MISMATCH")
             owner_comment = next(
                 (comment for comment in rest_client.list_comments()
                  if comment.get("id") == payload.owner_approval_comment_id), None,
