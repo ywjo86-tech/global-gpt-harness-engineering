@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Mapping
 
+from .g1_gate_approval_route import G1_GATE_APPROVAL_PROFILE
 from .operator_control import OperatorDirectiveV1
 from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
 from .remote_control_envelope import (
@@ -121,6 +122,9 @@ class RemoteOperatorService:
         issue_gate_approval_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         gate_approval_issue_enabled: bool = False,
         gate_approval_issue_policy_ref: str = "",
+        issue_g1_gate_approval_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
+        g1_gate_approval_issue_enabled: bool = False,
+        g1_gate_approval_issue_policy_ref: str = "",
         onboard_authorized: Callable[[RemoteControlEnvelopeV1], Mapping[str, Any]] | None = None,
         project_onboarding_enabled: bool = False,
         project_onboarding_policy_ref: str = "",
@@ -158,6 +162,9 @@ class RemoteOperatorService:
         self.issue_gate_approval_authorized = issue_gate_approval_authorized
         self.gate_approval_issue_enabled = bool(gate_approval_issue_enabled)
         self.gate_approval_issue_policy_ref = str(gate_approval_issue_policy_ref or "")
+        self.issue_g1_gate_approval_authorized = issue_g1_gate_approval_authorized
+        self.g1_gate_approval_issue_enabled = bool(g1_gate_approval_issue_enabled)
+        self.g1_gate_approval_issue_policy_ref = str(g1_gate_approval_issue_policy_ref or "")
         self.onboard_authorized = onboard_authorized
         self.project_onboarding_enabled = bool(project_onboarding_enabled)
         self.project_onboarding_policy_ref = str(project_onboarding_policy_ref or "")
@@ -480,6 +487,7 @@ class RemoteOperatorService:
                             blocked += 1
                 elif envelope.request_kind == GATE_APPROVAL_ISSUE_KIND:
                     payload_mode = str(envelope.payload.mode)
+                    g1_route = envelope.payload.project_alias == G1_GATE_APPROVAL_PROFILE.project_alias
                     mode_allowed = (
                         resolved_mode in {ControlMode.CONTROL_READ_ONLY, ControlMode.ACTIVE}
                         if payload_mode == "DRY_RUN" else resolved_mode == ControlMode.ACTIVE
@@ -487,10 +495,30 @@ class RemoteOperatorService:
                     if not mode_allowed:
                         projection = self._gate_approval_issue_status_projection(envelope, "MODE_BLOCKED")
                         blocked += 1
-                    elif not self.gate_approval_issue_enabled or self.issue_gate_approval_authorized is None:
+                    elif g1_route and (
+                        not self.g1_gate_approval_issue_enabled
+                        or self.issue_g1_gate_approval_authorized is None
+                    ):
+                        projection = self._gate_approval_issue_status_projection(
+                            envelope, "G1_GATE_APPROVAL_ISSUE_DISABLED"
+                        )
+                        blocked += 1
+                    elif not g1_route and (
+                        not self.gate_approval_issue_enabled or self.issue_gate_approval_authorized is None
+                    ):
                         projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_DISABLED")
                         blocked += 1
-                    elif (
+                    elif g1_route and (
+                        not isinstance(envelope.authorization, RemoteGateApprovalIssueAuthorization)
+                        or not self.g1_gate_approval_issue_policy_ref
+                        or envelope.authorization.gate_approval_issue_policy_ref
+                        != self.g1_gate_approval_issue_policy_ref
+                    ):
+                        projection = self._gate_approval_issue_status_projection(
+                            envelope, "G1_GATE_APPROVAL_ISSUE_AUTHORIZATION_MISMATCH"
+                        )
+                        blocked += 1
+                    elif not g1_route and (
                         not isinstance(envelope.authorization, RemoteGateApprovalIssueAuthorization)
                         or not self.gate_approval_issue_policy_ref
                         or envelope.authorization.gate_approval_issue_policy_ref != self.gate_approval_issue_policy_ref
@@ -499,7 +527,12 @@ class RemoteOperatorService:
                         blocked += 1
                     else:
                         try:
-                            projection = self.issue_gate_approval_authorized(envelope)
+                            callback = (
+                                self.issue_g1_gate_approval_authorized
+                                if g1_route else self.issue_gate_approval_authorized
+                            )
+                            assert callback is not None
+                            projection = callback(envelope)
                             if not isinstance(projection, Mapping):
                                 raise RemoteOperatorServiceError("Gate approval issue projection is malformed")
                         except Exception:

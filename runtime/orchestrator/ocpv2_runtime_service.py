@@ -26,6 +26,11 @@ from .approved_work_binding import validate_approved_work_binding
 from .harness_state_root import resolve_harness_state_root
 from .full_plan_activation import FullPlanActivationStore, activate_approved_full_plan
 from .gate_approval_issuance import GateApprovalIssuer
+from .g1_gate_approval_route import (
+    G1_GATE_APPROVAL_PROFILE,
+    G1_OWNER_AUDIT_ANCHOR_SOCKET,
+    G1GateApprovalIssuer,
+)
 from .host_inspection_port import HostInspectionPort
 from .plan_activation import PlanActivationStore, activate_approved_work
 from .project_onboarding import OnboardingRegistry
@@ -51,6 +56,7 @@ from .production_run_authority import executor_runtime_identity
 from .runtime_release import RuntimeReleaseError, RuntimeReleaseManifest, verify_runtime_release
 from .user_service_observer import UserServiceObserver, UserServiceObserverError
 from .remote_operator_service import CanaryScope, ControlMode, RemoteOperatorService, RemoteOperatorServiceError
+from .owner_audit_anchor_client import OwnerAuditAnchorClient
 
 
 _REQUIRED_ENV = {
@@ -77,6 +83,10 @@ _OPTIONAL_ENV = {
     "OCP_FULL_PLAN_ACTIVATION_POLICY_REF",
     "OCP_GATE_APPROVAL_ISSUE_ENABLED",
     "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
+    "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED",
+    "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF",
+    "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED",
+    "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
     "OCP_PROJECT_ONBOARDING_POLICY_REF",
     "HARNESS_CONTRACT_MAPPING_ROOT",
@@ -172,6 +182,8 @@ class RuntimeConfig:
     full_plan_activation_policy_ref: str = ""
     gate_approval_issue_enabled: bool = False
     gate_approval_issue_policy_ref: str = ""
+    g1_gate_approval_issue_enabled: bool = False
+    g1_gate_approval_issue_policy_ref: str = ""
     diagnostic_enabled: bool = False
     diagnostic_policy: DiagnosticPolicy | None = None
     project_onboarding_enabled: bool = False
@@ -404,6 +416,19 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     gate_approval_issue_policy_ref = str(environment.get("OCP_GATE_APPROVAL_ISSUE_POLICY_REF") or "").strip()
     if gate_approval_issue_enabled:
         _safe_id(gate_approval_issue_policy_ref, "Gate approval issue policy ref")
+    g1_gate_approval_issue_enabled = (
+        str(environment.get("OCP_G1_GATE_APPROVAL_ISSUE_ENABLED") or "").strip() == "1"
+    )
+    g1_gate_approval_issue_policy_ref = str(
+        environment.get("OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF") or ""
+    ).strip()
+    if g1_gate_approval_issue_enabled:
+        _safe_id(g1_gate_approval_issue_policy_ref, "G1 Gate approval issue policy ref")
+        if (
+            gate_approval_issue_enabled
+            and g1_gate_approval_issue_policy_ref == gate_approval_issue_policy_ref
+        ):
+            raise RuntimeServiceError("G1_GATE_APPROVAL_POLICY_REF_MUST_BE_DISTINCT")
     project_onboarding_enabled = project_onboarding_enabled_from_environment(environment)
     project_onboarding_policy_ref = str(environment.get("OCP_PROJECT_ONBOARDING_POLICY_REF") or "").strip()
     if project_onboarding_enabled:
@@ -417,6 +442,8 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
         project_onboarding_policy_ref=project_onboarding_policy_ref,
         gate_approval_issue_enabled=gate_approval_issue_enabled,
         gate_approval_issue_policy_ref=gate_approval_issue_policy_ref,
+        g1_gate_approval_issue_enabled=g1_gate_approval_issue_enabled,
+        g1_gate_approval_issue_policy_ref=g1_gate_approval_issue_policy_ref,
     )
 
 
@@ -579,6 +606,7 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
     full_plan_activation_store: FullPlanActivationStore | None = None
     onboarding_admission: ProjectOnboardingAdmission | None = None
     gate_approval_issuer: GateApprovalIssuer | None = None
+    g1_gate_approval_issuer: G1GateApprovalIssuer | None = None
     if config.work_activation_enabled:
         mapping_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
         if not mapping_root_raw:
@@ -631,6 +659,28 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         gate_approval_issuer = GateApprovalIssuer(
             registry_root=issue_root, mapping_root=issue_root / "mappings",
             harness_state_root=harness_state_root,
+        )
+
+    if config.g1_gate_approval_issue_enabled:
+        issue_root_raw = str(config.environment.get("HARNESS_CONTRACT_MAPPING_ROOT") or "").strip()
+        if not issue_root_raw:
+            raise RuntimeServiceError("G1_GATE_APPROVAL_ISSUE_REGISTRY_REQUIRED")
+        issue_root = Path(issue_root_raw).expanduser().absolute()
+        if not issue_root.is_dir() or issue_root.is_symlink() or issue_root.resolve() != issue_root:
+            raise RuntimeServiceError("G1_GATE_APPROVAL_ISSUE_REGISTRY_UNSAFE")
+        g1_registry_root = issue_root / "g1-approval-registry-main"
+        g1_alias_root = g1_registry_root / "aliases"
+        canonical_mapping_root = issue_root / "mappings"
+        if any(
+            not path.is_dir() or path.is_symlink() or path.resolve() != path
+            for path in (g1_registry_root, g1_alias_root, canonical_mapping_root)
+        ):
+            raise RuntimeServiceError("G1_GATE_APPROVAL_ISSUE_REGISTRY_UNSAFE")
+        g1_gate_approval_issuer = G1GateApprovalIssuer(
+            registry_root=g1_registry_root,
+            mapping_root=canonical_mapping_root,
+            harness_state_root=harness_state_root,
+            owner_anchor_reader=OwnerAuditAnchorClient(G1_OWNER_AUDIT_ANCHOR_SOCKET),
         )
 
     def durable_acknowledged(message_id: str) -> bool:
@@ -939,6 +989,10 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         if gate_approval_issuer is None:
             raise RuntimeServiceError("GATE_APPROVAL_ISSUE_DISABLED")
         payload = envelope.payload
+        if payload.gate_id == G1_GATE_APPROVAL_PROFILE.gate_id:
+            binding, _ = gate_approval_issuer._preflight(payload)
+            if binding["evidence"]["payload"]["project_id"] == G1_GATE_APPROVAL_PROFILE.project_id:
+                raise RuntimeServiceError("G1_GATE_APPROVAL_REQUIRES_G1_ROUTE")
         owner_comment = None
         if payload.mode == "ISSUE":
             owner_comment = next(
@@ -947,6 +1001,34 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             )
         result = gate_approval_issuer.execute(
             payload, owner_approval_comment=owner_comment,
+            owner_actor_id=envelope.transport.source_actor_id,
+        )
+        return {
+            "schema_version": "orchestration.remote-gate-approval-issue-status-projection.v1",
+            "message_id": envelope.message_id,
+            "request_id": payload.request_id,
+            "project_alias": payload.project_alias,
+            "request_digest": payload.request_digest,
+            "mode": payload.mode,
+            "result_class": result["status"],
+            "result": result,
+        }
+
+    def issue_g1_gate_approval(envelope: RemoteControlEnvelopeV1) -> Mapping[str, Any]:
+        if g1_gate_approval_issuer is None:
+            raise RuntimeServiceError("G1_GATE_APPROVAL_ISSUE_DISABLED")
+        payload = envelope.payload
+        owner_comment = None
+        if payload.mode == "ISSUE":
+            if str(envelope.transport.source_actor_id) != G1_GATE_APPROVAL_PROFILE.owner_actor_id:
+                raise RuntimeServiceError("OWNER_AUTHORITY_MISMATCH")
+            owner_comment = next(
+                (comment for comment in rest_client.list_comments()
+                 if comment.get("id") == payload.owner_approval_comment_id), None,
+            )
+        result = g1_gate_approval_issuer.execute(
+            payload,
+            owner_approval_comment=owner_comment,
             owner_actor_id=envelope.transport.source_actor_id,
         )
         return {
@@ -993,6 +1075,9 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
         issue_gate_approval_authorized=issue_gate_approval,
         gate_approval_issue_enabled=config.gate_approval_issue_enabled,
         gate_approval_issue_policy_ref=config.gate_approval_issue_policy_ref,
+        issue_g1_gate_approval_authorized=issue_g1_gate_approval,
+        g1_gate_approval_issue_enabled=config.g1_gate_approval_issue_enabled,
+        g1_gate_approval_issue_policy_ref=config.g1_gate_approval_issue_policy_ref,
         onboard_authorized=onboard,
         project_onboarding_enabled=config.project_onboarding_enabled,
         project_onboarding_policy_ref=config.project_onboarding_policy_ref,

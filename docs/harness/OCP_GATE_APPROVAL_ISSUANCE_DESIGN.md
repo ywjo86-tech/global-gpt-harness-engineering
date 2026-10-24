@@ -57,6 +57,47 @@ project-specific Gate approval bound to the exact source HEAD.
   write before result projection, and redacted result.
 - Preserve PR #33 HOLD and P5/P6 HOLD during qualification.
 
+## G1-only request route
+
+G1 uses the existing typed `GATE_APPROVAL_ISSUE` envelope through the dedicated
+alias `ocp-rdc-exec-canary-20260923-r2-g1`. Its immutable alias record lives in
+`HARNESS_CONTRACT_MAPPING_ROOT/g1-approval-registry-main/aliases`; the existing G3
+alias registry and its route remain separate. A G1 project/GATE-001 request
+resolved through the generic alias is rejected.
+
+The G1 issuer pins project `OCP-RDC-EXEC-CANARY-20260923-R2`, `GATE-001`, branch
+`main`, source HEAD `99dc2ff4081cae87bf2d777b8912d25760592b2f`, plan digest
+`a2d9b105bafa0e07819d1e35519f59e7e190b18b18223534451dca980241d3fa`, and
+requirements digest
+`0119f3527f3987eeb4337e7a8c459516d33fb7a077180f448ae49d4a9898b001`. The
+source is held in a clean `main` checkout at that exact HEAD. The independent
+Owner-anchor heads are read-only and included in the preflight digest.
+
+`OCP_G1_GATE_APPROVAL_ISSUE_ENABLED` and
+`OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF` select the G1 route and remain
+disabled by default. The G1 policy reference must differ from the generic Gate
+approval policy. The exact personal Owner GitHub comment bound to the DRY_RUN
+digest remains the ISSUE authorization. Dashboard WebAuthn approval remains a
+separate user-approval workflow; it does not by itself create this Gate
+artifact.
+
+An earlier read-only preflight record from 2026-10-23 reported
+`EXECUTABLE_REQUIREMENT_BINDING_MISMATCH` and claimed the pinned source lacked
+the `TASK-001` / `NFR-001` contract. Direct inspection of the pinned clean
+source at `99dc2ff4081cae87bf2d777b8912d25760592b2f` found the committed
+`docs/req-task-001.json` artifact, with SHA-256
+`0119f3527f3987eeb4337e7a8c459516d33fb7a077180f448ae49d4a9898b001`; the
+project-requirement resolver and loader matched its `NFR-001` semantics to the
+canonical plan. The earlier diagnosis is therefore stale or incomplete and
+does not establish the exact request or runtime cause. The G1 profile now pins
+the LV, committed path, and artifact digest, and the route rejects any missing
+or different reference before reading the Owner anchor or authority registry.
+The candidate test also exercises the generic issuer's real committed-artifact
+validation on an isolated Git source fixture. Before enabling the route, repeat
+a live DRY_RUN with the pinned request reference against the intended registry,
+mapping, source, and Owner-anchor service, and preserve its fresh result as
+evidence.
+
 ## Test gates
 
 - DRY_RUN has zero effects and returns stable scope/digest.
@@ -80,4 +121,4 @@ preflight and activation.
 Implement on the OCP successor source line in a separate branch and PR. Merge,
 runtime release staging, runtime-current switch, and feature enablement remain
 separate gates. The current GitHub control PR cannot issue this artifact until
-the deployed OCP supports the new request kind.
+the deployed OCP contains the G1-specific profile and its isolated alias registry.
