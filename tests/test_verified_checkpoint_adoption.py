@@ -1,12 +1,15 @@
 import hashlib
 import json
+import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from runtime.orchestrator.production_approval import calculate_v2_record_hash
+from runtime.orchestrator.validation_toolchain import ValidationCommandSet
 from runtime.orchestrator.verified_checkpoint_adoption import (
     ADOPTION_MODE,
     VerifiedCheckpointAdoptionError,
@@ -60,7 +63,7 @@ class VerifiedCheckpointAdoptionTests(unittest.TestCase):
         return project, package, approval, checkpoint
 
     @staticmethod
-    def command(_root, argv):
+    def command(_root, argv, **_kwargs):
         return {"command": argv, "exit_code": 0, "timeout": False, "stdout_sha256": "0" * 64, "stderr_sha256": "1" * 64}
 
     def test_builds_exact_scope_checkpoint_evidence(self):
@@ -74,6 +77,44 @@ class VerifiedCheckpointAdoptionTests(unittest.TestCase):
             self.assertEqual(result["changed_files"], ["app/a.py", "tests/test_a.py"])
             self.assertEqual(result["adoption"]["worker_provenance"], "NOT_APPLICABLE_CHECKPOINT_ADOPTION")
             self.assertEqual(result["commands"]["focused_test"]["command"][1:3], ["-m", "pytest"])
+
+    def test_external_source_profile_restores_sealed_interpreter_for_adoption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, package, approval, _ = self.fixture(Path(directory))
+            manifest_path=package/'package.manifest.json'
+            manifest=json.loads(manifest_path.read_text())
+            manifest['interpreter_policy_id']='IMMUTABLE_EXTERNAL_INTERPRETER'
+            manifest['validation_toolchain']={
+                'profile_ids':['PYTHON_PROJECT_SOURCE'],
+                'focused':[[sys.executable,'-m','pytest','-q','tests/test_a.py']],
+                'full':[[sys.executable,'-m','pytest','-q']],
+                'compile':[[sys.executable,'-m','compileall','-q','app/a.py']],
+                'deferred':False,
+            }
+            manifest_path.write_text(json.dumps(manifest))
+            plan=ValidationCommandSet(
+                ('PYTHON_PROJECT_SOURCE',),
+                ((sys.executable,'-m','pytest','-q','tests/test_a.py'),),
+                ((sys.executable,'-m','pytest','-q'),),
+                ((sys.executable,'-m','compileall','-q','app/a.py'),),
+                False,
+            )
+            captured_env={}
+            def command_with_env(_root, argv, **kwargs):
+                captured_env.update(kwargs.get('env') or {})
+                return self.command(_root, argv, **kwargs)
+            with patch.dict(os.environ, {'HARNESS_CONTRACT_MAPPING_ROOT':'/tmp/live-mapping'}), patch(
+                'runtime.orchestrator.verified_checkpoint_adoption.resolve_validation_commands',
+                return_value=plan,
+            ) as resolver, patch(
+                'runtime.orchestrator.verified_checkpoint_adoption._command', side_effect=command_with_env
+            ):
+                build_verified_checkpoint_result(
+                    project_root=project, package_root=package,
+                    approval_log=approval, approval_event_id='APR-G1-1',
+                )
+            self.assertEqual(resolver.call_args.kwargs['python_executable'], sys.executable)
+            self.assertNotIn('HARNESS_CONTRACT_MAPPING_ROOT', captured_env)
 
     def test_rejects_owned_file_change_after_checkpoint(self):
         with tempfile.TemporaryDirectory() as directory:

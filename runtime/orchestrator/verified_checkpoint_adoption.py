@@ -69,8 +69,24 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _command(root: Path, argv: list[str]) -> dict[str, Any]:
-    completed = subprocess.run(argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=120)
+def _source_validation_env(root: Path) -> dict[str, str]:
+    import_roots: list[str] = []
+    source_root = root / "src"
+    if source_root.is_dir() and not source_root.is_symlink():
+        import_roots.append(str(source_root))
+    import_roots.append(str(root))
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(import_roots)
+    env.pop("PYTHONHOME", None)
+    env.pop("HARNESS_CONTRACT_MAPPING_ROOT", None)
+    return env
+
+
+def _command(root: Path, argv: list[str], *, env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    completed = subprocess.run(
+        argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=False, timeout=120, env=dict(env) if env is not None else None,
+    )
     return {
         "command": argv,
         "exit_code": completed.returncode,
@@ -137,7 +153,11 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
         expected_profiles = (toolchain_contract.get("profile_ids", [])
                              if isinstance(toolchain_contract, dict) else [])
         external_python = None
-        if expected_profiles == ["PYTHON_UNITTEST_EXTERNAL"]:
+        external_source_profile = (
+            manifest.get("interpreter_policy_id") == "IMMUTABLE_EXTERNAL_INTERPRETER"
+            and expected_profiles == ["PYTHON_PROJECT_SOURCE"]
+        )
+        if expected_profiles == ["PYTHON_UNITTEST_EXTERNAL"] or external_source_profile:
             focused = toolchain_contract.get("focused", [])
             if not isinstance(focused, list) or not focused or not isinstance(focused[0], list) or not focused[0]:
                 raise ValidationToolchainError("sealed external Python interpreter binding is missing")
@@ -158,7 +178,12 @@ def build_verified_checkpoint_result(*, project_root: str | Path, package_root: 
             normalized=list(command)
             if normalized and normalized[0] == ".venv/bin/python":
                 normalized[0]=str(command_root / ".venv" / "bin" / "python")
-            return _command(command_root, normalized)
+            validation_env = (
+                _source_validation_env(command_root)
+                if validation_plan.profile_ids == ("PYTHON_PROJECT_SOURCE",)
+                else None
+            )
+            return _command(command_root, normalized, env=validation_env)
         return run_command_group(root, group, runner)
 
     commands = {

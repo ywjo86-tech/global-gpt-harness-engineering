@@ -2473,6 +2473,36 @@ def _bounded_validation_failure_evidence(
     }
 
 
+
+def _candidate_validation_command(root: Path, command: Sequence[str]) -> list[str]:
+    """Bind sealed project-venv commands to the real venv while candidate cwd stays isolated."""
+    normalized = list(command)
+    if normalized and normalized[0] == ".venv/bin/python":
+        interpreter = root / ".venv" / "bin" / "python"
+        if not interpreter.is_file() or not os.access(interpreter, os.X_OK):
+            raise ProductionWorkerError("candidate validation project interpreter is unavailable")
+        normalized[0] = str(interpreter.absolute())
+    return normalized
+
+
+def _source_validation_env(root: Path) -> dict[str, str]:
+    """Use only the governed project source roots for Python validation imports."""
+    env = _validation_command_env()
+    import_roots: list[str] = []
+    source_root = root / "src"
+    if source_root.is_dir() and not source_root.is_symlink():
+        import_roots.append(str(source_root))
+    import_roots.append(str(root))
+    env["PYTHONPATH"] = os.pathsep.join(import_roots)
+    env.pop("PYTHONHOME", None)
+    return env
+
+
+def _candidate_validation_env(sandbox: Path) -> dict[str, str]:
+    """Isolate candidate imports from live/editable project mappings and control-plane state."""
+    return _source_validation_env(sandbox)
+
+
 def _provider_action_candidate_focused_validator(
     *, root: Path, baseline: str, owned: list[str], request: WorkerRequest, timeout: int,
 ) -> Callable[[Mapping[str, Any]], str]:
@@ -2527,9 +2557,10 @@ def _provider_action_candidate_focused_validator(
                 python_executable = commands[0][0]
                 commands = [[python_executable, "-m", "unittest", "-v", *candidate_test_modules]]
             for command in commands:
+                candidate_command = _candidate_validation_command(root, command)
                 result = subprocess.run(
-                    command, cwd=sandbox, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    check=False, timeout=min(timeout, 180),
+                    candidate_command, cwd=sandbox, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False, timeout=min(timeout, 180), env=_candidate_validation_env(sandbox),
                 )
                 if result.returncode != 0:
                     return _bounded_validation_feedback(result.stdout, result.stderr)
@@ -2548,9 +2579,10 @@ def _sealed_external_validation_python(request: WorkerRequest) -> str | None:
     profiles = toolchain.get("profile_ids")
     if not isinstance(profiles, list):
         raise ProductionWorkerError("external Python validation contract is missing or mismatched")
-    if "PYTHON_UNITTEST_EXTERNAL" not in profiles:
+    external_python_profiles = {"PYTHON_UNITTEST_EXTERNAL", "PYTHON_PROJECT_SOURCE"}
+    if not any(profile in external_python_profiles for profile in profiles):
         return None
-    if profiles != ["PYTHON_UNITTEST_EXTERNAL"]:
+    if len(profiles) != 1 or profiles[0] not in external_python_profiles:
         raise ProductionWorkerError("external Python validation contract is missing or mismatched")
     executables: set[str] = set()
     for field in ("focused", "full", "compile"):
@@ -3493,8 +3525,13 @@ def execute_production_worker(request: WorkerRequest, *,
             normalized = list(command)
             if normalized and normalized[0] == ".venv/bin/python":
                 normalized[0] = str(command_root / ".venv" / "bin" / "python")
+            validation_env = (
+                _source_validation_env(command_root)
+                if validation_plan.profile_ids == ("PYTHON_PROJECT_SOURCE",)
+                else _validation_command_env()
+            )
             result = _command(
-                command_root, normalized, env=_validation_command_env(),
+                command_root, normalized, env=validation_env,
                 classify_collection=_is_test_runner(normalized),
                 capture_feedback=feedback_sink is not None,
             )
