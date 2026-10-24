@@ -85,6 +85,7 @@ _OPTIONAL_ENV = {
     "OCP_GATE_APPROVAL_ISSUE_POLICY_REF",
     "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED",
     "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF",
+    "OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID",
     "OCP_SUCCESSOR_RELEASE_STAGE_ENABLED",
     "OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF",
     "OCP_PROJECT_ONBOARDING_ENABLED",
@@ -208,6 +209,16 @@ def full_plan_activation_enabled_from_environment(environment: Mapping[str, str]
 def project_onboarding_enabled_from_environment(environment: Mapping[str, str]) -> bool:
     """Enable create-once project onboarding only on the exact explicit value `1`."""
     return str(environment.get("OCP_PROJECT_ONBOARDING_ENABLED") or "").strip() == "1"
+
+
+def github_control_start_after_comment_id_from_environment(environment: Mapping[str, str]) -> int:
+    """Return an optional initial comment watermark; zero preserves the legacy scan."""
+    raw = str(environment.get("OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID") or "").strip()
+    if not raw:
+        return 0
+    if not raw.isdecimal():
+        raise RuntimeServiceError("GITHUB_CONTROL_START_AFTER_COMMENT_ID_INVALID")
+    return int(raw)
 
 
 def new_activation_lifecycle_mode_from_environment(environment: Mapping[str, str]) -> str:
@@ -360,6 +371,7 @@ def load_runtime_config(path: str | Path, *, process_environment: Mapping[str, s
     file_env = _read_env_file(path)
     environment = dict(process_environment or os.environ)
     environment.update(file_env)
+    github_control_start_after_comment_id_from_environment(environment)
     try:
         mode = ControlMode(file_env["OCP_MODE"])
     except ValueError as exc:
@@ -568,6 +580,9 @@ def _compose_service(config: RuntimeConfig) -> RemoteOperatorService:
             allowed_repository_id=config.control_repository_id,
             control_pr_number=config.control_pr_number,
             allowed_actor_ids=frozenset(config.allowed_actor_ids),
+            start_after_comment_id=github_control_start_after_comment_id_from_environment(
+                config.environment
+            ),
         ),
         rest_client=rest_client,
         secret_scan=_projection_secret_findings,

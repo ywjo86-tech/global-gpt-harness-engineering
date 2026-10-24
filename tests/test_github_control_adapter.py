@@ -67,6 +67,26 @@ def comment(*, comment_id=101, actor_id=235775273, body=None):
 
 
 class GitHubControlAdapterTests(unittest.TestCase):
+    def test_start_after_comment_id_skips_history_and_keeps_later_controls(self):
+        adapter = GitHubControlAdapter(
+            config=config(start_after_comment_id=101),
+            rest_client=FakeRESTClient(comments=(
+                comment(comment_id=101),
+                comment(comment_id=102),
+            )),
+            secret_scan=lambda payload: {},
+        )
+
+        messages = adapter.receive()
+
+        self.assertEqual([item.source_message_id for item in messages], ["102"])
+
+    def test_start_after_comment_id_rejects_invalid_values(self):
+        for value in (True, -1, "101", None):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(GitHubControlAdapterError, "start-after comment ID"):
+                    config(start_after_comment_id=value)
+
     def test_wrong_repository_numeric_id_is_source_not_allowed(self):
         adapter = GitHubControlAdapter(
             config=config(),

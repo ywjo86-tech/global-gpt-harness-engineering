@@ -20,6 +20,7 @@ from runtime.orchestrator.ocpv2_runtime_service import (
     execute_authorized_canonical,
     finalize_remote_control_projection,
     full_plan_activation_enabled_from_environment,
+    github_control_start_after_comment_id_from_environment,
     full_plan_execution_health,
     host_inspection_enabled_from_environment,
     load_runtime_config,
@@ -207,6 +208,33 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             self.assertEqual(config.environment["OCP_SUCCESSOR_RELEASE_STAGE_ENABLED"], "0")
             self.assertEqual(config.environment["OCP_SUCCESSOR_RELEASE_STAGE_POLICY_REF"], "")
 
+    def test_github_control_start_after_comment_id_is_optional_and_validated(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env_path, _, _ = _write_runtime_env(root)
+            config = load_runtime_config(env_path, process_environment={
+                "OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID": "",
+            })
+            self.assertEqual(
+                github_control_start_after_comment_id_from_environment(config.environment),
+                0,
+            )
+
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID": "6379285263",
+            })
+            config = load_runtime_config(env_path, process_environment={})
+            self.assertEqual(
+                config.environment["OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID"],
+                "6379285263",
+            )
+
+            env_path, _, _ = _write_runtime_env(root, extra={
+                "OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID": "-1",
+            })
+            with self.assertRaisesRegex(RuntimeServiceError, "GITHUB_CONTROL_START_AFTER_COMMENT_ID_INVALID"):
+                load_runtime_config(env_path, process_environment={})
+
     def test_g1_route_composes_from_its_own_alias_registry(self):
         import runtime.orchestrator.ocpv2_runtime_service as module
 
@@ -215,6 +243,7 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             env_path, _, _ = _write_runtime_env(root, extra={
                 "OCP_G1_GATE_APPROVAL_ISSUE_ENABLED": "1",
                 "OCP_G1_GATE_APPROVAL_ISSUE_POLICY_REF": "G1-OWNER-POLICY",
+                "OCP_GITHUB_CONTROL_START_AFTER_COMMENT_ID": "6379285263",
             })
             config = load_runtime_config(env_path, process_environment={})
             mapping_root = root / "onboarding"
@@ -222,13 +251,18 @@ class OCPv2RuntimeServiceTests(unittest.TestCase):
             (mapping_root / "g1-approval-registry-main" / "aliases").mkdir(parents=True)
             g1_issuer = Mock()
             with patch.object(module, "GitHubRESTClient", return_value=Mock()), \
-                 patch.object(module, "GitHubControlAdapter", return_value=Mock()), \
+                 patch.object(module, "GitHubControlAdapter", return_value=Mock()) as control_adapter_factory, \
                  patch.object(module, "recover_pending_canonical_results", return_value=None), \
                  patch.object(module, "resolve_harness_state_root", return_value=root / "harness"), \
                  patch.object(module, "OwnerAuditAnchorClient", return_value=Mock()) as anchor_client, \
                  patch.object(module, "G1GateApprovalIssuer", return_value=g1_issuer) as issuer_factory:
                 config.environment["HARNESS_CONTRACT_MAPPING_ROOT"] = str(mapping_root)
                 service = _compose_service(config)
+
+        self.assertEqual(
+            control_adapter_factory.call_args.kwargs["config"].start_after_comment_id,
+            6379285263,
+        )
 
         self.assertFalse(service.gate_approval_issue_enabled)
         self.assertTrue(service.g1_gate_approval_issue_enabled)
