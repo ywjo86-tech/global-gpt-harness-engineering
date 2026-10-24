@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .codex_dynamic_transport import PINNED_CODEX_VERSION, TRANSPORT_CONTRACT_VERSION
+from .codex_dynamic_transport import CODEX_VERSION_POLICY, TRANSPORT_CONTRACT_VERSION
 from .lv_execution_package import canonical_json_bytes
 from .tool_authorization import (
     DEC007_CONTRACT_IDS, DEC007_DECISION_REF, DEC007_WORKER_TASK_ID,
@@ -309,7 +309,7 @@ def build_gateway_request(*, project_id: str, run_id: str, gate_id: str, lv_id: 
         "execution_backend": execution_backend,
         "transport_endpoint": transport_endpoint,
         "transport_compatibility": {
-            "codex_version": PINNED_CODEX_VERSION,
+            "codex_version_policy": CODEX_VERSION_POLICY,
             "transport_contract_version": TRANSPORT_CONTRACT_VERSION,
             "experimental_api_required": True,
             "dynamic_tool_request_required": True,
@@ -357,7 +357,7 @@ def validate_gateway_request(payload: Mapping[str, Any], *, expected: Mapping[st
         raise GatewayError("gateway transport endpoint is invalid")
     compatibility = payload.get("transport_compatibility")
     if (not isinstance(compatibility, Mapping)
-            or compatibility.get("codex_version") != PINNED_CODEX_VERSION
+            or compatibility.get("codex_version_policy") != CODEX_VERSION_POLICY
             or compatibility.get("transport_contract_version") != TRANSPORT_CONTRACT_VERSION
             or compatibility.get("experimental_api_required") is not True
             or compatibility.get("dynamic_tool_request_required") is not True
@@ -959,7 +959,7 @@ class UnixSocketHostRunner:
                                 "process_evidence": process_evidence,
                                 "adapter_evidence": {"backend": HOST_GATEWAY, "contract_version": TRANSPORT_CONTRACT_VERSION,
                                     "strict": False, "structured_event_contract_version": request["structured_event_contract_version"],
-                                    "codex_version": PINNED_CODEX_VERSION,
+                                    "codex_version": outcome.get("compatibility", {}).get("codex_version"),
                                     "final_message_target_binding": "WORKSPACE_RELATIVE_EXACT"},
                                 "stdout_b64": "", "stderr_b64": "",
                                 "final_message_b64": base64.b64encode(final_message).decode("ascii"),

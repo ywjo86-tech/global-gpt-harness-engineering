@@ -50,12 +50,33 @@ class _BufferedPipeProcess:
 
 
 class CodexDynamicTransportTests(unittest.TestCase):
-    def test_compatibility_is_exact_and_fail_closed(self):
-        good = CodexAppServerAdapter(version_probe=lambda: "0.150.1")
-        self.assertTrue(good.check_compatibility().compatible)
-        bad = CodexAppServerAdapter(version_probe=lambda: "0.151.0")
+    def test_compatibility_accepts_stable_cli_versions_but_fails_closed_on_schema_or_version(self):
+        verified_schema = {
+            "experimental_api": True, "dynamic_tool_request": True,
+            "dynamic_tool_response": True, "empty_environment_supported": True,
+            "schema_verified": True,
+        }
+        for version in ("0.150.1", "0.163.0", "0.164.2"):
+            with self.subTest(version=version):
+                adapter = CodexAppServerAdapter(
+                    version_probe=lambda version=version: version,
+                    schema_probe=lambda: dict(verified_schema),
+                )
+                compatibility = adapter.check_compatibility()
+                self.assertTrue(compatibility.compatible)
+                self.assertEqual(compatibility.codex_version, version)
+        malformed = CodexAppServerAdapter(
+            version_probe=lambda: "0.163.0-rc.1",
+            schema_probe=lambda: dict(verified_schema),
+        )
         with self.assertRaisesRegex(TransportError, "COMPATIBILITY_BLOCK"):
-            bad.check_compatibility()
+            malformed.check_compatibility()
+        malformed_schema = CodexAppServerAdapter(
+            version_probe=lambda: "0.163.0",
+            schema_probe=lambda: {**verified_schema, "dynamic_tool_request": "true"},
+        )
+        with self.assertRaisesRegex(TransportError, "COMPATIBILITY_BLOCK"):
+            malformed_schema.check_compatibility()
         missing = CodexAppServerAdapter(version_probe=lambda: "0.150.1", schema_probe=lambda: {
             "experimental_api": True, "dynamic_tool_request": False, "dynamic_tool_response": True,
             "empty_environment_supported": True, "schema_verified": True})

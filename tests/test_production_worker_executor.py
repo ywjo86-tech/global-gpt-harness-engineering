@@ -1047,11 +1047,39 @@ runtime.orchestrator.office_execution_backend_adapter.OfficeExecutionBackendAdap
             with self.subTest(event_type=event_type), self.assertRaisesRegex(ProductionWorkerError, "secret-like"):
                 _parse_structured_jsonl(payload)
 
-    def test_codex_version_is_exactly_bound_to_structured_contract(self):
-        self.assertEqual(CodexExecutionAdapter.validate_version_output(b"codex-cli 0.150.1\n"), "0.150.1")
-        for value in (b"codex-cli 0.150.0\n", b"codex-cli 0.151.0\n", b"unknown\n"):
+    def test_codex_version_is_metadata_not_an_exact_execution_pin(self):
+        for value, expected in (
+            (b"codex-cli 0.150.1\n", "0.150.1"),
+            (b"codex-cli 0.163.0\n", "0.163.0"),
+            (b"codex-cli 1.0.0\n", "1.0.0"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(CodexExecutionAdapter.validate_version_output(value), expected)
+        for value in (b"codex-cli 0.163\n", b"codex-cli 0.163.0-beta\n", b"unknown\n"):
             with self.subTest(value=value), self.assertRaises(StructuredEventError):
                 CodexExecutionAdapter.validate_version_output(value)
+
+    def test_worker_records_observed_cli_version_and_keeps_jsonl_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self._fixture(root)
+            evidence = {
+                "termination": "EXITED", "exit_code": 0, "signal": None,
+                "requested_signal": None, "hard_stop": True,
+            }
+            stdout = b'\n'.join((
+                b'{"type":"thread.started","thread_id":"thread-1"}',
+                b'{"type":"future.event","item":{"content":"hidden"}}',
+            ))
+            with patch.object(CodexExecutionAdapter, "probe_version", return_value="0.163.0"), \
+                    patch("runtime.orchestrator.production_worker_executor._run_managed_child",
+                          return_value=(stdout, b"", evidence)), \
+                    self.assertRaisesRegex(StructuredEventError, "unknown structured event type"):
+                execute_production_worker(request)
+
+            stored = json.loads((root / "out/executor.process.json").read_text())
+            self.assertEqual(stored["codex_version"], "0.163.0")
+            self.assertNotIn("codex_version", stored["structured_events"])
 
     def test_structured_event_secret_and_final_message_are_blocked(self):
         payload = _valid_structured_stdout(agent_text="api-key=synthetic-secret-value")

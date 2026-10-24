@@ -176,7 +176,9 @@ class GatewayContractTests(unittest.TestCase):
 
     def test_transport_compatibility_and_native_registry_seal_fail_closed(self):
         req = request()
-        for field, value in (("codex_version", "0.151.0"), ("native_command_runtime_count", 1),
+        self.assertEqual(req["transport_compatibility"]["codex_version_policy"], "STABLE_SEMVER_SCHEMA_VERIFIED")
+        self.assertNotIn("codex_version", req["transport_compatibility"])
+        for field, value in (("codex_version_policy", "EXACT_0.150.1"), ("native_command_runtime_count", 1),
                              ("native_file_runtime_count", 1), ("direct_mcp_effect_source_count", 1)):
             tampered = dict(req); compatibility = dict(req["transport_compatibility"])
             compatibility[field] = value; tampered["transport_compatibility"] = compatibility
@@ -284,15 +286,11 @@ class GatewayContractTests(unittest.TestCase):
             records = list(ledger.glob("*.json")); self.assertEqual(len(records), 1)
             self.assertIn('"state":"COMPLETED"', records[0].read_text())
 
-    def test_host_runner_codex_version_mismatch_fails_closed(self):
+    def test_host_runner_accepts_stable_cli_version_outside_the_old_pin(self):
         def executor(argv, **kwargs):
             return subprocess.CompletedProcess(argv, 0, b"codex-cli 0.151.0\n", b"")
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            runner = UnixSocketHostRunner(root / "gateway.sock", root / "ledger", executor=executor)
-            with self.assertRaisesRegex(Exception, "supported contract"):
-                from runtime.orchestrator.production_worker_executor import CodexExecutionAdapter
-                CodexExecutionAdapter().probe_version(executor)
+        from runtime.orchestrator.production_worker_executor import CodexExecutionAdapter
+        self.assertEqual(CodexExecutionAdapter().probe_version(executor), "0.151.0")
 
     def test_host_runner_no_client_times_out_and_removes_socket(self):
         with tempfile.TemporaryDirectory() as d:

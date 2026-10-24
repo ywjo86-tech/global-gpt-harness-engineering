@@ -19,10 +19,26 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
-PINNED_CODEX_VERSION = "0.150.1"
-TRANSPORT_CONTRACT_VERSION = "codex-app-server.dynamic-tools.0.150.1.v1"
+CODEX_VERSION_POLICY = "STABLE_SEMVER_SCHEMA_VERIFIED"
+TRANSPORT_CONTRACT_VERSION = "codex-app-server.dynamic-tools.schema-verified.v1"
 REQUIRED_SERVER_REQUEST = "item/tool/call"
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_STABLE_CODEX_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\Z")
+
+
+def is_stable_codex_version(value: object) -> bool:
+    return isinstance(value, str) and _STABLE_CODEX_VERSION.fullmatch(value) is not None
+
+
+def is_transport_schema_verified(value: object) -> bool:
+    required = (
+        "experimental_api",
+        "dynamic_tool_request",
+        "dynamic_tool_response",
+        "empty_environment_supported",
+        "schema_verified",
+    )
+    return isinstance(value, Mapping) and all(value.get(field) is True for field in required)
 
 
 class TransportError(RuntimeError):
@@ -74,12 +90,14 @@ class TransportCompatibility:
     @property
     def compatible(self) -> bool:
         return (
-            self.codex_version == PINNED_CODEX_VERSION
-            and self.experimental_api
-            and self.dynamic_tool_request
-            and self.dynamic_tool_response
-            and self.empty_environment_supported
-            and self.schema_verified
+            is_stable_codex_version(self.codex_version)
+            and all(flag is True for flag in (
+                self.experimental_api,
+                self.dynamic_tool_request,
+                self.dynamic_tool_response,
+                self.empty_environment_supported,
+                self.schema_verified,
+            ))
         )
 
 
