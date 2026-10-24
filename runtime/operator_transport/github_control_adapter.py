@@ -44,6 +44,7 @@ class GitHubControlConfig:
     max_comment_bytes: int = 65536
     poll_limit: int = 16
     delivery_ack_limit: int = 1024
+    start_after_comment_id: int = 0
 
     def __post_init__(self) -> None:
         if isinstance(self.allowed_repository_id, bool) or self.allowed_repository_id <= 0:
@@ -60,6 +61,12 @@ class GitHubControlConfig:
             raise GitHubControlAdapterError("poll limit must be positive")
         if isinstance(self.delivery_ack_limit, bool) or self.delivery_ack_limit <= 0:
             raise GitHubControlAdapterError("delivery ack limit must be positive")
+        if (
+            isinstance(self.start_after_comment_id, bool)
+            or not isinstance(self.start_after_comment_id, int)
+            or self.start_after_comment_id < 0
+        ):
+            raise GitHubControlAdapterError("start-after comment ID must be a non-negative integer")
         if not str(self.api_base).startswith("https://"):
             raise GitHubControlAdapterError("API base must use https")
 
@@ -423,6 +430,16 @@ class GitHubControlAdapter:
                 continue
             if not body.startswith(CONTROL_PREFIX):
                 continue
+            if self.config.start_after_comment_id > 0:
+                comment_id = comment.get("id")
+                if isinstance(comment_id, bool) or not isinstance(comment_id, int) or comment_id <= 0:
+                    if first_rejection is None:
+                        first_rejection = GitHubControlAdapterError(
+                            "SOURCE_NOT_ALLOWED: comment identity invalid"
+                        )
+                    continue
+                if comment_id <= self.config.start_after_comment_id:
+                    continue
             if len(body.encode("utf-8")) > self.config.max_comment_bytes:
                 if first_rejection is None:
                     first_rejection = GitHubControlAdapterError(
