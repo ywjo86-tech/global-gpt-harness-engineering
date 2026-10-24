@@ -82,10 +82,12 @@ def _envelope(alias: str, policy_ref: str, *, gate_id=None, branch=None, head=No
 
 
 class G1GateApprovalServiceRoutingTests(unittest.TestCase):
-    def _poll(self, envelope, *, g1_enabled=True, g1_policy="G1-ISSUE-POLICY"):
+    def _poll(self, envelope, *, g1_enabled=True, g1_policy="G1-ISSUE-POLICY", g1_callback=None):
         transport = _Transport(envelope)
         generic = Mock(return_value={"schema_version": "test.projection.v1", "result_class": "GENERIC"})
         g1 = Mock(return_value={"schema_version": "test.projection.v1", "result_class": "G1"})
+        if g1_callback is not None:
+            g1 = g1_callback
         service = RemoteOperatorService(
             transport=transport,
             decode_envelope=lambda raw: envelope,
@@ -130,6 +132,24 @@ class G1GateApprovalServiceRoutingTests(unittest.TestCase):
         )
         generic.assert_not_called()
         g1.assert_not_called()
+
+    def test_g1_callback_failure_is_logged_without_exception_message_and_stays_blocked(self):
+        envelope = _envelope(G1_GATE_APPROVAL_PROFILE.project_alias, "G1-ISSUE-POLICY")
+
+        def fail_with_sensitive_message(_envelope):
+            raise RuntimeError("sensitive callback payload")
+
+        with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+            result, transport, generic, _ = self._poll(envelope, g1_callback=fail_with_sensitive_message)
+
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+        self.assertIn("GATE_APPROVAL_ISSUE_CALLBACK_FAILED route=G1", captured.output[0])
+        self.assertIn("request_id=G1-ROUTE-REQUEST-001", captured.output[0])
+        self.assertIn("exception_type=RuntimeError", captured.output[0])
+        self.assertNotIn("sensitive callback payload", captured.output[0])
+        generic.assert_not_called()
 
     def test_existing_g3_alias_continues_through_generic_route(self):
         envelope = _envelope(
