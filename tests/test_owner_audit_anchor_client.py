@@ -16,6 +16,12 @@ from runtime.orchestrator.owner_audit_anchor_client import (
 
 
 class OwnerAuditAnchorClientTests(unittest.TestCase):
+    @staticmethod
+    def _simulated_client_uid(socket_path: str) -> int:
+        """Use a caller identity distinct from the temporary fixture owner."""
+        fixture_owner_uid = Path(socket_path).parent.stat().st_uid
+        return 0 if fixture_owner_uid != 0 else 1
+
     def test_client_uses_only_read_operations_for_global_and_project_owner_heads(self):
         with tempfile.TemporaryDirectory() as td:
             socket_path = str(Path(td) / "anchor.sock")
@@ -56,7 +62,8 @@ class OwnerAuditAnchorClientTests(unittest.TestCase):
 
             thread = threading.Thread(target=serve, daemon=True)
             thread.start()
-            with patch("runtime.orchestrator.owner_audit_anchor_client.os.geteuid", return_value=0):
+            client_uid = self._simulated_client_uid(socket_path)
+            with patch("runtime.orchestrator.owner_audit_anchor_client.os.geteuid", return_value=client_uid):
                 result = OwnerAuditAnchorClient(socket_path).read_owner_authority("PROJECT-1")
             thread.join(timeout=2)
 
@@ -92,7 +99,8 @@ class OwnerAuditAnchorClientTests(unittest.TestCase):
 
             thread = threading.Thread(target=serve_unavailable, daemon=True)
             thread.start()
-            with patch("runtime.orchestrator.owner_audit_anchor_client.os.geteuid", return_value=0):
+            client_uid = self._simulated_client_uid(socket_path)
+            with patch("runtime.orchestrator.owner_audit_anchor_client.os.geteuid", return_value=client_uid):
                 with self.assertRaises(OwnerAuditAnchorError):
                     OwnerAuditAnchorClient(socket_path).read_owner_authority("PROJECT-1")
             thread.join(timeout=2)
