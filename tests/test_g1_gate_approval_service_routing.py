@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import errno
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
-from runtime.orchestrator.g1_gate_approval_route import G1_GATE_APPROVAL_PROFILE
-from runtime.orchestrator.gate_approval_issuance import GateApprovalIssuanceRequest
+from runtime.orchestrator.g1_gate_approval_route import G1_GATE_APPROVAL_PROFILE, OwnerAuditAnchorError
+from runtime.orchestrator.gate_approval_issuance import GateApprovalIssuanceError, GateApprovalIssuanceRequest
 from runtime.orchestrator.remote_control_envelope import (
     REMOTE_CONTROL_ENVELOPE_SCHEMA,
     seal_remote_control_envelope,
@@ -82,9 +83,14 @@ def _envelope(alias: str, policy_ref: str, *, gate_id=None, branch=None, head=No
 
 
 class G1GateApprovalServiceRoutingTests(unittest.TestCase):
-    def _poll(self, envelope, *, g1_enabled=True, g1_policy="G1-ISSUE-POLICY", g1_callback=None):
+    def _poll(
+        self, envelope, *, g1_enabled=True, g1_policy="G1-ISSUE-POLICY", g1_callback=None,
+        generic_callback=None,
+    ):
         transport = _Transport(envelope)
-        generic = Mock(return_value={"schema_version": "test.projection.v1", "result_class": "GENERIC"})
+        generic = generic_callback or Mock(
+            return_value={"schema_version": "test.projection.v1", "result_class": "GENERIC"}
+        )
         g1 = Mock(return_value={"schema_version": "test.projection.v1", "result_class": "G1"})
         if g1_callback is not None:
             g1 = g1_callback
@@ -150,6 +156,105 @@ class G1GateApprovalServiceRoutingTests(unittest.TestCase):
         self.assertIn("exception_type=RuntimeError", captured.output[0])
         self.assertNotIn("sensitive callback payload", captured.output[0])
         generic.assert_not_called()
+
+    def test_gate_approval_error_logs_allowlisted_code_and_preserves_correlation_and_ack(self):
+        envelope = _envelope(G1_GATE_APPROVAL_PROFILE.project_alias, "G1-ISSUE-POLICY")
+        callback = Mock(side_effect=GateApprovalIssuanceError("APPROVAL_NAMESPACE_INVALID"))
+
+        with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+            result, transport, generic, g1 = self._poll(envelope, g1_callback=callback)
+
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(transport.acks, ["MSG-G1-ROUTE-001"])
+        self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+        self.assertIn("request_id=G1-ROUTE-REQUEST-001", captured.output[0])
+        self.assertIn("message_id=MSG-G1-ROUTE-001", captured.output[0])
+        self.assertIn(f"project_alias={G1_GATE_APPROVAL_PROFILE.project_alias}", captured.output[0])
+        self.assertIn("error_code=APPROVAL_NAMESPACE_INVALID", captured.output[0])
+        generic.assert_not_called()
+        g1.assert_called_once_with(envelope)
+
+    def test_gate_approval_error_uses_generic_code_for_untrusted_text(self):
+        envelope = _envelope(G1_GATE_APPROVAL_PROFILE.project_alias, "G1-ISSUE-POLICY")
+        callback = Mock(side_effect=GateApprovalIssuanceError("SECRET_TOKEN_ABC123"))
+
+        with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+            result, transport, _, _ = self._poll(envelope, g1_callback=callback)
+
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+        self.assertIn("error_code=GATE_APPROVAL_ISSUANCE_ERROR", captured.output[0])
+        self.assertNotIn("SECRET_TOKEN_ABC123", captured.output[0])
+
+    def test_owner_anchor_errors_keep_specific_bounded_diagnostic_codes(self):
+        envelope = _envelope(G1_GATE_APPROVAL_PROFILE.project_alias, "G1-ISSUE-POLICY")
+        for code in ("OWNER_AUDIT_ANCHOR_UNAVAILABLE", "OWNER_AUDIT_ANCHOR_BINDING_MISMATCH"):
+            with self.subTest(code=code):
+                callback = Mock(side_effect=OwnerAuditAnchorError(code))
+                with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+                    result, transport, _, _ = self._poll(envelope, g1_callback=callback)
+
+                self.assertEqual(result.blocked, 1)
+                self.assertEqual(result.acknowledged, 1)
+                self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+                self.assertIn(f"error_code={code}", captured.output[0])
+
+    def test_os_error_logs_errno_without_path_or_message(self):
+        envelope = _envelope(G1_GATE_APPROVAL_PROFILE.project_alias, "G1-ISSUE-POLICY")
+        callback = Mock(side_effect=OSError(errno.EACCES, "private failure", "/secret/path"))
+
+        with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+            result, transport, _, _ = self._poll(envelope, g1_callback=callback)
+
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+        self.assertIn("error_code=OSERROR_EACCES", captured.output[0])
+        self.assertNotIn("private failure", captured.output[0])
+        self.assertNotIn("/secret/path", captured.output[0])
+
+    def test_failing_exception_string_conversion_keeps_fail_closed_projection_and_ack(self):
+        envelope = _envelope(G1_GATE_APPROVAL_PROFILE.project_alias, "G1-ISSUE-POLICY")
+
+        class UnprintableGateApprovalIssuanceError(GateApprovalIssuanceError):
+            def __str__(self):
+                raise RuntimeError("SECRET_FROM_STR")
+
+        callback = Mock(side_effect=UnprintableGateApprovalIssuanceError("APPROVAL_NAMESPACE_INVALID"))
+        with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+            result, transport, _, _ = self._poll(envelope, g1_callback=callback)
+
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(transport.acks, ["MSG-G1-ROUTE-001"])
+        self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+        self.assertIn("error_code=APPROVAL_NAMESPACE_INVALID", captured.output[0])
+        self.assertNotIn("SECRET_FROM_STR", captured.output[0])
+
+    def test_g3_generic_issuer_remains_separate_and_fail_closed(self):
+        envelope = _envelope(
+            "ocp-rdc-exec-canary-20260923-r2",
+            "GENERIC-ISSUE-POLICY",
+            gate_id="GATE-003",
+            branch="g3/revision-5-contract-20261022",
+            head="6" * 40,
+            requirements_sha256="b" * 64,
+        )
+        callback = Mock(side_effect=GateApprovalIssuanceError("PROJECT_NOT_REGISTERED"))
+
+        with self.assertLogs("runtime.orchestrator.remote_operator_service", level="ERROR") as captured:
+            result, transport, generic, g1 = self._poll(envelope, generic_callback=callback)
+
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.acknowledged, 1)
+        self.assertEqual(transport.acks, ["MSG-G1-ROUTE-001"])
+        self.assertEqual(transport.projections[0]["result_class"], "GATE_APPROVAL_ISSUE_ERROR")
+        self.assertIn("route=GENERIC", captured.output[0])
+        self.assertIn("error_code=PROJECT_NOT_REGISTERED", captured.output[0])
+        generic.assert_called_once_with(envelope)
+        g1.assert_not_called()
 
     def test_existing_g3_alias_continues_through_generic_route(self):
         envelope = _envelope(
