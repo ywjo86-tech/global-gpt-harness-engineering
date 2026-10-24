@@ -7,6 +7,7 @@ permits it.  The callback remains responsible for the existing Full Plan / gatew
 """
 from __future__ import annotations
 
+import errno
 import json
 import logging
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Mapping
 
+from .gate_approval_issuance import GateApprovalIssuanceError
 from .g1_gate_approval_route import G1_GATE_APPROVAL_PROFILE
 from .operator_control import OperatorDirectiveV1
 from .read_only_host_diagnostic_contract import ReadOnlyDiagnosticRequestV1
@@ -46,6 +48,37 @@ from .remote_operator_transport import RawControlEnvelope, RemoteOperatorTranspo
 
 
 _LOGGER = logging.getLogger(__name__)
+_SAFE_GATE_APPROVAL_ERROR_CODES = frozenset({
+    "REQUEST_FIELDS_MISMATCH", "REQUEST_ID_INVALID", "PROJECT_ALIAS_INVALID", "GATE_ID_INVALID",
+    "APPROVAL_ID_INVALID", "APPROVAL_REF_INVALID", "EXPECTED_BRANCH_INVALID", "EXPECTED_HEAD_INVALID",
+    "REQUIREMENTS_DIGEST_INVALID", "APPROVAL_TIME_INVALID", "APPROVAL_WINDOW_INVALID",
+    "DRY_RUN_PREFLIGHT_DIGEST_FORBIDDEN", "PREFLIGHT_DIGEST_REQUIRED", "OWNER_APPROVAL_COMMENT_REQUIRED",
+    "MODE_INVALID", "REQUIREMENT_REFERENCES_INVALID", "AUTHORITY_ROOT_INVALID", "PROJECT_NOT_REGISTERED",
+    "PROJECT_BINDING_INVALID", "SOURCE_BINDING_MISMATCH", "MAPPING_INVALID", "PLAN_BINDING_MISMATCH",
+    "APPROVAL_WINDOW_EXPIRED", "EXACT_OWNER_APPROVAL_REQUIRED", "APPROVAL_NAMESPACE_INVALID",
+    "APPROVAL_REPLAY_CONFLICT", "OWNER_AUDIT_ANCHOR_CLIENT_REQUIRED", "OWNER_AUDIT_ANCHOR_UNAVAILABLE",
+    "OWNER_AUDIT_ANCHOR_BINDING_MISMATCH", "G1_REQUEST_BINDING_MISMATCH", "G1_SOURCE_BINDING_MISMATCH",
+    "OWNER_AUTHORITY_MISMATCH",
+})
+
+
+def _safe_gate_approval_error_code(exc: Exception) -> str:
+    """Return a bounded diagnostic code without formatting exception text."""
+    if isinstance(exc, OSError):
+        try:
+            error_number = exc.errno
+        except Exception:
+            return "GATE_APPROVAL_ISSUANCE_ERROR"
+        error_name = errno.errorcode.get(error_number) if type(error_number) is int else None
+        return f"OSERROR_{error_name}" if error_name else "OSERROR_UNKNOWN"
+    if isinstance(exc, GateApprovalIssuanceError):
+        try:
+            args = BaseException.args.__get__(exc, type(exc))
+        except Exception:
+            return "GATE_APPROVAL_ISSUANCE_ERROR"
+        if len(args) == 1 and type(args[0]) is str and args[0] in _SAFE_GATE_APPROVAL_ERROR_CODES:
+            return args[0]
+    return "GATE_APPROVAL_ISSUANCE_ERROR"
 
 
 class RemoteOperatorServiceError(ValueError):
@@ -542,12 +575,13 @@ class RemoteOperatorService:
                         except Exception as exc:
                             _LOGGER.error(
                                 "GATE_APPROVAL_ISSUE_CALLBACK_FAILED "
-                                "route=%s request_id=%s message_id=%s project_alias=%s exception_type=%s",
+                                "route=%s request_id=%s message_id=%s project_alias=%s exception_type=%s error_code=%s",
                                 "G1" if g1_route else "GENERIC",
                                 envelope.payload.request_id,
                                 envelope.message_id,
                                 envelope.payload.project_alias,
                                 type(exc).__name__,
+                                _safe_gate_approval_error_code(exc),
                             )
                             projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_ERROR")
                             blocked += 1
