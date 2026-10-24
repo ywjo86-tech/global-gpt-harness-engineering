@@ -19,18 +19,63 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
-PINNED_CODEX_VERSION = "0.150.1"
-TRANSPORT_CONTRACT_VERSION = "codex-app-server.dynamic-tools.0.150.1.v1"
+CODEX_VERSION_POLICY = "STABLE_SEMVER_SCHEMA_VERIFIED"
+TRANSPORT_CONTRACT_VERSION = "codex-app-server.dynamic-tools.schema-verified.v1"
 REQUIRED_SERVER_REQUEST = "item/tool/call"
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+_STABLE_CODEX_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\Z")
+
+
+def is_stable_codex_version(value: object) -> bool:
+    return isinstance(value, str) and _STABLE_CODEX_VERSION.fullmatch(value) is not None
+
+
+def is_transport_schema_verified(value: object) -> bool:
+    required = (
+        "experimental_api",
+        "dynamic_tool_request",
+        "dynamic_tool_response",
+        "empty_environment_supported",
+        "schema_verified",
+    )
+    return isinstance(value, Mapping) and all(value.get(field) is True for field in required)
 
 
 class TransportError(RuntimeError):
     """Bounded compatibility or protocol failure."""
 
 
+class TransportExecutionError(TransportError):
+    """Content-free failure after the Codex App Server process was launched."""
+
+    def __init__(self) -> None:
+        super().__init__("TRANSPORT_POST_LAUNCH_FAILURE")
+        self.failure_phase = "POST_LAUNCH"
+        self.failure_category = "TRANSPORT_POST_LAUNCH_FAILURE"
+
+
 class CrashAfterDurableWrite(TransportError):
     """Explicit proof-only interruption after a governed durable WRITE."""
+
+
+def _stop_app_server_process(process: Any) -> None:
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    except Exception:
+        pass
+    for stream in (getattr(process, "stdin", None), getattr(process, "stdout", None),
+                   getattr(process, "stderr", None)):
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,19 +119,22 @@ class TransportCompatibility:
     @property
     def compatible(self) -> bool:
         return (
-            self.codex_version == PINNED_CODEX_VERSION
-            and self.experimental_api
-            and self.dynamic_tool_request
-            and self.dynamic_tool_response
-            and self.empty_environment_supported
-            and self.schema_verified
+            is_stable_codex_version(self.codex_version)
+            and all(flag is True for flag in (
+                self.experimental_api,
+                self.dynamic_tool_request,
+                self.dynamic_tool_response,
+                self.empty_environment_supported,
+                self.schema_verified,
+            ))
         )
 
 
 class WorkerAdapter(Protocol):
     def check_compatibility(self) -> TransportCompatibility: ...
     def run_turn(self, *, prompt: str, dynamic_tools: Sequence[Mapping[str, Any]],
-                 tool_handler: Callable[[ToolRequestEnvelope], ToolResultEnvelope]) -> Mapping[str, Any]: ...
+                 tool_handler: Callable[[ToolRequestEnvelope], ToolResultEnvelope],
+                 expected_codex_version: str | None = None) -> Mapping[str, Any]: ...
 
 
 def _safe_id(value: object, name: str) -> str:
@@ -208,17 +256,24 @@ class CodexAppServerAdapter:
     def run_turn(self, *, prompt: str, dynamic_tools: Sequence[Mapping[str, Any]],
                  tool_handler: Callable[[ToolRequestEnvelope], ToolResultEnvelope],
                  worker_task_id: str = "TASK-4A-08", worker_action_id: str = "WORKER_TURN",
-                 timeout: int = 180) -> Mapping[str, Any]:
+                 timeout: int = 180,
+                 expected_codex_version: str | None = None) -> Mapping[str, Any]:
         compatibility = self.check_compatibility()
+        if expected_codex_version is not None and (
+            not is_stable_codex_version(expected_codex_version)
+            or compatibility.codex_version != expected_codex_version
+        ):
+            raise TransportError("CODEX_LAUNCH_VERSION_BINDING_MISMATCH")
         registry = self.registry_evidence(dynamic_tools)
+        if not isinstance(timeout, int) or timeout < 1:
+            raise TransportError("transport timeout is invalid")
         process = self._process_factory(
             ["codex", "app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         if process.stdin is None or process.stdout is None:
-            raise TransportError("app-server stdio unavailable")
-        if not isinstance(timeout, int) or timeout < 1:
-            raise TransportError("transport timeout is invalid")
+            _stop_app_server_process(process)
+            raise TransportExecutionError()
         deadline = time.monotonic() + timeout
         next_id = 1
         pending: dict[int, Mapping[str, Any]] = {}
@@ -238,7 +293,11 @@ class CodexAppServerAdapter:
         stdout_reader = threading.Thread(
             target=read_stdout, name="codex-app-server-stdout", daemon=True,
         )
-        stdout_reader.start()
+        try:
+            stdout_reader.start()
+        except Exception as exc:
+            _stop_app_server_process(process)
+            raise TransportExecutionError() from exc
 
         def send(value: Mapping[str, Any]) -> None:
             process.stdin.write(json.dumps(dict(value), separators=(",", ":")) + "\n")
@@ -346,11 +405,11 @@ class CodexAppServerAdapter:
             if broker_block is not None:
                 outcome["broker_block"] = broker_block
             return outcome
+        except CrashAfterDurableWrite:
+            raise
+        except TransportExecutionError:
+            raise
+        except Exception as exc:
+            raise TransportExecutionError() from exc
         finally:
-            if process.poll() is None:
-                process.terminate()
-                try: process.wait(timeout=5)
-                except subprocess.TimeoutExpired: process.kill()
-            for stream in (process.stdin, process.stdout, process.stderr):
-                close = getattr(stream, "close", None)
-                if callable(close): close()
+            _stop_app_server_process(process)

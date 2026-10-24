@@ -81,17 +81,28 @@ class CodexReadinessTests(unittest.TestCase):
         )
         self.assertEqual(evidence.auth_status, NOT_READY)
 
-    def test_cli_version_drift_fails_closed(self):
+    def test_cli_version_metadata_accepts_stable_update(self):
+        evidence = collect_codex_auth_readiness(
+            run_id="run-1",
+            worker_task_id="TASK-4A-08",
+            package_id="PKG-1",
+            package_revision=1,
+            probes=probes(version="0.163.0"),
+            verified_at_utc="2026-09-09T15:00:00Z",
+        )
+        self.assertEqual(evidence.cli_version, "0.163.0")
+
+    def test_unparseable_cli_version_fails_closed(self):
         with self.assertRaises(CodexReadinessError) as caught:
             collect_codex_auth_readiness(
                 run_id="run-1",
                 worker_task_id="TASK-4A-08",
                 package_id="PKG-1",
                 package_revision=1,
-                probes=probes(version="0.150.2"),
+                probes=probes(version="0.163.0-rc.1"),
                 verified_at_utc="2026-09-09T15:00:00Z",
             )
-        self.assertEqual(caught.exception.reason_taxonomy, "CODEX_CLI_VERSION_DRIFT")
+        self.assertEqual(caught.exception.reason_taxonomy, "CODEX_VERSION_INVALID")
 
     def test_schema_compatibility_failure_fails_closed(self):
         with self.assertRaises(CodexReadinessError) as caught:
@@ -101,6 +112,29 @@ class CodexReadinessTests(unittest.TestCase):
                 package_id="PKG-1",
                 package_revision=1,
                 probes=probes(schema_verified=False),
+                verified_at_utc="2026-09-09T15:00:00Z",
+            )
+        self.assertEqual(caught.exception.reason_taxonomy, "CODEX_SCHEMA_COMPATIBILITY_BLOCK")
+
+    def test_schema_readiness_requires_each_boolean_capability_check(self):
+        evidence = probes()
+        checks, digest = evidence.schema_probe()
+        checks = dict(checks)
+        checks["schema_verified"] = True
+        checks["dynamic_tool_request"] = "true"
+        malformed = ReadinessProbeSet(
+            version_probe=evidence.version_probe,
+            schema_probe=lambda: (checks, digest),
+            environment_probe=evidence.environment_probe,
+            auth_probe=evidence.auth_probe,
+        )
+        with self.assertRaises(CodexReadinessError) as caught:
+            collect_codex_auth_readiness(
+                run_id="run-1",
+                worker_task_id="TASK-4A-08",
+                package_id="PKG-1",
+                package_revision=1,
+                probes=malformed,
                 verified_at_utc="2026-09-09T15:00:00Z",
             )
         self.assertEqual(caught.exception.reason_taxonomy, "CODEX_SCHEMA_COMPATIBILITY_BLOCK")

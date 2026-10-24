@@ -60,8 +60,9 @@ class ProductionProviderRouterIntegrationTests(unittest.TestCase):
         self.assertEqual(decision.provider_ref, "nvidia")
 
         binding = {
-            "schema_version": "orchestration.canonical-launch-authority.v1",
+            "schema_version": "orchestration.canonical-launch-authority.v2",
             "execution_obligation": "READ_ONLY_EXECUTION",
+            "codex_cli_version": "NOT_APPLICABLE",
         }
         task = TaskSlice(
             thread_id="TASK-READ",

@@ -8,6 +8,7 @@ permits it.  The callback remains responsible for the existing Full Plan / gatew
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -42,6 +43,9 @@ from .remote_control_envelope import (
 from .remote_operator_envelope import RemoteControlEnvelope, RemoteOperatorEnvelopeV3
 from .remote_operator_ingress import IngressDecision
 from .remote_operator_transport import RawControlEnvelope, RemoteOperatorTransport
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class RemoteOperatorServiceError(ValueError):
@@ -535,7 +539,16 @@ class RemoteOperatorService:
                             projection = callback(envelope)
                             if not isinstance(projection, Mapping):
                                 raise RemoteOperatorServiceError("Gate approval issue projection is malformed")
-                        except Exception:
+                        except Exception as exc:
+                            _LOGGER.error(
+                                "GATE_APPROVAL_ISSUE_CALLBACK_FAILED "
+                                "route=%s request_id=%s message_id=%s project_alias=%s exception_type=%s",
+                                "G1" if g1_route else "GENERIC",
+                                envelope.payload.request_id,
+                                envelope.message_id,
+                                envelope.payload.project_alias,
+                                type(exc).__name__,
+                            )
                             projection = self._gate_approval_issue_status_projection(envelope, "GATE_APPROVAL_ISSUE_ERROR")
                             blocked += 1
                 elif envelope.request_kind == APPROVED_WORK_ACTIVATION_KIND:

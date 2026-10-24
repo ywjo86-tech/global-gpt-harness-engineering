@@ -84,8 +84,9 @@ NVIDIA_READ_ONLY_BACKEND = "NVIDIA_READ_ONLY"
 READ_ONLY_EXECUTION_MODE = "READ_ONLY_EXECUTION"
 EXECUTOR_VERSION = "1"
 ADAPTER_CONTRACT_VERSION = "SEM-025.v2"
-SUPPORTED_CODEX_VERSION = "0.150.1"
 STRUCTURED_EVENT_CONTRACT_VERSION = "codex-exec-jsonl.0.150.1.v1"
+_CODEX_VERSION_OUTPUT = re.compile(rb"codex-cli ([0-9]+\.[0-9]+\.[0-9]+)\r?\n?\Z")
+_CODEX_VERSION_TEXT = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\Z")
 MAX_PROVIDER_ACTION_VALIDATION_REMEDIATIONS = 2
 MAX_PROVIDER_ACTION_VALIDATION_FEEDBACK_CHARS = 4096
 def _run_builtin_nvidia_provider(**kwargs: Any) -> Mapping[str, Any]:
@@ -243,7 +244,6 @@ def _structured_metadata(*, counts: Mapping[str, int], item_counts: Mapping[str,
                          **extra: Any) -> dict[str, Any]:
     metadata = {
         "contract_version": STRUCTURED_EVENT_CONTRACT_VERSION,
-        "codex_version": SUPPORTED_CODEX_VERSION,
         "event_type_counts": dict(sorted(counts.items())),
         "item_type_counts": dict(sorted(item_counts.items())),
         "event_type_sequence_category": "INVALID" if terminal_status != "SUCCEEDED" else "THREAD_TURN_ITEMS_TERMINAL",
@@ -1507,7 +1507,6 @@ class CodexExecutionAdapter:
     backend_id = EXECUTOR_ID
     contract_version = ADAPTER_CONTRACT_VERSION
     structured_event_contract_version = STRUCTURED_EVENT_CONTRACT_VERSION
-    supported_codex_version = SUPPORTED_CODEX_VERSION
 
     def __init__(self, executor: Callable[..., subprocess.CompletedProcess[bytes]] | None = None,
                  *, strict_jsonl: bool = True) -> None:
@@ -1524,13 +1523,10 @@ class CodexExecutionAdapter:
 
     @classmethod
     def validate_version_output(cls, value: bytes) -> str:
-        match = re.fullmatch(rb"codex-cli ([0-9]+\.[0-9]+\.[0-9]+)\r?\n?", value)
+        match = _CODEX_VERSION_OUTPUT.fullmatch(value)
         if match is None:
             raise StructuredEventError("Codex CLI version contract could not be confirmed")
-        version = match.group(1).decode("ascii")
-        if version != cls.supported_codex_version:
-            raise StructuredEventError("Codex CLI version is outside the supported contract")
-        return version
+        return match.group(1).decode("ascii")
 
     def probe_version(self, executor: Callable[..., subprocess.CompletedProcess[bytes]] | None = None) -> str:
         run = executor or subprocess.run
@@ -3307,9 +3303,10 @@ def execute_production_worker(request: WorkerRequest, *,
         if process_evidence["structured_strict"]:
             if adapter_evidence.get("structured_event_contract_version") != STRUCTURED_EVENT_CONTRACT_VERSION:
                 raise StructuredEventError("structured event contract version mismatch")
-            if adapter_evidence.get("codex_version") != SUPPORTED_CODEX_VERSION:
+            codex_version = adapter_evidence.get("codex_version")
+            if not isinstance(codex_version, str) or _CODEX_VERSION_TEXT.fullmatch(codex_version) is None:
                 raise StructuredEventError("Codex CLI version is outside the supported contract")
-            process_evidence["codex_version"] = adapter_evidence["codex_version"]
+            process_evidence["codex_version"] = codex_version
     process_evidence["execution_backend"] = configured_backend
     process_evidence["gateway_contract_version"] = GATEWAY_CONTRACT_VERSION
     process_evidence["execution_request_id"] = gateway_request["execution_request_id"]

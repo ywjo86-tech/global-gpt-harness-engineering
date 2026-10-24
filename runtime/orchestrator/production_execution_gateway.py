@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .codex_dynamic_transport import PINNED_CODEX_VERSION, TRANSPORT_CONTRACT_VERSION
+from .codex_dynamic_transport import CODEX_VERSION_POLICY, TRANSPORT_CONTRACT_VERSION
 from .lv_execution_package import canonical_json_bytes
 from .tool_authorization import (
     DEC007_CONTRACT_IDS, DEC007_DECISION_REF, DEC007_WORKER_TASK_ID,
@@ -34,6 +34,7 @@ EFFECT_RECONCILIATION_RESULT_SCHEMA = "orchestration.effect-reconciliation-resul
 _EFFECT_RECONCILIATION_STATUSES = frozenset({"NOT_FOUND", "PENDING", "APPLIED", "FAILED", "UNKNOWN"})
 _SHA40_OR_64 = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_CODEX_STABLE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\Z")
 LOCAL_CHILD = "LOCAL_CHILD"
 HOST_GATEWAY = "HOST_GATEWAY"
 SUPPORTED_BACKENDS = frozenset({LOCAL_CHILD, HOST_GATEWAY})
@@ -43,6 +44,34 @@ AF_UNIX_PATH_LIMIT = 108
 
 class GatewayError(ValueError):
     """Contract, transport, or binding failure; all are fail-closed."""
+
+
+def expected_codex_launch_version(payload: Mapping[str, Any]) -> str:
+    """Return the CLI version bound to a complete canonical launch request."""
+    validated = validate_gateway_request(payload, require_canonical_authority=True)
+    binding = validated["canonical_authority_binding"]
+    expected_version = binding.get("codex_cli_version")
+    if (
+        not isinstance(expected_version, str)
+        or expected_version == "NOT_APPLICABLE"
+        or _CODEX_STABLE_VERSION.fullmatch(expected_version) is None
+    ):
+        raise GatewayError("CODEX_LAUNCH_VERSION_BINDING_MISMATCH")
+    return expected_version
+
+
+def validate_codex_launch_version(
+    payload: Mapping[str, Any], observed_version: str,
+) -> str:
+    """Require the executable Codex CLI to match the launch-authorized version."""
+    expected_version = expected_codex_launch_version(payload)
+    if (
+        not isinstance(observed_version, str)
+        or _CODEX_STABLE_VERSION.fullmatch(observed_version) is None
+        or observed_version != expected_version
+    ):
+        raise GatewayError("CODEX_LAUNCH_VERSION_BINDING_MISMATCH")
+    return observed_version
 
 
 def _digest(payload: Mapping[str, Any]) -> str:
@@ -309,7 +338,7 @@ def build_gateway_request(*, project_id: str, run_id: str, gate_id: str, lv_id: 
         "execution_backend": execution_backend,
         "transport_endpoint": transport_endpoint,
         "transport_compatibility": {
-            "codex_version": PINNED_CODEX_VERSION,
+            "codex_version_policy": CODEX_VERSION_POLICY,
             "transport_contract_version": TRANSPORT_CONTRACT_VERSION,
             "experimental_api_required": True,
             "dynamic_tool_request_required": True,
@@ -357,7 +386,7 @@ def validate_gateway_request(payload: Mapping[str, Any], *, expected: Mapping[st
         raise GatewayError("gateway transport endpoint is invalid")
     compatibility = payload.get("transport_compatibility")
     if (not isinstance(compatibility, Mapping)
-            or compatibility.get("codex_version") != PINNED_CODEX_VERSION
+            or compatibility.get("codex_version_policy") != CODEX_VERSION_POLICY
             or compatibility.get("transport_contract_version") != TRANSPORT_CONTRACT_VERSION
             or compatibility.get("experimental_api_required") is not True
             or compatibility.get("dynamic_tool_request_required") is not True
@@ -391,13 +420,14 @@ def validate_gateway_request(payload: Mapping[str, Any], *, expected: Mapping[st
             "preflight_evidence_digest",
             "codex_auth_readiness_ref",
             "codex_auth_recheck_evidence_ref",
+            "codex_cli_version",
             "launch_authorization_digest",
             "migration_authority_ref",
         }
         if (
             set(canonical_binding) != required_canonical_fields
             or canonical_binding.get("schema_version")
-                != "orchestration.canonical-launch-authority.v1"
+                != "orchestration.canonical-launch-authority.v2"
             or any(
                 not isinstance(canonical_binding.get(field), str)
                 or not canonical_binding.get(field)
@@ -405,6 +435,12 @@ def validate_gateway_request(payload: Mapping[str, Any], *, expected: Mapping[st
             )
             or canonical_binding.get("execution_obligation")
                 not in {"READ_ONLY_EXECUTION", "MUTATION_REQUIRED", "NONE_SATISFIED"}
+            or (
+                canonical_binding.get("codex_cli_version") != "NOT_APPLICABLE"
+                and _CODEX_STABLE_VERSION.fullmatch(
+                    str(canonical_binding.get("codex_cli_version", ""))
+                ) is None
+            )
             or not canonical_binding_digest
             or _digest(canonical_binding) != canonical_binding_digest
         ):
@@ -531,6 +567,115 @@ def build_gateway_result(request: Mapping[str, Any], *, backend_identity: str,
     }
     payload["result_digest"] = _digest(payload)
     return payload
+
+
+def _blocked_host_execution_response(
+    request: Mapping[str, Any], *, block_category: str,
+    codex_version: str | None = None,
+) -> dict[str, Any]:
+    """Build a content-free failure response before a Codex turn can start."""
+    gateway_result = build_gateway_result(
+        request,
+        backend_identity=HOST_GATEWAY,
+        process_termination_category="BLOCKED",
+        exit_status_category="NONZERO",
+        structured_event_metadata={"validation": block_category, "status": "BLOCKED"},
+        stderr_security_metadata={"status": "NOT_EVALUATED"},
+        final_message_metadata={
+            "exists": False, "nonempty": False, "security": "NOT_EVALUATED",
+        },
+        worker_result_identity={"execution_request_id": request["execution_request_id"]},
+        execution_status="FAILED",
+    )
+    process_evidence: dict[str, Any] = {
+        "exit_code": 1,
+        "termination": "BLOCKED",
+        "launch_authority_check": "BLOCKED",
+        "launch_authority_failure_category": block_category,
+    }
+    adapter_evidence: dict[str, Any] = {
+        "backend": HOST_GATEWAY,
+        "contract_version": request["adapter_contract_version"],
+        "strict": True,
+        "structured_event_contract_version": request["structured_event_contract_version"],
+        "final_message_target_binding": "WORKSPACE_RELATIVE_EXACT",
+    }
+    if isinstance(codex_version, str) and _CODEX_STABLE_VERSION.fullmatch(codex_version):
+        process_evidence["codex_version"] = codex_version
+        adapter_evidence["codex_version"] = codex_version
+    return {
+        "execution_request_id": request["execution_request_id"],
+        "request_digest": request["request_digest"],
+        "adopted": False,
+        "process_evidence": process_evidence,
+        "adapter_evidence": adapter_evidence,
+        "stdout_b64": "",
+        "stderr_b64": "",
+        "final_message_b64": "",
+        "gateway_result": gateway_result,
+    }
+
+
+def _failed_host_transport_response(
+    request: Mapping[str, Any], *, failure_category: str,
+    effect_evidence_status: str, governed_effect_evidence: list[Mapping[str, Any]],
+    codex_version: str | None = None,
+) -> dict[str, Any]:
+    """Build a failed post-launch response while retaining durable effect evidence."""
+    if effect_evidence_status not in {"COLLECTED", "UNAVAILABLE"}:
+        raise GatewayError("post-launch effect evidence status is invalid")
+    effects = [dict(item) for item in governed_effect_evidence]
+    reconciliation_status = (
+        "REQUIRED" if effects else
+        "UNKNOWN" if effect_evidence_status == "UNAVAILABLE" else
+        "NO_EFFECTS_OBSERVED"
+    )
+    gateway_result = build_gateway_result(
+        request,
+        backend_identity=HOST_GATEWAY,
+        process_termination_category="FAILED",
+        exit_status_category="NONZERO",
+        structured_event_metadata={
+            "validation": "BROKER_NATIVE", "status": "FAILED",
+            "failure_category": failure_category,
+        },
+        stderr_security_metadata={"status": "NOT_CAPTURED"},
+        final_message_metadata={
+            "exists": False, "nonempty": False, "security": "NOT_EVALUATED",
+        },
+        worker_result_identity={"transport": TRANSPORT_CONTRACT_VERSION},
+        execution_status="FAILED",
+    )
+    process_evidence: dict[str, Any] = {
+        "exit_code": 1,
+        "termination": "FAILED",
+        "launch_authority_check": "PASS",
+        "transport_failure_category": failure_category,
+        "governed_effect_evidence": effects,
+        "effect_evidence_status": effect_evidence_status,
+        "effect_reconciliation_status": reconciliation_status,
+    }
+    adapter_evidence: dict[str, Any] = {
+        "backend": HOST_GATEWAY,
+        "contract_version": TRANSPORT_CONTRACT_VERSION,
+        "strict": False,
+        "structured_event_contract_version": request["structured_event_contract_version"],
+        "final_message_target_binding": "WORKSPACE_RELATIVE_EXACT",
+    }
+    if isinstance(codex_version, str) and _CODEX_STABLE_VERSION.fullmatch(codex_version):
+        process_evidence["codex_version"] = codex_version
+        adapter_evidence["codex_version"] = codex_version
+    return {
+        "execution_request_id": request["execution_request_id"],
+        "request_digest": request["request_digest"],
+        "adopted": False,
+        "process_evidence": process_evidence,
+        "adapter_evidence": adapter_evidence,
+        "stdout_b64": "",
+        "stderr_b64": "",
+        "final_message_b64": "",
+        "gateway_result": gateway_result,
+    }
 
 
 def validate_gateway_result(payload: Mapping[str, Any], *, expected_request: Mapping[str, Any]) -> dict[str, Any]:
@@ -862,6 +1007,19 @@ class UnixSocketHostRunner:
                         response["gateway_result"] = gateway_result
                     else:
                         self.ledger.transition(request, "RECEIVED"); self.ledger.transition(request, "RUNNING")
+
+                        def close_blocked_launch(
+                            category: str, *, codex_version: str | None = None,
+                        ) -> None:
+                            response = _blocked_host_execution_response(
+                                request, block_category=category, codex_version=codex_version,
+                            )
+                            self.ledger.transition(
+                                request, "FAILED",
+                                result_digest=response["gateway_result"]["result_digest"],
+                            )
+                            conn.sendall(_frame(response))
+
                         if self.runtime_handler is not None:
                             prompt = base64.b64decode(envelope.get("prompt_b64", ""), validate=True)
                             workspace_root = Path(str(envelope.get("workspace_root", "")))
@@ -917,7 +1075,9 @@ class UnixSocketHostRunner:
                             conn.sendall(_frame(response))
                             return
                         if self.broker_native:
-                            from .production_tool_transport import ProductionToolTransport
+                            from .production_tool_transport import (
+                                ProductionToolTransport, ProductionTransportFailure,
+                            )
                             from .production_worker_executor import _secret_findings
                             prompt = base64.b64decode(envelope.get("prompt_b64", ""), validate=True)
                             workspace_root = Path(str(envelope.get("workspace_root", "")))
@@ -930,7 +1090,41 @@ class UnixSocketHostRunner:
                             transport = ProductionToolTransport(
                                 request=request, workspace_root=workspace_root,
                                 journal_root=self.ledger.root / "tool-effects", security_scan=safe)
-                            outcome = transport.run(prompt=prompt.decode("utf-8"), timeout=timeout)
+                            expected_version: str | None = None
+                            try:
+                                expected_version = expected_codex_launch_version(request)
+                                outcome = transport.run(
+                                    prompt=prompt.decode("utf-8"), timeout=timeout,
+                                    expected_codex_version=expected_version,
+                                )
+                            except Exception as exc:
+                                if isinstance(exc, ProductionTransportFailure):
+                                    response = _failed_host_transport_response(
+                                        request,
+                                        failure_category=exc.failure_category,
+                                        effect_evidence_status=exc.effect_evidence_status,
+                                        governed_effect_evidence=list(
+                                            exc.governed_effect_evidence
+                                        ),
+                                        codex_version=expected_version,
+                                    )
+                                    self.ledger.transition(
+                                        request, "FAILED",
+                                        result_digest=response["gateway_result"]["result_digest"],
+                                    )
+                                    conn.sendall(_frame(response))
+                                    return
+                                message = str(exc)
+                                if message == "CODEX_LAUNCH_VERSION_BINDING_MISMATCH":
+                                    category = "CODEX_LAUNCH_VERSION_BINDING"
+                                elif message == "TRANSPORT_COMPATIBILITY_BLOCK":
+                                    category = "CODEX_TRANSPORT_COMPATIBILITY"
+                                elif message == "CODEX_LAUNCH_AUTHORITY_UNAVAILABLE":
+                                    category = "CODEX_LAUNCH_AUTHORITY"
+                                else:
+                                    category = "CODEX_TRANSPORT_PRELAUNCH_FAILURE"
+                                close_blocked_launch(category)
+                                return
                             completed = outcome.get("completion") == "COMPLETED"
                             final_message = b"broker-native worker turn completed" if completed else b"broker-native worker turn blocked"
                             gateway_result = build_gateway_result(request, backend_identity=HOST_GATEWAY,
@@ -959,7 +1153,7 @@ class UnixSocketHostRunner:
                                 "process_evidence": process_evidence,
                                 "adapter_evidence": {"backend": HOST_GATEWAY, "contract_version": TRANSPORT_CONTRACT_VERSION,
                                     "strict": False, "structured_event_contract_version": request["structured_event_contract_version"],
-                                    "codex_version": PINNED_CODEX_VERSION,
+                                    "codex_version": outcome.get("compatibility", {}).get("codex_version"),
                                     "final_message_target_binding": "WORKSPACE_RELATIVE_EXACT"},
                                 "stdout_b64": "", "stderr_b64": "",
                                 "final_message_b64": base64.b64encode(final_message).decode("ascii"),
@@ -978,7 +1172,6 @@ class UnixSocketHostRunner:
                         workspace_root = Path(str(envelope.get("workspace_root", "")))
                         if not workspace_root.is_absolute() or not workspace_root.is_dir() or workspace_root.is_symlink():
                             raise GatewayError("host runner workspace is invalid")
-                        codex_version = adapter.probe_version(self.executor)
                         relative_target = envelope.get("last_message_relative")
                         if not isinstance(relative_target, str):
                             raise GatewayError("final-message target binding is missing")
@@ -987,6 +1180,21 @@ class UnixSocketHostRunner:
                         )
                         if rebound != relative_target:
                             raise GatewayError("final-message target binding mismatch")
+                        try:
+                            codex_version = adapter.probe_version(self.executor)
+                        except Exception:
+                            close_blocked_launch("CODEX_LAUNCH_VERSION_PROBE")
+                            return
+                        try:
+                            validate_codex_launch_version(request, codex_version)
+                        except GatewayError as exc:
+                            block_category = (
+                                "CODEX_LAUNCH_VERSION_BINDING"
+                                if str(exc) == "CODEX_LAUNCH_VERSION_BINDING_MISMATCH"
+                                else "CODEX_LAUNCH_AUTHORITY"
+                            )
+                            close_blocked_launch(block_category, codex_version=codex_version)
+                            return
                         completed = self.executor(adapter.argv(root=workspace_root, last_message=target), input=prompt, stdout=None, stderr=None, check=False, timeout=timeout)
                         stdout = bytes(getattr(completed, "stdout", b"") or b""); stderr = bytes(getattr(completed, "stderr", b"") or b"")
                         final_message = b""

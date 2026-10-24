@@ -87,7 +87,7 @@ def _authority_binding(
         )
 
     projection = {
-        "schema_version": "orchestration.canonical-launch-authority.v1",
+        "schema_version": "orchestration.canonical-launch-authority.v2",
         "package_ref": execution_package_ref(package),
         "package_digest": package.package_digest,
         "contract_ref": package.contract_ref,
@@ -99,6 +99,7 @@ def _authority_binding(
         "preflight_evidence_digest": preflight.evidence_digest,
         "codex_auth_readiness_ref": initial_readiness.evidence_id,
         "codex_auth_recheck_evidence_ref": readiness_recheck.evidence_id,
+        "codex_cli_version": readiness_recheck.cli_version,
         "launch_authorization_digest": launch.authorization_digest,
         "migration_authority_ref": migration_authority_ref.strip(),
     }

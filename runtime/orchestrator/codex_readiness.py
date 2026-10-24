@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from .codex_dynamic_transport import (
-    PINNED_CODEX_VERSION,
     TRANSPORT_CONTRACT_VERSION,
     CodexAppServerAdapter,
+    is_transport_schema_verified,
+    is_stable_codex_version,
 )
 from .execution_contract import (
     ALWAYS_BEFORE_CODEX_LAUNCH,
@@ -231,13 +232,13 @@ def collect_codex_auth_readiness(
             reason_taxonomy="CODEX_READINESS_PROBE_UNRESOLVED",
         ) from exc
 
-    if cli_version != PINNED_CODEX_VERSION:
+    if not is_stable_codex_version(cli_version):
         raise CodexReadinessError(
-            "Codex CLI version drifted from the pinned transport",
-            reason_taxonomy="CODEX_CLI_VERSION_DRIFT",
+            "Codex CLI version is not a stable semantic version",
+            reason_taxonomy="CODEX_VERSION_INVALID",
         )
 
-    if not isinstance(checks, Mapping) or not checks.get("schema_verified"):
+    if not is_transport_schema_verified(checks):
         raise CodexReadinessError(
             "Codex transport schema is not compatible",
             reason_taxonomy="CODEX_SCHEMA_COMPATIBILITY_BLOCK",

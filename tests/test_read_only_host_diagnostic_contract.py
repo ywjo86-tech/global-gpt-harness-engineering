@@ -160,6 +160,7 @@ class DiagnosticContractTests(unittest.TestCase):
                 "user_services": ["ocpv2.service", "ocpv2.timer"],
                 "limits": {"max_bytes": 1024, "max_lines": 20, "timeout_seconds": 5},
             }))
+            policy.chmod(0o600)
             loaded = DiagnosticPolicy.load(policy)
             self.assertEqual(loaded.user_services, ("ocpv2.service", "ocpv2.timer"))
 

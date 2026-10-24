@@ -237,6 +237,10 @@ class CanonicalLaunchBridgeTests(unittest.TestCase):
             result.gateway_authority_binding["codex_auth_recheck_evidence_ref"],
             result.gateway_authority_binding["codex_auth_readiness_ref"],
         )
+        self.assertEqual(
+            result.gateway_authority_binding["codex_cli_version"],
+            result.readiness_recheck.cli_version,
+        )
         self.assertEqual(len(result.gateway_authority_binding_digest), 64)
 
     @unittest.skipUnless(os.environ.get("HARNESS_RUN_ACTUAL_CODEX_TRANSPORT") == "1",
